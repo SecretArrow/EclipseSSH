@@ -279,9 +279,10 @@ class RootfsRepairTest {
         assertThat(project.readText()).isEqualTo("my project\n")
         assertThat(status.readText()).isEqualTo("Package: mine\n")
         // Nor is the pinned archive the disk's to take. It is the one file that makes the ladder's
-        // deeper rungs local, so giving it up is a separate step with its own caller and its own
-        // arithmetic ([RootfsInstaller.releasePinnedArchive]) rather than something a reclaim does
-        // on the way past.
+        // deeper rungs local, so giving it up is its own operation with its own arithmetic
+        // ([RootfsInstaller.releasePinnedArchive]) rather than something a reclaim does on the way
+        // past — and since that arithmetic did not work out, the ladder is not even a caller of it
+        // any more (AUDIT-REPORT §76).
         assertThat(installed.installer.pinnedArchiveOnDisk()).isTrue()
     }
 
@@ -291,9 +292,10 @@ class RootfsRepairTest {
         val archive = installed.installer.tarballFile
         val bytes = archive.length()
 
-        // The repair ladder's disk step, and the whole of its argument: this file is the largest
-        // thing the app owns that can be got again by asking for it, and a repair that cannot fit on
-        // the device cannot run at all.
+        // The operation the repair ladder's disk step used to be a caller of: this file is the largest
+        // thing the app owns that can be got again by asking for it. The ladder no longer asks —
+        // thirty-four megabytes cannot move the install-sized gate that wanted the space — but what it
+        // does is unchanged, and this is what pins it.
         assertThat(installed.installer.releasePinnedArchive()).isEqualTo(bytes)
         assertThat(installed.installer.pinnedArchiveOnDisk()).isFalse()
         assertThat(archive.exists()).isFalse()
@@ -393,8 +395,10 @@ class RootfsRepairTest {
             TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
             HttpDownloader { _, _, _ -> throw IOException("no route to host") },
         )
-        // The one state in which a repair genuinely has to fetch: the disk step gave the archive up to
-        // make room for a repair that could not otherwise run, and the network is what is missing.
+        // A state a repair genuinely has to fetch its way out of: there is no archive on disk — here
+        // because the release above was asked for by hand; on a device because the pin changed, or
+        // because the file is gone — and the network is what is missing. The ladder's disk step used
+        // to put a device into this state on purpose; AUDIT-REPORT §76 is why it no longer does.
         assertThat(installed.installer.releasePinnedArchive()).isGreaterThan(0L)
         assertThat(offline.tarballFile.exists()).isFalse()
 

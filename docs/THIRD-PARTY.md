@@ -26,7 +26,14 @@ targetSdk 29+ fixes, pinned to an exact commit in `linux/build.gradle.kts`:
   build; the fork's patches are derived from upstream
   `https://github.com/proot-me/proot`, GPL-2.0)
 - talloc source: `https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz`
-  (LGPL-3.0, SHA256-verified by the build)
+  (LGPL-3.0, SHA256-verified by the build). The build will also accept the
+  identical tarball from the pools Debian and Ubuntu build from
+  (`https://deb.debian.org/debian/pool/main/t/talloc/talloc_2.4.2.orig.tar.gz`
+  and the `archive.ubuntu.com` path beside it), which serve the same bytes under
+  a different filename — that is checked rather than assumed, because the same
+  pinned SHA256 decides what gets built whichever origin answers, and a
+  mismatch fails the fetch. They are listed only so that an outage at samba.org
+  does not stop a build; the canonical source of the file is the URL above.
 
 **Corresponding source**: the two tarballs above, at the versions and hashes
 pinned in `linux/build.gradle.kts`, **together with the six patches in

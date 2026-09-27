@@ -444,21 +444,17 @@ class LinuxUserspaceManager(
                 warnings += "freed ${reclaimed / (1024 * 1024)} MB of package caches and temporary " +
                     "files to make room for the repair"
             }
-            // The kept archive is the last thing given up, and it is given up only against a reading
-            // that says the disk is short. A reading of 0 means "unknown" (see
-            // [RootfsInstaller.reclaimSpace]'s caller), and trading the one file that makes this
-            // ladder's deeper rungs local for a number nobody measured is not a repair. Nor is it
-            // worth doing when there is no rootfs to repair: the install is about to need those same
-            // bytes, so freeing them and re-fetching them is a no-op with a download in the middle.
-            if (free > 0L && installer.rootfsInPlace() &&
-                free - reclaimed < installer.requiredFreeBytes
-            ) {
-                val released = installer.releasePinnedArchive()
-                if (released > 0L) {
-                    warnings += "gave up the base system archive (${released / (1024 * 1024)} MB) to " +
-                        "make room for the repair; the next rung that needs it will download it again"
-                }
-            }
+            // And the kept archive is deliberately not part of this, which is a change of mind worth
+            // recording because the code here used to give it up. The gate that opened this block
+            // measures the *install*: `requiredFreeBytes` is `rootfsSizeBytes * 5 + 600 MB`, so a
+            // repair that trips it is short by hundreds of megabytes and the archive is
+            // thirty-four. Freeing it could not move the reading that asked for the space, and every
+            // rung at or below "restore missing files" writes base bytes out of it — including the
+            // one directly below, which pays those same thirty-four megabytes back through
+            // [RootfsInstaller.ensurePinnedArchive]. So the trade was a download spent to arrive at
+            // the failure it was meant to avoid. What a device this short of room gets instead is
+            // that failure, said plainly, with its archive intact for the retry once the user has
+            // made room.
         }
 
         // Rung A — no rootfs at all. There is nothing to repair, only something to build, and the

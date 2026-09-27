@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §75, *A rung's outcome was never verified, so a repair that had already finished went on to download the base system again*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §77, *The native fetch retried one origin for four minutes and never tried another*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -6605,16 +6605,18 @@ cannot complete.
 
 The archive is now kept, and the record of that decision is in the code rather than in a comment that
 could drift: `moveIntoPlace` records *"pinned archive kept for repair"* with its size, and the file's
-own doc says where it is given up. There are exactly three such places, each deliberate.
+own doc says where it is given up. There are exactly two such places, each deliberate.
 `deleteRootfs()` still deletes it, so **Uninstall leaves no 34 MB behind** — a userspace the user
-removed is not a userspace anyone repairs. The repair ladder's disk step gives it up
-(`releasePinnedArchive`), and only against a *measured* shortfall: a device whose free space is unknown
-reads 0, and trading the one file that makes the deeper rungs local for a number nobody took is not a
-repair. It says what it cost out loud — *"gave up the base system archive (34 MB) to make room for the
-repair; the next rung that needs it will download it again"* — and the byte count it returns is what
-the ladder adds to its warnings, so the one case where the download returns is the one case the user is
-told about. The third is a pin that no longer matches: the next `ensurePinnedArchive` downloads over it,
-which is a version change and not a repair.
+removed is not a userspace anyone repairs. The second is a pin that no longer matches: the next
+`ensurePinnedArchive` downloads over it, which is a version change and not a repair.
+
+**Corrected in §76: the paragraph above said *three*, and the third was the repair ladder's disk step.**
+It gave the archive up (`releasePinnedArchive`) against a measured shortfall and said what it cost out
+loud — *"gave up the base system archive (34 MB) to make room for the repair; the next rung that needs
+it will download it again"* — and that warning was the honest half of a trade that should not have been
+made at all: the gate it answered wanted the *install*'s budget, which thirty-four megabytes cannot
+move, and every rung below it reads the file it had just deleted. §76 removed the step and states the
+arithmetic.
 
 **Apt's trees were emptied on every press, whatever the failure was.** Rung L called
 `clearRegenerableState()` unconditionally, and that method emptied `var/lib/apt/lists` *and*
@@ -6777,13 +6779,10 @@ and its three sentences are these.
 rootfs was in place. Every rung at or below *restore missing files* writes base bytes out of exactly
 that file, so a userspace that broke after a successful install could only be repaired by downloading
 the base system first — on the device state where the connection may be the thing that is also broken,
-which is the shape of the report §61 opens with. It is kept now, and given up in exactly three places:
-uninstall (`deleteRootfs`, so a removed userspace leaves no 34 MB behind), the disk step, and only
-against a *measured* shortfall — the step reads 0 as *unknown* and keeps the archive rather than
-trading the one file that makes the deeper rungs local for a number nobody took — and a pin that no
-longer matches, which is a version change and not a repair. The one case where the download returns is
-the one case the user is told about: *"gave up the base system archive (34 MB) to make room for the
-repair; the next rung that needs it will download it again"*.
+which is the shape of the report §61 opens with. It is kept now, and given up in exactly two places:
+uninstall (`deleteRootfs`, so a removed userspace leaves no 34 MB behind) and a pin that no longer
+matches, which is a version change and not a repair. This paragraph named a third when it was written —
+the disk step — and §76 is where that one is removed and the arithmetic against it stated.
 
 **Apt's trees are cleared on evidence, not on every press.** Rung L emptied `var/lib/apt/lists` *and*
 `var/cache/apt/archives` unconditionally, which for a failure that named neither was tens of megabytes
@@ -8794,3 +8793,149 @@ all, or a missing `libproot.so` still ends at `NeedsRepair` with the sentence it
 release branch, as §72 says of its own.
 
 ---
+
+## 76. The disk rung gave up the archive against a gate thirty-four megabytes could not move
+
+**Symptom.** None reported, which is the point: this is the fault §75 named and left standing — its own
+rule, *a repair must not spend a download it does not need*, broken on the one path where it had never
+been applied. §61's paragraph claimed the archive was given up in three places and named the repair
+ladder's disk step as the third, so the code was doing exactly what the report said it did.
+
+**The step was net-negative, and the arithmetic is short enough to state.** `LinuxUserspaceManager`'s
+disk step — rung S, above everything that could need the space — reclaimed apt's regenerable trees and
+then, if the reading was still under `installer.requiredFreeBytes`, gave the pinned archive up as well.
+That gate is the *install*'s budget: `requiredFreeBytes` is `rootfsSizeBytes * 5 + 600 MB`, which for
+this distro's 34 MB base system is about 770 MB. So a repair that tripped the gate was short by hundreds
+of megabytes, and freeing thirty-four could not lift the reading that had asked for the space; the gate
+that would refuse it — the setup rung's own `requireAptDiskSpace`, which measures the same disk — was
+still reached, in exactly the state the release was meant to avoid.
+
+**And the file it deleted is the file the rung below it reads.** *Restore missing files*, *rewrite the
+base system*, *reinstall* and `restorePackageDatabase`'s `ARCHIVE` arm all write base bytes out of the
+pinned tarball, and `ensurePinnedArchive` re-fetches it when it is gone — the setup rung's prologue,
+directly below the disk step, included: `requireAptDiskSpace` sits after `repairPackageState`, which is
+where a rootfs that has lost a program gets it back. So the trade was a download spent to arrive at the
+failure it was meant to avoid: the user paid thirty-four megabytes on whatever connection they have, and
+then met the same refusal one rung further down. `DiskFull` is on the ladder's *a rebuild cannot fix
+this* list, so that path ends at the same sentence either way — the ladder stops where it stands.
+
+**What changed.** The speculative release is gone from rung S. What remains is the half that is
+positive-sum: `reclaimSpace()` still runs whenever the space is short or unknown, because apt's caches
+and the guest temp trees are regenerable and giving them up costs the user nothing, and its warning —
+*"freed N MB of package caches and temporary files to make room for the repair"* — still reaches the
+report. The archive is simply not part of that any more, and a device this short of room gets the honest
+failure, with its archive intact for the retry once the user has made space.
+
+**`releasePinnedArchive()` itself is kept, deliberately.** It is a real operation and `RootfsRepairTest`
+uses it to build the one userspace the ladder's archive gate exists for — one whose archive is gone. What
+changed about it is its claim: its KDoc no longer says the ladder is a caller and now says why the ladder
+stopped being one, and its diagnostic record lost the *"to make room for the repair"* half of *"pinned
+archive given up"*, because that was the half that was never true. The same correction went into
+`moveIntoPlace`'s own doc — *two* places, each deliberate, with the reason the third was removed — and
+into `docs/linux-userspace.md`, where the **Free space** row now says the reading this rung is gated on
+is the install's budget and the **Install or Repair fails on space** row says the kept archive is not
+given up, naming the rootfs as the large item that uninstalling really does reclaim.
+
+**Verified by the suites.** One new test, and it is a test of the arithmetic rather than of the deleted
+block: a userspace installed with room to spare, a missing `rm` so the ladder climbs past the local
+rungs, and then a reading of 100 MB — asserted to be under `requiredFreeBytes` before the press. The
+ladder runs, the disk step reclaims what it can, and the press ends in `DiskFull` with **the archive
+still on disk** and **not one download spent**. That is the two-part claim: the file it would have given
+up is still there for the retry, and the failure it bought is the one that arrived anyway. 93 tests
+across the five linux suites pass on the standalone harness — 33 in `LinuxUserspaceManagerTest`, 20 in
+`UserspaceFailureTest`, 15 in `RootfsLocalRepairTest`, 13 in `RootfsInstallerTest` and 12 in
+`RootfsRepairTest` — and `scripts/check-doc-figures.sh` reports all 172 documentation claims in
+agreement, after the README's count moved to the 2,101 test methods the new one makes it.
+
+**The harness had to be told which device it is on, and that is a finding of its own.** The three disk
+readings — the apt phase's gate in `UbuntuDistributionManager`, the installer's own gate and the
+ladder's rung S — each took their own default `RuntimeStorageManager`, and the JVM's unmocked `StatFs`
+answers 0, which all three read as *unknown, do not gate*. The manager's was already answered by hand
+for §75's tests; the other two were not, so the apt gate was unreachable from any test at all, and the
+first version of this section's test passed for the wrong reason — a healthy userspace on a short disk
+never reaches that gate, because §75's probe stops the ladder first. The harness now builds one
+`RuntimeStorageManager` and hands it to the runtime, the installer and the manager, which is what
+`LinuxUserspaceGraphProvider` does for real and what its own comment is for — *one storage for the whole
+graph, so no two members can disagree about where anything lives*. A test can now move the disk
+underneath a repair without moving it for only half the code that reads it.
+
+**Not verified: no phone was involved.** The observable half is a device check, and it is the user's:
+fill a device until a repair reports the disk, then free some space and press Repair again — the
+archive should still be there, and the repair should not begin with a download it has already paid for.
+
+**What this does not do.** It does not change the disk step's gate, the budget it compares against, or
+what `reclaimSpace` takes; it does not reorder a rung; and it does not give the `DiskFull` sentence more
+instruction than it has — §75's own note about `PinnedArchiveUnavailable` covers that, and it is a
+message-quality question rather than this one.
+
+**No version bump here.** A behaviour change makes its release a minor, and the bump belongs to the
+release branch, as §72 and §75 both say of their own.
+
+---
+
+## 77. The native fetch retried one origin for four minutes and never tried another
+
+**Symptom.** PR #189's run (2026-09-27, run 36316479359) reddened the `FreeRDP native (4 ABIs)` job
+after 14 minutes, and the same fetch took `Instrumentation`'s job down with it (run 36316479066). Every
+job downstream — `Lint`, `Unit and integration tests`, `APKs, AAB and signatures`, `Boot the built
+APKs` — was `skipped`, because `native` gates all of them. The diff at that head was Kotlin comments, a
+documentation table and one test; nothing in it is compiled by either job's failing step.
+
+**Root cause.** `:linux:fetchLinuxSource` fetches talloc through `download()` in
+`linux/build.gradle.kts`, whose retry policy — added by #126 after two reds in one day caused by
+third-party mirrors answering 5xx — was **seven attempts over roughly four minutes against a single
+URL**:
+
+```
+:linux:fetchLinuxSource FAILED
+Caused by: java.lang.IllegalStateException:
+  downloading https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz failed:
+  HTTP 503 after 7 attempts over ~4 minutes
+```
+
+That policy is right for a CDN having a bad burst and wrong for an origin that is simply gone. samba.org
+was down for longer than the whole window (measured 2026-09-27: both `www.samba.org` and
+`download.samba.org` unreachable, the index as well as the tarball), so seven attempts and four minutes
+bought nothing that one attempt would not have. Meanwhile the Debian and Ubuntu pools were serving the
+file in under two seconds.
+
+**The change.** `download()` takes a **list** of origins and walks it in order, keeping the per-origin
+backoff and only failing when every origin has failed; the failure message names each origin and its
+last code rather than one URL. `:freerdp`'s fetch passes a single-element list, so its behaviour is
+unchanged. The talloc call names two more origins:
+
+- `https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz` — canonical, and the one the pinned sha256 was
+  published beside, still tried first
+- `https://deb.debian.org/debian/pool/main/t/talloc/talloc_2.4.2.orig.tar.gz`
+- `https://archive.ubuntu.com/ubuntu/pool/main/t/talloc/talloc_2.4.2.orig.tar.gz`
+
+**Why a second origin is safe here, and what proves it.** The pinned sha256 decides what gets built
+whichever origin answers, so an origin serving different bytes fails the fetch rather than reaching the
+compiler. Measured 2026-09-27 rather than assumed: the Ubuntu pool path returns 679,750 bytes whose
+sha256 is exactly `85ecf9e4…d8a6`, the value already pinned in the build for the samba.org tarball, and
+it unpacks to `talloc-2.4.2/talloc.c` — the same tree under a different filename. `docs/THIRD-PARTY.md`
+records the two extra origins beside the canonical one, because a document that discloses where
+`libproot.so`'s source comes from has to name every place the build will accept it from.
+
+**Verified.** The hash and the archive layout above were checked on this host with `curl` and
+`sha256sum` against the pool URLs. The retry loop itself is not covered by a test: it is a
+`linux/build.gradle.kts` task action, and this repository builds only in CI. What proves the change is
+the next run's `:linux:fetchLinuxSource` succeeding without samba.org.
+
+**What this does not do.** It does not change the per-origin window, the backoff schedule, the pinned
+hashes, or `:freerdp`'s fetch. `:freerdp` carries its **own copy** of the same loop — its KDoc says so,
+"the same bounded retry as `:linux`'s fetch task" — and that copy still retries a single URL, so the
+class of failure this section describes is still available to `openssl-4.0.1.tar.gz`, which comes from
+`github.com` and its CDN. It is left alone deliberately: that origin has no second source to name, so
+the only honest change there would be a longer wait, and a longer wait is what this section just
+concluded is not the fix. If a run reddens on the OpenSSL download the way this one reddened on talloc,
+the answer is not another mirror — it is asking whether a *fetch* should be doing this work in a job
+that is a release blocker. It does not add a mirror for the proot fork either, which has one origin
+(`codeload.github.com`) and a commit-pinned sha256; naming a second origin for it would mean naming a
+second place the fork's bytes may come from, and the fork is a *patched* tree whose provenance is worth
+keeping singular. And it does not make the fetch cache survive the change: both native fetch tasks key
+their cache on their module's build script (§41.6), so editing `linux/build.gradle.kts` retires the
+`linux-native` entry and the next run pays a cold native build of the four ABIs.
+
+**No version bump.** §76's line applies here too: a behaviour change makes its release a minor, and the
+bump belongs to the release branch.
