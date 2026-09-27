@@ -20,6 +20,17 @@
 # ways that happens. It does not guard against the *machine* dying; that is
 # what CI_WINDOW_DEADLINE is for, and scripts/ci-window-watchdog.sh reads it.
 #
+# PROTECTION. Opening the window is also the only moment `main` can be guarded
+# at all: branch protection is a paid feature on a private repository for this
+# account and a free one on a public repository, and a close *deletes* the rule
+# rather than suspending it. So `open` applies it - the same rule
+# docs/branch-protection.md writes down, whose check names that page's own table
+# pins against the workflows - and then reads it back, because a PUT returning
+# 200 says the request was accepted and not that the rule is what was asked for.
+# A failure here does not close the window: the run is worth having either way,
+# so it warns instead, in the plainest words it has, that the window is open and
+# unguarded. `protect` re-applies the rule on its own and `status` reports it.
+#
 # WHAT MAKING THE REPOSITORY PUBLIC COSTS. Everything in the history, to
 # everyone, permanently: forks and third-party archives (Software Heritage,
 # GH Archive) copy it within minutes and flipping back to private does not
@@ -34,6 +45,7 @@
 # Usage:
 #   ci-window.sh status
 #   ci-window.sh open  [--workflow release.yml] [--ref main] [--minutes 120] --yes
+#   ci-window.sh protect
 #   ci-window.sh close
 set -euo pipefail
 
@@ -42,6 +54,26 @@ DEADLINE_VARIABLE="CI_WINDOW_DEADLINE"
 DEFAULT_WORKFLOW="release.yml"
 DEFAULT_REF="main"
 DEFAULT_MINUTES=120
+
+# The checks a window requires on `main`, in the order docs/branch-protection.md
+# lists them. That page's table is where this list is *written down*, and it is
+# already checked against the workflows - scripts/check-doc-figures.sh resolves
+# every row's job key against the workflow it names and fails if the job calls
+# itself something else. This copy is checked against that table by the same
+# script, because the two drifting apart is the worst failure available here: a
+# required context that no workflow reports is a check that can never pass, and
+# `main` becomes permanently unmergeable rather than merely unguarded. Read the
+# reasoning for each row there - in particular why the closer's job and the idle
+# stress test are deliberately absent.
+PROTECTION_CONTEXTS=(
+  "Documentation figures"
+  "FreeRDP native (4 ABIs)"
+  "Lint (release variant)"
+  "Unit and integration tests"
+  "APKs, AAB and signatures"
+  "Boot the built APKs (crash-on-open gate)"
+  "connectedAndroidTest"
+)
 
 die() { echo "ci-window: $*" >&2; exit 1; }
 note() { echo "ci-window: $*"; }
@@ -100,6 +132,84 @@ clear_deadline() {
   api -X DELETE "repos/$REPO/actions/variables/$DEADLINE_VARIABLE" >/dev/null 2>&1 || true
 }
 
+# A JSON string array built from the arguments. The names come from a table this
+# repository checks, so the escaping is belt-and-braces rather than something
+# expected to fire - but these strings are interpolated into a JSON document,
+# which is the one place in this script where a stray character would be
+# structural rather than cosmetic.
+json_string_array() {
+  local first=1 item
+  printf '['
+  for item in "$@"; do
+    [ "$first" = 1 ] || printf ','
+    first=0
+    printf '"%s"' "$(printf '%s' "$item" | sed 's/[\\"]/\\&/g')"
+  done
+  printf ']'
+}
+
+# Applies the rule to `main` and verifies it by reading it back.
+#
+# It returns rather than exits, because whoever called it is the one that knows
+# whether the window is still worth having - and the answer to that is yes: a
+# window that could not be guarded is a worse window, not a useless one, and
+# closing it would mean giving up the run as well as the guard. It says what
+# went wrong on the way out, so the caller only has to add the consequence.
+#
+# The read-back is the evidence, not the PUT's exit status: a 200 says the
+# request was accepted, not that the stored rule is the one that was sent. The
+# two sides are compared as sorted sets, because the API is not obliged to hand
+# the contexts back in the order they were sent.
+apply_protection() {
+  local want readback err
+  want="$(printf '%s\n' "${PROTECTION_CONTEXTS[@]}" | LC_ALL=C sort | tr '\n' '|')"
+
+  err="$({
+    cat <<EOF
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": $(json_string_array "${PROTECTION_CONTEXTS[@]}")
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0
+  },
+  "restrictions": null,
+  "required_linear_history": false,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+EOF
+  } | api -X PUT "repos/$REPO/branches/main/protection" --input - 2>&1 >/dev/null)" || {
+    note "could not apply the rule to $REPO/branches/main: ${err:-the API gave no detail}"
+    note "administrative access to the repository is needed for this; the default token does not have it"
+    return 1
+  }
+
+  readback="$(api "repos/$REPO/branches/main/protection" \
+    --jq '"\(.enforce_admins.enabled)|\(.required_status_checks.contexts | sort | map(. + "|") | add)"' \
+    2>/dev/null)" || readback=""
+  if [ "$readback" != "true|$want" ]; then
+    note "the rule was accepted but the read-back does not match it"
+    note "  asked for: true|$want"
+    note "  read back: ${readback:-(could not read it back at all)}"
+    return 1
+  fi
+  return 0
+}
+
+# One line describing the guard, for `status`. Empty when the rule cannot be read,
+# which is the expected answer on a private repository rather than a failure.
+protection_summary() {
+  api "repos/$REPO/branches/main/protection" --jq \
+    'if (.enforce_admins.enabled // false)
+       then "\(.required_status_checks.contexts | length) required checks, and they bind the administrator"
+       else "the rule is stored but does not bind administrators" end' 2>/dev/null
+}
+
 # `close` is the only way this script ever makes the repository private, and it
 # verifies the result: a close that silently did nothing would leave the window
 # open while reporting success, which is the one outcome worth failing loudly
@@ -121,11 +231,24 @@ close_window() {
 }
 
 cmd_status() {
-  local current dl
+  local current dl guard
   current="$(visibility)" || die "cannot read $REPO - is the token still valid?"
   dl="$(deadline)"
+  guard="$(protection_summary)" || guard=""
   printf 'repository    : %s\n' "$REPO"
   printf 'visibility    : %s\n' "$current"
+  # Reported beside the visibility because the same window decides both, and
+  # because an unguarded window is otherwise indistinguishable from a guarded one
+  # until somebody reads mergeStateStatus on a pull request.
+  if [ "$current" = "public" ]; then
+    if [ -n "$guard" ]; then
+      printf 'branch guard  : %s\n' "$guard"
+    else
+      printf 'branch guard  : NOT APPLIED - main is unguarded for as long as this window is open\n'
+    fi
+  else
+    printf 'branch guard  : n/a - a private repository cannot carry the rule\n'
+  fi
   if [ -n "$dl" ]; then
     printf 'window deadline: %s\n' "$dl"
     if [ "$current" = "public" ] && [ "$(date -u +%s)" -ge "$(date -u -d "$dl" +%s)" ]; then
@@ -208,6 +331,20 @@ EOF
     current="$(visibility)" || die "flipped but could not read the visibility back"
     [ "$current" = "public" ] || die "the API reports '$current' after the flip - not dispatching"
     note "window open"
+
+    # Now, and only now: the endpoint answers 403 while the repository is
+    # private, so this is the first moment in the window when the rule can be
+    # applied - and applying it before the dispatch means the runs this window
+    # exists for are gated from their first check. A failure warns instead of
+    # dying deliberately: the flip is one-way and already taken, and closing the
+    # window would throw away the run as well as the guard.
+    if apply_protection; then
+      note "protection verified: ${#PROTECTION_CONTEXTS[@]} required checks on main, and they bind the administrator"
+    else
+      note "WARNING: the window is open and main is UNGUARDED."
+      note "         A red check will not block a merge until the rule is applied."
+      note "         Re-apply it with \`ci-window.sh protect\` before merging anything."
+    fi
   else
     # No deadline either: a deadline recorded for a window that never opens is
     # the state the watchdog reports as a stale marker, and it would be one this
@@ -241,14 +378,33 @@ EOF
   note "run finished"
 }
 
+# Re-applies the rule on its own, and the reason it has to exist is the design of
+# the call inside `open`: that one is allowed to fail without consequence, so
+# there must be a way to retry it that is not "open another window". It is also
+# what an operator reaches for when `status` reports NOT APPLIED.
+#
+# Unlike the call in `open`, this one dies on failure - nothing here is worth
+# salvaging, and the command's whole purpose is the rule.
+cmd_protect() {
+  local current
+  current="$(visibility)" || die "cannot read $REPO - is the token still valid?"
+  [ "$current" = "public" ] || die "$REPO is $current, so the rule cannot be applied:
+       branch protection is a paid feature on a private repository for this account,
+       so it exists only while a window is open - and a close deletes it rather than
+       suspending it. Open a window first."
+  apply_protection || die "the rule was not verified - read it back by hand before relying on it"
+  note "protection verified: ${#PROTECTION_CONTEXTS[@]} required checks on main, binding the administrator"
+}
+
 cmd_close() { close_window; }
 
 load_token
 command="${1:-}"
 [ $# -gt 0 ] && shift
 case "$command" in
-  status) cmd_status "$@" ;;
-  open)   cmd_open "$@" ;;
-  close)  cmd_close "$@" ;;
-  *) die "usage: ci-window.sh {status|open|close} [options]" ;;
+  status)  cmd_status "$@" ;;
+  open)    cmd_open "$@" ;;
+  protect) cmd_protect "$@" ;;
+  close)   cmd_close "$@" ;;
+  *) die "usage: ci-window.sh {status|open|protect|close} [options]" ;;
 esac

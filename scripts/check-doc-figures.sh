@@ -512,6 +512,25 @@ else
   done < <(grep -E '^\| `[A-Za-z0-9 .-]+` \| ' docs/branch-protection.md)
 fi
 
+# The same list is written a second time in scripts/ci-window.sh, because that script applies the
+# rule itself and cannot read the markdown to do it - it is a shell script that talks to the API and
+# may be run from outside a checkout. A second copy is fine; a second copy that drifts is not, and
+# the failure it produces is the worst one this file guards: a required context that no workflow
+# reports never reports at all, so `main` stops being mergeable rather than stopping being guarded.
+# The comparison is against the table above, so the page stays the place the list is written down.
+checked=$((checked + 1))
+documented_contexts="$(grep -E '^\| `[A-Za-z0-9 .-]+` \| ' docs/branch-protection.md \
+  | sed -nE 's/^\| `[^`]+` \| `([^`]+)`.*$/\1/p' | LC_ALL=C sort)"
+script_contexts="$(sed -nE '/^PROTECTION_CONTEXTS=\($/,/^\)$/p' scripts/ci-window.sh \
+  | sed -nE 's/^[[:space:]]*"(.*)",?$/\1/p' | LC_ALL=C sort)"
+if [ -z "$script_contexts" ]; then
+  fail "scripts/ci-window.sh no longer declares PROTECTION_CONTEXTS in the shape this script reads"
+elif [ "$documented_contexts" != "$script_contexts" ]; then
+  fail "scripts/ci-window.sh's PROTECTION_CONTEXTS and docs/branch-protection.md's table disagree:
+$(printf '%s\n' "$documented_contexts" | sed 's/^/    documented: /')
+$(printf '%s\n' "$script_contexts" | sed 's/^/    script:     /')"
+fi
+
 # ---------------------------------------------------------------------------------------------
 # Cross-references: a workflow name that no longer resolves. Every document that names workflows.
 # ---------------------------------------------------------------------------------------------

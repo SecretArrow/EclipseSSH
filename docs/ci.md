@@ -84,7 +84,9 @@ claim about classes rather than files, that `ChoiceActivitiesRobolectricTest.kt`
 against that file. It checks every library version the About screen shows, checks that every workflow
 a document names exists, checks that every repository path a document names resolves (from the root or
 from that document's own directory), and checks that each row of the branch-protection table names a
-check the job actually reports as. One of its checks is about the tree rather than a document: no Kotlin
+check the job actually reports as — and that the copy of that list in `scripts/ci-window.sh`, which
+applies the rule itself, still agrees with the table row for row. One of its checks is about the tree
+rather than a document: no Kotlin
 source under `app/src` may contain a NUL byte, because such a file is binary to `grep` and every
 count taken from it is silently short.
 
@@ -229,10 +231,11 @@ one step has to come from outside GitHub, which is why the opener is a script an
 Everything after it can be a job, and the closer is.
 
 ```sh
-scripts/ci-window.sh status                       # visibility, and whether a window is open
+scripts/ci-window.sh status                       # visibility, whether a window is open, and the guard on main
 scripts/ci-window.sh open --yes                   # release.yml on main, 120-minute deadline
 scripts/ci-window.sh open --workflow ci.yml --ref some-branch --minutes 60 --yes
 scripts/ci-window.sh open --dry-run               # dispatch and wait, flip nothing
+scripts/ci-window.sh protect                      # re-apply the branch-protection rule alone
 scripts/ci-window.sh close                        # close it now
 ```
 
@@ -298,11 +301,14 @@ private repository for this account and a free one on a public repository, so th
 only while a window is open — and a close does not suspend it, it deletes it. That was measured in
 that order: a pull request carrying a red check read `mergeStateStatus: BLOCKED` while the window was
 open, read `UNSTABLE` with the same red check still present minutes after `close`, and a later window
-found the endpoint answering `404 Branch not protected`. So a window opened without re-applying the
-rule leaves `main` guarded by nothing for its own duration as well as after it — and the whole point
-of running a release this way is that the merge and the tag happen inside the window. The `PUT` that
-re-applies it is on [Branch protection](branch-protection.md); it is by hand today, and folding it
-into `open` is the open item that page names.
+found the endpoint answering `404 Branch not protected`. That is why `ci-window.sh open` applies the
+rule itself, immediately after the flip and *before* it dispatches: the merge a window exists for
+happens inside the window, so a window that arrives unguarded is the one case where the merge is the
+thing at risk. The rule it applies is the one on [Branch protection](branch-protection.md), and it is
+verified by reading it back rather than trusted to the `PUT`'s status code — a failure warns and leaves
+the window open, because the flip is one-way and already taken. `ci-window.sh protect` re-applies it
+alone, and `ci-window.sh status` reports it, saying `UNGUARDED` plainly when it is not in force: an
+unguarded window and a guarded one look identical until a merge is attempted.
 
 ## Reproducing a CI failure locally
 
