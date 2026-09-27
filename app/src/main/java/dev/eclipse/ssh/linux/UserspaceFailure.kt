@@ -97,7 +97,8 @@ sealed class UserspaceFailure(
      * nothing on the device left to try. That is why the sentence names the connection and not the
      * userspace — the fault is outside, and the one useful thing the user can do is what the button
      * they already have does. [attempts] is how many transfers were spent, so a hiccup reads
-     * differently from four minutes of trying; [detail] is the last attempt's own words.
+     * differently from a transfer that was asked three times over half a minute; [detail] is the
+     * last attempt's own words.
      */
     class ArchiveUnavailable(
         val attempts: Int = 1,
