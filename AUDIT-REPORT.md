@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 45 / versionName 1.12.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 46 / versionName 1.13.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §78, *The rootfs download had one attempt, so a mirror's bad minute cost the user thirty-four megabytes by hand*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §79, *Releasing 1.13.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9046,3 +9046,107 @@ the one verdict arm, and it does not change any user-visible string the E2E driv
 
 **No version bump.** §76's line applies here too: a behaviour change makes its release a minor, and the
 bump belongs to the release branch.
+
+---
+
+## 79. Releasing 1.13.0
+
+1.12.0 repaired a terminal that drew a rewritten line one cell too far right. 1.13.0 is the userspace
+release. It is the version in which a fresh install passes the app's own health check instead of failing
+it, a repair stops the moment the userspace is sound rather than paying an `apt-get update` for a fault a
+local rung had already fixed, an install that ends up unhealthy tries once to put itself right in place
+before it reports failure, a base system that will not download is retried in place, and the
+thirty-four-megabyte archive the deeper rungs need is no longer given up by the rung that cannot free
+enough space to replace it. §72 through §78 are the changes; this section is the release.
+
+Ten pull requests stand between the two tags and five of them carry behaviour. **#183** asks whether apt can
+open a lock rather than whether anything holds it — §72. **#185** ends a glyph run at a cell whose glyph
+does not fit it — §73. **#188** verifies a rung's outcome, so a repair that has already finished stops
+there — §75. **#189** stops the disk rung giving up the archive it cannot afford to lose, and is §76 and
+§77 together: the native fetch walking its origins instead of retrying one for four minutes had no pull
+request of its own. **#190** retries the rootfs transfer in place and gives its failure a sentence — §78.
+The other five are not app behaviour: **#182** records what 1.12.0's validation run did, **#184** and
+**#186** make the window's own guard apply its rule and keep applying it, **#187** keeps the watchdog alive
+on a full filesystem, and **#175** is the Actions bump. `git log v1.12.0..main` is twenty-eight commits,
+which is those ten and the eighteen they merge.
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56 and §67 set, and §69, §71 and §72 each applied: **a patch number is honest when the
+artifact a user installs behaves as its predecessor's does.** This one cannot pass that test, and the first
+item below is the reason. On 1.12.0 a *correct* install failed the app's own health check: the probe asked
+whether a package lock file was present while nothing held it, apt creates those four files with `O_CREAT`
+and never unlinks them, so the setup pipeline's own successful `apt-get` was what made the probe report "an
+interrupted package operation left its lock behind" — and that same verdict is what failed each of the seven
+repair rungs in turn, every one of them judged against files its own work had just caused. A device that
+installs 1.13.0 over 1.12.0 therefore installs a userspace 1.12.0 could not report as sound, and repairs
+one with fewer bytes over the network than 1.12.0 would spend, in two independent places. §67 and §71 are
+the precedent rather than an exception to it: a repair was a minor release there too, for the same reason,
+that what the artifact does on a device changes. `versionCode` moves 45 → 46 and `versionName` 1.12.0 →
+1.13.0.
+
+Nothing native is rebuilt. `linux/build.gradle.kts` moves — §77, the origins the *build* may take the
+pinned talloc tarball from and the backoff between its attempts — and the pinned SHA256 still decides what
+is built whichever origin answers, so no `linux/proot-patches/` file and no `freerdp/` source moves, and
+the binaries a device runs are the ones 1.12.0 shipped. `docs/THIRD-PARTY.md` gained the two extra origins
+beside the canonical URL, which is the whole of its diff: eight lines, and not one of them a library. What
+differs in the artifact is Kotlin in the APK's dex.
+
+### What a device gains
+
+- **A fresh install passes its health check, and Repair is not offered for a userspace that is working.**
+  The question is now the one apt itself asks — whether the lock *path* can be opened for reading and
+  writing — so a directory standing where a lock belongs, a mode that denies the write, or a link that
+  resolves to nothing is still caught, in apt's own words, while four empty files a clean run left behind
+  are not.
+- **A repair that has finished stops there.** The ladder's local rungs returned no verdict and nothing
+  probed them, so a fault one of them had just repaired still fell through to *Set up again* and paid a
+  full `apt-get update` and base-package pass — tens of megabytes for a userspace that was already sound.
+  A rung's outcome is verified now, and the ladder returns as soon as the report is sound.
+- **An install that ends up unhealthy heals itself once, in place, before it reports failure.** The guest's
+  temporary directories, the package locks, proot's leftovers, the package database and the base files the
+  archive already on disk can supply are each put back, in the ladder's own order, and the probe runs
+  again. The heal never re-enters `setup()`, so it cannot itself cost an `apt-get update`; it runs once; and
+  a userspace it cannot mend is reported with the sentence it would have had anyway.
+- **The base system is downloaded again rather than the user being told to press Install again.** A
+  transfer that ends in a 5xx, a dropped connection, a read timeout, a short body or a checksum mismatch is
+  repeated — three attempts over about twenty-five seconds, logged as it goes — and when the attempts are
+  spent the sentence says the failure is in the download and not in what is already installed. A status the
+  origin itself sent as final (a 404, a 403) is not repeated: the transfer is what is retried, not a URL
+  that has been answered.
+- **The archive survives a repair that reports the disk.** The disk rung used to release the
+  thirty-four-megabyte tarball whenever free space minus what it could reclaim fell short of
+  `requiredFreeBytes`, which is the *install* budget — some seven hundred megabytes — so the release could
+  not move the reading that had asked for the space, and the next rung down, which reads that file, paid
+  those same bytes back as a download. The ladder no longer calls it at all, and a repair that tells the
+  user to free space leaves the file where the retry will find it.
+- **Text stays under the cursor around a glyph no bundled face has.** A cluster the bundled faces cannot
+  draw was placed at the platform fallback face's own advance, which slid the rest of its style run off the
+  grid while the cursor stayed where the buffer said it was; a run now ends at a cell whose glyph does not
+  fit it. Runs drawn from the bundled faces render as they did.
+
+### What is not claimed
+
+- **No device was involved, in any of §72–§78, or in this release.** Each of those sections says so about
+  itself, and it stays true here. The closest this repository gets to a device is
+  `android-release-test.yml`, whose emulator legs install and launch the artifact rather than reading a
+  screen or a terminal.
+- **§73's draw call site is not verified.** The arithmetic is; the ink is the platform's, and this host has
+  no usable emulator. The width-2 arm of `terminalCharWidth` (§70) is untouched, so a CJK, fullwidth or
+  emoji character still occupies one cell and can still overprint its neighbour.
+- **The install heal covers only what the in-place rungs can fix.** A fault that needs the network, a
+  genuinely full disk, a rootfs that is not there at all and a missing `libproot.so` are all still
+  `NeedsRepair` with the sentence they had before, and `aRebuildCouldFix` still refuses to spend a rebuild
+  on them.
+- **§78 adds no second origin for the rootfs.** The pin is one URL; §77's answer — several origins walked
+  in turn — belongs to a build that names several mirrors. A mirror that is gone is still a failure. It is
+  a faster and better-said one.
+- **§77's retry loop has no test.** The origins walk is exercised by every build that uses it and the
+  pinned hash is what decides the result, but the loop's own branches are covered by neither suite.
+
+### The artifacts
+
+Built and signed by `tagged-release.yml` from the `v1.13.0` tag: the universal APK, the four per-ABI splits
+(`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The signing
+identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this
+build installs over 1.12.0 and every earlier release normally.
