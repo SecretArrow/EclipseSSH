@@ -89,8 +89,16 @@ health check passes — "installed" and "works" are the same fact:
 
 1. **Download** — HTTPS, streamed to a `.part` file. The `.part` file is never a resume point: an
    interrupted download starts again from the first byte. What is reused is a tarball that already
-   arrived *and* verified — reinstalling over a complete download does not fetch it again.
-2. **Verify** — SHA256 against the pinned hash; a mismatch extracts nothing.
+   arrived *and* verified — reinstalling over a complete download does not fetch it again. A transfer
+   that fails is **retried in place** — three attempts over about twenty-five seconds — so a mirror
+   answering 503 for a minute, a connection dropped mid-body or a body that arrived truncated does not
+   end the install and leave the user to press Install again for the same thirty-four megabytes. A
+   URL the origin says is *gone* (a 404, a 403) is not retried, because patience cannot change it. The
+   retry is recorded in the install log, so a report of a slow install can say whether it was a slow
+   connection or one that was asked three times.
+2. **Verify** — SHA256 against the pinned hash; a mismatch extracts nothing. A mismatch on a transfer
+   that has already been repeated is the last attempt's failure, so the user is told the base system
+   could not be downloaded and that the fault is the connection rather than anything already installed.
 3. **Extract** — into `rootfs.staging/`, then renamed into place. A rootfs that exists is always a
    complete one; an interrupted install leaves no half-extracted tree under the real name. Every
    entry is resolved through a path-traversal guard (`resolveInsideRoot`) that refuses `../` and
@@ -540,8 +548,10 @@ It is given up in two places, each deliberate — uninstalling the userspace, an
 matches, where the next fetch downloads over it. The disk rung above used to be a third and is not one
 any more: the reading it acts on is the *install*'s budget, so thirty-four megabytes could not move it,
 and every rung below reads the archive it had just deleted. A repair therefore downloads nothing unless
-the archive was never fetched, is gone, or no longer matches its pin; it clears apt's lists only when
-the failure in front of it named them.
+the archive was never fetched, is gone, or no longer matches its pin — and when it is one of those and
+the fetch is genuinely forced, the transfer is the retried one described under [the install
+process](#the-install-process), so a mirror having a bad minute costs the repair a wait rather than the
+press. It clears apt's lists only when the failure in front of it named them.
 
 The ladder refuses a failure a rebuild cannot fix, and hands it back unchanged rather than rewriting
 a working base system over it: no network, no DNS, an archive that no longer matches its pin, a
@@ -605,7 +615,7 @@ the packages the user installed with it.
 | `whoami` is not `root` (a number, or `ubuntu`) | `/etc/passwd`'s root entry lost, or the shell did not get proot's `-0` — without it `apt install` and `su` cannot work | Repair |
 | DNS does not resolve | Network changed since setup wrote `resolv.conf` | Repair rewrites it; the wiring layer passes the live resolvers |
 | `groups: cannot find name for group ID 3003` (or 9997, 20504, 50504) | The names for the app's own Android groups are missing from the rootfs's `/etc/group` — an install made before the app wrote them | Nothing to repair: starting the userspace rewrites the file, so opening the terminal once after the update clears it. The IDs are the app's real groups (`inet`, `everybody`, and the cache and shared groups derived from its app id); `id` and `ls -l` print them by number until then |
-| Download dies mid-install | Network drop; the verified-tarball resume only covers completed downloads | Retry install; nothing half-extracted is left behind |
+| A download that fails mid-install | A mirror having a bad minute, a connection dropped mid-body, a read timeout, or a body that arrived truncated or did not match its pin — the verified-tarball reuse covers only downloads that *completed* | The install retries the transfer in place: three attempts over about twenty-five seconds, each one starting its own `.part` file from the first byte. A URL the origin says is *gone* — a 404, a 403 — is not retried, because patience cannot change it, and neither is anything the origin answers with a status that says the request itself was wrong. If every attempt fails, the install ends with *the Ubuntu base system could not be downloaded after N attempts — check the connection and try again; the failure is in the download, not in what is already installed*, and nothing half-extracted is left behind. Repair does not offer a rebuild for it: a rebuild is made of the bytes that would not download |
 | Install or Repair fails on space | The tarball plus the extracted rootfs plus apt's caches exceed what the volume has | Repair reclaims apt's caches, its lists, the temporary directories and the rotated logs before it does anything else, and reports how much it freed. If that is still too little for the repair to run, it stops there and says so: the kept archive is not given up, because thirty-four megabytes cannot close a gap measured in hundreds and the rungs below read that archive. Uninstalling with "delete the workspace" is the other half — and the one that really does reclaim the space, since the rootfs is the large item |
 | Repair ran and the terminal still fails | The failure is environmental — no network, no DNS, a mirror refusing, an archive that no longer matches its pin, a step timing out, a disk with nothing left to free | Repair says so instead of rebuilding: it hands back the numbered failure the taxonomy names (see [What Repair tries](#what-repair-tries)), and the install log records which rung ran and what each one answered |
 | Sessions die when app is backgrounded | The foreground service was stopped by the user or the system | Settings → Ubuntu on this device → Start; sessions cannot be revived (their ptys died) but the workspace is untouched |

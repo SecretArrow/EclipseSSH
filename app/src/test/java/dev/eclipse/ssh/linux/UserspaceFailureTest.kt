@@ -332,4 +332,57 @@ class UserspaceFailureTest {
         // The controller renders .message verbatim; it must read as a sentence, not a code.
         assertThat(failure.message).contains("failed to start")
     }
+
+    // ------------------------------------------------------------------ the installer's own types
+
+    @Test
+    fun `the archive the installer could not fetch becomes a sentence the user can act on`() {
+        // The installer types this itself, and deliberately: it is the one failure a repair must not
+        // answer by rebuilding, because the archive *is* what a rebuild is made of. What it is not
+        // is a sentence — "HTTP 503" names the fault and not the response — so the boundary types it
+        // too, and the round trip is what this pins.
+        val unfetched = PinnedArchiveUnavailable(
+            "downloading https://fixtures.invalid/rootfs.tar.gz failed: HTTP 503",
+            attempts = 3,
+        )
+
+        // Through a wrapper, because that is how it arrives: the ladder records a rung's failure
+        // inside its own prose, and the wrapping exception is the less specific fact.
+        val failure = UserspaceFailure.fromThrowable(IOException("rung 4 failed", unfetched))
+
+        assertThat(failure).isInstanceOf(UserspaceFailure.ArchiveUnavailable::class.java)
+        assertThat(failure!!.message).contains("could not be downloaded after 3 attempts")
+        assertThat(failure.message).contains("check the connection")
+        // And the attempt's own words still survive, so a report can name what the origin said.
+        assertThat(failure.message).contains("HTTP 503")
+        assertThat((failure as UserspaceFailure.ArchiveUnavailable).attempts).isEqualTo(3)
+    }
+
+    @Test
+    fun `a failure the taxonomy already typed is returned as it stands`() {
+        val already = UserspaceFailure.DiskFull(0, 0, detail = "Ubuntu needs ~900 MB free; 200 MB available")
+
+        assertThat(UserspaceFailure.fromThrowable(IOException("wrapped", already))).isSameInstanceAs(already)
+    }
+
+    @Test
+    fun `a prefix contract is found through a wrapper, not only at the top`() {
+        // The repair ladder's own gate walks the chain for these; the classifier that feeds the user
+        // their sentence has to agree with it, or one boundary says "not enough disk" and the other
+        // reports the wrapper's prose.
+        val wrapped = IOException(
+            "rung 3 failed",
+            IOException("runtime storage not ready: the tmp probe could not write"),
+        )
+
+        val failure = UserspaceFailure.fromThrowable(wrapped)
+
+        assertThat(failure).isInstanceOf(UserspaceFailure.ProotLaunchFailed::class.java)
+        assertThat(failure!!.message).contains("the tmp probe could not write")
+    }
+
+    @Test
+    fun `anything else keeps the original exception as the answer`() {
+        assertThat(UserspaceFailure.fromThrowable(IllegalStateException("the health check failed"))).isNull()
+    }
 }

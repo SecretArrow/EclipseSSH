@@ -89,6 +89,30 @@ sealed class UserspaceFailure(
     )
 
     /**
+     * The pinned base system itself could not be obtained: every transfer attempt failed, or the
+     * bytes that arrived were not the ones the pin describes.
+     *
+     * The step below [MirrorUnreachable] rather than beside it, and deliberately the one failure a
+     * repair cannot answer by rebuilding: the archive *is* what a rebuild is made of, so there is
+     * nothing on the device left to try. That is why the sentence names the connection and not the
+     * userspace — the fault is outside, and the one useful thing the user can do is what the button
+     * they already have does. [attempts] is how many transfers were spent, so a hiccup reads
+     * differently from four minutes of trying; [detail] is the last attempt's own words.
+     */
+    class ArchiveUnavailable(
+        val attempts: Int = 1,
+        detail: String? = null,
+        cause: Throwable? = null,
+    ) : UserspaceFailure(
+        "the Ubuntu base system could not be downloaded" +
+            (attempts.takeIf { it > 1 }?.let { " after $it attempts" } ?: "") +
+            " - check the connection and try again; the failure is in the download, not in what is " +
+            "already installed" +
+            detail.inParentheses(),
+        cause,
+    )
+
+    /**
      * proot itself failed to launch — a missing loader, a ptrace refusal — which the historical
      * bug reported as "every mirror is down" (audit F2). Exit codes 126 and 127 belong to the
      * launcher ("not executable", "not found"); [exitCode] is -1 when the launch never produced one
@@ -392,6 +416,14 @@ sealed class UserspaceFailure(
 
     companion object {
         /**
+         * How far down a cause chain [fromThrowable] looks, with the same bound and the same reason
+         * as the repair ladder's own walk: this code wraps a failure once, so three is already
+         * deeper than it goes, and a bound is what keeps a self-referential cause from spinning the
+         * check.
+         */
+        private const val MAX_CAUSE_DEPTH = 4
+
+        /**
          * Classifies one failed apt-get rung from its exit code and captured output, or null when
          * the evidence names nothing this taxonomy knows — the caller then falls back to its own
          * prose. Pure on purpose: the rules are decision logic and get tested like the ladder.
@@ -443,6 +475,37 @@ sealed class UserspaceFailure(
                 ProotLaunchFailed(-1, message.removePrefix(RUNTIME_STORAGE_PREFIX).trim(), cause = cause)
             message.startsWith(DISK_FULL_PREFIX) -> DiskFull(0, 0, detail = message, cause = cause)
             else -> null
+        }
+
+        /**
+         * The typed failure for [failure], or null when it is not one this taxonomy knows — the
+         * boundary the install and repair paths classify at.
+         *
+         * [fromMessage] reads a message prefix, which is all a bare `IOException` thrown deep in
+         * the runtime layer offers. This reads the *type* first, because a failure typed at its
+         * throw site is better evidence than any amount of prose about it — and the installer's
+         * [PinnedArchiveUnavailable] is typed deliberately, precisely so that somebody can act on
+         * it. Until this existed that type reached the user as the downloader's own sentence:
+         * "downloading https://… failed: HTTP 503", which names the fault and not the response.
+         *
+         * The chain is walked because a typed failure is often wrapped on its way up — the ladder
+         * records a rung's failure inside its own prose — and the wrapping exception is the less
+         * specific fact. A [UserspaceFailure] found in the chain is returned as it stands, and the
+         * prefix contracts are looked for in the same walk rather than only at the top, which is
+         * the rule the repair ladder's own gate already keeps.
+         */
+        fun fromThrowable(failure: Throwable): UserspaceFailure? {
+            var seen: Throwable? = failure
+            var depth = 0
+            while (seen != null && depth++ < MAX_CAUSE_DEPTH) {
+                if (seen is UserspaceFailure) return seen
+                if (seen is PinnedArchiveUnavailable) {
+                    return ArchiveUnavailable(seen.attempts, detail = seen.message, cause = failure)
+                }
+                fromMessage(seen.message ?: "", cause = failure)?.let { return it }
+                seen = seen.cause
+            }
+            return null
         }
 
         /**

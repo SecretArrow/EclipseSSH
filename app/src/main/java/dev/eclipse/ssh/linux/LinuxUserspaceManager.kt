@@ -177,8 +177,15 @@ class LinuxUserspaceManager(
                 SetupReport(warnings)
             } catch (t: Throwable) {
                 onFailedInstallRun()
-                _state.value = failureState(t)
-                throw t
+                // Typed at this boundary rather than left as whatever the layer below said: the
+                // installer's own refusal is the ladder's key to stop on, not a sentence, and a
+                // user told "HTTP 503" has been told nothing they can act on. A failure the ladder
+                // already typed comes back unchanged — the classifier returns the first
+                // [UserspaceFailure] it finds in the chain — and the original stays the cause of
+                // whatever does come out of here.
+                val failure = UserspaceFailure.fromThrowable(t) ?: t
+                _state.value = failureState(failure)
+                throw failure
             }
         } finally {
             storage.releaseInstallLock()
@@ -338,8 +345,15 @@ class LinuxUserspaceManager(
                 SetupReport(warnings)
             } catch (t: Throwable) {
                 onFailedInstallRun()
-                _state.value = failureState(t)
-                throw t
+                // Typed at this boundary rather than left as whatever the layer below said: the
+                // installer's own refusal is the ladder's key to stop on, not a sentence, and a
+                // user told "HTTP 503" has been told nothing they can act on. A failure the ladder
+                // already typed comes back unchanged — the classifier returns the first
+                // [UserspaceFailure] it finds in the chain — and the original stays the cause of
+                // whatever does come out of here.
+                val failure = UserspaceFailure.fromThrowable(t) ?: t
+                _state.value = failureState(failure)
+                throw failure
             }
         } finally {
             storage.releaseInstallLock()
@@ -884,6 +898,12 @@ class LinuxUserspaceManager(
             is UserspaceFailure.DnsUnresolved,
             is UserspaceFailure.MirrorUnreachable,
             is UserspaceFailure.RepositoryUnsigned,
+            // The base system's own archive, which is what a rebuild is made of: there is no rung
+            // below this one that does not read it, so the ladder would spend its last thirty
+            // megabytes fetching the bytes that just failed to arrive. The installer's own
+            // [PinnedArchiveUnavailable] is the same verdict reached one layer down, and the
+            // chain-walk at the top of this function is what catches it there.
+            is UserspaceFailure.ArchiveUnavailable,
             is UserspaceFailure.DiskFull,
             is UserspaceFailure.StepTimedOut,
             // The device's clock, which nothing inside the rootfs can move: apt's index reads as
@@ -949,10 +969,12 @@ class LinuxUserspaceManager(
      * is the one that had the whole archive to work from.
      *
      * A typed failure stays typed: the controller renders its own sentence for those, and rewording
-     * it here would fork one explanation into two.
+     * it here would fork one explanation into two. The classification reads the failure's *type*
+     * before its prose ([UserspaceFailure.fromThrowable]), so the installer's own typed refusals
+     * arrive with the sentence they were given rather than as the downloader's HTTP line.
      */
     private fun repairFailed(attempted: List<String>, failure: Throwable?): Throwable {
-        failure?.let { UserspaceFailure.fromMessage(it.message ?: "", it) }?.let { return it }
+        failure?.let { UserspaceFailure.fromThrowable(it) }?.let { return it }
         return IOException(
             "Ubuntu could not be repaired: ${failure?.message ?: "every repair step failed"}" +
                 " (tried: ${attempted.joinToString(", ")})",

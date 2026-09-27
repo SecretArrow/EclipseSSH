@@ -8,6 +8,7 @@ import java.security.MessageDigest
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
@@ -47,6 +48,20 @@ class RootfsInstaller(
      * rootfs failure taxonomy is built to name.
      */
     private val diagnostics: UserspaceDiagnostics = UserspaceDiagnostics(),
+    /**
+     * How long to wait before each repeat of a failed transfer, and — by its length — how many
+     * repeats one install may spend, so the default is three transfers over ~25 seconds.
+     *
+     * Twenty-five seconds is measured against a person watching a progress screen rather than
+     * against the network. The two failures this is for are an origin having a bad minute and a
+     * phone whose Wi-Fi is reattaching, and either is answered inside that window or not at all;
+     * a build machine can afford the four minutes the native fetch spends, because nobody
+     * is watching it.
+     *
+     * A test passes `longArrayOf()` — one attempt, no waiting — because the tests that must not
+     * sleep are exactly the ones about a failed transfer.
+     */
+    private val retryWaitsMillis: LongArray = longArrayOf(5_000, 20_000),
 ) {
     /** Where the tarball is downloaded to before verification. */
     val tarballFile: File get() = File(storage.downloadsDir, "rootfs-${distro.ubuntuArch}.tar.gz")
@@ -577,6 +592,17 @@ class RootfsInstaller(
     private fun isRotatedLog(name: String): Boolean =
         name.endsWith(".gz") || name.endsWith(".1") || name.endsWith(".old")
 
+    /**
+     * The transfer, retried in place.
+     *
+     * One attempt used to be the whole of it, and that made every transient failure the user's to
+     * pay for: a 503 while a mirror is restarting, a connection dropped mid-body, a read that timed
+     * out, a body that arrived truncated — each ended the install, and pressing Install again spent
+     * the same thirty-four megabytes from byte zero. The retry is bounded and in place instead, and
+     * it does not widen the download: this function returns before touching the network whenever a
+     * verified archive is already on disk — the first thing it does — which is the state every
+     * repair that kept its archive is in.
+     */
     private suspend fun download(onProgress: (Progress) -> Unit) {
         migrateLegacyTarball()
         if (tarballFile.isFile && verifyFileSha256(tarballFile, distro.rootfsSha256)) {
@@ -594,62 +620,45 @@ class RootfsInstaller(
         // cancellation — a cancelled install must stop mid-download, not after 30 MB more.
         val job = coroutineContext[Job]
         val temp = File(storage.downloadsDir, tarballFile.name + ".part")
+        val attempts = retryWaitsMillis.size + 1
+        var attempt = 0
         var receivedFinal = 0L
-        var reportedTotal = 0L
         try {
-            try {
-                downloader.download(
-                    distro.rootfsTarballUrl,
-                    temp,
-                    onChunk = { received, total ->
-                        job?.ensureActive()
-                        receivedFinal = received
-                        if (total > 0) reportedTotal = total
-                        // The server's content length versus the pin: wildly off in either direction
-                        // means the URL is no longer serving the file this build was verified against
-                        // (an error page with a 200, a redirect to something else) — fail now, not
-                        // after 30 MB of the wrong bytes.
-                        if (total > 0 && distro.rootfsSizeBytes > 0) {
-                            val expected = distro.rootfsSizeBytes
-                            if (total > expected * 2 || total < expected / 2) {
-                                throw PinnedArchiveUnavailable(
-                                    "the rootfs download is $total bytes, but the pinned ${distro.displayName} " +
-                                        "tarball is about $expected bytes - the URL is serving something else",
-                                )
-                            }
-                        }
-                        onProgress(Progress.Downloading(received, total))
-                    },
-                )
-            } catch (e: IOException) {
-                // Typed here rather than at each throw site, because the fetch has three: the
-                // downloader's own HTTP failure, the size check above, and the truncation check
-                // below. They are one fact — the archive could not be obtained — and the repair
-                // ladder reads it that way (see [PinnedArchiveUnavailable]).
-                throw PinnedArchiveUnavailable(e.message ?: "the rootfs download failed", e)
-            }
-            if (reportedTotal > 0 && receivedFinal != reportedTotal) {
-                throw PinnedArchiveUnavailable(
-                    "the rootfs download was truncated: $receivedFinal of $reportedTotal bytes arrived",
-                )
-            }
-            // Fail closed: an unverifiable temp file is deleted by the finally below, never
-            // renamed into place as if it were the pinned tarball.
-            if (!verifyFileSha256(temp, distro.rootfsSha256)) {
+            while (true) {
+                attempt++
+                // A failed attempt's fragment is not a resume point and nothing here reads it as
+                // one: every attempt starts at byte zero, so a length the previous origin
+                // announced cannot be mistaken for what the pin describes.
+                temp.delete()
+                receivedFinal = 0L
+                val failure = try {
+                    receivedFinal = transferOnce(attempt, temp, job, onProgress)
+                    null
+                } catch (e: PinnedArchiveUnavailable) {
+                    e
+                }
+                if (failure == null) break
+                if (attempt >= attempts || !worthAnotherAttempt(failure)) throw failure
+                val waitMillis = retryWaitsMillis[attempt - 1]
                 diagnostics.record(
                     UserspaceDiagnosticCategory.DOWNLOAD,
-                    "tarball checksum mismatch",
-                    detail = "expected ${distro.rootfsSha256.take(16)}…, ${receivedFinal} bytes arrived",
+                    "download attempt failed; retrying",
+                    detail = "attempt $attempt of $attempts: ${failure.message} - " +
+                        "waiting ${waitMillis / 1000}s",
                 )
-                throw PinnedArchiveUnavailable("Rootfs checksum mismatch for ${distro.displayName}")
+                delay(waitMillis)
             }
             // Bytes and seconds, not a progress transcript: the rate is what says whether a slow
             // install was the network or the unpack, which is the first question a report raises.
+            // A transfer that took more than one attempt says so here, because "it installed in
+            // ninety seconds" and "it installed in ninety seconds, the second of which was a
+            // retry" are different facts about the connection.
             diagnostics.record(
                 UserspaceDiagnosticCategory.DOWNLOAD,
                 "tarball downloaded and verified",
                 durationMs = System.currentTimeMillis() - startedAt,
-                detail = "${receivedFinal} bytes from ${distro.rootfsTarballUrl}",
+                detail = "$receivedFinal bytes from ${distro.rootfsTarballUrl}" +
+                    (attempt.takeIf { it > 1 }?.let { " on attempt $it of $attempts" } ?: ""),
             )
             if (!temp.renameTo(tarballFile)) {
                 temp.copyTo(tarballFile, overwrite = true)
@@ -658,6 +667,107 @@ class RootfsInstaller(
         } finally {
             temp.delete()
         }
+    }
+
+    /**
+     * One transfer of the pinned archive into [temp], and every check that decides whether what
+     * arrived is what the pin describes; the bytes received.
+     *
+     * Every way it can fail leaves as a [PinnedArchiveUnavailable], so the caller has one type to
+     * catch and one question to ask of it — whether this is worth another attempt. [attempt] is
+     * carried into the failure so the sentence the user is finally shown can say how many
+     * transfers were spent rather than implying there was only ever one.
+     *
+     * A cancelled install is not one of these: `ensureActive` raises `CancellationException`, which
+     * is not an [IOException] and passes through the catch below untouched.
+     */
+    private suspend fun transferOnce(
+        attempt: Int,
+        temp: File,
+        job: Job?,
+        onProgress: (Progress) -> Unit,
+    ): Long {
+        var received = 0L
+        var total = 0L
+        try {
+            downloader.download(
+                distro.rootfsTarballUrl,
+                temp,
+                onChunk = { got, announced ->
+                    job?.ensureActive()
+                    received = got
+                    if (announced > 0) total = announced
+                    // The server's content length versus the pin: wildly off in either direction
+                    // means the URL is no longer serving the file this build was verified against
+                    // (an error page with a 200, a redirect to something else) — fail now, not
+                    // after 30 MB of the wrong bytes.
+                    if (announced > 0 && distro.rootfsSizeBytes > 0) {
+                        val expected = distro.rootfsSizeBytes
+                        if (announced > expected * 2 || announced < expected / 2) {
+                            throw PinnedArchiveUnavailable(
+                                "the rootfs download is $announced bytes, but the pinned ${distro.displayName} " +
+                                    "tarball is about $expected bytes - the URL is serving something else",
+                                attempts = attempt,
+                            )
+                        }
+                    }
+                    onProgress(Progress.Downloading(got, announced))
+                },
+            )
+        } catch (e: PinnedArchiveUnavailable) {
+            throw e
+        } catch (e: IOException) {
+            // Typed here rather than at each throw site, because the fetch has three: the
+            // downloader's own HTTP failure, the size check above, and the truncation check
+            // below. They are one fact — the archive could not be obtained — and the repair
+            // ladder reads it that way (see [PinnedArchiveUnavailable]).
+            throw PinnedArchiveUnavailable(e.message ?: "the rootfs download failed", e, attempt)
+        }
+        if (total > 0 && received != total) {
+            throw PinnedArchiveUnavailable(
+                "the rootfs download was truncated: $received of $total bytes arrived",
+                attempts = attempt,
+            )
+        }
+        // Fail closed: an unverifiable temp file is deleted by the caller's finally, never
+        // renamed into place as if it were the pinned tarball.
+        if (!verifyFileSha256(temp, distro.rootfsSha256)) {
+            diagnostics.record(
+                UserspaceDiagnosticCategory.DOWNLOAD,
+                "tarball checksum mismatch",
+                detail = "expected ${distro.rootfsSha256.take(16)}…, $received bytes arrived",
+            )
+            throw PinnedArchiveUnavailable(
+                "Rootfs checksum mismatch for ${distro.displayName}",
+                attempts = attempt,
+            )
+        }
+        return received
+    }
+
+    /**
+     * Whether the transfer that just failed is worth another of the install's attempts.
+     *
+     * The status code is the whole reason [HttpStatusException] exists. A 503, a 429 and a 408 are
+     * the origin having a bad minute, and the identical request a few seconds later is the ordinary
+     * outcome — the build-side fetch in `linux/build.gradle.kts` found samba.org answering 503 for
+     * longer than its whole four-minute window while the same bytes were healthy from the pools
+     * Debian builds from. A 404 or a 403 is the origin saying the URL is not there, and half a
+     * minute will not change its mind, so those are the one family this refuses.
+     *
+     * With no status at all it is the transfer rather than the URL: a connection that never
+     * completed (a timeout, a dropped socket, a name that did not resolve), or one that completed
+     * carrying the wrong bytes — a truncated body, or a checksum the pin refuses. Those are all the
+     * same request having gone wrong once, which is what an attempt budget is for.
+     */
+    private fun worthAnotherAttempt(failure: PinnedArchiveUnavailable): Boolean {
+        var seen: Throwable? = failure
+        var depth = 0
+        while (seen != null && depth++ < MAX_CAUSE_DEPTH) {
+            (seen as? HttpStatusException)?.let { return it.isWorthRepeating }
+            seen = seen.cause
+        }
+        return true
     }
 
     /**
@@ -1546,6 +1656,14 @@ class RootfsInstaller(
         private const val DOWNLOAD_BUFFER = 64 * 1024
         private const val PROGRESS_EVERY_ENTRIES = 200
 
+        /**
+         * How far down a cause chain [worthAnotherAttempt] looks for the status the origin
+         * answered with. The same bound and the same reason as the manager's own walk: this code
+         * wraps a failure once, so three is already deeper than it goes, and a bound is what keeps
+         * a self-referential cause from spinning the check.
+         */
+        private const val MAX_CAUSE_DEPTH = 4
+
         /** The mode bits the archive's own entries carry for "this is a program" (0111). */
         private const val EXECUTABLE_BITS = 0b001_001_001
 
@@ -1794,7 +1912,34 @@ enum class PackageDatabaseSource {
 class PinnedArchiveUnavailable(
     message: String,
     cause: Throwable? = null,
+    /**
+     * How many transfers this install spent before giving up, so the sentence the user finally
+     * reads can say whether they are looking at a hiccup or at four minutes of trying. 1 for a
+     * failure raised before any retry was possible — the checks that run once the bytes are on
+     * disk are told the attempt they belong to.
+     */
+    val attempts: Int = 1,
 ) : IOException(message, cause)
+
+/**
+ * The origin answered, and with what.
+ *
+ * Carried as a type rather than left in the message because the retry rule reads it: a 503 is the
+ * origin having a bad minute and a 404 is a URL that is gone, and the same patience is right for
+ * one and wasted on the other. See [HttpStatusException.isWorthRepeating].
+ */
+class HttpStatusException(
+    val code: Int,
+    url: String,
+) : IOException("downloading $url failed: HTTP $code") {
+    /**
+     * Whether the identical request is worth making again. 5xx is the origin's own side of the
+     * line; 408, 425 and 429 are the three 4xx codes that mean "not now" rather than "not this".
+     * Every other 4xx is the request itself being wrong — a URL that has moved, a path that never
+     * existed, a key the origin wants — and repeating it cannot fix any of those.
+     */
+    val isWorthRepeating: Boolean get() = code >= 500 || code == 408 || code == 425 || code == 429
+}
 
 /** A byte-range-progressing HTTP(S) GET; an interface so tests never touch the network. */
 fun interface HttpDownloader {
@@ -1814,7 +1959,7 @@ class UrlConnectionDownloader : HttpDownloader {
         connection.instanceFollowRedirects = true
         try {
             val code = connection.responseCode
-            if (code !in 200..299) throw IOException("downloading $url failed: HTTP $code")
+            if (code !in 200..299) throw HttpStatusException(code, url)
             val total = connection.contentLengthLong
             connection.inputStream.use { input ->
                 target.outputStream().use { output ->
