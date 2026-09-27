@@ -367,6 +367,29 @@ sealed class UserspaceFailure(
         cause,
     )
 
+    /**
+     * The health probe found the userspace unable to do the one thing it exists for, after the
+     * in-place remedies had their turn and the probe still disagreed.
+     *
+     * It carries the whole [HealthReport], and that is the reason the type exists rather than the
+     * sentence: the question the ladder has to answer is not "did the probe fail" but *which field*
+     * failed. [aRebuildCouldFix] reads the report there, so a complaint no rebuild can answer — a
+     * resolver that does not resolve, a device with no network — stops the ladder instead of sending
+     * it down to rewriting a base system that was never the fault. Before this existed the probe
+     * threw a bare `IllegalStateException`, which reached the gate's untyped arm and was read as "a
+     * rebuild could fix it" every single time.
+     *
+     * The message is the sentence that throw used to carry, because it is what the install log line
+     * and `NeedsRepair`'s detail have always shown: the caller supplies its own prefix — "Ubuntu
+     * installed but failed its health check" for an install, [HEALTH_FAILURE] for a repair — and
+     * [HealthReport.describe] supplies the failing fields.
+     */
+    class GuestUnhealthy(
+        val report: HealthReport,
+        healthFailure: String,
+        cause: Throwable? = null,
+    ) : UserspaceFailure("$healthFailure: ${report.describe()}", cause)
+
     companion object {
         /**
          * Classifies one failed apt-get rung from its exit code and captured output, or null when

@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §74, *The watchdog died at its own log line, and the redirect it was blamed on had opened*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §75, *A rung's outcome was never verified, so a repair that had already finished went on to download the base system again*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -8675,5 +8675,122 @@ with the mechanism above and also with an older empty file that no run had ever 
 reproduction does establish is the negative result §71 needed: the redirect opens, so the sentence
 blaming the open was wrong, and a fix built only on moving the log elsewhere would have left the same
 failure in place for the next filesystem to fill.
+
+---
+
+## 75. A rung's outcome was never verified, so a repair that had already finished went on to download the base system again
+
+**Symptom.** Reported in Indonesian, after §72 had shipped: *"perbaiki install masih blm sempurna ndan
+repiar juga ga works. perbaiki lagi dan sempurnakan."* — the install is still not perfect and Repair
+still does not work, so perfect them again. The same report says what perfect would be, and it is one
+requirement stated twice: an install that *"bisa langsung otomatis selesai tanpa error dan dapat
+digunakan langsung"*, and a Repair that fixes every case by the best route — *"jangan langsung download
+ulang, usahakan perbaiki langsung dulu, jika terpaksa barulah download kebutuhannya"*, repair in place
+first, download only under duress.
+
+**One mistake explains all three faults below: a rung's outcome was never verified, so the ladder could
+not tell that it had already finished.** `repairLadder` runs its rungs in order, and only the last of
+them — the setup rung — was followed by a health check, as the final line of `setUpAndVerify`. The two
+local rungs above it are `localRung`, which returned `Unit`: they removed the damage and reported
+success, and §72's own words for the consequence are the plainest statement of it — *"rung L removed the
+four files and reported success, and nothing looked."* §63 records the same gap as knowingly left open.
+
+**The cost is not only a missed fix; it is a download.** `setup()` is not step-gated. `SetupStep` is a
+progress label and nothing persists one, so a call to it always re-runs `registerUbuntuUser`,
+`configureDns`, `verifyResolution`, `configureAptSources`, `verifyRuntime`, `repairPackageState`,
+`requireAptDiskSpace`, **`aptUpdate`** and `installBasePackages`, whether or not any of them has anything
+to do. A press whose fault a local rung had already cleared therefore paid a full `apt-get update` and a
+base-package pass to arrive at the same healthy userspace it had been in since the rung above. That is
+the needless download the report describes, and it is tens of megabytes per press.
+
+**The cheap way to stop the ladder is unsound, and that is worth recording.**
+`unusableGuestTemp()` and `unusablePackageLocks()` are host-side and free — the health probe's own KDoc
+says so — so a `changed && bothAreClean() && isConfigured()` stop could have been added for nothing at
+all. `isConfigured()` only proves that setup *ran*: passwd, the sources marker, the workspace. It says
+nothing about `shellWorks`, `accountCorrect`, `aptUsable` or `missingPrograms`. A rootfs missing `rm` —
+§55's case — that also had one unopenable lock path would satisfy all three conditions and stop the
+ladder reporting success over a userspace dpkg still cannot unpack into. Verification has to be able to
+see the whole userspace, and only a probe can.
+
+**What changed.** Three parts, and the first is what makes the other two possible.
+
+- **`HealthReport.sound`** — `healthy`'s conjunction minus `networkUp`. `healthy` keeps its exact value
+  (`sound && networkUp`), so `refreshHealth` and `start()` are untouched; `sound` is derived and purely
+  additive, and no call site of `healthy` changed.
+- **One probe after both local rungs, and the ladder stops on it.** `healthProbe` gained a
+  `probeNetwork: Boolean = true` parameter, and the mid-ladder call passes `false`: the ladder may be
+  running *because* the connection is down, and §59's principle is that a repair should not reach for
+  the network before it has looked at the rootfs. A `sound` report returns the rungs' own warnings and
+  ends the ladder there, above the setup rung — which is the whole of the fix for the user-visible
+  complaint, because it is what makes a press a local rung can answer cost no `apt-get update` at all.
+  `localRung` now returns whether it changed anything, and the probe runs only when one of the two did;
+  when they changed nothing there is nothing new to measure, and the ladder goes straight on to the
+  setup rung, which measures the same state with the same answer. The same flag closes §63's second gap:
+  a rung that did nothing is no longer named in `repairFailed`'s `(tried: …)` sentence. The probe is five
+  guest commands with per-command timeouts, so a userspace that answers nothing costs minutes of wall
+  clock before it reports — which is why there is one of them, after *both* local rungs, and not one
+  after each.
+- **The failure the ladder cannot rebuild over is typed.** The health check threw a bare
+  `IllegalStateException`, and `aRebuildCouldFix` ends in `else -> true`; a DNS-only complaint therefore
+  read as "a rebuild could fix this" and the ladder carried on down to *rewrite the base system* and
+  *reinstall*. It is now `UserspaceFailure.GuestUnhealthy(report, detail)`, whose message is exactly the
+  sentence it replaced, so both existing strings survive verbatim, and `aRebuildCouldFix` gained the arm
+  `is UserspaceFailure.GuestUnhealthy -> failure.report.sound`, which keeps §63's compiler-enforced rule
+  that every type is named and there is no `else`. The verdict looks inverted and is deliberate: an
+  **unsound** userspace is precisely what the deeper rungs fix, so the ladder climbs; one that is sound
+  except for the network is what nothing on the ladder fixes, so the rung rethrows and the ladder stops
+  with the sentence the user would have seen anyway.
+
+**The install heals itself once, in place, before it declares failure** — the other half of the report,
+*"pikirkan pula perbaiki saat install berlangsung"*. `install()` no longer calls `setUpAndVerify`
+directly but `setUpVerifyAndHeal`, which runs it as before; on a `GuestUnhealthy` it runs the in-place
+remedies in the ladder's own order — `restoreLocalState`, then `restorePackageDatabase` inside a
+`runCatching` (its own failure is a warning, not a second failure mode), then `restoreDamaged` and only
+where the pinned archive is already on disk, which after an install it is, since §61 keeps it, and so
+that step too is local. Then it probes again: `sound` returns the report with the remedies' account in
+`warnings`, which reaches the UI; anything else **rethrows the original `GuestUnhealthy`**, so the user
+sees the sentence they would have seen and the state stays `NeedsRepair`. It runs **once, no loop, and
+never calls `setup()` again** — a retry that re-entered the pipeline would re-run `apt-get update`, which
+is the download this section exists to stop.
+
+**Verified by the suites.** Seven new tests. Six drive the ladder end to end through the manager: a
+rung-L fault is fixed, the probe agrees, and the ladder stops *before any package step*, asserted on the
+scripted guest's own command log; a repair that changed nothing locally still runs the pipeline, so the
+early stop cannot fire on nothing; a userspace that is sound but has no network is not rebuilt over, and
+the user's own package is untouched; a lock path a local rung clears does not stop the ladder over a
+*missing program*, which is the case that rejects the host-side shortcut; an install whose only fault is
+a lock path repairs itself in place, lands `Stopped`, and runs the pipeline exactly once — asserted as
+two `apt-get update` commands, because one `aptUpdate` call issues a scoped rung and an unscoped
+confirmation beside it; and an install the remedies cannot fix fails with the sentence it would have
+failed with anyway. The seventh is the classification case in `UserspaceFailureTest`: the message, the
+report it carries, and `sound`'s disagreement with `healthy` on a networkless userspace. All 92 tests
+across the five linux suites pass on the standalone harness — 32 in `LinuxUserspaceManagerTest`, 20 in
+`UserspaceFailureTest`, 15 in `RootfsLocalRepairTest`, 13 in `RootfsInstallerTest` and 12 in
+`RootfsRepairTest` — and `scripts/check-doc-figures.sh` reports all 172 documentation claims in
+agreement, after the README's count was moved to the 2,100 test methods the seven make it.
+
+**Not verified: no phone was involved, and none can be from here.** The loop this section claims to close
+is a device check, and it is the user's: break a userspace in a way a local rung fixes — a directory
+standing where a lock file belongs — press Repair, and confirm the log shows the local rung and no
+package step and no download; then delete `rm` from the rootfs, press Repair, and confirm the rung that
+needs the archive finds it already on disk.
+
+**What this does not do.** It does not touch the rung order, `setup()`'s internals, the extras, the
+percentage schedule, or the install and repair failure strings, which stay verbatim because the E2E
+driver parses the install log. It does not reorder `restoreDamaged` above the setup rung: that would help
+§55's case on the repair path, but the install heal above already closes that case where the user meets
+it, and the order is §61's argument. It leaves the disk rung alone, which is its own PR: `repairLadder`'s
+speculative `releasePinnedArchive()` gives up the 34 MB archive against a gate that asks for the *install*
+budget (≈770 MB), so freeing 34 MB cannot satisfy it, and every rung at or below *restore missing files*
+— including the next one down — then pays those same 34 MB back through `ensurePinnedArchive`. It is this
+section's own rule broken on the one path where it was not applied: a download spent for nothing. And it
+does not claim the install heal covers every fault. It covers what the in-place rungs can fix — the lock
+paths, the guest temp directories, proot's leftovers, the package database, and the base files the kept
+archive can supply. A fault that needs the network, a genuinely full disk, a rootfs that is not there at
+all, or a missing `libproot.so` still ends at `NeedsRepair` with the sentence it has today, and
+`aRebuildCouldFix` still refuses to spend a rebuild on it.
+
+**No version bump here.** A behaviour change makes its release a minor, and the bump belongs to the
+release branch, as §72 says of its own.
 
 ---

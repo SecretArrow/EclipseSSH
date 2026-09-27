@@ -120,8 +120,14 @@ health check passes — "installed" and "works" are the same fact:
      [Preinstalling apps](#preinstalling-apps). One caveat stated plainly — `cron` is installed but
      nothing starts it: this userspace has no init, so a crontab fires only if the user starts the
      daemon themselves.
-5. **Health check** — a shell runs and prints a marker, `whoami` answers `root`, DNS resolves,
-   `apt-get check` passes. Only then does the state machine reach Stopped.
+5. **Health check, and one attempt to heal in place** — a shell runs and prints a marker, `whoami`
+   answers `root`, DNS resolves, `apt-get check` passes. A userspace that fails here is not reported
+   as a failed install straight away: the same file-level remedies Repair's local rungs use — the
+   package-lock paths apt cannot open, the guest's temporary trees, the package database, and the base
+   files the kept archive still has — are applied **once**, and the check runs again. Only if it still
+   fails does the install end at *Needs repair*, with the sentence it would have failed with anyway.
+   The attempt never calls `setup()` a second time, so it cannot cost a second `apt-get update`. Only
+   then does the state machine reach Stopped.
 6. **Workspace restore** — if a previous keep-workspace uninstall parked a snapshot, it is
    restored into the fresh rootfs before the first shell opens.
 
@@ -497,13 +503,22 @@ the old two-step repair (`apt-get update`, `dpkg --configure -a && apt-get -f in
 the same `1 expected program not found in PATH or not executable` — is exactly the case the lower
 rungs exist for.
 
+**A rung's outcome is verified, and the ladder ends as soon as the userspace is sound.** The two local
+rungs are followed by one probe — with the network lookup skipped, because a repair may be running
+*because* the connection is down — and a sound report ends the ladder there, above the setup rung. That
+matters because the setup rung is not step-gated: `SetupStep` is a progress label and nothing persists
+one, so every call re-runs `apt-get update` and the base packages whether or not anything needs them.
+A press that a local rung answers therefore costs no download at all. When those rungs changed nothing
+there is nothing new to measure, so the ladder goes straight on to the setup rung, which measures the
+same state with the same answer.
+
 | Rung | What it does | What it costs |
 |---|---|---|
 | Reclaim the staging tree | A crash mid-extraction leaves a whole rootfs *and* `rootfs.staging` beside it; `isExtracted()` is false because of the leftover alone, so the leftover goes before anything reads the install as missing | Nothing: the tree is what the failed run already abandoned |
 | Free space | Empties apt's package cache, its lists, the binary index caches, `/tmp` and `/var/tmp`, rotated logs, a download fragment, and a `rootfs.old` parked by a crashed swap — and only when a rootfs is in place. Runs whenever the free space is short or unknown. If that still leaves too little for the repair to run at all, the kept archive goes last | Nothing the user owns: every byte is one apt regenerates. The archive costs one download later, which is why it goes only against a reading that says the disk is short — and never when there is no rootfs to repair, since the install is about to need those same bytes |
 | Clear local state | The lock *paths* apt cannot open, and the guest's own directories put back. A directory standing where one of the four lock files belongs — or a mode that denies the write, or a link resolving out of the userspace — refuses every package command before any lock is asked for, in a sentence about a lock rather than about the thing in its way. The lock **files** dpkg and apt leave on disk are the other case and are not this rung's business: neither tool unlinks its own lock file, so all four sit there empty and unheld after *every* package run, a successful one included, and a probe that called that damage reported a working userspace as broken and could never be satisfied — the rung removed them and the setup rung below recreated them, on every press. `/tmp` and `/run` are recreated where they are missing or are a file or a link, the workspace the user deleted is recreated, and a workspace that is a symlink is replaced by a real directory. proot's own scratch directories (`tmp/exec-<pid>-XXXXXX`, one per launch, which it removes at exit — see [Troubleshooting](#troubleshooting) for the exits where it could not) are cleared too, matched by the pid proot put in the name so a live session's is never touched and nothing under one is followed out of it. It only puts the rootfs back into a state the pipeline can work in; the pipeline itself runs once, in the rung below | Nothing the user owns: a lock file apt *can* open is left exactly where it is, whatever is holding it, because a path that can be locked is a path this rung never touches; nothing here is downloaded, and nothing apt has fetched is thrown away |
 | Restore the package database | `var/lib/dpkg/status` — the one file no other rung may write, because the whole directory is a preserved member and every rung needs what is in it. When it does not read as a dpkg database (a killed `dpkg` leaves half a record) it is parked as `status.broken` and replaced from dpkg's own previous generation, or — with no `status-old` to hand — out of the pinned archive | Nothing when dpkg's own copy is the source: it is the same database one write ago, so nothing has to be reinstalled. The archive's copy is the base system's records and nothing else, so packages the user installed read as not-installed while their files stay on disk; reinstalling them with apt restores the record. A database no source can supply stops the ladder instead (`PackageDatabaseUnreadable`) — the honest exit is uninstall with *keep my files*, then install |
-| Set up again | The setup pipeline again: `apt-get update`, the dpkg prologue (which restores any of dpkg's own programs that are really gone, out of the pinned archive), the base packages — and never the [preinstalled extras](#preinstalling-apps), which a repair does not carry: they are either on disk already or the user's own to add, and neither is a repair's business | Time — and no download: the prologue's restores read the archive the install kept on disk |
+| Set up again | The setup pipeline again: `apt-get update`, the dpkg prologue (which restores any of dpkg's own programs that are really gone, out of the pinned archive), the base packages — and never the [preinstalled extras](#preinstalling-apps), which a repair does not carry: they are either on disk already or the user's own to add, and neither is a repair's business. It runs only when the two local rungs above did not leave the userspace sound | Time — and no download: the prologue's restores read the archive the install kept on disk |
 | Clear apt's own state | The one rung whose evidence is the failure that came *before* it, which is why it sits below the setup run rather than above it. apt's `lists` and the packages already downloaded are given up only when that run failed over them: apt naming its own bookkeeping (`Hash Sum mismatch`, `unable to parse package file`, a merge list it will not read) or the host seeing the shape of it (a `lists/partial` with anything in it, an index file of zero bytes). A failure that names neither leaves both trees exactly where they are, and the ladder moves on to the rungs below | The lists cost one `apt-get update` to rebuild, and with them gone that update is a full re-index — `main restricted universe multiverse` over three suites, tens of megabytes. The downloaded packages cost every byte apt has to fetch again, so they go only when apt said the bytes themselves were wrong. Then the setup pipeline runs again |
 | Restore what the archive says is missing | One pass over the pinned tarball comparing presence, kind and the executable bit against the rootfs, then the absent members written back | Nothing: the members come from the archive the install already fetched and verified and that is now kept on disk |
 | Rewrite the base system | Every member the pinned archive carries, written over whatever the rootfs holds at that name — the repair for damage no file-level scan can name (a library replaced by something that does not load) | The base system's own bytes, written from the archive on disk; installed packages stay installed |
@@ -535,6 +550,14 @@ is the low-memory killer taking the largest process on the phone — no rung cre
 own proot binary or loader missing from its installation, and every terminal the app can hold already
 open. On a metered connection a rebuild is the one repair that leaves the user worse off, and it
 would not have worked anyway.
+
+The verdict is read off the probe's own report rather than off the shape of the failure. A report that
+is **sound** — every field passing except the network — is what nothing on the ladder can help with, so
+those failures are handed back unchanged; an **unsound** one (a program dpkg cannot find, a lock path
+apt cannot open, a database no source will read) is exactly what the rungs below exist for, and the
+ladder climbs on. That distinction is why a userspace whose only fault is a dead resolver is reported
+rather than rebuilt: rewriting the base system would not bring the connection back, and it would take
+the packages the user installed with it.
 
 ## Security
 

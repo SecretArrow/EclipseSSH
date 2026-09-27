@@ -258,6 +258,35 @@ class UserspaceFailureTest {
         assertThat(UserspaceFailure.fromMessage("some unrelated IOException")).isNull()
     }
 
+    @Test
+    fun `an unhealthy userspace carries the report, and says what the untyped throw used to say`() {
+        // A userspace sound except for its account name: the install and the repair both fail on it,
+        // and no rung of the ladder can change it. The sentence is the one the untyped throw carried
+        // — the caller's own words, then the probe's account of what is wrong.
+        val wrongAccount = HealthReport(
+            shellWorks = true,
+            account = "ubuntu",
+            accountCorrect = false,
+            networkUp = true,
+            aptUsable = true,
+        )
+        val sentence = "Ubuntu installed but failed its health check"
+        val failure = UserspaceFailure.GuestUnhealthy(wrongAccount, sentence)
+
+        assertThat(failure.message).isEqualTo("$sentence: ${wrongAccount.describe()}")
+        assertThat(failure.message).contains("'ubuntu'")
+        assertThat(failure.report.sound).isFalse()
+
+        // The same userspace with only the resolver down: *sound*, and that is the distinction the
+        // ladder's verdict is read off. An unsound userspace is what the deeper rungs fix; one that
+        // is sound except for the network is what nothing on the ladder can, so a repair must stop
+        // rather than rewrite a base system the probe has just called fine.
+        val noNetwork = wrongAccount.copy(accountCorrect = true, networkUp = false)
+
+        assertThat(noNetwork.sound).isTrue()
+        assertThat(noNetwork.healthy).isFalse()
+    }
+
     // ------------------------------------------------------------------ the session-ending rule
 
     @Test

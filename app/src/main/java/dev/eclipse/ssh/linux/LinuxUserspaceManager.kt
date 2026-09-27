@@ -157,7 +157,10 @@ class LinuxUserspaceManager(
                 // setup, where it surfaces as a missing-file error that reads like corruption.
                 check(installer.isExtracted()) { "the extracted rootfs is incomplete - there is nothing to set up" }
                 storage.updateInstallLockPhase("setup")
-                val report = setUpAndVerify(plan, "Ubuntu installed but failed its health check", extras)
+                // Not setUpAndVerify directly: an install whose only problem is something already on
+                // the device fixes it here rather than handing the user a failure and a Repair
+                // button. See setUpVerifyAndHeal for what bounds that.
+                val report = setUpVerifyAndHeal(plan, "Ubuntu installed but failed its health check", extras)
 
                 writeInstalledState()
                 val warnings = (extractionWarnings + report.warnings).toMutableList()
@@ -386,14 +389,22 @@ class LinuxUserspaceManager(
          * answers for. A rung that only puts the rootfs back into a state the pipeline can work in
          * has nothing to learn from running it, so the pipeline runs once, in its own rung below,
          * after every rung of this kind has had its turn. What each one did is in [warnings] and in
-         * the diagnostics ring; none of them has a report of its own to hand back, which is the
-         * difference between this and [rung].
+         * the diagnostics ring; what it hands back is the one fact the ladder above needs — whether
+         * anything changed at all, because a probe of an unchanged state is a second measurement of
+         * the same answer.
+         *
+         * @return true when the rung wrote or removed something
          */
-        suspend fun localRung(label: String, action: suspend () -> Unit) {
-            attempted += label
-            try {
-                action()
+        suspend fun localRung(label: String, action: suspend () -> Boolean): Boolean {
+            return try {
+                val changed = action()
+                // Only what actually happened. `(tried: …)` is read as a list of attempts, and a rung
+                // that found nothing to do did not make one.
+                if (changed) attempted += label
+                changed
             } catch (t: Throwable) {
+                // A rung that threw did try, so it is named whether or not it got as far as writing.
+                attempted += label
                 lastFailure = t
                 if (!aRebuildCouldFix(t)) throw t
                 diagnostics.record(
@@ -401,6 +412,7 @@ class LinuxUserspaceManager(
                     "repair step left the userspace broken: $label",
                     detail = t.message ?: t.javaClass.simpleName,
                 )
+                false
             }
         }
 
@@ -466,8 +478,36 @@ class LinuxUserspaceManager(
         // downloads anything, which matters here more than anywhere else on the ladder: a repair that
         // reads the network before it has looked at the rootfs spends a metered connection on a run
         // that the rootfs itself can already say will not work.
-        localRung("restore local state") { restoreLocalState(warnings) }
-        localRung("restore the package database") { restorePackageDatabase(warnings) }
+        val localStateRestored = localRung("restore local state") { restoreLocalState(warnings) }
+        val packageDatabaseRestored =
+            localRung("restore the package database") { restorePackageDatabase(warnings) }
+
+        // The stop that makes this ladder in-place-first, and the reason it is here rather than one
+        // rung further down.
+        //
+        // Every rung from `setup` onwards is expensive in the currency the user pays for: the setup
+        // pipeline is **not** step-gated — [SetupStep] is progress labels, and nothing persists a
+        // step — so it re-runs `registerUbuntuUser`, `configureDns`, `verifyRuntime`,
+        // `repairPackageState`, `apt-get update` and the base packages on *every* call. Tens of
+        // megabytes over whatever connection the device has, for a userspace that two local rungs
+        // may already have put right. Before this, a fault a local rung fixed went on to spend that
+        // anyway, because nothing looked: the only probe on the ladder was the setup rung's own.
+        //
+        // What licenses stopping is the probe, not the rungs. [HealthReport.sound] is the whole
+        // report minus the network, which is the half a local rung can be responsible for; the
+        // network is skipped because this ladder can be running *because* it is down, and no rung
+        // here can fix a resolver.
+        //
+        // Only when one of them changed something: a probe is a measurement of a state, and if
+        // neither rung touched one there is nothing new to measure — the setup rung's own probe
+        // below answers the same question with the same answer.
+        if (localStateRestored || packageDatabaseRestored) {
+            val health = distribution.healthProbe(probeNetwork = false)
+            // Kept, so a repair that ends here leaves the card showing what was just measured
+            // rather than what was measured before the repair.
+            _lastHealth.value = health
+            if (health.sound) return SetupReport(warnings.toList())
+        }
 
         return rung("setup", { setUpAgain(warnings) })
             // The one rung that answers a *failed* setup run, and the only reason it is below it:
@@ -511,11 +551,14 @@ class LinuxUserspaceManager(
      * *can* open is left exactly where it is, whatever is holding it, and the directories are
      * recreated only when they are missing or wrong.
      *
-     * What it did goes into [warnings] and the diagnostics ring as it goes; there is no summary to
-     * hand back, because the ladder does not branch on this rung — the setup rung below runs either
-     * way, since a repair the user asked for is a repair that runs the pipeline.
+     * What it did goes into [warnings] and the diagnostics ring as it goes, and whether it did
+     * anything at all is the return value, because the ladder reads that: a rung that changed
+     * nothing has given the probe below nothing new to measure, and naming it in a failure's
+     * `(tried: …)` list would claim an attempt that was never made.
+     *
+     * @return true when this rung wrote or removed something
      */
-    private suspend fun restoreLocalState(warnings: MutableList<String>) {
+    private suspend fun restoreLocalState(warnings: MutableList<String>): Boolean {
         var changed = false
 
         val sweep = installer.clearUnusablePackageLocks()
@@ -580,10 +623,11 @@ class LinuxUserspaceManager(
         if (changed) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.ROOTFS,
-                "local state restored; the setup rung takes it from here",
+                "local state restored",
                 detail = "the rootfs itself was not written",
             )
         }
+        return changed
     }
 
     /**
@@ -652,9 +696,12 @@ class LinuxUserspaceManager(
      *
      * A database that reads as a database is the common answer, and it means this rung has no
      * opinion about the failure being repaired — the setup rung below it is the one that speaks.
+     *
+     * @return true when it wrote a database back, which is the same fact as "the reader refused the
+     *   one that was there" — a null source means nothing was wrong with it and nothing changed
      */
-    private suspend fun restorePackageDatabase(warnings: MutableList<String>) {
-        val source = installer.restorePackageDatabase(onProgress = ::emitArchiveProgress) ?: return
+    private suspend fun restorePackageDatabase(warnings: MutableList<String>): Boolean {
+        val source = installer.restorePackageDatabase(onProgress = ::emitArchiveProgress) ?: return false
         warnings += when (source) {
             // dpkg's own previous generation: the same database one write ago, so every package the
             // user installed is still recorded and nothing has to be reinstalled.
@@ -669,6 +716,7 @@ class LinuxUserspaceManager(
                     "installed; their files are still on disk and reinstalling them with apt puts " +
                     "the record back"
         }
+        return true
     }
 
     /**
@@ -819,6 +867,23 @@ class LinuxUserspaceManager(
         }
         if (failure !is UserspaceFailure) return true
         return when (failure) {
+            // The one type here whose verdict is not a property of the type at all, because the type
+            // carries the measurement rather than a cause: the report says which field failed, so the
+            // verdict is read out of the report, inverted.
+            //
+            // An *unsound* userspace — a missing program, a package database that will not open, a
+            // lock path nothing can clear — is precisely what the deeper rungs are for: the overlay
+            // re-extracts the base system and the reinstall builds it again, and both genuinely reach
+            // those. That is a `true`, and it is the common case.
+            //
+            // A userspace that is sound except for the network is the opposite, and it is the case
+            // this arm exists for. Nothing on this ladder can move a resolver or a connection: the
+            // setup rung just failed on the same network, the archive rungs read it too, and the
+            // deepest one would spend thirty megabytes of a connection that is not there to rewrite a
+            // base system the probe has *just said is fine*. So it is a `false`, the rung rethrows,
+            // and the user is told the one true thing — the network, not Ubuntu.
+            is UserspaceFailure.GuestUnhealthy -> !failure.report.sound
+
             is UserspaceFailure.Offline,
             is UserspaceFailure.DnsUnresolved,
             is UserspaceFailure.MirrorUnreachable,
@@ -1163,9 +1228,11 @@ class LinuxUserspaceManager(
      *   are not broken: they are either on disk already, or the user's own to add. Repairing a
      *   userspace must not re-download a toolchain on a metered connection because a *previous*
      *   install was told to.
-     * @throws IllegalStateException when the health check fails — the install is not done until the
-     *   environment has been proven usable, and a report that says otherwise would be the exact
-     *   "it installed" / "it works" conflation the pipeline exists to refuse
+     * @throws UserspaceFailure.GuestUnhealthy when the health check fails — the install is not done
+     *   until the environment has been proven usable, and a report that says otherwise would be the
+     *   exact "it installed" / "it works" conflation the pipeline exists to refuse. Typed rather
+     *   than thrown as prose so the ladder's gate can read *which* field failed and refuse a rebuild
+     *   for a complaint a rebuild cannot answer
      */
     private suspend fun setUpAndVerify(
         plan: InstallPlan,
@@ -1204,9 +1271,93 @@ class LinuxUserspaceManager(
         _state.value = LinuxUserspaceState.Installing(LinuxInstallStep.VerifyingHealth, plan)
         val health = distribution.healthProbe()
         _lastHealth.value = health
-        check(health.healthy) { "$healthFailure: ${health.describe()}" }
+        if (!health.healthy) throw UserspaceFailure.GuestUnhealthy(health, healthFailure)
         return report
     }
+
+    /**
+     * [setUpAndVerify], and one bounded attempt to put the userspace right *in place* before the
+     * failure is handed to the user.
+     *
+     * The install is supposed to finish on its own and be usable when it does. When the health check
+     * is the only thing standing in the way — a lock path apt cannot open, a temporary directory
+     * nothing can write to, a package database that will not parse, a base file the kept archive can
+     * supply — everything needed to fix it is already on the device, and the alternative is an
+     * install that reports failure and a user who is told to press a button. So the failures the
+     * in-place rungs answer are answered here, and only what is left over is a failure.
+     *
+     * Three things bound it, and each is deliberate:
+     *
+     * - **Once.** There is no loop: a second pass over remedies that just ran would repeat the same
+     *   work for the same verdict, and the ladder is the place for trying harder.
+     * - **Never [distribution]'s setup again.** The setup pipeline is not step-gated — it re-runs
+     *   `apt-get update` and the base packages on every call — so re-entering it to answer a probe a
+     *   file-level remedy can answer would spend tens of megabytes of the user's connection. The
+     *   remedies below touch files, not the network.
+     * - **The full gate, not [HealthReport.sound].** The ladder stops early on `sound`, because a
+     *   repair is about the rootfs and may legitimately run with no network. An install is not: it
+     *   has just used the network, and "'installed' and 'works' are the same fact" is the promise the
+     *   card is shown under. So a healed install has to pass what an untouched one has to pass.
+     *
+     * @throws UserspaceFailure.GuestUnhealthy the original verdict, when the remedies did not change
+     *   it — the user sees the sentence they would have seen anyway, and the state stays NeedsRepair
+     */
+    private suspend fun setUpVerifyAndHeal(
+        plan: InstallPlan,
+        healthFailure: String,
+        extras: List<OptionalPackage> = emptyList(),
+    ): SetupReport {
+        val healing = mutableListOf<String>()
+        val report = try {
+            setUpAndVerify(plan, healthFailure, extras)
+        } catch (unhealthy: UserspaceFailure.GuestUnhealthy) {
+            healing += "the health check failed, so the userspace was repaired in place rather than " +
+                "reporting the install as failed"
+            healInPlace(healing)
+            val health = distribution.healthProbe()
+            _lastHealth.value = health
+            if (!health.healthy) throw unhealthy
+            return SetupReport(healing)
+        }
+        return SetupReport(report.warnings + healing)
+    }
+
+    /**
+     * The remedies an install can apply to itself, in the ladder's own order, reusing the ladder's
+     * own steps.
+     *
+     * Each is guarded on its own, and the guard is not decoration: a heal runs *after* a failure, so
+     * anything it threw would replace an honest verdict with a smaller one. What a remedy could not
+     * do belongs in [warnings], beside what it did.
+     *
+     * The last one is gated on the archive being here rather than on anything about the failure,
+     * because that gate is what makes it local. An install has just fetched and verified it and keeps
+     * it for repair, so the gate is satisfied in the ordinary case; without it this call is a
+     * download, and a heal that needs the network is not a heal.
+     */
+    private suspend fun healInPlace(warnings: MutableList<String>) {
+        try {
+            restoreLocalState(warnings)
+        } catch (t: Throwable) {
+            warnings += healWarning("clearing the package-manager locks and the guest's temporary state", t)
+        }
+        try {
+            restorePackageDatabase(warnings)
+        } catch (t: Throwable) {
+            warnings += healWarning("restoring the package database", t)
+        }
+        if (installer.pinnedArchiveOnDisk()) {
+            try {
+                restoreDamaged(warnings)
+            } catch (t: Throwable) {
+                warnings += healWarning("restoring the base files the archive still has", t)
+            }
+        }
+    }
+
+    /** One remedy that did not finish, said in the same breath as the ones that did. */
+    private fun healWarning(what: String, t: Throwable): String =
+        "$what did not finish: ${t.message ?: t.javaClass.simpleName}"
 }
 
 /**

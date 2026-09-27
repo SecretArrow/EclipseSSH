@@ -405,7 +405,7 @@ class LinuxUserspaceManagerTest {
     }
 
     @Test
-    fun `a package lock apt cannot open is cleared before the first package step, and the repair stays local`() = runTest {
+    fun `a package lock apt cannot open is cleared, and the ladder stops before it can spend a package step`() = runTest {
         val harness = newHarness()
         harness.manager.install()
         // A directory standing where the lock file belongs. This is the damage the local rung answers,
@@ -449,8 +449,10 @@ class LinuxUserspaceManagerTest {
         val report = harness.manager.repair()
 
         assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Gone before anything that would have refused on it. Without the local rung the ladder would
-        // have spent all four of its rungs on this one refusal and ended by rebuilding the rootfs.
+        // Gone before anything that would have refused on it — and gone is where the ladder *ended*:
+        // the local rung cleared it, the probe that follows the local rungs found the userspace sound,
+        // and every rung below that one never ran. Without the local rung the ladder would have spent
+        // all four of its rungs on this one refusal and ended by rebuilding the rootfs.
         assertThat(lock.exists()).isFalse()
         assertThat(refusals).isEqualTo(0)
         assertThat(report.warnings.joinToString("\n")).contains("cleared 1 package-manager lock(s)")
@@ -963,6 +965,198 @@ class LinuxUserspaceManagerTest {
         kotlinx.coroutines.withTimeout(5_000) { command.join() }
         assertThat(process.closed).isTrue()
         assertThat(runtime.hasLiveScriptedProcesses()).isFalse()
+    }
+
+    // ------------------------------------------------------------------ the ladder's own verdict
+
+    @Test
+    fun `a fault the local rung clears stops the ladder before any package step`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        // The one fault the local rung answers, and one the probe sees on the host rather than through
+        // the guest: a directory where the lock file belongs.
+        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+        lock.parentFile?.mkdirs()
+        lock.mkdirs()
+        val downloadsBeforeRepair = harness.downloads
+        val commandsBeforeRepair = harness.spawner.commands.size
+
+        val report = harness.manager.repair()
+
+        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+        assertThat(lock.exists()).isFalse()
+
+        // The whole point, and the user's own complaint in one assertion: the ladder stopped at its
+        // own probe rather than at the setup rung below it, so not one package step ran. The window is
+        // the repair's alone, and the probe's own reads are in it — `apt-get check` is how the report
+        // reads apt's state and is deliberately not what is being asked about here.
+        val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
+        val packageSteps = duringRepair.filter {
+            !it.startsWith("echo eclipse-uid=") &&
+                (it.startsWith("apt-get update") || it.startsWith("apt-get install") || it.contains("dpkg"))
+        }
+        assertThat(packageSteps).isEmpty()
+        // And the stop was a measurement rather than a skip: the probe really ran over the repaired
+        // rootfs, which is the only thing that licenses ending the ladder here.
+        assertThat(duringRepair).contains("whoami")
+        assertThat(duringRepair).contains("apt-get check")
+        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        assertThat(report.warnings.joinToString("\n")).contains("cleared 1 package-manager lock(s)")
+    }
+
+    @Test
+    fun `a repair that changes nothing locally still runs the setup pipeline`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        val commandsBeforeRepair = harness.spawner.commands.size
+
+        val report = harness.manager.repair()
+
+        // Neither local rung had anything to do on the userspace the install left, and that is what
+        // licenses the ladder to keep going: a probe of an unchanged state is a second measurement of
+        // the same answer. So this pins the other direction of the stop — a ladder that stopped on an
+        // unchanged state would be a Repair button that silently does nothing at all.
+        val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
+        assertThat(duringRepair.any { it.startsWith("apt-get update") }).isTrue()
+        assertThat(report.warnings.joinToString("\n"))
+            .doesNotContain("recreated the guest's temporary directories")
+    }
+
+    @Test
+    fun `a userspace that is sound but has no network is not rebuilt over it`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        // Something the user installed on top of the base system: a rebuild takes it, so its survival
+        // is how this test says no rebuild happened.
+        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+        userPackage.writeText("installed by the user\n")
+        val downloadsBeforeRepair = harness.downloads
+        // Everything the rootfs owns answers; the connection does not. The resolver is failed only
+        // *after* the pipeline has installed its base packages, because setup's own DNS step asks the
+        // same `getent hosts` the probe asks — and this test is about the probe's verdict, not about a
+        // setup run that died at its first step.
+        var baseInstalled = false
+        val healthyRespond = harness.spawner.respond
+        harness.spawner.respond = { command ->
+            if (command.startsWith("apt-get install")) {
+                baseInstalled = true
+                healthyRespond(command)
+            } else if (baseInstalled && command.startsWith("getent hosts")) {
+                2 to ""
+            } else {
+                healthyRespond(command)
+            }
+        }
+
+        val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
+
+        // Typed, and the type is the point: the report travels with the failure, and the report is
+        // what says the userspace itself is sound. Nothing on this ladder fixes a resolver, so the
+        // deepest rungs — which rewrite the base system and take the user's own packages with it —
+        // must never run over this.
+        assertThat(failure).isInstanceOf(UserspaceFailure.GuestUnhealthy::class.java)
+        assertThat((failure as UserspaceFailure.GuestUnhealthy).report.sound).isTrue()
+        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+    }
+
+    @Test
+    fun `a lock the local rung clears does not stop the ladder over a program the rootfs is missing`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        // Two faults at once, and the pair is the whole test: one a local rung can clear and one it
+        // cannot even see. `missingPrograms` is read from the login shell's own report rather than from
+        // the host, so a stop decided on the local rung's own subjects — the lock paths and the guest
+        // temp trees, both free and both host-side — would call this userspace sound while dpkg still
+        // refuses to unpack anything. That is the shortcut this test exists to refuse.
+        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+        lock.parentFile?.mkdirs()
+        lock.mkdirs()
+        val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
+        rm.delete()
+        val downloadsBeforeRepair = harness.downloads
+        val commandsBeforeRepair = harness.spawner.commands.size
+        val healthyRespond = harness.spawner.respond
+        harness.spawner.respond = { command ->
+            if (command.startsWith("echo eclipse-uid=") && !rm.exists()) {
+                0 to "eclipse-uid=0\neclipse-path=/usr/local/sbin:/usr/bin:/bin\neclipse-missing=rm\n"
+            } else {
+                healthyRespond(command)
+            }
+        }
+
+        harness.manager.repair()
+
+        // The ladder climbed: the local rung did something, the probe looked, and it disagreed — so
+        // the setup rung below ran, and the prologue put the program back out of the archive the
+        // install kept.
+        val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
+        assertThat(duringRepair.any { it.startsWith("apt-get update") }).isTrue()
+        assertThat(rm.readText()).isEqualTo("fake rm\n")
+        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+    }
+
+    // ------------------------------------------------------------------ the install's own heal
+
+    @Test
+    fun `an install whose only fault is a lock path repairs itself in place and runs the pipeline once`() = runTest {
+        val harness = newHarness()
+        // The fault appears once the pipeline has installed its packages, so the install's own health
+        // check is what meets it. The check is the install's gate — "installed" and "works" are the
+        // same fact — which is what makes this a heal rather than a failure and a second press.
+        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+        val healthyRespond = harness.spawner.respond
+        harness.spawner.respond = { command ->
+            if (command.startsWith("apt-get install")) {
+                lock.parentFile?.mkdirs()
+                lock.mkdirs()
+            }
+            healthyRespond(command)
+        }
+
+        val report = harness.manager.install()
+
+        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+        // Under the lock path either way: gone, or the archive's own lock file written back over it.
+        // Both are states apt can open, which is the only question the probe asks.
+        assertThat(lock.isDirectory).isFalse()
+        // Once. One pipeline run is two `apt-get update` commands - the scoped rung and the unscoped
+        // confirmation beside it - so a second `setup()` would show as four, and that is the thing
+        // being asked about: the remedy is a file-level one and not `setup()` again, because a second
+        // pipeline run is another full update on the user's connection and finds nothing the first
+        // did not.
+        assertThat(harness.spawner.commands.count { it.startsWith("apt-get update") }).isEqualTo(2)
+        val warnings = report.warnings.joinToString("\n")
+        assertThat(warnings).contains("repaired in place rather than reporting the install as failed")
+        assertThat(warnings).contains("cleared 1 package-manager lock(s)")
+    }
+
+    @Test
+    fun `an install the remedies cannot fix fails with the sentence it would have failed with anyway`() = runTest {
+        val harness = newHarness()
+        // A fault no file on the device can answer: the session is not proot's fake root. The remedies
+        // still run — there is an archive on disk to read and lock paths to clear — and change none of
+        // it, so the install must not present them as a rescue.
+        val healthyRespond = harness.spawner.respond
+        harness.spawner.respond = { command ->
+            if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
+        }
+
+        val failure = runCatching { harness.manager.install() }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(UserspaceFailure.GuestUnhealthy::class.java)
+        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+        // The same sentence the un-healed path produced, which is the contract: a heal that worked
+        // changes what the user sees, and one that did not changes nothing about it.
+        val unhealthy = failure as UserspaceFailure.GuestUnhealthy
+        assertThat(unhealthy.message).startsWith("Ubuntu installed but failed its health check: ")
+        assertThat(unhealthy.message).contains("'ubuntu'")
+        // Unsound, not merely unhealthy: a wrong account is exactly what the deeper rungs are for, so
+        // this is the case the *ladder* would climb on — and the install does not consult it, because
+        // an install has no ladder to climb. It has one bounded attempt, and this is its outcome.
+        assertThat(unhealthy.report.sound).isFalse()
     }
 }
 
