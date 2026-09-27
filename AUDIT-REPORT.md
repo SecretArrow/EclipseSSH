@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §77, *The native fetch retried one origin for four minutes and never tried another*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §78, *The rootfs download had one attempt, so a mirror's bad minute cost the user thirty-four megabytes by hand*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -8936,6 +8936,113 @@ second place the fork's bytes may come from, and the fork is a *patched* tree wh
 keeping singular. And it does not make the fetch cache survive the change: both native fetch tasks key
 their cache on their module's build script (§41.6), so editing `linux/build.gradle.kts` retires the
 `linux-native` entry and the next run pays a cold native build of the four ABIs.
+
+**No version bump.** §76's line applies here too: a behaviour change makes its release a minor, and the
+bump belongs to the release branch.
+
+## 78. The rootfs download had one attempt, so a mirror's bad minute cost the user thirty-four megabytes by hand
+
+**Symptom.** An install of the on-device Ubuntu that fails while fetching the base system ends with the
+downloader's own prose — `downloading https://… failed: HTTP 503`, or `unexpected end of stream`, or
+`connection reset by peer` — and no instruction. The install is over. The only way on is to press
+Install again, which starts the same thirty-four megabytes from the first byte, and there is nothing in
+the app that says whether pressing it again is worth doing or will fail the same way in the same second.
+
+**Root cause.** `UrlConnectionDownloader.download` in `RootfsInstaller.kt` makes **exactly one
+attempt**, and nothing above it makes a second: a 503 from the mirror during a bad minute, a connection
+dropped mid-body, a read timeout, a body that arrived truncated, or a body whose sha256 does not match
+the pin all end the install on the spot. This is precisely the class of failure §77 fixed on the *build*
+side — where the same class of third-party mirror had reddened two runs in one day — left un-fixed on
+the side a phone actually meets, and the phone is the one where a retry costs the user nothing but
+waiting.
+
+The second half is a typing gap. The failure *was* typed — `PinnedArchiveUnavailable` — but that type
+exists for the **installer's own control flow**: it is what `aRebuildCouldFix` walks the cause chain
+looking for, and what `RootfsRepairTest` asserts on. The **UI's** taxonomy is `UserspaceFailure`, a
+sealed type whose `.message` the controller renders verbatim, and `PinnedArchiveUnavailable` is not a
+member of it. So `repairFailed`'s old `fromMessage(failure.message)` matched no prefix and returned
+null, and the user was shown the downloader's sentence rather than an app's sentence.
+
+**The change.** Two halves, the retry and the sentence.
+
+*The transfer is retried in place.* `RootfsInstaller` takes
+
+```kotlin
+private val retryWaitsMillis: LongArray = longArrayOf(5_000, 20_000),
+```
+
+— the wait before each repeat, and by its length the number of repeats, so the default is three
+transfers over about twenty-five seconds. Injectable and not a constant because the tests that must not
+sleep are exactly the ones about a failed transfer: they pass `longArrayOf()` for a single attempt with
+no wait, or `longArrayOf(1, 1)` for three attempts in about two milliseconds. The figure is measured
+against the thing that has to live with it — a person watching a progress screen — not against a
+network's own patience.
+
+`download()` keeps its first line: **a tarball already on disk that verifies is returned before any
+network call is made.** That is what keeps the retry inside the user's own rule — repair in place
+first, download only when forced — because the state every repair that kept its archive is in is
+exactly the early return, so a repair that does not need the network still does not touch it. Only when
+the archive is genuinely missing does the loop run, and each attempt deletes the `.part` file before it
+starts, so bytes a truncated attempt left behind can never be mistaken for the next attempt's body.
+
+*Which failures are worth repeating is decided by the status code, not by hope.* The downloader now
+throws
+
+```kotlin
+class HttpStatusException(val code: Int, url: String) : IOException(...) {
+    val isWorthRepeating: Boolean get() = code >= 500 || code == 408 || code == 425 || code == 429
+}
+```
+
+and `worthAnotherAttempt` walks the cause chain (bounded at `MAX_CAUSE_DEPTH = 4`) for the first
+`HttpStatusException`, returning `true` when there is none. So a 503, a 502, a 429 or a 408 is repeated;
+a **404 or a 403 is not**, because that is a URL that is gone and patience cannot change it — retrying
+it three times would spend twenty-five seconds to arrive at the same sentence. And a failure with *no*
+status at all — a timeout, a dropped socket, a DNS failure, a truncated body, a checksum mismatch — is
+repeated, because there the *transfer* failed rather than the URL, which is the case a second attempt
+can actually fix. `PinnedArchiveUnavailable` gained `val attempts: Int = 1` so the count reaches the
+message, and the install log records both each retry (`download attempt failed; retrying`, with
+`attempt 1 of 3` and the wait) and the success (`tarball downloaded and verified`, naming the attempt it
+succeeded on when it was not the first).
+
+*And the failure becomes a sentence with a verdict.* `UserspaceFailure.ArchiveUnavailable(attempts,
+detail, cause)` says what happened and what to do:
+
+> the Ubuntu base system could not be downloaded after 3 attempts - check the connection and try again;
+> the failure is in the download, not in what is already installed
+
+`UserspaceFailure.fromThrowable(failure)` replaces the old top-level `fromMessage` at both of
+`LinuxUserspaceManager`'s catch sites. It walks the cause chain, and at each link it returns a
+`UserspaceFailure` it finds as it stands, maps a `PinnedArchiveUnavailable` to `ArchiveUnavailable`
+carrying that link's attempt count, and tries the prefix contracts on that link's message — which is
+strictly better than what it replaced: a prefix contract wrapped inside another exception is now found,
+which is the same rule `aRebuildCouldFix` already used. `aRebuildCouldFix` itself gained the arm
+`is UserspaceFailure.ArchiveUnavailable -> false`. That arm was not optional — `aRebuildCouldFix` is an
+exhaustive `when` over the taxonomy with no `else`, so adding the type *stopped the file compiling*
+until its verdict was written down, which is the property §63 built that `when` for. The verdict is
+`false` and could only be `false`: a rebuild is made of the bytes this download failed to get, so
+spending one on a download that will not complete is spending a rebuild to reach the same failure.
+
+**Verified.** 100 tests across the five linux suites that touch this code pass on the standalone
+harness — 24 in `UserspaceFailureTest`, 16 in `RootfsInstallerTest`, 33 in `LinuxUserspaceManagerTest`,
+12 in `RootfsRepairTest` and 15 in `RootfsLocalRepairTest` — and the two suites that neighbour it pass
+with them (`UbuntuDistributionManagerTest` 68, `RootfsTransferTest` 11), every one green. That is a run
+of the real suites on the cached Kotlin compiler with no Gradle, no NDK and no daemon, which is how a
+pure Kotlin file is verified here without a build. Three of the new tests are the behaviour itself and
+not a mock of it — a server answering 503, 503, then the fixture installs on the third attempt and
+leaves no `.part` behind; a transfer that never completes spends every attempt and reports
+`attempts == 3` with `connection reset by peer` in its message and `attempt 1 of 3` in the log; and an
+`HttpStatusException(404)` is **not** retried (`downloads == 1`). A fourth pins the classification
+through a wrapper, and a fifth pins the case that made `fromThrowable` necessary rather than convenient:
+a prefix contract wrapped inside another exception is still found.
+
+**What this does not do.** It does not widen the download: the verified-archive early return is
+untouched, so a repair that kept its archive still fetches nothing, and §76's removal of the
+speculative archive release is what makes that state the common one. It does not add a second *origin*
+for the rootfs — the pin is one URL and the tarball is fetched from it; §77's second-origin answer
+belongs to a build that names several mirrors, not to a pin that names one. It does not touch
+`:freerdp`'s own copy of the build-side loop, for §77's reasons. It does not change the ladder beyond
+the one verdict arm, and it does not change any user-visible string the E2E driver parses.
 
 **No version bump.** §76's line applies here too: a behaviour change makes its release a minor, and the
 bump belongs to the release branch.

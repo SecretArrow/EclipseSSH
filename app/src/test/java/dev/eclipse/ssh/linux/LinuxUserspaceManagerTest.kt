@@ -77,6 +77,11 @@ class LinuxUserspaceManagerTest {
                     TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
                 },
                 storage = storage,
+                // No waiting between attempts: these tests break the transfer to drive the ladder
+                // into the one failure no rebuild fixes, and the retry's own pacing is pinned
+                // where it lives (RootfsInstallerTest). An install leaves its verified archive on
+                // disk, so no test here reaches a repair that has to fetch one either.
+                retryWaitsMillis = longArrayOf(),
             )
         val distribution = UbuntuDistributionManager(
             distro,
@@ -389,6 +394,12 @@ class LinuxUserspaceManagerTest {
 
         assertThat(failure).isInstanceOf(IOException::class.java)
         assertThat(failure?.message).contains("the network is down")
+        // And the sentence is the taxonomy's rather than the downloader's. The installer types this
+        // refusal so the ladder can stop on it, but a type is not something a user can act on:
+        // "downloading … failed: " names the fault and not the response, and this is the case where
+        // the only useful thing the user can do is the thing the button they pressed does again.
+        assertThat(failure).isInstanceOf(UserspaceFailure.ArchiveUnavailable::class.java)
+        assertThat(failure?.message).contains("check the connection")
         // Untouched: nothing re-extracted, nothing rewritten, and the packages the user installed
         // on top of the base system are still installed.
         assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
@@ -720,6 +731,12 @@ class LinuxUserspaceManagerTest {
         // been wrapped is still the failure.
         assertThat(harness.manager.aRebuildCouldFix(IOException("$RUNTIME_STORAGE_PREFIX the tmp probe could not write"))).isFalse()
         assertThat(harness.manager.aRebuildCouldFix(IOException("$DISK_FULL_PREFIX ~900 MB free; 200 MB available"))).isFalse()
+        // The base system's own archive, which is what a rebuild is made of: no rung below the one
+        // that reads it supplies those bytes. Typed at the boundary by the taxonomy *and* one layer
+        // down by the installer, and both are false — the ladder must not spend its last thirty
+        // megabytes fetching what just failed to arrive.
+        assertThat(harness.manager.aRebuildCouldFix(UserspaceFailure.ArchiveUnavailable(attempts = 3))).isFalse()
+        assertThat(harness.manager.aRebuildCouldFix(PinnedArchiveUnavailable("the network is down"))).isFalse()
         // Anything that is not a typed failure at all passes: untyped prose is what a rung's own
         // failure looks like, and the ladder's answer to that is to keep climbing.
         assertThat(harness.manager.aRebuildCouldFix(IllegalStateException("the health check failed"))).isTrue()

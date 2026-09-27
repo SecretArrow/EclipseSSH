@@ -19,13 +19,22 @@ class RootfsInstallerTest {
 
     private fun newRoot(): File = Files.createTempDirectory("linux-rootfs").toFile().apply { deleteOnExit() }
 
+    /**
+     * The installer most of these tests drive.
+     *
+     * [retryWaitsMillis] defaults to empty here rather than to the production 5s/20s, so a test that
+     * breaks a transfer on purpose is about the failure and not about waiting for it: an empty array
+     * is one attempt, which is exactly the old behaviour, and the retry has tests of its own below
+     * that pass real waits.
+     */
     private fun installInto(
         root: File,
         serving: File,
         sha256: String = TestTarballs.sha256(serving),
         distro: LinuxDistro = TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", sha256),
         downloader: HttpDownloader = TestTarballs.serving(serving),
-    ): RootfsInstaller = RootfsInstaller(root, distro, downloader)
+        retryWaitsMillis: LongArray = longArrayOf(),
+    ): RootfsInstaller = RootfsInstaller(root, distro, downloader, retryWaitsMillis = retryWaitsMillis)
 
     @Test
     fun `a verified tarball extracts with files, modes and symlinks`() = runBlocking {
@@ -154,6 +163,8 @@ class RootfsInstallerTest {
             root,
             TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", "00".repeat(32)),
             failingDownloader,
+            // The one attempt this test is about: see the retry tests for what three attempts do.
+            retryWaitsMillis = longArrayOf(),
         )
 
         var thrown: IOException? = null
@@ -388,5 +399,113 @@ class RootfsInstallerTest {
         // which on a metered phone connection is the difference between "retry" and "pay again".
         runCatching { installer.install(onProgress = { }) }
         assertThat(downloads).isEqualTo(1)
+    }
+
+    // ------------------------------------------------------------------ the retry, in place
+
+    /**
+     * A transfer that failed is attempted again before the install is given up on.
+     *
+     * The shape here is a mirror restarting: two 503s and then the file. Before this, each of those
+     * ended the install and left the user to press Install again, which spent the same thirty-four
+     * megabytes from byte zero — the retry is the difference between a hiccup and a re-download the
+     * user pays for by hand.
+     */
+    @Test
+    fun `a transfer that fails twice is retried and the third attempt installs`() = runBlocking {
+        val root = newRoot()
+        val fixture = TestTarballs.writeRootfsFixture(
+            Files.createTempDirectory("linux-fixture").toFile().resolve("rootfs.tar.gz"),
+        )
+        var downloads = 0
+        val restarting = HttpDownloader { _, target, onChunk ->
+            downloads++
+            if (downloads < 3) throw HttpStatusException(503, "https://fixtures.invalid/rootfs.tar.gz")
+            TestTarballs.serving(fixture).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
+        }
+        val installer = installInto(root, fixture, downloader = restarting, retryWaitsMillis = longArrayOf(1, 1))
+
+        installer.install(onProgress = { })
+
+        assertThat(downloads).isEqualTo(3)
+        assertThat(installer.isExtracted()).isTrue()
+        assertThat(installer.tarballFile.isFile).isTrue()
+        // Nothing of the two failed attempts is left to be mistaken for a resume point.
+        assertThat(root.resolve("downloads/rootfs-arm64.tar.gz.part").exists()).isFalse()
+    }
+
+    /**
+     * The attempts are bounded, the count survives into the failure, and the log says the retries
+     * happened — which is what lets a report of a slow install tell a bad connection from one that
+     * was asked three times.
+     *
+     * A connection that never completed carries no status at all, and that is the case this pins:
+     * with no status to read, the transfer is what failed rather than the URL, so it is repeated.
+     */
+    @Test
+    fun `a transfer that never completes spends every attempt and says how many`() = runBlocking {
+        val root = newRoot()
+        var downloads = 0
+        val down = HttpDownloader { _, _, _ ->
+            downloads++
+            throw IOException("connection reset by peer")
+        }
+        val diagnostics = UserspaceDiagnostics()
+        val installer = RootfsInstaller(
+            root,
+            TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", "00".repeat(32)),
+            down,
+            diagnostics = diagnostics,
+            retryWaitsMillis = longArrayOf(1, 1),
+        )
+
+        var thrown: PinnedArchiveUnavailable? = null
+        try {
+            installer.install(onProgress = { })
+        } catch (e: PinnedArchiveUnavailable) {
+            thrown = e
+        }
+
+        assertThat(downloads).isEqualTo(3)
+        assertThat(thrown).isNotNull()
+        assertThat(thrown!!.attempts).isEqualTo(3)
+        assertThat(thrown.message).contains("connection reset by peer")
+        assertThat(diagnostics.events.value.map { it.event }).contains("download attempt failed; retrying")
+        assertThat(diagnostics.events.value.first { it.event == "download attempt failed; retrying" }.detail)
+            .contains("attempt 1 of 3")
+        assertThat(installer.isExtracted()).isFalse()
+    }
+
+    /**
+     * A URL the origin says is gone is not tried three times. 404 is the origin answering the
+     * question — this file is not here — and half a minute of patience cannot change it; the
+     * attempt budget is for the failures that are about the connection rather than the path.
+     */
+    @Test
+    fun `a URL the origin says is gone is not retried`() = runBlocking {
+        val root = newRoot()
+        var downloads = 0
+        val gone = HttpDownloader { _, _, _ ->
+            downloads++
+            throw HttpStatusException(404, "https://fixtures.invalid/rootfs.tar.gz")
+        }
+        val installer = RootfsInstaller(
+            root,
+            TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", "00".repeat(32)),
+            gone,
+            retryWaitsMillis = longArrayOf(1, 1),
+        )
+
+        var thrown: PinnedArchiveUnavailable? = null
+        try {
+            installer.install(onProgress = { })
+        } catch (e: PinnedArchiveUnavailable) {
+            thrown = e
+        }
+
+        assertThat(downloads).isEqualTo(1)
+        assertThat(thrown).isNotNull()
+        assertThat(thrown!!.attempts).isEqualTo(1)
+        assertThat(thrown.message).contains("HTTP 404")
     }
 }

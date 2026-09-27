@@ -380,6 +380,9 @@ class RootfsRepairTest {
             installed.root,
             TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
             HttpDownloader { _, _, _ -> throw IOException("no route to host") },
+            // Nothing is fetched here — the archive the install kept answers every read — so there
+            // is no transfer to retry and nothing to wait for.
+            retryWaitsMillis = longArrayOf(),
         )
 
         assertThat(offline.inspectAgainstPinnedArchive().damaged).containsExactly("usr/bin/rm")
@@ -394,6 +397,11 @@ class RootfsRepairTest {
             installed.root,
             TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
             HttpDownloader { _, _, _ -> throw IOException("no route to host") },
+            // One attempt, no waiting: what this test pins is the failure the ladder gates on, and
+            // the three attempts a device would spend getting there are the retry's own business
+            // (RootfsInstallerTest). A connection with no route does not heal in twenty-five
+            // seconds, and the retry's own rule would spend all three here anyway.
+            retryWaitsMillis = longArrayOf(),
         )
         // A state a repair genuinely has to fetch its way out of: there is no archive on disk — here
         // because the release above was asked for by hand; on a device because the pin changed, or
