@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §72, *A free package lock is not damage, and the probe that called it damage could never be satisfied*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §73, *The cursor does not sit on the text, because a glyph from a fallback face draws its whole run off the grid*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -8489,5 +8489,109 @@ and rebuilds nothing, are untouched and still pass.
 - **Not claimed: that this was the whole of the install's imperfection.** The report named install *and*
   Repair, and the install half of it is a step in the setup pipeline whose own health check could not
   pass — which this fixes. Any other install failure is a different report, and needs its own evidence.
+
+---
+
+## 73. The cursor does not sit on the text, because a glyph from a fallback face draws its whole run off the grid
+
+**Symptom.** Reported in Indonesian, after the zero-width fix of §70 had shipped: *"kursor teks di
+terminal kadang tidak sesuai dengan posisi sebenarnya"* — the text cursor in the terminal sometimes does
+not match its actual position.
+
+**The cursor is not what moves.** Measuring this first is what kept the change small, and it is worth
+recording because the reported sentence points at the cursor. The cursor is a hollow rectangle drawn from
+the *grid*: `TerminalView.kt` takes `layout.cursorColumn * cellWidth` for its left edge, and no font
+advance enters that arithmetic at all. It is therefore always exactly on the cell the buffer says it is
+on, and a style run cannot displace it. What moves is the **ink**: the same function draws each style run
+as one string, `drawText(glyphs, topLeft = Offset(left, top))` with `left = (column - visual.from) *
+cellWidth`, and lets the font place every glyph after the run's first one by its own advance. The user sees text that has slid
+out from under a cursor that never moved, and describes it — correctly, from where they are sitting — as
+the cursor not matching its position.
+
+**The measurement that makes that a fault and not a rounding.** Read out of the two bundled faces
+directly (`app/src/main/res/font/jetbrains_mono_{regular,bold}.ttf`, upem 1000, `hmtx` through `cmap`):
+
+| glyph | advance, regular | advance, bold |
+|---|---|---|
+| every glyph the faces carry — checked at `M`, `U+2500`, `U+2588`, `U+2591`, `U+25CF`, `U+2192`, `U+00F8`, `U+2202`, `U+E0B0` | 600 / 1000 em | 600 / 1000 em |
+| `U+0301`, a combining mark | 0 | 0 |
+| `U+FEFF`, a byte-order mark | 0 | **351** |
+
+So a run measured from the bundled faces is exact: 600 units is exactly the cell the metrics were
+measured from, and the run stays on the grid for as long as the run is long. Two classes do not:
+
+- **Absent from both faces** — verified against each face's `cmap`: `U+2800`–`U+28FF` (braille, which is
+  the spinner alphabet every progress indicator uses), CJK and fullwidth, emoji, `U+2714` (`✔`),
+  `U+FE0F` and `U+200D`. Each is drawn from a platform face at that face's advance, which is not the
+  cell's.
+- **Present but off the cell** — `U+FEFF`, which the bold face advances by 351 units. This is why the
+  width cache below is keyed on the resolved style — weight and slant — rather than on the character
+  alone: the same cluster genuinely measures differently in the two faces, and one entry serving both
+  would answer for the wrong one.
+
+**Why the decision cannot be a pixel tolerance on the run.** The tempting test — measure the run, compare
+its width against `cells * cellWidth` — does not work, and the reason is worth stating so that nobody
+reintroduces it. `cellWidth` is a measurement rounded to a whole pixel over a twenty-glyph run, so it
+carries up to a twentieth of a pixel of error per cell; across a 200-cell row that is ten pixels of
+accumulated drift, which is larger than the difference a fallback glyph makes at the start of the row. A
+whole-run comparison therefore cannot tell a rounding error from an off-grid glyph. The decision is made
+at **one cluster at a time** instead, where nothing accumulates: the tolerance is a quarter of a cell,
+which is far above the sub-pixel rounding of a single measurement and far below the two fifths of a cell
+that a fallback face's advance differs by.
+
+**The change.** A cluster that does not measure one cell ends the run it is in and starts the next one.
+Every cell after it is then placed at its own column again, and the glyph itself is drawn alone, on its
+own cell, spilling (if it spills at all) only into the cell to its right — which is what a terminal is
+supposed to do. A run of the bundled faces measures exactly one cell per cell, so for ordinary output
+nothing changes at all: same runs, same draw calls, same pixels.
+
+| File | Change |
+|---|---|
+| `app/src/main/java/dev/eclipse/ssh/ui/terminal/GlyphRuns.kt` | **new** — `glyphRunEnd`, `clusterFitsOneCell`, `clusterIsCertainlyOneCell`, the tolerance and the measurement repeat. Pure, no Compose, no Android |
+| `app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalView.kt` | `ClusterWidthCache`, the memoised per-cluster measurement; `drawFrame` takes it and asks `glyphRunEnd` where each run ends; the resolved style is now built before the run is delimited rather than after, since measuring needs it |
+| `app/src/test/java/dev/eclipse/ssh/ui/terminal/GlyphRunsTest.kt` | **new** — 12 tests, listed below |
+
+**Two decisions inside it that are worth naming.**
+
+*The printable-ASCII short circuit is not an optimisation, it is the cost.* The question is asked once per
+cell per row per frame — around 1,800 times a frame on a phone — and building a cache key per cell would
+allocate two strings for each of them. `clusterIsCertainlyOneCell` answers for printable ASCII with a
+range check and no allocation, which is what the overwhelming majority of a terminal's output is. The
+rest reach the cache, which measures each distinct cluster once and is bounded at 512 entries.
+
+*The cell a run starts at is tested on its own.* The loop that extends a run never looks at the cell the
+run begins at, so a guard on the loop alone would let an off-grid glyph in the first cell drag the whole
+following line with it — and a line usually begins where the program put the glyph, so that is the common
+shape of the bug rather than a corner of it. `glyphRunEnd`'s first test is that cell, and
+`an off-grid cluster in the first cell does not take the text after it with it` is the test.
+
+**Ordering inside the run, pinned because it is easy to get backwards.** A cell of another style ends the
+run *before* it is measured: measuring it here would measure it in this run's weight, which is the one
+thing the cache is keyed on. `a style change ends the run before the cell is measured` asserts that
+`fitsOneCell` is never called for such a cell.
+
+**What is verified, and what is not.** The twelve tests run on the JVM with no device and no Robolectric —
+they are pure predicates over integers and floats — and they were run locally before the branch was
+pushed. The font measurements above were read out of the two `.ttf` files on this host, not taken from
+the earlier pass that planned this. What is **not** verified here is the draw call site itself: `drawFrame`
+is a `DrawScope` extension, it needs a device to exercise, and this host has no usable emulator. CI
+compiles it and the device check is the user's.
+
+**What this does not do.** It does not act on the width-2 arm of `terminalCharWidth` (§70): a BMP wide
+character still spends one cell where the far side counts two, which is the other way a cursor can
+disagree with the server — measured, after two CJK characters this app's `cursorColumn` is 4 where the
+server's is 6. That is the buffer's business and a much larger change than this one; the report of the
+symptom this section answers names no wide characters, and §70 already records the arm as knowingly
+unacted-on. Astral characters — every emoji — are already counted as two cells by `putCodePoint`, so
+they do not drift; what this section fixes about them is only their *advance*, as a glyph drawn from a
+fallback face.
+
+**No version bump here.** A behaviour change makes its release a minor, and the bump belongs to the
+release branch, as §72 says of its own.
+
+**The test a reader can run to tell this apart from the arm above**, if the artifact survives this change:
+force a full redraw — rotate the device, or `clear` and reprint. A buffer divergence re-syncs under
+absolute addressing and the stale cells go away; an ink displacement is recomputed from the same cells on
+every frame and persists.
 
 ---
