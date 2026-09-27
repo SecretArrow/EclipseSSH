@@ -199,7 +199,7 @@ val fetchLinuxSource =
                 }
             }
 
-            fun download(url: String, target: File) {
+            fun download(urls: List<String>, target: File) {
                 // A third-party mirror answering 5xx at the wrong moment must not
                 // fail a release-blocking job. samba.org sits behind a CDN that
                 // answers 503/504 in bursts: it cost CI a run on 2026-09-15, and
@@ -207,9 +207,18 @@ val fetchLinuxSource =
                 // for talloc-2.4.2 - the whole four-retry window this loop used to
                 // have, about 50 seconds - and reddened an assemble job whose diff
                 // could not have caused it. The window below is roughly four
-                // minutes across seven attempts. Same URL, and the pinned sha256
-                // still decides what gets built: this waits out a transient
-                // upstream error, it does not paper over a real one.
+                // minutes across seven attempts per origin.
+                //
+                // Waiting is not enough when the origin is not having a bad burst
+                // but is simply gone. On 2026-09-27 samba.org answered 503 for
+                // longer than that whole window - www and download alike - and
+                // reddened both the native job and the instrumentation job, whose
+                // diffs were Kotlin comments and a documentation table. So the
+                // loop below no longer retries one URL: it walks the origins it
+                // is given, in order, and only fails when every one of them has.
+                // The pinned sha256 still decides what gets built, which is what
+                // makes a second origin safe to name at all - an origin serving
+                // different bytes is rejected on arrival rather than built.
                 fun fetchOnce(url: String, target: File): Int {
                     val connection = URL(url).openConnection() as HttpURLConnection
                     connection.connectTimeout = 30_000
@@ -229,23 +238,44 @@ val fetchLinuxSource =
                         connection.disconnect()
                     }
                 }
+                check(urls.isNotEmpty()) { "download() was given no origin to try for ${target.name}" }
                 val backoffMillis = longArrayOf(10_000, 20_000, 40_000, 60_000, 60_000, 60_000)
-                var code = fetchOnce(url, target)
-                var attempt = 1
-                while (code !in 200..299 && attempt <= backoffMillis.size) {
-                    logger.warn(
-                        "downloading $url failed: HTTP $code - attempt " +
-                            "$attempt/${backoffMillis.size + 1}, waiting " +
-                            "${backoffMillis[attempt - 1] / 1000}s",
-                    )
+                val failures = mutableListOf<String>()
+                // A plain index loop rather than forEachIndexed, because the
+                // success path has to leave the whole function: the lambda of a
+                // forEach only offers `return@forEachIndexed`, which moves to the
+                // next origin and would fetch the same bytes a second time.
+                var index = 0
+                while (index < urls.size) {
+                    val url = urls[index]
                     target.delete()
-                    Thread.sleep(backoffMillis[attempt - 1])
-                    attempt++
-                    code = fetchOnce(url, target)
+                    var code = fetchOnce(url, target)
+                    var attempt = 1
+                    while (code !in 200..299 && attempt <= backoffMillis.size) {
+                        logger.warn(
+                            "downloading $url failed: HTTP $code - attempt " +
+                                "$attempt/${backoffMillis.size + 1}, waiting " +
+                                "${backoffMillis[attempt - 1] / 1000}s",
+                        )
+                        target.delete()
+                        Thread.sleep(backoffMillis[attempt - 1])
+                        attempt++
+                        code = fetchOnce(url, target)
+                    }
+                    if (code in 200..299) return
+                    failures +=
+                        "$url: HTTP $code after ${backoffMillis.size + 1} attempts over ~4 minutes"
+                    if (index < urls.lastIndex) {
+                        logger.warn(
+                            "${target.name}: giving up on $url and trying the next of " +
+                                "${urls.size} origins",
+                        )
+                    }
+                    index++
                 }
-                check(code in 200..299) {
-                    "downloading $url failed: HTTP $code after " +
-                        "${backoffMillis.size + 1} attempts over ~4 minutes"
+                check(failures.isEmpty()) {
+                    "downloading ${target.name} failed from every origin tried:\n" +
+                        failures.joinToString("\n") { "  - $it" }
                 }
             }
 
@@ -311,7 +341,7 @@ val fetchLinuxSource =
                 if (!oonidTgz.isFile) {
                     logger.lifecycle("Downloading the proot fork @ $prootCommit ...")
                     download(
-                        "https://codeload.github.com/oonid/pr/tar.gz/$prootCommit",
+                        listOf("https://codeload.github.com/oonid/pr/tar.gz/$prootCommit"),
                         oonidTgz,
                     )
                 }
@@ -340,7 +370,19 @@ val fetchLinuxSource =
                 if (!tallocTgz.isFile) {
                     logger.lifecycle("Downloading talloc $tallocVer ...")
                     download(
-                        "https://www.samba.org/ftp/talloc/talloc-$tallocVer.tar.gz",
+                        listOf(
+                            // The canonical origin, and the one the pinned sha256
+                            // above was published beside.
+                            "https://www.samba.org/ftp/talloc/talloc-$tallocVer.tar.gz",
+                            // The identical tarball, republished by the pools
+                            // Debian and Ubuntu build from. Verified 2026-09-27:
+                            // both serve 679,750 bytes whose sha256 is the pinned
+                            // one, and both unpack to talloc-2.4.2/talloc.c, so
+                            // they are the same bytes under a different filename
+                            // and the check below is what proves it per download.
+                            "https://deb.debian.org/debian/pool/main/t/talloc/talloc_$tallocVer.orig.tar.gz",
+                            "https://archive.ubuntu.com/ubuntu/pool/main/t/talloc/talloc_$tallocVer.orig.tar.gz",
+                        ),
                         tallocTgz,
                     )
                 }

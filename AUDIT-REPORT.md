@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §76, *The disk rung gave up the archive against a gate thirty-four megabytes could not move*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §77, *The native fetch retried one origin for four minutes and never tried another*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -8870,3 +8870,72 @@ message-quality question rather than this one.
 
 **No version bump here.** A behaviour change makes its release a minor, and the bump belongs to the
 release branch, as §72 and §75 both say of their own.
+
+---
+
+## 77. The native fetch retried one origin for four minutes and never tried another
+
+**Symptom.** PR #189's run (2026-09-27, run 36316479359) reddened the `FreeRDP native (4 ABIs)` job
+after 14 minutes, and the same fetch took `Instrumentation`'s job down with it (run 36316479066). Every
+job downstream — `Lint`, `Unit and integration tests`, `APKs, AAB and signatures`, `Boot the built
+APKs` — was `skipped`, because `native` gates all of them. The diff at that head was Kotlin comments, a
+documentation table and one test; nothing in it is compiled by either job's failing step.
+
+**Root cause.** `:linux:fetchLinuxSource` fetches talloc through `download()` in
+`linux/build.gradle.kts`, whose retry policy — added by #126 after two reds in one day caused by
+third-party mirrors answering 5xx — was **seven attempts over roughly four minutes against a single
+URL**:
+
+```
+:linux:fetchLinuxSource FAILED
+Caused by: java.lang.IllegalStateException:
+  downloading https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz failed:
+  HTTP 503 after 7 attempts over ~4 minutes
+```
+
+That policy is right for a CDN having a bad burst and wrong for an origin that is simply gone. samba.org
+was down for longer than the whole window (measured 2026-09-27: both `www.samba.org` and
+`download.samba.org` unreachable, the index as well as the tarball), so seven attempts and four minutes
+bought nothing that one attempt would not have. Meanwhile the Debian and Ubuntu pools were serving the
+file in under two seconds.
+
+**The change.** `download()` takes a **list** of origins and walks it in order, keeping the per-origin
+backoff and only failing when every origin has failed; the failure message names each origin and its
+last code rather than one URL. `:freerdp`'s fetch passes a single-element list, so its behaviour is
+unchanged. The talloc call names two more origins:
+
+- `https://www.samba.org/ftp/talloc/talloc-2.4.2.tar.gz` — canonical, and the one the pinned sha256 was
+  published beside, still tried first
+- `https://deb.debian.org/debian/pool/main/t/talloc/talloc_2.4.2.orig.tar.gz`
+- `https://archive.ubuntu.com/ubuntu/pool/main/t/talloc/talloc_2.4.2.orig.tar.gz`
+
+**Why a second origin is safe here, and what proves it.** The pinned sha256 decides what gets built
+whichever origin answers, so an origin serving different bytes fails the fetch rather than reaching the
+compiler. Measured 2026-09-27 rather than assumed: the Ubuntu pool path returns 679,750 bytes whose
+sha256 is exactly `85ecf9e4…d8a6`, the value already pinned in the build for the samba.org tarball, and
+it unpacks to `talloc-2.4.2/talloc.c` — the same tree under a different filename. `docs/THIRD-PARTY.md`
+records the two extra origins beside the canonical one, because a document that discloses where
+`libproot.so`'s source comes from has to name every place the build will accept it from.
+
+**Verified.** The hash and the archive layout above were checked on this host with `curl` and
+`sha256sum` against the pool URLs. The retry loop itself is not covered by a test: it is a
+`linux/build.gradle.kts` task action, and this repository builds only in CI. What proves the change is
+the next run's `:linux:fetchLinuxSource` succeeding without samba.org.
+
+**What this does not do.** It does not change the per-origin window, the backoff schedule, the pinned
+hashes, or `:freerdp`'s fetch. `:freerdp` carries its **own copy** of the same loop — its KDoc says so,
+"the same bounded retry as `:linux`'s fetch task" — and that copy still retries a single URL, so the
+class of failure this section describes is still available to `openssl-4.0.1.tar.gz`, which comes from
+`github.com` and its CDN. It is left alone deliberately: that origin has no second source to name, so
+the only honest change there would be a longer wait, and a longer wait is what this section just
+concluded is not the fix. If a run reddens on the OpenSSL download the way this one reddened on talloc,
+the answer is not another mirror — it is asking whether a *fetch* should be doing this work in a job
+that is a release blocker. It does not add a mirror for the proot fork either, which has one origin
+(`codeload.github.com`) and a commit-pinned sha256; naming a second origin for it would mean naming a
+second place the fork's bytes may come from, and the fork is a *patched* tree whose provenance is worth
+keeping singular. And it does not make the fetch cache survive the change: both native fetch tasks key
+their cache on their module's build script (§41.6), so editing `linux/build.gradle.kts` retires the
+`linux-native` entry and the next run pays a cold native build of the four ABIs.
+
+**No version bump.** §76's line applies here too: a behaviour change makes its release a minor, and the
+bump belongs to the release branch.
