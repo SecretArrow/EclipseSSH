@@ -8267,3 +8267,72 @@ Built and signed by `tagged-release.yml` from the `v1.12.0` tag: the universal A
 (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The signing
 identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this
 build installs over 1.11.0 and every earlier release normally.
+
+### What the validation run did, and the order this release kept
+
+`tagged-release.yml` builds the artifact; `android-release-test.yml` is the only thing in this repository
+that *installs* one, and it fires on `release: published`. §65 recorded the cost of getting that order
+wrong — publishing after the window closed left its device check refused by a runner pool it could not
+reach. This release did it the other way: the draft was verified, published at 20:28:49Z with the window
+open, and the window was closed only after `Android release test` 36269668468 had settled.
+
+**The build.** `Tagged release` run 36268622456, 20:11:02Z to 20:25:56Z, all thirty of its steps green —
+including `Verify the build is from a clean tag`, which is the step that makes the tag rather than a
+working tree the thing that was built. The tag is `369dc9071f6b732f6de57ec282d7d7445a9efacc`, which is
+both the merge commit of #181 and the tip of `main`: nothing landed between the merge and the tag, so the
+section above describes exactly the tree the runner compiled.
+
+**The artifacts, read out of the files rather than off the log.** `testing/verify-release-artifact.py` was
+first run against a *published* asset whose values were already known — `v1.10.0`'s `arm64-v8a` split,
+which it read as `43 / 1.10.0 / 0c69794b…` — because a checker that has never disagreed with reality is
+not evidence. It was then run against all five APKs from this release, and each read `versionCode 45`,
+`versionName 1.12.0`, signer `0c69794b…`. Recomputing the six digests in `SHA256SUMS.txt` matched all six,
+each split carries exactly its own ABI and no other (eleven libraries apiece), and the universal carries
+all four. One host artifact is worth naming so it is not mistaken for a defect next time:
+`testing/verify-release-splits.sh` reports the `x86` split as failed *on this workstation* because `file`
+5.46 spells e_machine 3 `Intel i386` where the script expects `Intel 80386`. `readelf -h` on the same bytes
+reads `Machine: Intel 80386`, and the runner's own `Verify the per-ABI release splits` step — the same
+script, the same APK, `file` 5.45 — passed.
+
+**The device check.** `Android release test` 36269668468 was created 20:28:51Z, two seconds after the
+publish, and settled green at 20:49:50Z. Both legs — `Release APK on API 30` and `Release APK on API 35` —
+report `OK (49 tests)`, `Failed: 0`, and both `crash-report.json` files read `status: clean,
+signatureMatches: 0`. `Release gate` passed, each leg's `Final Recommendation` is `RELEASE`, and
+`Autonomous repair` is `skipped`, which is its normal state on a release event.
+
+**The cross-check worth stating plainly.** Each leg's `release-validation.json` records `sha256
+7d7e1d3f…`, `bytes 19410459` for the asset the emulator installed. That is the same file, by the same
+hash, that `SHA256SUMS.txt` lists for `app-x86_64-release.apk` and that recomputation confirmed here — so
+versionCode, versionName and signer were each read twice by two independent methods and agreed, and the
+APK on the emulator is the published artifact rather than a rebuild.
+
+**The merge, and the one red check that was not a defect.** The seven contexts branch protection requires
+were green at the merge, and `Close the CI window` was red as it is on every run started while the window
+is open — the token that closes it is deliberately not available to a run. `connectedAndroidTest` failed
+once on `ReleaseChaosJourneyTest.theAddHostFormSurvivesARotation`, a `ComposeTimeoutException` after
+10000 ms, and went green on a re-run of the same commit. That the commit rather than the change was
+responsible is arithmetic, not opinion: attempt 1's report reads `failures 17` and attempt 2's reads
+`failures 16`, against 16 arg-gated `UbuntuE2eVerificationTest` assumptions in both — one real failure
+between them, gone on a re-run of identical code. §41 and §60 already decided what to do about that
+number: nothing. Inflating the timeout hides the hang it exists to catch, so it was left at 10000 ms.
+Reading attempt 2 at all required care — `gh run download` returns the *first* artifact of a name, not the
+newest, so the green attempt's report initially read as the red one's.
+
+**The backstop did not work, and that is the part to fix.** The order above is only half of what this
+workflow promises; the other half is that a window left open is closed by something that is not the
+session that opened it. It was not. The repository was still `public` with a deadline of
+`2026-09-26T21:45:00Z` at 00:58Z the next day — three hours and thirteen minutes past it — and
+`ci-window.sh close` run by hand is what closed it, verified by read-back as `private` with the deadline
+cleared. The backstop is installed and armed: the crontab holds `*/5 * * * * /home/dev/eclipse/scripts/
+ci-window-watchdog.sh >> /tmp/ci-window-watchdog.log 2>&1`, and `cron` is running. But that log is **empty**,
+and the script prints on every path it can take, including the ones that decline to act. The likeliest
+mechanism — named here as a hypothesis, not a finding, because it has not been reproduced — is the
+redirect: the cron line appends to a file on `/tmp`, a 3.9 GB tmpfs that was full at the time, and a
+redirection the shell cannot open is a redirection that stops the command from running at all. That would
+make the watchdog fail precisely when the machine is under the disk pressure a long session creates, which
+is the same class of failure §65 recorded for the device check: the thing that is supposed to catch the
+problem is unavailable for the reason the problem exists. The release's own sequence was unaffected — the
+validation run settled 55 minutes before the deadline — but a backstop nobody has tested in anger is worth
+less than its description suggests, and the entry should log somewhere that is not the tmpfs.
+
+---
