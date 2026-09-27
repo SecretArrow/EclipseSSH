@@ -480,19 +480,20 @@ class LinuxUserspaceManager(
     }
 
     /**
-     * Rung L — the repairs that need nothing but what is already on disk: the package locks an
-     * interrupted run left behind, the apt-owned state the next update rebuilds, the guest
-     * directories that nothing else puts back, and proot's own leftover scratch directories.
+     * Rung L — the repairs that need nothing but what is already on disk: the package lock paths apt
+     * cannot open, the guest directories that nothing else puts back, and proot's own leftover
+     * scratch directories.
      *
-     * Each part answers a failure the ladder could otherwise not see. The locks are a *marker* a
-     * killed dpkg leaves on disk while the kernel has already dropped the lock itself, so every
-     * package step of every rung refuses in a second and the user is told the same thing four times
-     * (see [RootfsInstaller.clearStalePackageLocks], which proves nothing holds a lock before
-     * removing it rather than deleting a file that happens to be named `lock`). The guest's `tmp`
-     * and `run` are preserved members that no rung writes and no archive overlay replaces, and the
-     * setup pipeline's own attempt to create them — `prepareWorkspace` — throws its result away, so
-     * a `tmp` that is a *file* and a workspace that is not a real directory both survived every
-     * repair there was, silently. The scratch directories are not the rootfs' at all — proot's
+     * Each part answers a failure the ladder could otherwise not see. A lock *path* apt cannot open
+     * — a directory where the file belongs, a mode that denies the write, a link resolving out of
+     * the userspace — refuses every package step of every rung in about a second, in a sentence
+     * about a lock rather than about the thing standing where the lock belongs (see
+     * [RootfsInstaller.clearUnusablePackageLocks] for the question it asks instead, which is apt's
+     * own call, and for why a lock file that merely *exists* is not it). The guest's `tmp` and `run`
+     * are preserved members that no rung writes and no archive overlay replaces, and the setup
+     * pipeline's own attempt to create them — `prepareWorkspace` — throws its result away, so a
+     * `tmp` that is a *file* and a workspace that is not a real directory both survived every repair
+     * there was, silently. The scratch directories are not the rootfs' at all — proot's
      * `PROOT_TMP_DIR` is `files/linux/tmp`, beside it — and until patch 0006 an ordinary exit left
      * one behind per launch, four `proot warning:` lines with it: see
      * [RuntimeStorageManager.sweepOrphanTempDirs] for the leak and for what makes clearing them
@@ -506,8 +507,9 @@ class LinuxUserspaceManager(
      * below the setup run, where the evidence for it exists: see [clearAptState].
      *
      * Everything here is unconditional in the other direction — it is gated on the *state*, not on
-     * the failure — and that is safe because none of it can cost the user anything: a lock something
-     * holds is left alone, and the directories are recreated only when they are missing or wrong.
+     * the failure — and that is safe because none of it can cost the user anything: a lock file apt
+     * *can* open is left exactly where it is, whatever is holding it, and the directories are
+     * recreated only when they are missing or wrong.
      *
      * What it did goes into [warnings] and the diagnostics ring as it goes; there is no summary to
      * hand back, because the ladder does not branch on this rung — the setup rung below runs either
@@ -516,19 +518,20 @@ class LinuxUserspaceManager(
     private suspend fun restoreLocalState(warnings: MutableList<String>) {
         var changed = false
 
-        val sweep = installer.clearStalePackageLocks()
+        val sweep = installer.clearUnusablePackageLocks()
         if (sweep.removed.isNotEmpty()) {
             changed = true
-            warnings += "cleared ${sweep.removed.size} package-manager lock(s) an interrupted run " +
-                "left behind: ${sweep.removed.joinToString(", ")}"
+            warnings += "cleared ${sweep.removed.size} package-manager lock(s) apt could not open: " +
+                sweep.removed.joinToString(", ")
         }
-        if (sweep.held.isNotEmpty()) {
-            // Not this rung's failure and not hidden either: something really is holding these, and
-            // the package steps below will refuse in dpkg's own words rather than this one's.
+        if (sweep.stillThere.isNotEmpty()) {
+            // Not this rung's failure and not hidden either: something is standing where a lock file
+            // belongs and this rung could not remove it, so the package steps below will refuse in
+            // apt's own words rather than this one's.
             diagnostics.record(
                 UserspaceDiagnosticCategory.APT,
-                "package locks are still held; the package steps below will refuse",
-                detail = sweep.held.joinToString(", "),
+                "package lock paths could not be removed; the package steps below will refuse",
+                detail = sweep.stillThere.joinToString(", "),
             )
         }
 
@@ -859,7 +862,12 @@ class LinuxUserspaceManager(
             is UserspaceFailure.ProotLaunchFailed,
             // A broken package database is what `dpkg --configure -a` exists for.
             is UserspaceFailure.PackageDbBroken,
-            // Rung L clears the lock, and a lock is a file in the rootfs like any other.
+            // Rung L clears a lock *path* apt cannot open, which is the arm of this failure that no
+            // amount of waiting fixes. The other arm — a lock something is holding — is not this
+            // rung's to clear and is not on this line's account: it stays rebuildable because the
+            // deeper rungs rewrite the files, including the one being held, so the ladder still ends
+            // somewhere better than it started; and the sentence the user is shown for it names the
+            // wait rather than a repair. See the type's own doc for the split.
             is UserspaceFailure.PackageLocksHeld,
             // Rung L clears the state the bad index lives in; nothing outside the rootfs is at fault.
             is UserspaceFailure.IndexHashMismatch,

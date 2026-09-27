@@ -187,29 +187,52 @@ sealed class UserspaceFailure(
     )
 
     /**
-     * Another package operation still holds dpkg's or apt's lock — the mark an interrupted or
-     * killed run leaves behind, since a process killed by a signal never deletes its own lock file.
-     * It is why every later command refuses in about a second, without contacting anything.
+     * A package command refused because the package manager's lock was not available, in one of the
+     * two ways apt and dpkg say that — and they mean different things.
      *
-     * [holderPid] is the process the lock file names, or null when it names none, and [locks] is
-     * every lock file found. Both are carried because a lock can be legitimately live: the repair
-     * path clears a lock only when nothing holds it, and this type is what is reported when
-     * something does.
+     * **A holder** (`Could not get lock ... is another process using it`, `held by process N`):
+     * something is running and holds the lock. [openFailed] is false, the way out is to wait, and the
+     * sentence says so — no repair is offered because none can help while the holder is alive.
      *
-     * Rebuildable: the lock is a file in the rootfs, not a fact about the archive, so the ladder's
-     * local rung deals with it before the first step that needs anything else.
+     * **A path** (`Could not open lock file /var/lib/dpkg/lock - open (21: Is a directory)`):
+     * [openFailed] is true, and nothing holds anything — apt never got as far as asking for the
+     * lock, because the file it would ask about is not a file it can open. Waiting fixes nothing, and
+     * the rung that clears such a path is the way out.
+     *
+     * This type used to say "another package operation is still holding the package manager's lock"
+     * for both, and to explain itself with a claim that is not true: *the mark an interrupted or
+     * killed run leaves behind, since a process killed by a signal never deletes its own lock file*.
+     * A process that exits normally does not delete it either — apt and dpkg never unlink these files,
+     * so an existing lock file is the state *every* package run leaves, and the sentence told a user
+     * to wait for a process that had already finished.
+     *
+     * [holderPid] is the process the message named, or null when it named none, and [locks] is every
+     * lock path found. Both are carried because the two arms are worth telling apart in a bug report:
+     * one is a busy userspace, the other a damaged one.
+     *
+     * Rebuildable: whether it is a path apt cannot open or a lock whose holder will not outlive the
+     * repair, the thing to change is a file in the rootfs, so the ladder's local rung reaches it
+     * before the first step that needs anything else.
      */
     class PackageLocksHeld(
         val holderPid: Int?,
         val locks: List<String>,
+        val openFailed: Boolean,
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "another package operation is still holding the package manager's lock" +
-            (holderPid?.let { " (held by process $it)" } ?: "") +
-            (locks.takeIf { it.isNotEmpty() }?.let { " - ${it.joinToString(", ")}" } ?: "") +
-            " - wait for it to finish, then try again" +
-            detail.inParentheses(),
+        if (openFailed) {
+            "the package manager's lock cannot be opened" +
+                (locks.takeIf { it.isNotEmpty() }?.let { " (${it.joinToString(", ")})" } ?: "") +
+                " - Repair clears it" +
+                detail.inParentheses()
+        } else {
+            "another package operation is still holding the package manager's lock" +
+                (holderPid?.let { " (held by process $it)" } ?: "") +
+                (locks.takeIf { it.isNotEmpty() }?.let { " - ${it.joinToString(", ")}" } ?: "") +
+                " - wait for it to finish, then try again" +
+                detail.inParentheses()
+        },
         cause,
     )
 
@@ -430,7 +453,12 @@ sealed class UserspaceFailure(
             // read as a repository or database problem the user cannot act on.
             clockSkew(output)?.let { return ClockSkew(it, detail = firstErrorLine(output)) }
             if (LOCK_PATTERNS.any { it.containsMatchIn(output) }) {
-                return PackageLocksHeld(dpkgLockHolder(output), locksNamedIn(output), detail = firstErrorLine(output))
+                return PackageLocksHeld(
+                    holderPid = dpkgLockHolder(output),
+                    locks = locksNamedIn(output),
+                    openFailed = LOCK_OPEN_PATTERN.containsMatchIn(output),
+                    detail = firstErrorLine(output),
+                )
             }
             if (PACKAGE_DB_PATTERNS.any { it.containsMatchIn(output) }) return PackageDbBroken(detail = firstErrorLine(output))
             if (DPKG_SUBPROCESS_PATTERN.containsMatchIn(output)) {
@@ -570,8 +598,9 @@ private val PACKAGE_DB_PATTERNS = listOf(
 )
 
 /**
- * Every way apt and dpkg say that another process holds their lock: the frontend lock (apt's), the
- * dpkg lock, the lists lock, and the two bare refusals that name no file at all.
+ * Every way apt and dpkg say that their lock is not available: the frontend lock (apt's), the dpkg
+ * lock, the lists lock, the bare refusals that name no file at all, and the refusal that is not
+ * about a holder at all — `Could not open lock file`, which names a path apt could not open.
  */
 private val LOCK_PATTERNS = listOf(
     Regex("""Could not get lock""", RegexOption.IGNORE_CASE),
@@ -580,6 +609,14 @@ private val LOCK_PATTERNS = listOf(
     Regex("""lock file already used""", RegexOption.IGNORE_CASE),
     Regex("""Could not open lock file""", RegexOption.IGNORE_CASE),
 )
+
+/**
+ * The refusal that is about the *path* rather than about a holder: apt could not open the file at all
+ * — a directory where it belongs, a mode that denies the write. Split out of [LOCK_PATTERNS] rather
+ * than merely listed beside it, because the two ask the user for different things and only one of
+ * them is something waiting can fix.
+ */
+private val LOCK_OPEN_PATTERN = Regex("""Could not open lock file""", RegexOption.IGNORE_CASE)
 
 /** A lock path inside a sentence, trailing punctuation excluded so `/var/lib/dpkg/lock.` reads right. */
 private val LOCK_PATH_PATTERN = Regex("""(/[^\s,()]*?lock[^\s,().]*)""")
