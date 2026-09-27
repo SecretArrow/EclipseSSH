@@ -707,12 +707,18 @@ class RootfsInstaller(
     /**
      * Gives up the kept archive, and answers how many bytes that freed.
      *
-     * The one caller is the repair ladder's disk step, and the argument for it is arithmetic rather
-     * than policy: this is the largest file the app owns that can be obtained again by asking for
-     * it, a repair that cannot fit cannot run at all, and the alternative source of the space — the
-     * rootfs — costs the user their system instead of a download. What it costs is said out loud at
-     * the call site rather than discovered later: the next rung that needs the archive's bytes
-     * fetches it again.
+     * The repair ladder's disk step used to be its one caller and is deliberately no longer one. The
+     * argument for that call was arithmetic, and the arithmetic was wrong: the step's gate is
+     * [requiredFreeBytes], which is the *install* budget — hundreds of megabytes — so giving up
+     * thirty-four megabytes could not move the reading that had just asked for the space, and since
+     * every rung at or below "restore missing files" reads this file, the next one down paid those
+     * same thirty-four megabytes back. A device that short of room is better served by the failure
+     * it was always going to get, said plainly, than by a download spent on the way to it.
+     *
+     * It stays because giving the archive up is a real operation rather than a rung's private step,
+     * and because a userspace whose archive is gone is a state the tests have to be able to reach:
+     * `RootfsRepairTest` pins what this returns, that it is idempotent, and that the next rung which
+     * needs those bytes fetches them again.
      */
     suspend fun releasePinnedArchive(): Long = withContext(Dispatchers.IO) {
         if (!pinnedArchiveOnDisk()) return@withContext 0L
@@ -720,7 +726,7 @@ class RootfsInstaller(
         tarballFile.delete()
         diagnostics.record(
             UserspaceDiagnosticCategory.STORAGE,
-            "pinned archive given up to make room for the repair",
+            "pinned archive given up",
             detail = "freed ${bytes / MIB}MB; the next rung that needs it will download it again",
         )
         if (tarballFile.exists()) 0L else bytes
@@ -915,11 +921,12 @@ class RootfsInstaller(
         // rung at or below "restore missing files" writes from this archive ([ensurePinnedArchive]),
         // and a userspace that needs one of those rungs is exactly the userspace whose connection
         // may also be the thing that is broken. Keeping it is what makes those rungs local, and it
-        // costs the 34 MB the install has already fetched and verified. It is given up in three
-        // places, each of them deliberate: [deleteRootfs] when the userspace is removed, the repair
-        // ladder's own disk step ([releasePinnedArchive], with a warning) when the device is too
-        // short of space for the repair to run at all, and a pin that no longer matches (the next
-        // [ensurePinnedArchive] downloads over it).
+        // costs the 34 MB the install has already fetched and verified. It is given up in two
+        // places, each of them deliberate: [deleteRootfs] when the userspace is removed, and a pin
+        // that no longer matches (the next [ensurePinnedArchive] downloads over it). The repair
+        // ladder's disk step was a third and is not one any more — its gate measures the install's
+        // budget rather than the repair's need, so the bytes it freed could not move that gate, and
+        // the rungs below read the file it had just deleted. See [releasePinnedArchive].
         diagnostics.record(
             UserspaceDiagnosticCategory.STORAGE,
             "pinned archive kept for repair",

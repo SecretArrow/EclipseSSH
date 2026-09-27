@@ -31,6 +31,10 @@ class LinuxUserspaceManagerTest {
         // construction, not on demand.
         val rootDir: File = Files.createTempDirectory("linux-userspace").toFile().apply { deleteOnExit() },
         supplementaryGids: () -> IntArray = { IntArray(0) },
+        // Read on every probe rather than captured, so a test can install with room to spare and
+        // then say the disk has filled — which is the only way to reach the disk rung with a
+        // userspace already installed, since an install on a short disk never gets that far.
+        freeBytes: () -> Long = { ROOM_TO_SPARE },
     ) {
         val spawner = ScriptedPtySpawner()
         var downloads = 0
@@ -41,15 +45,39 @@ class LinuxUserspaceManagerTest {
          * fix — the archive itself — without also making the install impossible.
          */
         var downloadFails = false
-        val runtime = ProotRuntime(rootDir, fakeNativeLibraryDir(), spawner)
+
+        /**
+         * A device with room to spare, said out loud rather than measured — because the JVM's
+         * unmocked `StatFs` answers 0, and 0 means *unknown*, and both of the disk gates run on an
+         * unknown reading exactly as they do on a short one: the ladder's disk rung empties apt's
+         * lists and the packages already downloaded, and the apt phase's own gate lets through a run
+         * the reading would have stopped. A harness that left the probes to `StatFs` would therefore
+         * have every repair begin by emptying the trees the rungs below argue about, which is the
+         * behaviour these tests exist to pin down the *absence* of. `RuntimeStorageManager.freeBytes`'s
+         * own doc says 0 is "do not gate on this", and this is what holds that gate open.
+         *
+         * One instance for the whole graph, as the app has it ([LinuxUserspaceGraphProvider] hands
+         * the same object to the runtime, the installer and the manager): the apt phase's gate, the
+         * installer's own gate and the disk rung are then three readings of one device rather than
+         * three devices. And the probe is called through rather than captured, so a test can install
+         * with room to spare and then say the disk has filled — which is the only way to meet either
+         * gate with a userspace already installed.
+         */
+        val storage = RuntimeStorageManager(rootDir, freeBytesProbe = { freeBytes() })
+        val runtime = ProotRuntime(rootDir, fakeNativeLibraryDir(), spawner, storage)
         val installer =
-            RootfsInstaller(rootDir, distro, downloader = { _, target, onChunk ->
-                downloads++
-                // An IOException, because that is what an HTTP fetch raises and what `download()`
-                // types as PinnedArchiveUnavailable — the failure the ladder's gate reads.
-                if (downloadFails) throw IOException("the network is down")
-                TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
-            })
+            RootfsInstaller(
+                rootDir,
+                distro,
+                downloader = { _, target, onChunk ->
+                    downloads++
+                    // An IOException, because that is what an HTTP fetch raises and what `download()`
+                    // types as PinnedArchiveUnavailable — the failure the ladder's gate reads.
+                    if (downloadFails) throw IOException("the network is down")
+                    TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
+                },
+                storage = storage,
+            )
         val distribution = UbuntuDistributionManager(
             distro,
             runtime,
@@ -72,18 +100,6 @@ class LinuxUserspaceManagerTest {
         val processes = LinuxProcessManager()
         val workspace = LinuxWorkspaceManager(runtime)
         val backupFile = File(rootDir.parentFile, "${rootDir.name}-workspace-backup.tar.gz")
-
-        /**
-         * A device with room to spare, said out loud rather than measured — because the JVM's
-         * unmocked `StatFs` answers 0, and 0 means *unknown*, and the ladder's disk rung runs on an
-         * unknown reading exactly as it does on a short one. A harness that took the default probe
-         * would therefore have every repair begin by emptying apt's lists and the packages already
-         * downloaded, which is the behaviour these tests exist to pin down the *absence* of: the
-         * rungs below are only testable when the trees they argue about are still there when they
-         * get to them. `RuntimeStorageManager.freeBytes`'s own doc says 0 is "do not gate on this",
-         * and the disk rung's gate is what this is holding open.
-         */
-        val storage = RuntimeStorageManager(rootDir, freeBytesProbe = { ROOM_TO_SPARE })
 
         val manager = LinuxUserspaceManager(
             rootDir,
@@ -120,10 +136,14 @@ class LinuxUserspaceManagerTest {
          */
         private const val ROOM_TO_SPARE = 64L * 1024 * 1024 * 1024
 
-        private fun newHarness(supplementaryGids: () -> IntArray = { IntArray(0) }): Harness =
+        private fun newHarness(
+            supplementaryGids: () -> IntArray = { IntArray(0) },
+            freeBytes: () -> Long = { ROOM_TO_SPARE },
+        ): Harness =
             Harness(
                 TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
                 supplementaryGids = supplementaryGids,
+                freeBytes = freeBytes,
             )
     }
 
@@ -356,9 +376,12 @@ class LinuxUserspaceManagerTest {
         // The archive has to go first, and that is the whole point of this test's premise rather
         // than a detail of it: an install *keeps* its verified tarball precisely so the deeper rungs
         // can write base bytes without the network, which means a device with nothing on disk to
-        // rebuild from is the only one left to refuse. The sibling test below — "repair climbs to a
-        // rebuild when nothing cheaper clears the fault, and keeps the work" — is the other side of
-        // that line: it reaches the deepest rung and rebuilds out of the archive, fetching nothing.
+        // rebuild from is the only one left to refuse. It goes here by being released by hand,
+        // because nothing on the ladder removes it any more — the disk step that used to is gone
+        // (AUDIT-REPORT §76) — and on a device it takes a changed pin or a lost file. The sibling
+        // test below — "repair climbs to a rebuild when nothing cheaper clears the fault, and keeps
+        // the work" — is the other side of that line: it reaches the deepest rung and rebuilds out
+        // of the archive, fetching nothing.
         assertThat(harness.installer.releasePinnedArchive()).isGreaterThan(0L)
         harness.downloadFails = true
 
@@ -1157,6 +1180,56 @@ class LinuxUserspaceManagerTest {
         // this is the case the *ladder* would climb on — and the install does not consult it, because
         // an install has no ladder to climb. It has one bounded attempt, and this is its outcome.
         assertThat(unhealthy.report.sound).isFalse()
+    }
+
+    @Test
+    fun `a repair on a disk too short for an install keeps the archive and spends nothing`() = runTest {
+        var free = ROOM_TO_SPARE
+        val harness = newHarness(freeBytes = { free })
+        // Installed with room to spare, because the reading is about to be the fault: a device that
+        // is short *before* the install never gets a userspace to repair.
+        harness.manager.install()
+        val archive = harness.installer.tarballFile
+        assertThat(harness.installer.pinnedArchiveOnDisk()).isTrue()
+        // And one fault that is not the disk, because the disk alone does not reach a rung: the local
+        // rungs have nothing to do on a sound userspace, so no probe is taken, and the ladder walks
+        // into the setup rung — which is where the budget this test is about is re-checked. A rootfs
+        // missing a program is unsound, so the ladder climbs to it either way; the pairing is what
+        // makes the press an *attempt* that the disk then stops.
+        val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
+        rm.delete()
+        val healthyRespond = harness.spawner.respond
+        harness.spawner.respond = { command ->
+            if (command.startsWith("echo eclipse-uid=") && !rm.exists()) {
+                0 to "eclipse-uid=0\neclipse-path=/usr/local/sbin:/usr/bin:/bin\neclipse-missing=rm\n"
+            } else {
+                healthyRespond(command)
+            }
+        }
+        val downloadsBeforeRepair = harness.downloads
+
+        // Short by the install's own budget, which is the reading the disk rung's last step used to
+        // gate on. That step gave up the archive — and the arithmetic of it is the whole reason it
+        // no longer does: `requiredFreeBytes` is `rootfsSizeBytes * 5 + 600 MB`, so this reading is
+        // short by hundreds of megabytes and the archive is thirty-four, and every rung at or below
+        // "restore missing files" writes base bytes out of that archive — including the one directly
+        // below, which pays those same thirty-four megabytes back through `ensurePinnedArchive`. A
+        // download spent to arrive at the failure it was meant to avoid.
+        free = 100L * 1024 * 1024
+        harness.installer.requiredFreeBytes.let { assertThat(free).isLessThan(it) }
+
+        val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
+
+        // The archive is still there, and the press cost nothing: no rung below had to re-fetch it.
+        assertThat(harness.installer.pinnedArchiveOnDisk()).isTrue()
+        assertThat(archive.isFile).isTrue()
+        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        // And the failure is the honest one — the disk, said plainly — rather than a rebuild attempt
+        // that the same reading would have stopped. `DiskFull` is on the ladder's "a rebuild cannot
+        // fix this" list, so the ladder stops where it stands, and the archive it would have given up
+        // is still on disk for the retry once the user has made room.
+        assertThat(failure).isInstanceOf(UserspaceFailure.DiskFull::class.java)
+        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
     }
 }
 
