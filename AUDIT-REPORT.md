@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §73, *The cursor does not sit on the text, because a glyph from a fallback face draws its whole run off the grid*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §74, *The watchdog died at its own log line, and the redirect it was blamed on had opened*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -8593,5 +8593,87 @@ release branch, as §72 says of its own.
 force a full redraw — rotate the device, or `clear` and reprint. A buffer divergence re-syncs under
 absolute addressing and the stale cells go away; an ink displacement is recomputed from the same cells on
 every frame and persists.
+
+---
+## 74. The watchdog died at its own log line, and the redirect it was blamed on had opened
+
+§71 left a hypothesis standing on purpose. The CI window's backstop did not fire on 2026-09-26: the
+repository stayed `public` with a deadline of `2026-09-26T21:45:00Z` until 00:58Z the next day, three
+hours and thirteen minutes past it, and `ci-window.sh close` run by hand is what closed it. The crontab
+held `*/5 * * * * …/ci-window-watchdog.sh >> /tmp/ci-window-watchdog.log 2>&1`, `cron` was running, and
+the log was **empty** although the script prints on every path it can take. The mechanism §71 offered —
+"a redirection the shell cannot open is a redirection that stops the command from running at all" — was
+labelled a hypothesis rather than a finding, because it had not been reproduced.
+
+It has now been reproduced, and **the redirect was not what stopped it.** The redirect *opened*. On a
+full filesystem the file is created, because a new empty file needs no blocks, and the command then
+runs — so what kills the run is not the open but the **first write**, which fails with `ENOSPC` and,
+under `set -e`, takes the whole script with it. The watchdog's first write is
+`act "window past its deadline … - closing"`, and the line after it is the flip. The run therefore
+ended one line before the thing it exists to do, and left behind the 0-byte file the redirect had just
+created, which is the recorded evidence exactly — and is not what the hypothesis predicted, since a
+redirection that cannot be opened creates no file at all.
+
+### The measurement
+
+A 64 KB tmpfs mounted inside a user and mount namespace (`unshare -Ur -m`, then
+`mount -t tmpfs -o size=64k`) and filled with `dd`, so the host's own `/tmp` was never a party to it.
+Two probe scripts: one shaped like the watchdog as it was — `set -euo pipefail` with
+`act() { echo …; }` — and one shaped like the fix, where every write is guarded. Each logs and then
+`touch`es a marker file, so "did it reach the work" is a fact rather than an inference.
+
+| How cron's line ran it | Exit | Reached the work |
+| --- | --- | --- |
+| `script >> /tmp/log 2>&1` — the entry as installed | 1 | **no** |
+| `script 1>&- 2>&-` — stdout closed | 1 | **no** |
+| `script >/dev/null 2>&1` | 0 | yes |
+| `script 2>/dev/null \| true` — stdout on a broken pipe | 0 | yes |
+| the fixed shape, `>> /tmp/log 2>&1` on the same full filesystem | 0 | yes |
+
+An exit of 1 rather than 2 is itself the finding: `dash` exits **2** when it cannot apply a redirection
+and never runs the command at all, so an exit of 1 means the redirect was applied, the command ran, and
+the script is what failed.
+
+Then the real script, both revisions, in the same 64 KB tmpfs, with `CI_WINDOW_REPO` pointed at a
+repository that does not exist so that the run takes the path that logs and then exits:
+
+- `git show HEAD:scripts/ci-window-watchdog.sh` — **exit 1**, and nothing written anywhere. It died at
+  its first log line.
+- the revision this section describes — **exit 0**, with
+  `ci-window-watchdog: 2026-09-27T08:19:12Z cannot read maragung/NoSuchRepo-93 from the API - nothing
+  to do` sitting in the log the script writes for itself.
+
+One further measurement, because it rules out the obvious alternative fix: cron's stdout is writable
+here even though this host has no MTA — a `bash -c 'set -euo pipefail; echo …'` child inheriting it
+exits 0. So removing the redirect on its own would have been enough for *that* night. It is not enough
+in general, and the closed-stdout row above is why: a job whose stdout is closed fails in exactly the
+same way, and it is the guard, not the destination, that makes the run independent of where its output
+happens to point.
+
+### The fix, and what each part of it is for
+
+- **The entry redirects to `/dev/null`.** A redirection is applied by cron's shell *before* the command
+  runs, so one that cannot be opened is a command that never runs; `/dev/null` cannot fail to open. It
+  is also the only redirect that stays correct when a log's filesystem fills, which is the case that
+  started this.
+- **The script writes its own account to `${XDG_STATE_HOME:-$HOME/.local/state}/ci-window-watchdog.log`**
+  — not the tmpfs, because the filesystem most likely to be full is the one the log would be on.
+- **Every write in `say` and `act` is guarded**, so a log that cannot be written cannot take the run
+  with it. This is the load-bearing part: it is what makes the outcome independent of the other two.
+
+`--install-cron` replaces an entry in the earlier form rather than adding a second one beside it, so
+the migration is `--install-cron` itself. Its four paths — an earlier entry present, already current,
+no entry at all, and an empty crontab — were exercised against a stub `crontab`, with another
+unrelated job in the file each time, and the unrelated job survived all four.
+
+### What this does not claim
+
+That the host's `/tmp` was full at 21:45Z on 2026-09-26 is §71's record and not a fresh measurement;
+this section took that condition as given and asked what follows from it. The 0-byte log is consistent
+with the mechanism above and also with an older empty file that no run had ever written to, so the
+*timing* is not proven either — the mechanism is, and it is the one the symptom matches. What the
+reproduction does establish is the negative result §71 needed: the redirect opens, so the sentence
+blaming the open was wrong, and a fix built only on moving the log elsewhere would have left the same
+failure in place for the next filesystem to fill.
 
 ---

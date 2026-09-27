@@ -17,7 +17,17 @@
 # is a decision, not a leak, and this script does not overrule decisions.
 #
 # Install (every five minutes):
-#   */5 * * * * /home/dev/eclipse/scripts/ci-window-watchdog.sh >> /tmp/ci-window-watchdog.log 2>&1
+#   */5 * * * * /home/dev/eclipse/scripts/ci-window-watchdog.sh >/dev/null 2>&1
+#
+# The redirect goes to /dev/null, and that is a decision rather than tidiness.
+# Cron's shell applies a redirection *before* it runs the command, so a redirect
+# it cannot open is a command that never runs at all - the watchdog would be
+# absent for exactly the reason it exists. A log file is also the wrong thing
+# for this script to depend on, because the filesystem most likely to be full is
+# the one the log would be written to. What this script has to report, it writes
+# itself, to $LOG below, and it writes it in a way that cannot take the run down
+# with it. Both halves were measured; see AUDIT-REPORT.md §74, which reproduces
+# and corrects the hypothesis §71 left standing.
 #
 # Usage: ci-window-watchdog.sh [--install-cron] [--verbose]
 set -euo pipefail
@@ -27,18 +37,37 @@ DEADLINE_VARIABLE="CI_WINDOW_DEADLINE"
 SELF="$(readlink -f "$0")"
 VERBOSE=""
 
+# Where this script's own account of what it did goes. Deliberately not /tmp:
+# on this host that is a 3.9 GB tmpfs shared with every other process on the
+# machine, and it is the filesystem most likely to be full at the moment a
+# watchdog is needed - it was at 93% when this was written, and full on
+# 2026-09-26. Overridable so a test can point it at a scratch file.
+LOG="${CI_WINDOW_WATCHDOG_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/ci-window-watchdog.log}"
+
 for arg in "$@"; do
   case "$arg" in
     --verbose) VERBOSE=1 ;;
     --install-cron)
-      line="*/5 * * * * $SELF >> /tmp/ci-window-watchdog.log 2>&1"
+      line="*/5 * * * * $SELF >/dev/null 2>&1"
       current="$(crontab -l 2>/dev/null || true)"
-      if printf '%s\n' "$current" | grep -qF "$SELF"; then
+      if printf '%s\n' "$current" | grep -qxF "$line"; then
         echo "ci-window-watchdog: already installed"
         exit 0
       fi
-      # Appended, never replaced: `crontab -` with only this line would delete
-      # every other job the user has.
+      # Everything already in the crontab is kept, in order, on both paths below
+      # - `crontab -` with only this line would delete every other job.
+      if printf '%s\n' "$current" | grep -qF "$SELF"; then
+        # A line naming this script that is not the line above is an earlier
+        # form of this entry - the one that appended to /tmp - and it is
+        # replaced rather than left beside the new one. Two entries would run
+        # the watchdog twice every tick, and the earlier one is the one that
+        # cannot survive a full filesystem.
+        updated="$( { printf '%s\n' "$current" | grep -vF "$SELF" || true
+                      printf '%s\n' "$line"; } | sed '/^$/d' )"
+        printf '%s\n' "$updated" | crontab -
+        echo "ci-window-watchdog: replaced an earlier entry - $line"
+        exit 0
+      fi
       printf '%s\n%s\n' "$current" "$line" | sed '/^$/d' | crontab -
       echo "ci-window-watchdog: installed - $line"
       exit 0
@@ -47,8 +76,27 @@ for arg in "$@"; do
   esac
 done
 
-say() { [ -n "$VERBOSE" ] && echo "ci-window-watchdog: $*"; return 0; }
-act() { echo "ci-window-watchdog: $(date -u +%Y-%m-%dT%H:%M:%SZ) $*"; }
+# `say` and `act` differ in who they are talking to, not in how careful they
+# are. Every write in both is guarded, and that is the load-bearing part of this
+# file rather than defensive noise: a script that logs with a bare `echo` under
+# `set -e` dies at that echo when its stdout cannot be written. That is not
+# hypothetical - it is measured, and it is the shape this watchdog was in on
+# 2026-09-26. With /tmp full, the run ended at its first log line, one line
+# before the flip it exists to perform, and left the 0-byte file the redirect
+# had just created. A watchdog that cannot report what it is doing must still
+# do it.
+say() {
+  [ -n "$VERBOSE" ] || return 0
+  { printf 'ci-window-watchdog: %s\n' "$*"; } 2>/dev/null || true
+  return 0
+}
+
+act() {
+  local line="ci-window-watchdog: $(date -u +%Y-%m-%dT%H:%M:%SZ) $*"
+  { printf '%s\n' "$line"; } 2>/dev/null || true
+  { mkdir -p -- "$(dirname -- "$LOG")" && printf '%s\n' "$line" >>"$LOG"; } 2>/dev/null || true
+  return 0
+}
 
 # Same rule as scripts/ci-window.sh: the netrc token, pulled into the
 # environment, never printed, and never routed through the git credential
