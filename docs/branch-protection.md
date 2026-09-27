@@ -24,12 +24,13 @@ The rule was re-applied while a window was open and it bound: a pull request wit
 `mergeStateStatus: BLOCKED`. Minutes after `scripts/ci-window.sh close`, the same pull request read
 `UNSTABLE` with the same red check still present — nothing was required any more, so nothing was
 blocked. Re-opening a window afterwards, the endpoint answered `404 Branch not protected`: the rule
-had not been waiting to come back, it was gone, and it has to be applied again by hand.
+had not been waiting to come back, it was gone, and it had to be applied again by hand — which is the
+measurement that made `ci-window.sh open` apply it, rather than a claim that it still has to be.
 
 | While the repository is | What guards `main` |
 | --- | --- |
-| public — a window is open **and** the rule has been re-applied | The rule below, enforced by GitHub, including against the administrator |
-| private — every ordinary hour, and most of a window's too | The author's discipline, read by hand. Nothing on the platform |
+| public — a window is open | The rule below, applied by `ci-window.sh open` before it dispatches anything, and enforced by GitHub, including against the administrator |
+| private — every ordinary hour, and every hour after a close | The author's discipline, read by hand. Nothing on the platform |
 
 **What the hand-read guard costs, stated plainly.** While the window is closed a red check merges
 without complaint, because nothing is required. The one merge made that way read every check run on
@@ -41,14 +42,28 @@ are what that discipline looks like in practice without a platform behind it. An
 the window is closed should say so in the pull request rather than let the merge imply a gate that was
 not there.
 
-**Putting the rule back is a by-hand `PUT`** to
-`/repos/maragung/EclipseSSH/branches/main/protection` with the settings in the table below, run while
-the repository is public. Nothing in `scripts/` does it today: `ci-window.sh` opens and closes the
-window and never touches protection, and the closer's job cannot — it runs under the default token,
-which has no `administration` permission to grant at any level. Moving this `PUT` into
-`ci-window.sh open`, so a window arrives with the rule already back, is the open item; until it
-exists, a window opened and closed without a hand-applied `PUT` leaves `main` unguarded for its whole
-duration *and* every hour after it.
+**Putting the rule back is `ci-window.sh open`'s job as of 2026-09-27.** It is a `PUT` to
+`/repos/maragung/EclipseSSH/branches/main/protection` with the settings in the table below, made the
+moment the repository is public and *before* the workflow is dispatched, so the runs a window exists
+for are gated from their first check. `ci-window.sh protect` re-applies it on its own, and
+`ci-window.sh status` reports whether it is in force. The closer's job still cannot do this, and that
+part is unchanged: it runs under the default token, which has no `administration` permission to grant
+at any level.
+
+The apply is verified by reading the rule back, because a `PUT` returning `200` says the request was
+accepted and not that the stored rule is the one that was sent — the same standard this page holds the
+read-back to above. A failure there does **not** close the window: it warns, in a line that says
+`UNGUARDED`, because the flip is one-way and already taken and the run is worth having either way. So
+an unguarded window is now *reported* rather than merely possible — which matters, because the two are
+otherwise indistinguishable until somebody reads `mergeStateStatus` on a pull request.
+
+The list of required checks is written down twice: in the table below, and again as
+`PROTECTION_CONTEXTS` in `scripts/ci-window.sh`, which cannot read the markdown because it is a shell
+script that talks to the API and may be run from outside a checkout. A second copy is fine; a second
+copy that drifts is not, because a required context that no workflow reports never reports at all, and
+`main` would stop being *mergeable* rather than stop being *guarded*. `scripts/check-doc-figures.sh`
+therefore compares the two lists and fails on any difference — so the table below remains the place the
+list is written down, and the script's copy is only ever a copy.
 
 Settings are at `github.com/maragung/EclipseSSH/settings/branches`.
 
