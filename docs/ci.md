@@ -306,7 +306,9 @@ rule itself, immediately after the flip and *before* it dispatches: the merge a 
 happens inside the window, so a window that arrives unguarded is the one case where the merge is the
 thing at risk. The rule it applies is the one on [Branch protection](branch-protection.md), and it is
 verified by reading it back rather than trusted to the `PUT`'s status code — a failure warns and leaves
-the window open, because the flip is one-way and already taken. `ci-window.sh protect` re-applies it
+the window open, because the flip is one-way and already taken. That apply retries, because the attempt
+it makes is the one taken seconds after the flip and the endpoint can still be answering with the
+paid-feature 403 until the change has propagated. `ci-window.sh protect` re-applies it
 alone, and `ci-window.sh status` reports it, saying `UNGUARDED` plainly when it is not in force: an
 unguarded window and a guarded one look identical until a merge is attempted.
 

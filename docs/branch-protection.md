@@ -57,6 +57,15 @@ read-back to above. A failure there does **not** close the window: it warns, in 
 an unguarded window is now *reported* rather than merely possible — which matters, because the two are
 otherwise indistinguishable until somebody reads `mergeStateStatus` on a pull request.
 
+**It retries before it warns, as of 2026-09-27.** The attempt `open` makes is the one that lands in the
+seconds after the flip, and that is precisely when the endpoint can still be answering with the
+paid-feature 403: on the first window to use this path the `PUT` was refused and the identical call
+succeeded a few minutes later. Whether that is the visibility change propagating or a transient error is
+not something this page can tell you — the two look the same from here — and the remedy is the same for
+both, so the apply and the read-back are retried together up to five times before the `UNGUARDED`
+warning is printed. Only the last failure is reported, so a transient one cannot be mistaken for the
+reason the guard is missing.
+
 The list of required checks is written down twice: in the table below, and again as
 `PROTECTION_CONTEXTS` in `scripts/ci-window.sh`, which cannot read the markdown because it is a shell
 script that talks to the API and may be run from outside a checkout. A second copy is fine; a second

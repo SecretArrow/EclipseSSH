@@ -75,6 +75,18 @@ PROTECTION_CONTEXTS=(
   "connectedAndroidTest"
 )
 
+# How many times to try the rule before believing it will not take, and how long
+# to wait between tries. The first attempt is not a fair test of the token: the
+# endpoint answers with the paid-feature 403 until the visibility PATCH has
+# propagated, so the attempt `open` makes seconds after the flip can be refused
+# by a repository that is, a minute later, perfectly able to carry the rule.
+# Measured 2026-09-27 - the PUT inside `open` failed there and the identical call
+# succeeded by hand afterwards - which is why one attempt cannot distinguish
+# "this token may not" from "not yet". `check-doc-figures.sh` reads the array
+# above and stops at the `)`, so anything added here must stay below it.
+PROTECTION_ATTEMPTS=5
+PROTECTION_RETRY_SECONDS=5
+
 die() { echo "ci-window: $*" >&2; exit 1; }
 note() { echo "ci-window: $*"; }
 
@@ -160,12 +172,14 @@ json_string_array() {
 # request was accepted, not that the stored rule is the one that was sent. The
 # two sides are compared as sorted sets, because the API is not obliged to hand
 # the contexts back in the order they were sent.
+#
+# It retries, up to PROTECTION_ATTEMPTS times, because the first attempt is the
+# one made in the seconds after the flip and that is exactly when the endpoint
+# can still be answering with the paid-feature 403. See the constants above.
 apply_protection() {
-  local want readback err
+  local want body attempt put_err readback last
   want="$(printf '%s\n' "${PROTECTION_CONTEXTS[@]}" | LC_ALL=C sort | tr '\n' '|')"
-
-  err="$({
-    cat <<EOF
+  body="$(cat <<EOF
 {
   "required_status_checks": {
     "strict": true,
@@ -183,22 +197,36 @@ apply_protection() {
   "allow_deletions": false
 }
 EOF
-  } | api -X PUT "repos/$REPO/branches/main/protection" --input - 2>&1 >/dev/null)" || {
-    note "could not apply the rule to $REPO/branches/main: ${err:-the API gave no detail}"
-    note "administrative access to the repository is needed for this; the default token does not have it"
-    return 1
-  }
+)"
 
-  readback="$(api "repos/$REPO/branches/main/protection" \
-    --jq '"\(.enforce_admins.enabled)|\(.required_status_checks.contexts | sort | map(. + "|") | add)"' \
-    2>/dev/null)" || readback=""
-  if [ "$readback" != "true|$want" ]; then
-    note "the rule was accepted but the read-back does not match it"
-    note "  asked for: true|$want"
-    note "  read back: ${readback:-(could not read it back at all)}"
-    return 1
-  fi
-  return 0
+  # The whole pair - apply, then read back - is what is retried, not just the
+  # PUT, because both halves can lose the same race: a rule that was stored can
+  # still read back short for a moment. Only the last failure is reported, so a
+  # transient one cannot be mistaken for the reason the guard is missing.
+  attempt=0
+  while : ; do
+    attempt=$((attempt + 1))
+    if put_err="$(printf '%s' "$body" | api -X PUT "repos/$REPO/branches/main/protection" --input - 2>&1 >/dev/null)"; then
+      readback="$(api "repos/$REPO/branches/main/protection" \
+        --jq '"\(.enforce_admins.enabled)|\(.required_status_checks.contexts | sort | map(. + "|") | add)"' \
+        2>/dev/null)" || readback=""
+      [ "$readback" = "true|$want" ] && return 0
+      last="the rule was accepted but the read-back does not match it
+  asked for: true|$want
+  read back: ${readback:-(could not read it back at all)}"
+    else
+      last="the API refused it: ${put_err:-no detail given}"
+    fi
+
+    if [ "$attempt" -ge "$PROTECTION_ATTEMPTS" ]; then
+      note "could not apply the rule to $REPO/branches/main after $attempt attempts"
+      note "$last"
+      note "administrative access to the repository is needed for this; the default token does not have it"
+      return 1
+    fi
+    note "attempt $attempt to apply the rule did not take; retrying in ${PROTECTION_RETRY_SECONDS}s"
+    sleep "$PROTECTION_RETRY_SECONDS"
+  done
 }
 
 # One line describing the guard, for `status`. Empty when the rule cannot be read,
