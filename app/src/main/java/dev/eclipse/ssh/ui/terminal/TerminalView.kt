@@ -328,6 +328,9 @@ fun TerminalView(
     onZoom: (scale: Float, ended: Boolean) -> Unit = { _, _ -> },
 ) {
     val measurer = rememberTextMeasurer()
+    // How wide each distinct cluster draws, kept across frames. Keyed on the style and the metrics
+    // because both change which face draws a glyph and therefore what it measures.
+    val clusters = remember(style, metrics) { ClusterWidthCache() }
     val density = LocalDensity.current
     // Whether the cursor is in its "on" half-period. A [mutableStateOf] read from inside the draw
     // lambda rather than from the composable body, so a blink invalidates the draw phase only - the
@@ -552,6 +555,7 @@ fun TerminalView(
                             foreground = foreground,
                             background = background,
                             metrics = metrics,
+                            clusters = clusters,
                             // The rows there is room for, not the rows the pty was told about: a tall
                             // grid is a taller pty, and a row below the bottom edge is a row of cells
                             // painted where nobody can see them.
@@ -597,6 +601,50 @@ private fun Offset.toCell(
 }
 
 /**
+ * How wide each distinct cluster draws, remembered across the frames of a session.
+ *
+ * Keyed on the cluster **and** the two attributes that decide which face draws it, because a mark the
+ * regular weight carries at zero advance can be missing from the bold one - the same characters then
+ * genuinely measure differently by weight, and one entry serving both would answer for the wrong face
+ * half the time.
+ *
+ * The cache is what makes asking the question affordable. A screen of ordinary output asks about the
+ * same few dozen clusters on every frame and measures each of them once, and since a cluster of the
+ * bundled face measures exactly one cell, the overwhelmingly common answer is the one that leaves the
+ * run whole - so the measurement costs a hash lookup and buys nothing but the certainty that the run
+ * may be drawn as one string.
+ */
+private class ClusterWidthCache {
+    private val widths = HashMap<String, Float>()
+
+    /** Whether this cell's cluster draws from a face that advances it by exactly one cell. */
+    fun spendsOneCell(cell: TerminalCell, textStyle: TextStyle, measurer: TextMeasurer, cellWidth: Float): Boolean {
+        if (clusterIsCertainlyOneCell(cell.value, cell.combining)) return true
+        val cluster = cell.value + cell.combining
+        // A blank cell has no ink to misplace, and a space is the one glyph every face carries.
+        if (cluster.isBlank()) return true
+        val key = buildString(cluster.length + 2) {
+            append(if (cell.style.bold) 'b' else '-')
+            append(if (cell.style.italic) 'i' else '-')
+            append(cluster)
+        }
+        val width = widths.getOrPut(key) {
+            // Bounded, because a screen of text nobody types twice would otherwise grow this for as
+            // long as the session lives. Emptying it costs one measurement per cluster to refill.
+            if (widths.size >= MAX_CACHED_CLUSTERS) widths.clear()
+            // Measured as a repeat for the same reason the cell itself is: one measurement rounds to a
+            // whole pixel, which at a phone's font size is a fifth of the difference being looked for.
+            val measured = measurer.measure(AnnotatedString(cluster.repeat(CLUSTER_MEASURE_REPEAT)), textStyle)
+            measured.size.width.toFloat() / CLUSTER_MEASURE_REPEAT
+        }
+        return clusterFitsOneCell(width, cellWidth)
+    }
+}
+
+/** Distinct clusters remembered before the cache is emptied and refilled. */
+private const val MAX_CACHED_CLUSTERS = 512
+
+/**
  * Paints one frame: backgrounds, then glyph runs, then the selection tint, then the cursor.
  *
  * Runs, not cells. Consecutive cells that share a style are measured and drawn as one string, so a
@@ -615,6 +663,7 @@ private fun DrawScope.drawFrame(
     foreground: Color,
     background: Color,
     metrics: TerminalCellMetrics,
+    clusters: ClusterWidthCache,
     maxRows: Int,
     selection: TerminalSelection?,
     selectionColour: Color,
@@ -640,8 +689,28 @@ private fun DrawScope.drawFrame(
         var column = visual.from
         while (column < lastColumn) {
             val cell = line[column]
-            var end = column + 1
-            while (end < lastColumn && line[end].style == cell.style) end++
+            val resolved = cell.style.resolve(foreground, background)
+            val glyphStyle = style.merge(
+                TextStyle(
+                    color = resolved.foreground,
+                    fontWeight = if (cell.style.bold) FontWeight.Bold else null,
+                    fontStyle = if (cell.style.italic) FontStyle.Italic else null,
+                    textDecoration = decorationFor(cell),
+                ),
+            )
+            // A cluster the bundled face does not carry is drawn from a fallback face, at that face's
+            // own advance - which is not the cell's. Drawn as part of a run, it displaces every glyph
+            // after it by the difference, so the text slides along the row while the cursor stays where
+            // the grid puts it: the cursor is then not where it looks like it is. Ending the run at such
+            // a cluster puts it, and everything after it, back on its own cell. A cluster that measures
+            // one cell - which is every character of the bundled face - leaves the run whole, so a line
+            // of ordinary output is still the single draw call it was.
+            val end = glyphRunEnd(
+                from = column,
+                lastColumn = lastColumn,
+                sameStyle = { line[it].style == cell.style },
+                fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
+            )
             // A cell's ink is its base plus whatever zero-width characters were put on it, so a run is
             // built from the clusters and not from the bases. Appending the marks here is what lets the
             // font do the joining: the bundled face carries the combining marks at zero advance, so a
@@ -658,23 +727,12 @@ private fun DrawScope.drawFrame(
             // Relative to the row, not to the line: a wrapped continuation is drawn from the left margin.
             val left = (column - visual.from) * cellWidth
             val runWidth = (end - column) * cellWidth
-            val resolved = cell.style.resolve(foreground, background)
             if (resolved.background != null) {
                 drawRect(resolved.background, topLeft = Offset(left, top), size = Size(runWidth, cellHeight))
             }
             if (text.isNotBlank()) {
-                val layout = measurer.measure(
-                    AnnotatedString(text),
-                    style.merge(
-                        TextStyle(
-                            color = resolved.foreground,
-                            fontWeight = if (cell.style.bold) FontWeight.Bold else null,
-                            fontStyle = if (cell.style.italic) FontStyle.Italic else null,
-                            textDecoration = decorationFor(cell),
-                        ),
-                    ),
-                )
-                drawText(layout, topLeft = Offset(left, top))
+                val glyphs = measurer.measure(AnnotatedString(text), glyphStyle)
+                drawText(glyphs, topLeft = Offset(left, top))
             }
             column = end
         }
