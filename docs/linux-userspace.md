@@ -555,7 +555,9 @@ press. It clears apt's lists only when the failure in front of it named them.
 
 The ladder refuses a failure a rebuild cannot fix, and hands it back unchanged rather than rewriting
 a working base system over it: no network, no DNS, an archive that no longer matches its pin, a
-mirror that refuses or serves an unsigned index, a step that timed out, a disk with nothing left
+mirror that refuses or serves an unsigned index, a base system that could not be downloaded at all —
+a rebuild is made of exactly those bytes, so spending one is spending it to reach the same failure —
+a step that timed out, a disk with nothing left
 to free, a clock that disagrees with the archive's own timestamps, a program killed by a signal (137
 is the low-memory killer taking the largest process on the phone — no rung creates memory), the app's
 own proot binary or loader missing from its installation, and every terminal the app can hold already
