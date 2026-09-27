@@ -244,11 +244,21 @@ class UbuntuDistributionManager(
      * docs). A probe built without an installer — a test that constructs this class alone — reports
      * both as healthy, which is what "not examined" has to mean for a report whose other fields are
      * all measured.
+     *
+     * @param probeNetwork when false the name-resolution command is not run at all, and
+     *   [HealthReport.networkUp] reads as passing by the same convention the installer's absence
+     *   above uses. The ladder asks for this: it can be running because the network is down, and a
+     *   repair that reached for the network before it had looked at the rootfs is the mistake this
+     *   whole layer is arranged to avoid.
      */
-    suspend fun healthProbe(): HealthReport {
+    suspend fun healthProbe(probeNetwork: Boolean = true): HealthReport {
         val shell = runSessionCommand("echo $PROBE_MARKER", PROBE_TIMEOUT_MS)
         val whoami = runSessionCommand("whoami", PROBE_TIMEOUT_MS)
-        val network = runSessionCommand("getent hosts $networkHost", NETWORK_TIMEOUT_MS)
+        val network = if (probeNetwork) {
+            runSessionCommand("getent hosts $networkHost", NETWORK_TIMEOUT_MS)
+        } else {
+            null
+        }
         val apt = runSessionCommand("apt-get check", APT_TIMEOUT_MS)
         // One more command, and the one that answers the failure this probe could not name before:
         // `whoami` proves the session is fake root, but says nothing about the PATH the login shell
@@ -278,7 +288,7 @@ class UbuntuDistributionManager(
             shellWorks = shell != null && shell.exitCode == 0 && shell.outputText().contains(PROBE_MARKER),
             account = account,
             accountCorrect = account == ROOT_ACCOUNT,
-            networkUp = network?.exitCode == 0,
+            networkUp = if (probeNetwork) network?.exitCode == 0 else true,
             aptUsable = apt?.exitCode == 0,
             loginUid = marked(PROBE_UID_PREFIX)?.toIntOrNull(),
             loginPath = marked(PROBE_PATH_PREFIX),
@@ -2580,7 +2590,24 @@ data class HealthReport(
      * command ends in it — and gating on it made this verdict unreachable for a healthy install.
      */
     val healthy: Boolean
-        get() = shellWorks && accountCorrect && networkUp && aptUsable && missingPrograms.isEmpty() &&
+        get() = sound && networkUp
+
+    /**
+     * Everything [healthy] asks for except the network: the userspace can do what it exists for,
+     * whatever the connection is doing.
+     *
+     * The ladder needs this verdict and not [healthy] at the point where it asks whether a local
+     * rung has finished the job. A repair is often running *because* the network is down, and no
+     * local rung can fix a resolver — so a check that failed on DNS would send the ladder deeper
+     * for a reason not one of its rungs addresses, which is the shape of every expensive repair
+     * this ladder has ever got wrong. The install's own final gate keeps [healthy], because "usable"
+     * there includes being able to reach the archive the install just used.
+     *
+     * Split rather than redefined: [healthy] is read by `refreshHealth` and `start()` as well, and
+     * moving its line would move theirs.
+     */
+    val sound: Boolean
+        get() = shellWorks && accountCorrect && aptUsable && missingPrograms.isEmpty() &&
             unusableTempDirs.isEmpty() && unusablePackageLocks.isEmpty()
 
     /**
