@@ -250,6 +250,20 @@ repository is public *and* carries a deadline that has passed. A repository some
 hand has no deadline, and the watchdog leaves it alone — that is a decision, and the script does not
 overrule decisions.
 
+**The watchdog's log must not be able to stop the watchdog.** The backstop failed once — on 2026-09-26
+the repository stayed public three hours and thirteen minutes past its deadline and was closed by hand —
+and the cause was the log line rather than the logic. The entry appended to a file on `/tmp`, a 3.9 GB
+tmpfs that was full at the time; cron's shell applies that redirection before it runs the command, so
+the file was created (an empty file needs no blocks), and the script then died at its first log write,
+under `set -e`, one line before the flip it exists to perform. That also explains the evidence the
+failure left: a log of 0 bytes, which is the file the redirect had just made. The entry now redirects to
+`/dev/null`, which cannot fail to open, and the script writes what it has to report to
+`${XDG_STATE_HOME:-$HOME/.local/state}/ci-window-watchdog.log` itself, with every write in `say` and
+`act` guarded so that a log it cannot write cannot take the run with it. Running `--install-cron` again
+is the migration — it replaces an entry in the earlier form rather than adding a second one beside it.
+`AUDIT-REPORT.md` §74 has the measurements, including the one that corrects the cause first guessed at
+there: the redirect was not what stopped it, because on a full filesystem the redirect opens.
+
 **The closer's guard reads the trigger event, not the repository.** The job is conditioned on
 `github.event.repository.private == false`, and that is the visibility recorded in the event payload
 when the run was created — not a live read at job time. Two consequences, both observed. A run
