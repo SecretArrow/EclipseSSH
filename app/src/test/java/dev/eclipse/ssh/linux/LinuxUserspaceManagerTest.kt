@@ -643,7 +643,11 @@ class LinuxUserspaceManagerTest {
         val rootfsOwned = listOf(
             UserspaceFailure.ProotLaunchFailed(127, ""),
             UserspaceFailure.PackageDbBroken(),
-            UserspaceFailure.PackageLocksHeld(holderPid = 4321, locks = listOf("/var/lib/dpkg/lock-frontend")),
+            UserspaceFailure.PackageLocksHeld(
+                holderPid = 4321,
+                locks = listOf("/var/lib/dpkg/lock-frontend"),
+                openFailed = false,
+            ),
             UserspaceFailure.PackageDatabaseUnreadable(),
             UserspaceFailure.IndexHashMismatch("http://m.example/ubuntu"),
             UserspaceFailure.GuestTmpUnwritable("/tmp"),

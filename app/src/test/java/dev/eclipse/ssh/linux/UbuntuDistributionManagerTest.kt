@@ -1581,13 +1581,13 @@ class UbuntuDistributionManagerTest {
         File(rootfs, "run").mkdirs()
         assertThat(harness.distribution.healthProbe().healthy).isTrue()
 
-        // A `touch` where the directory was, and the marker a killed apt leaves behind: nothing
-        // holds it — the kernel dropped the lock with the process — but the file is still there, and
-        // every dpkg and apt command refuses in about a second because of it.
+        // A `touch` where the directory was, and a *directory* where a lock file belongs. The second
+        // is the shape of the fault the lock field is for: apt never gets as far as asking for the
+        // lock, because the path it would ask about cannot be opened at all.
         File(rootfs, "tmp").deleteRecursively()
         File(rootfs, "tmp").writeText("not a directory\n")
         File(rootfs, "var/lib/dpkg").mkdirs()
-        File(rootfs, "var/lib/dpkg/lock-frontend").writeText("")
+        File(rootfs, "var/lib/dpkg/lock-frontend").mkdirs()
 
         val report = harness.distribution.healthProbe()
 
@@ -1598,7 +1598,7 @@ class UbuntuDistributionManagerTest {
         assertThat(report.shellWorks).isTrue()
         assertThat(report.aptUsable).isTrue()
         assertThat(report.unusableTempDirs).containsExactly("tmp")
-        assertThat(report.staleLocks).containsExactly("var/lib/dpkg/lock-frontend")
+        assertThat(report.unusablePackageLocks).containsExactly("var/lib/dpkg/lock-frontend")
         assertThat(report.healthy).isFalse()
         // The sentence names the guest's own path — `/tmp`, not the archive's relative `tmp` — and the
         // lock's sentence says what to do about it, because it is the one Repair clears by itself.
@@ -1634,13 +1634,27 @@ class UbuntuDistributionManagerTest {
         val rootfs = harness.runtime.rootfsDir
         File(rootfs, "tmp").mkdirs()
         File(rootfs, "run").mkdirs()
+        // And the four lock files a successful package run leaves on disk — empty, held by nobody,
+        // which is what apt and dpkg leave after they exit, since neither unlinks its own lock file.
+        // This is the state a userspace is in immediately after this app's own setup pipeline has
+        // run, so a probe that reads it as damage reports every healthy install as broken — which is
+        // what happened, and what the sweep's own doc records.
+        for (name in listOf(
+            "var/lib/dpkg/lock",
+            "var/lib/dpkg/lock-frontend",
+            "var/lib/apt/lists/lock",
+            "var/cache/apt/archives/lock",
+        )) {
+            File(rootfs, name).also { it.parentFile?.mkdirs() }.writeText("")
+        }
 
-        // The premise, on the very userspace this test then damages: real temporary directories are
-        // healthy, and both fields behind that verdict are empty rather than merely ungating.
+        // The premise, on the very userspace this test then damages: real temporary directories and
+        // the lock files a package run leaves behind are healthy, and both fields behind that verdict
+        // are empty rather than merely ungating.
         val healthy = harness.distribution.healthProbe()
         assertThat(healthy.healthy).isTrue()
         assertThat(healthy.unusableTempDirs).isEmpty()
-        assertThat(healthy.staleLocks).isEmpty()
+        assertThat(healthy.unusablePackageLocks).isEmpty()
         assertThat(healthy.describe()).isEqualTo("healthy")
 
         // A tool that wrote a `touch` where the directory was. To the probe that is the same answer
@@ -1654,14 +1668,14 @@ class UbuntuDistributionManagerTest {
         // The other field is untouched, so the sentence is this fault's alone — and it names the
         // guest's `/tmp`, not the archive's relative `tmp`, because the reader is looking at their own
         // terminal where `/tmp` is the path.
-        assertThat(report.staleLocks).isEmpty()
+        assertThat(report.unusablePackageLocks).isEmpty()
         assertThat(report.healthy).isFalse()
         assertThat(report.describe())
             .isEqualTo("Ubuntu's temporary directories cannot be written to (/tmp)")
     }
 
     @Test
-    fun `a stale package lock is reported unhealthy, and the probe leaves the file on disk`() = runTest {
+    fun `an unusable package lock is reported unhealthy, and the probe leaves it on disk`() = runTest {
         val fixture = TestTarballs.writeRootfsFixture(
             Files.createTempDirectory("linux-fixture").toFile().resolve("rootfs.tar.gz"),
         )
@@ -1680,30 +1694,33 @@ class UbuntuDistributionManagerTest {
         val rootfs = harness.runtime.rootfsDir
         File(rootfs, "tmp").mkdirs()
         File(rootfs, "run").mkdirs()
-        // The file a killed apt leaves behind: nothing holds it — the kernel dropped the lock with the
-        // process — and the bytes written here are what proves the probe did not rewrite or clear it.
+        // A directory where the lock file belongs, with something inside it: apt refuses to open the
+        // path — "Could not open lock file ... (21: Is a directory)" — before it asks anyone for a
+        // lock, and the marker is what proves the probe did not clear what it was asked about. It is
+        // also the file that keeps the sweep honest: a *non-empty* directory is one `File.delete`
+        // refuses, so the rung reports it rather than deleting what is inside.
         val lock = File(rootfs, "var/lib/dpkg/lock-frontend")
-        lock.parentFile?.mkdirs()
-        lock.writeText("pid 4151 held this\n")
+        lock.mkdirs()
+        File(lock, "not-a-lock").writeText("pid 4151 held this\n")
 
         val report = harness.distribution.healthProbe()
 
-        assertThat(report.staleLocks).containsExactly("var/lib/dpkg/lock-frontend")
+        assertThat(report.unusablePackageLocks).containsExactly("var/lib/dpkg/lock-frontend")
         assertThat(report.unusableTempDirs).isEmpty()
         assertThat(report.healthy).isFalse()
-        // The sentence names the lock in the guest's own relative spelling, as apt prints it, and says
-        // what the way out is — this is the one of the two faults Repair clears by itself.
+        // The sentence names the lock path in the guest's own relative spelling, as apt prints it, and
+        // says what the way out is — this is the one of the two faults Repair clears by itself.
         assertThat(report.describe())
             .isEqualTo(
-                "an interrupted package operation left its lock behind (var/lib/dpkg/lock-frontend)" +
+                "the package manager's lock cannot be opened (var/lib/dpkg/lock-frontend)" +
                     " - Repair clears it",
             )
         // Reported, never repaired: the probe is the question and the local rung is the answer, which
-        // is the whole reason the two are separate code paths. A file that had been swept would be one
+        // is the whole reason the two are separate code paths. A path that had been swept would be one
         // fewer thing for Repair to do, and a health check that did the repairing could not be run at
         // any moment without changing what it was run on.
-        assertThat(lock.isFile).isTrue()
-        assertThat(lock.readText()).isEqualTo("pid 4151 held this\n")
+        assertThat(lock.isDirectory).isTrue()
+        assertThat(File(lock, "not-a-lock").readText()).isEqualTo("pid 4151 held this\n")
     }
 
     @Test

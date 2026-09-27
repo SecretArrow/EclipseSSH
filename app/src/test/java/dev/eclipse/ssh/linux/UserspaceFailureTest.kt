@@ -71,10 +71,33 @@ class UserspaceFailureTest {
 
         assertThat(failure).isInstanceOf(UserspaceFailure.PackageLocksHeld::class.java)
         assertThat((failure as UserspaceFailure.PackageLocksHeld).holderPid).isEqualTo(4321)
+        assertThat(failure.openFailed).isFalse()
         assertThat(failure.locks).contains("/var/lib/dpkg/lock-frontend")
         // Trailing punctuation is not part of the path a user would type.
         assertThat(failure.locks).doesNotContain("/var/lib/dpkg/lock-frontend.")
         assertThat(failure.message).contains("process 4321")
+        // A holder is a userspace that is busy, not one that is broken: the way out is to wait.
+        assertThat(failure.message).contains("wait for it to finish")
+    }
+
+    @Test
+    fun `a lock apt could not open is told apart from one somebody is holding`() {
+        // The other arm, and the reason the two are split: nothing holds this lock — apt never got as
+        // far as asking for it. The path is a directory, so the refusal names no process at all, and
+        // telling the user to wait for one would send them to wait for something that does not exist.
+        val failure = UserspaceFailure.fromAptRun(
+            "http://x.example/ubuntu",
+            100,
+            "E: Could not open lock file /var/lib/dpkg/lock - open (21: Is a directory)\n" +
+                "E: Unable to lock the administration directory (/var/lib/dpkg/), are you root?\n",
+        )
+
+        assertThat(failure).isInstanceOf(UserspaceFailure.PackageLocksHeld::class.java)
+        assertThat((failure as UserspaceFailure.PackageLocksHeld).openFailed).isTrue()
+        assertThat(failure.holderPid).isNull()
+        assertThat(failure.message).contains("cannot be opened")
+        assertThat(failure.message).contains("Repair clears it")
+        assertThat(failure.message).doesNotContain("wait for it to finish")
     }
 
     @Test

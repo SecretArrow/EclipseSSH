@@ -8,16 +8,19 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 /**
- * The two repairs that need nothing but the rootfs, tested as the primitives they are: the
- * package-manager locks an interrupted run left behind, the apt state that is regenerable and that a
- * repair now gives up only when the evidence names it, the guest directories nothing else puts back,
- * and the package database that no other rung may touch.
+ * The repairs that need nothing but the rootfs, tested as the primitives they are: the package lock
+ * paths apt cannot open, the apt state that is regenerable and that a repair now gives up only when
+ * the evidence names it, the guest directories nothing else puts back, and the package database that
+ * no other rung may touch.
  *
- * These are the four failures the ladder used to be blind to. A killed apt leaves a lock *file* the
- * kernel has already released, and every dpkg and apt call after it refuses in a second — so every
- * rung failed identically and the deepest one rebuilt a userspace that was never broken. The
- * database is the other direction entirely: `var/lib/dpkg` is a preserved member, so no rung may
- * write it, and every rung needs it — the deadlock the last test below is about.
+ * These are the failures the ladder used to be blind to. A *directory* standing where a lock file
+ * belongs stops every dpkg and apt call before any lock is asked for. The lock *files* a successful
+ * run leaves behind are the opposite case, and the tests below hold both ends of it: neither dpkg nor
+ * apt unlinks its own lock file, so their presence is the state every package command ends in — read
+ * as damage it made a healthy userspace fail its own health check and left Repair with nothing it
+ * could do, which is the report the first test is named for. The database is the other direction
+ * entirely: `var/lib/dpkg` is a preserved member, so no rung may write it, and every rung needs it —
+ * the deadlock the last test below is about.
  *
  * Every test installs a real rootfs from a real archive first, for the reason the other repair suite
  * does: the state each repair is defined against is an installed userspace, and the archive's own
@@ -67,25 +70,51 @@ class RootfsLocalRepairTest {
     // ------------------------------------------------------------------ the locks
 
     @Test
-    fun `a lock nothing holds is cleared, and one something holds is left where it is`() = runBlocking {
+    fun `the lock files a package run leaves behind are neither reported nor removed`() = runBlocking {
         val installed = installFixture()
         val rootfs = installed.installer.rootfsDir
-        val stale = listOf("var/lib/dpkg/lock", "var/lib/apt/lists/lock")
-        val live = "var/lib/dpkg/lock-frontend"
-        for (name in stale + live) writeFile(File(rootfs, name), "")
+        // The four files dpkg and apt leave on disk, empty and held by nobody — which is what they
+        // leave after they *exit*, not only after they are killed: neither tool unlinks its own lock
+        // file, so this is the state a userspace is in immediately after this app's own setup
+        // pipeline has run. Reading it as damage is what made a just-installed userspace fail its own
+        // health check, and what made Repair unable to clear it — every rung that runs the pipeline
+        // recreated the files before the probe looked again.
+        val leftBehind = listOf(
+            "var/lib/dpkg/lock",
+            "var/lib/dpkg/lock-frontend",
+            "var/lib/apt/lists/lock",
+            "var/cache/apt/archives/lock",
+        )
+        for (name in leftBehind) writeFile(File(rootfs, name), "")
 
-        // A lock this process really holds — the one case the sweep must never delete. A FileChannel
-        // takes the same POSIX record lock dpkg takes, so this is the kernel's own answer rather than
-        // a mock of it, and the JVM's OverlappingFileLockException is what a second attempt in the
-        // same process gets.
+        assertThat(installed.installer.unusablePackageLocks()).isEmpty()
+
+        val sweep = installed.installer.clearUnusablePackageLocks()
+
+        assertThat(sweep.removed).isEmpty()
+        assertThat(sweep.stillThere).isEmpty()
+        for (name in leftBehind) assertThat(File(rootfs, name).isFile).isTrue()
+    }
+
+    @Test
+    fun `a lock something is holding is left exactly where it is`() = runBlocking {
+        val installed = installFixture()
+        val rootfs = installed.installer.rootfsDir
+        val live = "var/lib/dpkg/lock-frontend"
+        writeFile(File(rootfs, live), "")
+
+        // A lock this process really holds — the case the sweep must never delete, and it cannot:
+        // under the predicate it uses now, a file that can be *held* is a file the probe can open,
+        // so it is never in the set the sweep works from. A FileChannel takes the same POSIX record
+        // lock dpkg takes, so this is the kernel's own answer rather than a mock of it.
         val holder = RandomAccessFile(File(rootfs, live), "rw")
         val lock = holder.channel.lock()
         try {
-            val sweep = installed.installer.clearStalePackageLocks()
+            assertThat(installed.installer.unusablePackageLocks()).isEmpty()
 
-            assertThat(sweep.removed).containsExactlyElementsIn(stale)
-            assertThat(sweep.held).containsExactly(live)
-            for (name in stale) assertThat(File(rootfs, name).exists()).isFalse()
+            val sweep = installed.installer.clearUnusablePackageLocks()
+
+            assertThat(sweep.removed).isEmpty()
             // Still there, still held: deleting a lock something is using would let two package tools
             // work on one database, which is the one thing in this feature that must never happen.
             assertThat(File(rootfs, live).isFile).isTrue()
@@ -96,16 +125,55 @@ class RootfsLocalRepairTest {
     }
 
     @Test
-    fun `the probe reports a stale lock and takes nothing`() = runBlocking {
+    fun `a directory where a lock file belongs is reported, and can be cleared`() = runBlocking {
         val installed = installFixture()
         val rootfs = installed.installer.rootfsDir
-        writeFile(File(rootfs, "var/lib/dpkg/lock-frontend"), "")
+        // The fault the lock field is for: not a lock file left behind, but a path apt cannot open
+        // at all. It refuses before it asks anyone for a lock — "Could not open lock file
+        // /var/lib/dpkg/lock - open (21: Is a directory)" — and no amount of waiting clears it, which
+        // is why the field gates and the local rung clears it.
+        File(rootfs, "var/lib/dpkg/lock").mkdirs()
 
-        assertThat(installed.installer.stalePackageLocks()).containsExactly("var/lib/dpkg/lock-frontend")
+        assertThat(installed.installer.unusablePackageLocks()).containsExactly("var/lib/dpkg/lock")
+
+        val sweep = installed.installer.clearUnusablePackageLocks()
+
+        assertThat(sweep.removed).containsExactly("var/lib/dpkg/lock")
+        assertThat(sweep.stillThere).isEmpty()
+        assertThat(File(rootfs, "var/lib/dpkg/lock").exists()).isFalse()
+    }
+
+    @Test
+    fun `a lock path that is a directory with something in it is reported and left alone`() = runBlocking {
+        val installed = installFixture()
+        val rootfs = installed.installer.rootfsDir
+        val path = File(rootfs, "var/lib/apt/lists/lock")
+        path.mkdirs()
+        writeFile(File(path, "someone-elses-file"), "not this feature's to delete\n")
+
+        assertThat(installed.installer.unusablePackageLocks()).containsExactly("var/lib/apt/lists/lock")
+
+        val sweep = installed.installer.clearUnusablePackageLocks()
+
+        // Reported rather than forced: `File.delete` refuses a directory that is not empty, and what
+        // is inside one is not this method's to decide about. The rung says so in the diagnostics
+        // ring and the user is told the lock could not be cleared instead of losing a file.
+        assertThat(sweep.removed).isEmpty()
+        assertThat(sweep.stillThere).containsExactly("var/lib/apt/lists/lock")
+        assertThat(File(path, "someone-elses-file").readText()).isEqualTo("not this feature's to delete\n")
+    }
+
+    @Test
+    fun `the probe reports an unusable lock and takes nothing`() = runBlocking {
+        val installed = installFixture()
+        val rootfs = installed.installer.rootfsDir
+        File(rootfs, "var/lib/dpkg/lock-frontend").mkdirs()
+
+        assertThat(installed.installer.unusablePackageLocks()).containsExactly("var/lib/dpkg/lock-frontend")
 
         // Reported, not removed: the probe is a question, and the rung is the answer. A health check
         // that repaired what it found could not be run at any moment, which is what makes it useful.
-        assertThat(File(rootfs, "var/lib/dpkg/lock-frontend").isFile).isTrue()
+        assertThat(File(rootfs, "var/lib/dpkg/lock-frontend").isDirectory).isTrue()
     }
 
     // ------------------------------------------------------------------ the guest directories
