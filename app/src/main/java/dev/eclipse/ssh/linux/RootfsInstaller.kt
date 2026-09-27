@@ -413,105 +413,128 @@ class RootfsInstaller(
     }
 
     /**
-     * Removes the package-manager locks an interrupted or killed run left behind, and answers which
+     * Removes the package-manager lock paths apt and dpkg cannot use as they stand, and answers which
      * it could remove and which it could not — the two halves the caller needs to tell a cleared
-     * problem from a live one.
+     * problem from one this rung could not touch.
      *
-     * A killed apt never deletes its own lock file: the file is not the lock (the lock is an fcntl
-     * record lock the kernel drops when the process dies), so what is left on disk is a *stale
-     * marker* that the next dpkg or apt refuses to work past — "Could not get lock ... is another
-     * process using it?" — in about a second, without contacting anything. Every step of every
-     * repair that goes through the package manager then fails identically, which is how one OOM kill
-     * during an install turns into a userspace that no rung of the ladder can touch.
+     * **The state this is not about, which it was about until now.** An earlier version of this
+     * method, and of the probe below it, treated a lock *file* that existed with nothing holding it
+     * as the mark an interrupted run leaves behind and deleted it. That predicate cannot be
+     * satisfied, and the reason is worth stating exactly, because it is the whole bug: apt and dpkg
+     * do **not** remove their lock files when they exit. The file is opened with `O_CREAT` and the
+     * lock is an fcntl record lock the kernel releases with the process, so a successful run leaves
+     * behind exactly what a killed one does — the same four files, empty, with nothing holding them.
+     * On this project's own build host all four are present and held by nobody (`fuser` names no
+     * process) between package runs; and `nm -D` shows both `/usr/bin/dpkg` and `libapt-pkg`
+     * importing `fcntl` and not `flock`, so the record lock this app tested was the same one they
+     * take, and the answer "nothing holds it" was always the truth rather than a near miss.
      *
-     * So the question is not "does a lock file exist" — one nearly always does after a killed run —
-     * but "is anything actually holding it", and that is asked of the kernel rather than inferred
-     * from a pid: [java.nio.channels.FileChannel.tryLock] takes the same POSIX record lock dpkg
-     * takes, so a lock it can take is a lock nothing holds. A lock it cannot take is left exactly
-     * where it is, and reported: deleting a live lock would let two package tools run at once over
-     * one database, and the rootfs under a running dpkg is the one thing in this feature that must
-     * never be touched.
+     * Two failures followed from that, and users reported both. A userspace that had *just* been
+     * installed failed its own health check, listing all four files, because the setup pipeline it
+     * had just run was itself what created them. And Repair could not clear it: the local rung did
+     * remove them, and then the setup rung below it ran apt again and recreated every one, so the
+     * probe failed identically at the end of every rung on the ladder and the user was told "an
+     * interrupted package operation left its lock behind" about a package operation that had
+     * finished. A predicate that the app's own next command makes false is not a repair target.
      *
-     * The invariant that makes this safe is the kernel's answer above, and it is worth stating
-     * precisely, because the tempting version of it is false. It is *not* that nothing else can be
-     * running: Repair does not close the user's terminals, and the install lock this holds serializes
-     * repairs and installs against each other rather than against a shell. What it is, instead, is
-     * that no process can be *waiting* on a lock this function unlinks — a waiter is the one thing
-     * that would make removal dangerous, because it would take the record lock on a file that no
-     * longer has a name, and two package tools would then work on one database. Neither apt nor dpkg
-     * can be that waiter: both take these locks with a non-blocking `F_SETLK` and *refuse* when they
-     * cannot have it ("Could not get lock ... is another process using it?"), which is why a package
-     * command's failure here arrives in about a second rather than after a wait. A shell genuinely
-     * running apt is therefore not a race to lose but a holder — and a lock something holds is never
-     * removed by this function, only reported.
+     * **The state this is about.** A lock *path* apt cannot open for reading and writing: a
+     * directory where the file belongs, a file whose mode denies the write, a link that resolves out
+     * of the userspace or to nothing. That refuses before any lock is asked for — `E: Could not open
+     * lock file /var/lib/dpkg/lock - open (21: Is a directory)` — no successful package run produces
+     * it, and removing the path is the only thing that clears it. The question is asked with the
+     * call apt itself makes ([lockIsOpenable]), so the answer is apt's own rather than an inference
+     * about what a file of that name ought to be.
      *
-     * @return the lock files removed, and the ones something still holds or that could not be
-     *   examined at all. A file that cannot be opened is not evidence of staleness, so it is reported
-     *   as held rather than deleted.
+     * Removal is safe for the reason the predicate is narrow: a path that cannot be opened for
+     * reading and writing cannot be *holding* an fcntl record lock either, because taking one needs
+     * an open descriptor with write access. Nothing a live package tool could be holding is deleted
+     * here, which is what the held list used to be for.
+     *
+     * @return the lock paths removed, and the ones that were still there afterwards — a directory
+     *   with something inside it, say, which [File.delete] refuses. Reported rather than forced:
+     *   what is in such a directory is not this method's to decide about.
      */
-    suspend fun clearStalePackageLocks(): PackageLockSweep = withContext(Dispatchers.IO) {
+    suspend fun clearUnusablePackageLocks(): PackageLockSweep = withContext(Dispatchers.IO) {
         val removed = mutableListOf<String>()
-        val held = mutableListOf<String>()
-        for (name in PACKAGE_LOCK_FILES) {
-            val lock = runCatching { resolveInside(rootfsDir, name) }.getOrNull() ?: continue
-            if (!lock.isFile) continue
-            when (lockIsFree(lock)) {
-                true -> if (lock.delete()) removed += name else held += name
-                false -> held += name
-                null -> held += name
-            }
+        val stillThere = mutableListOf<String>()
+        for (name in unusablePackageLocksNow()) {
+            val path = File(rootfsDir, name)
+            if (runCatching { path.delete() }.getOrDefault(false)) removed += name else stillThere += name
         }
-        if (removed.isNotEmpty() || held.isNotEmpty()) {
+        if (removed.isNotEmpty() || stillThere.isNotEmpty()) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.APT,
-                "package locks swept before the repair",
-                detail = "removed=[${removed.joinToString(", ")}] held=[${held.joinToString(", ")}]",
+                "package lock paths swept before the repair",
+                detail = "removed=[${removed.joinToString(", ")}] " +
+                    "couldNotRemove=[${stillThere.joinToString(", ")}]",
             )
         }
-        PackageLockSweep(removed = removed, held = held)
+        PackageLockSweep(removed = removed, stillThere = stillThere)
     }
 
     /**
-     * The package-manager locks that are present and that nothing holds — the ones [clearStalePackageLocks]
+     * The lock paths apt and dpkg cannot open as they stand — the ones [clearUnusablePackageLocks]
      * would remove, answered without removing anything.
      *
-     * For the health probe, which has to *report* rather than repair: the same proof ([lockIsFree]),
-     * the same list of files, and no write. A lock something really holds is deliberately not
-     * reported, because a package operation that is running is not a fault — the app cannot tell the
-     * user's own `apt` from its own, and a probe that called a working install broken would be worse
-     * than one that stayed quiet.
+     * For the health probe, which has to *report* rather than repair: the same question, the same
+     * list of paths, and no write. Two states are deliberately **not** here, and naming them is the
+     * point of the method. A lock file that exists with nothing holding it is not here, because it
+     * is what every apt run leaves behind, this app's own setup pipeline included — reporting it
+     * called a working userspace broken, and no repair could ever clear it; see the sweep above for
+     * the whole argument. A lock that something really *is* holding is not here either, for the
+     * older reason: a package operation that is running is not a fault, and this probe cannot tell
+     * the user's own `apt` from the app's own.
      */
-    suspend fun stalePackageLocks(): List<String> = withContext(Dispatchers.IO) {
-        PACKAGE_LOCK_FILES.filter { name ->
-            val lock = runCatching { resolveInside(rootfsDir, name) }.getOrNull() ?: return@filter false
-            lock.isFile && lockIsFree(lock) == true
+    suspend fun unusablePackageLocks(): List<String> = withContext(Dispatchers.IO) {
+        unusablePackageLocksNow()
+    }
+
+    /**
+     * The one question both halves above ask, in the rootfs' own terms.
+     *
+     * A path that will not resolve inside the userspace is reported rather than skipped, for the
+     * reason [unusableGuestTemp] reports the same shape: apt would open, and lock, a file that is
+     * not in this rootfs at all. A path that resolves to nothing is the one arm here that is
+     * cautious rather than proven — apt opens these files with `O_CREAT`, so a dangling link whose
+     * target directory exists would be created by the next package command and would have worked.
+     * Reporting it costs a deletion of the link and a line in the warnings; leaving it out would
+     * cost the case where the target's directory is gone, which is the same amount of evidence
+     * pointing the other way. Nothing in this app, or in apt, creates such a link.
+     */
+    private fun unusablePackageLocksNow(): List<String> = PACKAGE_LOCK_FILES.filter { name ->
+        val path = File(rootfsDir, name)
+        val resolved = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+        when {
+            // Out of the userspace: a link with somewhere else as its target.
+            resolved == null -> java.nio.file.Files.isSymbolicLink(path.toPath())
+            // The ordinary case, and the only one that is ever a fault in a file: it is there, and
+            // apt cannot open it.
+            resolved.isFile -> !lockIsOpenable(resolved)
+            // Nothing there is not a fault: apt and dpkg create these files when they need them.
+            !resolved.exists() && !java.nio.file.Files.isSymbolicLink(path.toPath()) -> false
+            // A directory, a fifo, a socket, a link resolving to nothing: not a file apt can lock.
+            else -> true
         }
     }
 
     /**
-     * Whether nothing holds [lock] — true, false, or null for "could not tell".
+     * Whether [lock] can be opened for reading and writing — the call apt and dpkg make on these
+     * paths before they ask for anything else, and therefore the only question worth asking about
+     * them.
      *
-     * The lock is taken and released rather than merely tested, because that is the only way the
-     * question can be asked: POSIX record locks have no "is it locked" query, and a successful
-     * [java.nio.channels.FileChannel.tryLock] answers it by construction. The channel is closed on
-     * every path, so the release is the close — one syscall, and no window in which this process
-     * holds a lock it is about to delete.
-     *
-     * `OverlappingFileLockException` is "held" and not "free": the JVM raises it when *this* process
-     * already holds a lock on the file, which means a repair or an install in this process is using
-     * it — the one case where deleting would be catastrophic rather than merely wrong.
+     * `O_CREAT` is deliberately not among the options: this runs inside a probe and inside a repair's
+     * *survey*, and either one creating the file it was asking about would repair the state it was
+     * measuring. A missing file consequently answers "not openable", and [unusablePackageLocksNow]
+     * asks about existence before it asks this.
      */
-    private fun lockIsFree(lock: File): Boolean? = runCatching {
-        java.io.RandomAccessFile(lock, "rw").use { file ->
-            file.channel.use { channel ->
-                val acquired = channel.tryLock() ?: return@runCatching false
-                acquired.release()
-                true
-            }
-        }
-    }.getOrElse { error ->
-        if (error is java.nio.channels.OverlappingFileLockException) false else null
-    }
+    private fun lockIsOpenable(lock: File): Boolean = runCatching {
+        java.nio.channels.FileChannel.open(
+            lock.toPath(),
+            java.nio.file.StandardOpenOption.READ,
+            java.nio.file.StandardOpenOption.WRITE,
+        ).close()
+        true
+    }.getOrDefault(false)
 
     /**
      * The bytes [target] occupies without following links — a link counts as its own entry, never
@@ -1563,6 +1586,11 @@ class RootfsInstaller(
          * Every lock file dpkg and apt take: the two dpkg takes around a run, and the two the index
          * and archive directories carry. Named explicitly rather than discovered by a walk — a walk
          * would find a lock file inside a package's own data and delete it.
+         *
+         * All four sit on disk, empty and held by nobody, on any system that has ever run a package
+         * command, and that is the state they are *meant* to be in between runs: neither tool
+         * removes its lock file when it exits. Their presence is therefore not the question — see
+         * [clearUnusablePackageLocks] for what is, and for what reading it as damage cost.
          */
         private val PACKAGE_LOCK_FILES = listOf(
             "var/lib/dpkg/lock",
@@ -1715,17 +1743,18 @@ enum class AptDamage {
 }
 
 /**
- * What a package-lock sweep found, split by what it could prove: [removed] are the lock files
- * nothing was holding, [held] the ones something still holds — or that could not be examined at all,
- * which is reported as held because a file that cannot be opened is not evidence of staleness.
+ * What a package-lock sweep found, split by what it did: [removed] are the lock paths that were not
+ * a file apt could open and are now gone, and [stillThere] are the ones that were still there
+ * afterwards — a directory with something inside it is the case that reaches this, because
+ * `File.delete` refuses a directory that is not empty.
  *
  * Two lists rather than a count, because the caller says different things about them: a sweep that
- * removed something repaired the userspace, and a sweep that found a live holder has to tell the user
- * to wait rather than send them into a repair that will fail the same way.
+ * removed something repaired the userspace, and a sweep that could not has to say so rather than
+ * report a repair it did not make.
  */
 data class PackageLockSweep(
     val removed: List<String>,
-    val held: List<String>,
+    val stillThere: List<String>,
 )
 
 /**

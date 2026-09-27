@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §71, *Releasing 1.12.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §72, *A free package lock is not damage, and the probe that called it damage could never be satisfied*; §71, *Releasing 1.12.0*, is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -7010,7 +7010,7 @@ the tree, and which of its sentences now describe something that was later rewri
 | The gap the plan named | What answers it |
 | --- | --- |
 | A session that dies mid-flight leaves the manager `Running`, so the card offers nothing to press | `LinuxSessionRegistry.liveCountExcept` (`:83`) and `LinuxUserspaceManager.noteSessionEnded` (`:954`), reached from the session-ending collector at `MainViewModel.kt:2163` — and only for a local host |
-| A stale package lock makes every rung refuse identically, in about a second | `RootfsInstaller.clearStalePackageLocks` (`:452`), which answers with two lists — the locks *removed* and the locks *held* — proving the difference by taking the fcntl lock rather than by reading a file's name |
+| A stale package lock makes every rung refuse identically, in about a second | `RootfsInstaller.clearStalePackageLocks` (`:452`), which answers with two lists — the locks *removed* and the locks *held* — proving the difference by taking the fcntl lock rather than by reading a file's name. **§72 replaces this**: the fcntl answer was always "nothing holds it", including after a *successful* package run, because apt and dpkg never unlink their lock files — so the rung cleared the state every run leaves and the probe that reported it could not be satisfied. What it clears now is a lock *path* apt cannot open |
 | A corrupt `/var/lib/dpkg/status` is unfixable by construction | `RootfsInstaller.restorePackageDatabase` (`:964`): dpkg's own `status-old` first, then the SHA256-verified pinned archive, then a typed refusal |
 | Regenerable apt state is given up only when the disk looked short | the ladder's own rung, `LinuxUserspaceManager.clearAptState` (`:578`), gated on the failed step's own evidence instead of on free space |
 | `StepTimedOut` was declared and never constructed | two construction sites (`UbuntuDistributionManager.kt:638` and `:1065`, for `UPDATE_PACKAGES_STEP` and `INSTALL_BASE_PACKAGES_STEP`) and a verdict of *not rebuildable*, so a slow connection no longer spends a reinstall that times out identically |
@@ -7418,7 +7418,10 @@ The report was a phone's Health check, pasted whole:
 diagnosis the ladder already acts on.**
 
 The lock sentence is `HealthReport.describe()`'s own, the file is a stale lock a killed `apt` left, and
-rung L has cleared those since §61 — nothing about it changes here. It reads as a defect only because the
+rung L has cleared those since §61 — nothing about it changes here. **§72 corrects the middle clause**:
+a lock file on disk is not a mark a killed run leaves, because neither apt nor dpkg unlinks its own lock
+file — a *successful* package run leaves the same four, empty and unheld — and the rung clears a lock
+*path* apt cannot open rather than a file nothing holds. It reads as a defect only because the
 transcript ran it together with the line above it, which *is* one: a userspace that answered `root` and
 had nothing else wrong with it was reported as **not** root, in a sentence quoting proot's own four
 warnings back at the user, and `healthy` withheld the host card over it.
@@ -8334,5 +8337,157 @@ is the same class of failure §65 recorded for the device check: the thing that 
 problem is unavailable for the reason the problem exists. The release's own sequence was unaffected — the
 validation run settled 55 minutes before the deadline — but a backstop nobody has tested in anger is worth
 less than its description suggests, and the entry should log somewhere that is not the tmpfs.
+
+---
+
+## 72. A free package lock is not damage, and the probe that called it damage could never be satisfied
+
+The report was two failures on one phone, pasted in one message, and they are the same bug read twice:
+
+> **perbaiki install masih blm sempurna ndan repiar juga ga works.**
+> Repair failed: Ubuntu could not be repaired: Ubuntu was repaired but still fails its health check: an
+> interrupted package operation left its lock behind (`/var/lib/dpkg/lock`, `/var/lib/dpkg/lock-frontend`,
+> `/var/lib/apt/lists/lock`, `/var/cache/apt/archives/lock`) — Repair clears it (tried: restore local
+> state, restore the package database, setup, clear apt's package lists, restore missing files, rewrite the
+> base system, reinstall)
+
+The install failed its health check on the same four files, and Repair failed it on each of the seven rungs
+it tried — the ladder's first two, the staging reclaim and the free-space rung, are gated on a leftover
+tree and on a short disk reading and had nothing to do here, which is why the list the user saw begins at
+*restore local state*. Both sentences were the app's own, and both were describing a userspace that was
+working.
+
+### The premise, and the measurement that killed it
+
+`HealthReport.staleLocks` was defined as *lock files that are present while nothing holds them*, on the
+stated belief that this is "what an interrupted or killed apt leaves on disk" — that a killed process
+cannot delete its own lock file and a living one can. **Neither apt nor dpkg ever deletes its lock file.**
+The file is opened with `O_CREAT`, and the lock itself is an **fcntl record lock**, which the kernel
+releases when the process exits; the file is left exactly where it is. So a run that finished cleanly
+leaves behind precisely what a run that was killed leaves behind: four empty files with nothing holding
+them. A predicate that a *successful* package command makes false cannot be the description of damage,
+and it cannot be a repair target either — the app's own next command recreates it.
+
+The measurement, on the Debian 13 host this work was done on, between package runs:
+
+- all four files exist and are zero bytes, dated to earlier successful runs;
+- `fuser -v` on all four names no process and exits 1, so nothing holds any of them;
+- `nm -D /usr/bin/dpkg` and `nm -D /lib/x86_64-linux-gnu/libapt-pkg.so.7.0` both import
+  `fcntl@GLIBC_2.2.5` and neither imports `flock`.
+
+The third one was checked for a reason worth recording as a **negative result**. The hypothesis worth
+ruling out first was not "is the file stale" but "is the probe asking the wrong question": Java's
+`FileChannel.tryLock` takes an fcntl record lock, so had dpkg taken a `flock` instead, the sweep would
+have been calling a *live* lock free and unlinking files a running `apt-get` was holding — a far worse bug
+than the one being fixed. It does not: both tools use fcntl, so the answer the old sweep computed was
+always the truth, and the truth was simply not damage.
+
+### Why every rung failed, and why install failed too
+
+Two details in the ladder made this unrecoverable rather than merely wrong.
+
+**The local rung does not probe.** `restoreLocalState` is reached through `localRung`, and only `rung(...)`
+runs the health probe afterwards — so rung L removed the four files and reported success, and nothing
+looked. The rung below it, *Set up again*, then ran the setup pipeline, whose own `apt-get update` and
+`dpkg` invocations recreated all four files within the same press. *That* rung's probe then ran against
+the files its own work had just made, failed on them, and the ladder moved on. Every rung below ended the
+same way, for the same reason, which is exactly what `repairFailed(attempted, lastFailure)` printed: seven
+attempts, one sentence, and a userspace that had been through a full reinstall for it.
+
+**Install failed for the same reason in one step.** The setup pipeline that had just finished successfully
+was itself what created the four files, so `Healthy` was uncomputable for a *fresh, correct* install —
+`"Ubuntu installed but failed its health check"` (`LinuxUserspaceManager.kt:160`) and
+`HEALTH_FAILURE = "Ubuntu was repaired but still fails its health check"` (`:900`) are two strings over
+one cause.
+
+### The predicate that replaced it
+
+**A lock *path* apt cannot open for reading and writing.** A directory standing where one of the four
+files belongs, a file whose mode denies the write, a link resolving out of the userspace or to nothing.
+That refuses before any lock is asked for, in apt's own words —
+`E: Could not open lock file /var/lib/dpkg/lock - open (21: Is a directory)` — no successful package run
+produces it, and removing the path is the only thing that clears it in place.
+
+The question is asked with **the call apt itself makes**: `FileChannel.open(path, READ, WRITE)`. `O_CREAT`
+is deliberately not among the options, because the same code runs inside the health probe and inside a
+repair's survey, and either one creating the file it was asking about would repair the state it was
+measuring. A missing file therefore answers "not openable" at that level, and the caller asks about
+existence first — a path with nothing at it is not a fault, since apt and dpkg create these files when
+they need them.
+
+Removal is safe for a reason narrower than the old sweep's, and it is the reason the sweep's "held" list
+could be deleted rather than kept: **a path that cannot be opened for reading and writing cannot be
+holding an fcntl record lock at all**, because taking one requires an open descriptor with write access.
+Nothing a live package tool is holding is removed, by construction rather than by a second measurement.
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `app/src/main/java/dev/eclipse/ssh/linux/RootfsInstaller.kt` | `clearStalePackageLocks` / `stalePackageLocks` / `lockIsFree` are gone; `clearUnusablePackageLocks`, `unusablePackageLocks` and `lockIsOpenable` replace them. `PackageLockSweep` answers with `removed` and `stillThere` — the second replacing `held`, and meaning something different: a path this rung could not delete, not one it declined to touch |
+| `app/src/main/java/dev/eclipse/ssh/linux/UbuntuDistributionManager.kt` | `HealthReport.staleLocks` → `unusablePackageLocks`, with a KDoc that states the correction rather than quietly changing the name; `healthy` and `describe()` read it, and the sentence becomes "the package manager's lock cannot be opened (…) - Repair clears it" |
+| `app/src/main/java/dev/eclipse/ssh/linux/UserspaceFailure.kt` | `PackageLocksHeld` gains `openFailed`, and the two arms get two sentences: a holder asks the user to wait, an unopenable path offers Repair. The discriminator is apt's own wording — `Could not open lock file`, split out of `LOCK_PATTERNS` into `LOCK_OPEN_PATTERN` |
+| `app/src/main/java/dev/eclipse/ssh/linux/LinuxUserspaceManager.kt` | Rung L's warning and its diagnostics line follow the new lists; the `aRebuildCouldFix` comment for `PackageLocksHeld` names both arms and says why a held lock is still on that line |
+| `docs/linux-userspace.md` | The *Clear local state* rung row, whose cost column now reads "a lock file apt *can* open is left exactly where it is"; and the troubleshooting row, which asserted the disproven premise and is now two rows, because the two refusals ask for different things |
+| `app/src/test/java/dev/eclipse/ssh/linux/RootfsLocalRepairTest.kt` | Five tests where the two lock tests were |
+| `app/src/test/java/dev/eclipse/ssh/linux/UbuntuDistributionManagerTest.kt` | The paired-fault test, the tmp test's healthy premise (which now plants all four lock files and asserts the report is *healthy*), and the lock test |
+| `app/src/test/java/dev/eclipse/ssh/linux/UserspaceFailureTest.kt` | `openFailed` asserted on the holder case, plus a new test over apt's `Is a directory` refusal |
+| `app/src/test/java/dev/eclipse/ssh/linux/LinuxUserspaceManagerTest.kt` | The one construction site, and the four-hundred-and-eight-line test that planted an *empty* lock file and asserted the ladder cleared it — which is the disproven premise written into the suite. It now plants a directory at the lock path and scripts apt's open-failure refusal, keeping every "the repair stays local" assertion it had; and a second test, `the lock files a package run leaves are not damage, and no repair is spent on them`, plants all four empty files through the manager and asserts they survive an entire repair |
+
+The regression test is the one to read first —
+`the lock files a package run leaves behind are neither reported nor removed` plants all four empty files
+and asserts that the probe reports nothing, the sweep removes nothing, and the files are still there
+afterwards. It is the assertion that fails against the old code, and it is the exact state the app's own
+setup pipeline leaves behind, so it is the reported failure reproduced without a phone. Its twin one
+level up, `the lock files a package run leaves are not damage, and no repair is spent on them`, does the
+same through the manager and a whole repair — which is where the premise did the damage, since the rung
+that cleared the files and the setup rung that recreated them are both inside it.
+
+**The premise was load-bearing in the suite, and that is the evidence for it.** One test outside the
+sweep's own file — `a stale package lock is cleared before the first package step, and the repair stays
+local` — planted an empty lock file and asserted the ladder cleared it before any package step could
+refuse, with a scripted apt that refused on the file's *existence* and named a holder process that did
+not exist. Every part of that is the disproven premise: an empty lock file is what a successful package
+run leaves, apt does not refuse on it, and nothing was holding it. It failed against the new predicate
+with ten refusals where it asserted none, which is the false premise caught by the code rather than by a
+reading. It is now a directory at the lock path with apt's open-failure sentence, which is damage the
+predicate calls damage — and the assertions it was really written for, that the repair downloads nothing
+and rebuilds nothing, are untouched and still pass.
+
+### Decisions worth stating
+
+- **A lock the app cannot delete is reported, not forced.** A directory with something inside it is
+  refused by `File.delete()`; what is inside it is not this rung's to decide about, so the sweep returns
+  it in `stillThere` and the rung records a diagnostic saying the package steps below will refuse.
+- **One arm of the predicate is cautious rather than proven, and the KDoc says so.** A dangling symlink
+  whose target directory exists would be created by apt's next `O_CREAT` and would have worked. Reporting
+  it costs a deletion of the link; leaving it out costs the case where the target's *directory* is gone,
+  which is the same amount of evidence pointing the other way. Nothing in this app or in apt creates such
+  a link.
+- **The two sentences are split because they ask the user for different things.** A live holder is a
+  userspace that is busy, and telling that user to press Repair sends them to a button that cannot help
+  while the holder is alive; the previous single sentence did exactly that, and it was the sentence in
+  the user's paste.
+- **`PackageLocksHeld` stays on `aRebuildCouldFix`'s list for both arms.** The deeper rungs do rewrite the
+  files, including one being held, so the ladder still ends somewhere better than it started — and the
+  sentence the user sees for the holder arm names the wait rather than offering a repair.
+- **No version bump here.** This is a behaviour change, so by the rule §41, §56, §67, §69 and §71 all set
+  — *a patch number is honest when the artifact a user installs behaves as its predecessor's does* — its
+  release is a **minor**, not a patch. The bump belongs to the release branch, not to this change.
+
+### What is verified, and what is not
+
+- **Verified on the host**: the four readings above, which are what the predicate rests on. They are
+  re-runnable with `ls -l`, `fuser -v` and `nm -D` on any machine that has run apt, and the first two need
+  no privileges.
+- **Verified by the suites**: the twelve tests named above, which run in CI rather than here. The five in
+  `RootfsLocalRepairTest` cover both directions — a file that merely exists is reported by nothing, and a
+  directory standing where a file belongs is reported by both the probe and the sweep.
+- **Not verified: no phone was involved, and none can be from here.** The confirmation that matters is
+  the user's own health check: after this build, a fresh install must pass Verify without Repair, and the
+  card must not offer Repair for a userspace that has just been set up.
+- **Not claimed: that this was the whole of the install's imperfection.** The report named install *and*
+  Repair, and the install half of it is a step in the setup pipeline whose own health check could not
+  pass — which this fixes. Any other install failure is a different report, and needs its own evidence.
 
 ---

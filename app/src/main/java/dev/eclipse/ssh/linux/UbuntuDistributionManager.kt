@@ -257,13 +257,13 @@ class UbuntuDistributionManager(
         // file — and the repair for each is different.
         val login = runSessionCommand(LOGIN_PROBE_COMMAND, PROBE_TIMEOUT_MS)
         // The two faults no command from inside the guest would ever report as themselves, asked on
-        // the host instead: the installer owns both proofs (a probe file for writability, a kernel
-        // record lock for staleness) and neither question needs a proot child to answer. They are
-        // here because they are the two states that silently disable package management while every
-        // other field of this report passes — and because the ladder's local rung repairs exactly
-        // them, which is what makes a failed probe here mean something the user can act on.
+        // the host instead: the installer owns both proofs (a probe file for writability, an open for
+        // the lock path) and neither question needs a proot child to answer. They are here because
+        // they are the two states that silently disable package management while every other field
+        // of this report passes — and because the ladder's local rung repairs exactly them, which is
+        // what makes a failed probe here mean something the user can act on.
         val unusableTemp = installer?.unusableGuestTemp().orEmpty()
-        val staleLocks = installer?.stalePackageLocks().orEmpty()
+        val unusableLocks = installer?.unusablePackageLocks().orEmpty()
         val loginLines = login?.outputText()?.lines()?.map { stripEscapes(it).trim() }.orEmpty()
         // The answer line, not the capture. proot writes its own teardown notes to this command's
         // own pty, after `whoami` has already answered, and read whole they became the "account
@@ -287,7 +287,7 @@ class UbuntuDistributionManager(
                 .map { it.removePrefix(PROBE_MISSING_PREFIX).trim() }
                 .filter { it.isNotEmpty() },
             unusableTempDirs = unusableTemp,
-            staleLocks = staleLocks,
+            unusablePackageLocks = unusableLocks,
         )
     }
 
@@ -2542,17 +2542,26 @@ data class HealthReport(
      */
     val unusableTempDirs: List<String> = emptyList(),
     /**
-     * The package-manager lock files that are present while *nothing holds them* — what an
-     * interrupted or killed apt leaves on disk. Empty is the healthy answer.
+     * The package-manager lock *paths* apt cannot open — a directory where one of the four lock
+     * files belongs, a file whose mode denies the write, a link resolving out of the userspace. Empty
+     * is the healthy answer.
      *
-     * A lock something holds is deliberately not here: a package operation that is really running is
-     * not a fault, and this probe cannot tell the user's own `apt` from the app's. The stale file is
-     * the fault, and it gates because of what it does to everything after it: every dpkg and apt
-     * command refuses in about a second, without contacting anything, in a sentence about "another
-     * process" that is not true — and nothing else in the userspace is the slightest bit wrong, so
-     * no other field here will notice.
+     * **A lock file that exists with nothing holding it is not here, and that is the correction this
+     * field carries.** Every apt and dpkg run leaves all four files on disk, empty and unheld,
+     * because neither tool unlinks its lock file when it exits — so the state an earlier version of
+     * this field reported as "an interrupted package operation left its lock behind" is the state a
+     * *successful* install ends in, including this app's own setup pipeline. Two things followed: a
+     * userspace that had just installed cleanly failed its own health check, and Repair could not
+     * clear it, because every rung that runs the pipeline recreated the files before the probe ran
+     * again. See [RootfsInstaller.clearUnusablePackageLocks] for the measurement and the argument.
+     *
+     * What is here does gate, and for a reason of the same shape as [unusableTempDirs]: nothing
+     * else in the userspace notices it. A shell starts, `apt-get check` passes, and the next package
+     * command refuses in about a second — `Could not open lock file` — in words that name a lock
+     * rather than the directory that is standing where the lock belongs. One Repair clears it and
+     * downloads nothing.
      */
-    val staleLocks: List<String> = emptyList(),
+    val unusablePackageLocks: List<String> = emptyList(),
 ) {
     /**
      * Healthy — and therefore card-worthy — only when every field passes.
@@ -2562,13 +2571,17 @@ data class HealthReport(
      * a userspace missing one of them cannot install, remove or repair a package at all. A missing
      * program is therefore not a detail of a working install; it is the install not working. The
      * same holds for the two fields the ladder's local rung repairs — a temporary directory nothing
-     * can write to, and a package lock left behind by a run that was killed: both leave the
-     * userspace unable to do the one thing it exists for, and both are fixed by one Repair that
-     * downloads nothing.
+     * can write to, and a package lock *path* apt cannot open: both leave the userspace unable to do
+     * the one thing it exists for, and both are fixed by one Repair that downloads nothing.
+     *
+     * The line each of those two is drawn at is the same line, and it was learned the same way: what
+     * gates is the state the userspace cannot work in, not the state it merely looks untidy in. A
+     * lock file left on disk with nothing holding it is the second kind — every successful package
+     * command ends in it — and gating on it made this verdict unreachable for a healthy install.
      */
     val healthy: Boolean
         get() = shellWorks && accountCorrect && networkUp && aptUsable && missingPrograms.isEmpty() &&
-            unusableTempDirs.isEmpty() && staleLocks.isEmpty()
+            unusableTempDirs.isEmpty() && unusablePackageLocks.isEmpty()
 
     /**
      * The failing fields as one sentence, for NeedsRepair's detail and the settings screen. Names
@@ -2591,10 +2604,12 @@ data class HealthReport(
                 // someone looking at their own terminal, where the directory is `/tmp`.
                 add("Ubuntu's temporary directories cannot be written to (${unusableTempDirs.joinToString(", ") { "/$it" }})")
             }
-            if (staleLocks.isNotEmpty()) {
+            if (unusablePackageLocks.isNotEmpty()) {
+                // The paths are apt's own relative spelling, which is how they appear in apt's own
+                // refusal — the reader may be looking at exactly that line next.
                 add(
-                    "an interrupted package operation left its lock behind (${staleLocks.joinToString(", ")}) " +
-                        "- Repair clears it",
+                    "the package manager's lock cannot be opened " +
+                        "(${unusablePackageLocks.joinToString(", ")}) - Repair clears it",
                 )
             }
         }.joinToString(", ").ifEmpty { "healthy" }

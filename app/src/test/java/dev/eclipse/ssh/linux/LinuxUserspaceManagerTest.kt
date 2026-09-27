@@ -405,12 +405,16 @@ class LinuxUserspaceManagerTest {
     }
 
     @Test
-    fun `a stale package lock is cleared before the first package step, and the repair stays local`() = runTest {
+    fun `a package lock apt cannot open is cleared before the first package step, and the repair stays local`() = runTest {
         val harness = newHarness()
         harness.manager.install()
+        // A directory standing where the lock file belongs. This is the damage the local rung answers,
+        // and it is deliberately *not* an empty lock file: apt and dpkg never unlink their own lock
+        // files, so the four empty files are what a successful package run leaves, and a rung that
+        // cleared those would be clearing the healthy state on every press.
         val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
         lock.parentFile?.mkdirs()
-        lock.writeText("")
+        lock.mkdirs()
         // Something the user installed on top of the base system: a rebuild would take it with it, and
         // this repair is not one.
         val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
@@ -427,15 +431,16 @@ class LinuxUserspaceManagerTest {
         cachedDeb.writeText("already downloaded\n")
         val downloadsBeforeRepair = harness.downloads
 
-        // What the real userspace does with that file on disk: every dpkg and apt command refuses in
-        // about a second, in a sentence about "another process" that is not true of anything. Scripted
-        // so the test fails if even one package step ever meets the lock — the count is asserted below.
+        // What the real userspace does with a lock path it cannot open: every dpkg and apt command
+        // refuses in about a second, in apt's own sentence about the *open* failing - naming no
+        // process, because nothing holds it. Scripted so the test fails if even one package step ever
+        // meets the lock — the count is asserted below.
         var refusals = 0
         val healthyRespond = harness.spawner.respond
         harness.spawner.respond = { command ->
-            if (lock.exists() && (command.contains("dpkg") || command.contains("apt-get"))) {
+            if (lock.isDirectory && (command.contains("dpkg") || command.contains("apt-get"))) {
                 refusals++
-                100 to "E: Could not get lock $lock. It is held by process 1234 (apt-get)\n"
+                100 to "E: Could not open lock file $lock - open (21: Is a directory)\n"
             } else {
                 healthyRespond(command)
             }
@@ -458,6 +463,35 @@ class LinuxUserspaceManagerTest {
         // these before the setup run, on every failure there was.
         assertThat(index.readText()).isEqualTo("Package: fixture\n")
         assertThat(cachedDeb.readText()).isEqualTo("already downloaded\n")
+    }
+
+    @Test
+    fun `the lock files a package run leaves are not damage, and no repair is spent on them`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        // The state a successful `apt-get install` leaves behind, on a userspace that is otherwise
+        // perfectly healthy: all four lock files, empty, held by nobody. The health check used to call
+        // this damage - it asked whether the file existed and whether a lock was held on it, and those
+        // four files exist after every successful run with nothing holding them - so a working
+        // userspace was reported broken, and no rung could satisfy the check: the local rung removed
+        // the files and the setup rung below recreated them, on every press, forever.
+        val locks = listOf(
+            "var/lib/dpkg/lock",
+            "var/lib/dpkg/lock-frontend",
+            "var/lib/apt/lists/lock",
+            "var/cache/apt/archives/lock",
+        ).map { harness.installer.rootfsDir.resolve(it) }
+        locks.forEach { it.parentFile?.mkdirs(); it.writeText("") }
+
+        val report = harness.manager.repair()
+
+        // Every one of them still there, and untouched: the repair did not do work to remove the state
+        // the package manager itself creates. This is the regression the reported failure was.
+        locks.forEach { assertThat(it.isFile).isTrue() }
+        assertThat(report.warnings.joinToString("\n")).doesNotContain("package-manager lock")
+        // And the package steps ran on a userspace that was never asked to refuse, because a lock apt
+        // can open is a lock apt is content with.
+        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
     }
 
     @Test
@@ -643,7 +677,11 @@ class LinuxUserspaceManagerTest {
         val rootfsOwned = listOf(
             UserspaceFailure.ProotLaunchFailed(127, ""),
             UserspaceFailure.PackageDbBroken(),
-            UserspaceFailure.PackageLocksHeld(holderPid = 4321, locks = listOf("/var/lib/dpkg/lock-frontend")),
+            UserspaceFailure.PackageLocksHeld(
+                holderPid = 4321,
+                locks = listOf("/var/lib/dpkg/lock-frontend"),
+                openFailed = false,
+            ),
             UserspaceFailure.PackageDatabaseUnreadable(),
             UserspaceFailure.IndexHashMismatch("http://m.example/ubuntu"),
             UserspaceFailure.GuestTmpUnwritable("/tmp"),
