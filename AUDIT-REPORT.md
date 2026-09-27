@@ -8432,13 +8432,27 @@ Nothing a live package tool is holding is removed, by construction rather than b
 | `app/src/test/java/dev/eclipse/ssh/linux/RootfsLocalRepairTest.kt` | Five tests where the two lock tests were |
 | `app/src/test/java/dev/eclipse/ssh/linux/UbuntuDistributionManagerTest.kt` | The paired-fault test, the tmp test's healthy premise (which now plants all four lock files and asserts the report is *healthy*), and the lock test |
 | `app/src/test/java/dev/eclipse/ssh/linux/UserspaceFailureTest.kt` | `openFailed` asserted on the holder case, plus a new test over apt's `Is a directory` refusal |
-| `app/src/test/java/dev/eclipse/ssh/linux/LinuxUserspaceManagerTest.kt` | The one construction site |
+| `app/src/test/java/dev/eclipse/ssh/linux/LinuxUserspaceManagerTest.kt` | The one construction site, and the four-hundred-and-eight-line test that planted an *empty* lock file and asserted the ladder cleared it — which is the disproven premise written into the suite. It now plants a directory at the lock path and scripts apt's open-failure refusal, keeping every "the repair stays local" assertion it had; and a second test, `the lock files a package run leaves are not damage, and no repair is spent on them`, plants all four empty files through the manager and asserts they survive an entire repair |
 
 The regression test is the one to read first —
 `the lock files a package run leaves behind are neither reported nor removed` plants all four empty files
 and asserts that the probe reports nothing, the sweep removes nothing, and the files are still there
 afterwards. It is the assertion that fails against the old code, and it is the exact state the app's own
-setup pipeline leaves behind, so it is the reported failure reproduced without a phone.
+setup pipeline leaves behind, so it is the reported failure reproduced without a phone. Its twin one
+level up, `the lock files a package run leaves are not damage, and no repair is spent on them`, does the
+same through the manager and a whole repair — which is where the premise did the damage, since the rung
+that cleared the files and the setup rung that recreated them are both inside it.
+
+**The premise was load-bearing in the suite, and that is the evidence for it.** One test outside the
+sweep's own file — `a stale package lock is cleared before the first package step, and the repair stays
+local` — planted an empty lock file and asserted the ladder cleared it before any package step could
+refuse, with a scripted apt that refused on the file's *existence* and named a holder process that did
+not exist. Every part of that is the disproven premise: an empty lock file is what a successful package
+run leaves, apt does not refuse on it, and nothing was holding it. It failed against the new predicate
+with ten refusals where it asserted none, which is the false premise caught by the code rather than by a
+reading. It is now a directory at the lock path with apt's open-failure sentence, which is damage the
+predicate calls damage — and the assertions it was really written for, that the repair downloads nothing
+and rebuilds nothing, are untouched and still pass.
 
 ### Decisions worth stating
 
