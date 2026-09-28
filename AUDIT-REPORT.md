@@ -9150,3 +9150,56 @@ Built and signed by `tagged-release.yml` from the `v1.13.0` tag: the universal A
 (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The signing
 identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this
 build installs over 1.12.0 and every earlier release normally.
+
+### What the validation run did, and the order this release kept
+
+`tagged-release.yml` builds the artifact; `android-release-test.yml` is the only thing in this repository
+that *installs* one, and it fires on `release: published`. §65 recorded the cost of getting that order
+wrong — publishing after the window closed left its device check refused by a runner pool it could not
+reach. This release did it the other way: the draft was built, verified, published at 18:08:20Z with the
+window open, and the window was closed only after `Android release test` 36339531040 had settled.
+
+**The build.** `Tagged release` run 36337896265, 17:41:47Z to 18:07:09Z, all thirty of its steps green —
+including `Verify the build is from a clean tag`, which is the step that makes the tag rather than a
+working tree the thing that was built. The tag is `7cb06a74d26e115736c5edfa8143048b2a5b2185`, which is
+both the merge commit of #191 and the tip of `main`; it started thirteen seconds after that merge landed
+(17:41:34Z), so nothing could have slipped between them and the section above describes exactly the tree
+the runner compiled.
+
+**The artifacts, read out of the files rather than off the log.** `testing/verify-release-artifact.py` was
+first run against a *published* asset whose values were already known — `v1.12.0`'s `arm64-v8a` split,
+which it read as `45 / 1.12.0 / 0c69794b…` — because a checker that has never disagreed with reality is
+not evidence. It was then run against all five APKs from this release, and each read `versionCode 46`,
+`versionName 1.13.0`, signer `0c69794b…`. Recomputing the six digests in `SHA256SUMS.txt` matched all
+six. One thing worth recording for next time: the draft is invisible to `GET /releases/tags/v1.13.0`
+(it answers 404 until the release is published), so a draft is found by listing — which is also why the
+assets were fetched by release id rather than by tag.
+
+**The device check.** `Android release test` 36339531040 was created 18:08:22Z, two seconds after the
+publish, and settled green at 18:30:54Z. Both legs — `Release APK on API 30` and `Release APK on API 35` —
+report 49 tests run with 0 failures, both `crash-report.json` files read `status: clean,
+signatureMatches: 0`, `Release gate` passed, each leg's `Final Recommendation` is `RELEASE`, and
+`Autonomous repair` is `skipped`, which is its normal state on a release event.
+
+**The cross-check worth stating plainly.** Each leg's `release-validation.json` records `sha256
+8029ebd91f7b…`, `bytes 19418003` for the asset the emulator installed. That is the same file, by the same
+hash, that `SHA256SUMS.txt` lists for `app-x86_64-release.apk` and that recomputation confirmed here — so
+versionCode, versionName and signer were each read twice by two independent methods and agreed, and the
+APK on the emulator is the published artifact rather than a rebuild.
+
+**The merge, and the one red check that was not a defect.** The seven contexts branch protection requires
+were green at the merge, and `Close the CI window` was red as it is on every run started while the window
+is open — the token that closes it is deliberately not available to a run. `main`'s own post-merge runs
+are red for that reason and no other: `CI` 36337884401 and `Release build` 36337884605 both fail in
+`Flip the repository back to private` and nothing else, while `Instrumentation` 36337884166 is green. The
+merge commit this time carries the house shape — `Release 1.13.0 (#191)` with an empty body, which is what
+`gh pr merge` alone does *not* write (`--subject`/`--body`, or the merge API's `commit_title` and
+`commit_message`, is what reproduces it); #190's read `Merge pull request #190 from …` because it was
+merged without either.
+
+**The window, and why it was opened by hand.** This release's window had to outlive any single run — a
+branch, a PR, its merge, a tag, and a validation that only starts once the release is published — so it
+was opened the way §69 records rather than with `ci-window.sh open`, which dispatches one workflow and
+closes when that run settles. The deadline was recorded before the flip, `main` was guarded from that
+moment (the apply took two attempts, which is the retry §71's follow-up added), and the close came after
+the validation had settled, verified by reading the visibility back as `private`.
