@@ -832,6 +832,14 @@
 # test's reference that has to resolve by name. Both are kept with all members
 # for the reason at the top of this file: losing the getter is a
 # NoSuchMethodError where losing the class is a NoClassDefFoundError.
+#
+# Follow-up from CI run 36365465063 (2026-09-28), and the first of these that
+# a device did not have to find: the orientation chaos journey now waits for
+# the soft keyboard's inset to reach zero before it taps the host form's
+# Cancel, and reads that inset through ViewCompat. The step that caught it was
+# "Check the instrumentation keep list against the test sources" in the APKs
+# job rather than a release-test leg - which is what that checker is for - and
+# it named the rule to add.
 # ---------------------------------------------------------------------------
 -keep class androidx.activity.ComponentActivity { *; }
 -keep class androidx.activity.compose.ComponentActivityKt { *; }
@@ -841,6 +849,7 @@
 -keep class androidx.collection.MutableIntObjectMap { *; }
 -keep class androidx.core.os.ConfigurationCompat { *; }
 -keep class androidx.core.os.LocaleListCompat { *; }
+-keep class androidx.core.view.ViewCompat { *; }
 -keep class androidx.core.view.ViewConfigurationCompat { *; }
 -keep class androidx.core.view.ViewGroupKt { *; }
 -keep class androidx.core.view.WindowCompat { *; }
