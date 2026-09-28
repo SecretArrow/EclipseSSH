@@ -4003,7 +4003,7 @@ private fun TerminalTabStrip(
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "Terminal actions", tint = termFg) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
-                    text = { Text("Duplicate terminal") },
+                    text = { Text("New Terminal") },
                     onClick = { menuOpen = false; onDuplicate(activeTab) },
                 )
                 // Only on a live session: the wait is for a command to *finish*, and a session
