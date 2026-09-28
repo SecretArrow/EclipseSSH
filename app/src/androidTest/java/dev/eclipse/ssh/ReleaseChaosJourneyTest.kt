@@ -1,8 +1,10 @@
 package dev.eclipse.ssh
 
 import android.app.Activity
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -13,6 +15,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,11 +89,58 @@ class ReleaseChaosJourneyTest {
     private fun resumedActivity(): Activity? {
         var activity: Activity? = null
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            activity = ActivityLifecycleMonitorRegistry.getInstance()
-                .getActivitiesInStage(Stage.RESUMED)
-                .lastOrNull()
+            activity = resumedActivityOnMainThread()
         }
         return activity
+    }
+
+    /** [resumedActivity] for a caller already on the main thread. */
+    private fun resumedActivityOnMainThread(): Activity? =
+        ActivityLifecycleMonitorRegistry.getInstance()
+            .getActivitiesInStage(Stage.RESUMED)
+            .lastOrNull()
+
+    /**
+     * How much of the window the soft keyboard is taking, as the window currently has it.
+     *
+     * Read from the window rather than from the keyboard's own visibility because the two answer
+     * different questions, and the layout follows this one: the inset is animated, so it is a
+     * non-zero height for as long as the keyboard is collapsing and only reaches zero once the body
+     * below has stopped moving.
+     */
+    private fun imeInset(): Int {
+        var height = -1
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val activity = resumedActivityOnMainThread() ?: return@runOnMainSync
+            val insets = ViewCompat.getRootWindowInsets(activity.window.decorView) ?: return@runOnMainSync
+            height = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        }
+        return height
+    }
+
+    /**
+     * The keyboard the text input above left up, put away and waited out.
+     *
+     * The form's two buttons sit at the end of a scrollable body, so Cancel is reached by
+     * [performScrollTo], which scrolls it into a viewport the keyboard is still resizing.
+     * `performClick` injects at the node's bounds *as it read them*: on a loaded emulator drawing
+     * three frames a second — run 36359890174's logcat shows 344 ms frames all the way through this
+     * wait — the inset animation is still in flight seconds after the tap, so the tap lands where
+     * the row used to be, on the keyboard, and the form never finishes. The failure then surfaces
+     * one call later, in [awaitForeground], as the window that did not come back.
+     *
+     * Waiting for the inset to reach zero is what makes the click's target stop moving. The rule's
+     * own teardown is not a substitute: it launches its empty activity only after the wait has
+     * already expired.
+     */
+    private fun hideSoftKeyboard() {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val activity = resumedActivityOnMainThread() ?: return@runOnMainSync
+            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(activity.window.decorView.windowToken, 0)
+        }
+        compose.waitUntil(timeoutMillis = 10_000) { imeInset() == 0 }
+        compose.waitForIdle()
     }
 
     private fun foregroundActivity(): Activity =
@@ -245,6 +296,10 @@ class ReleaseChaosJourneyTest {
         // The half that fails if the window was recreated behind the user's back.
         compose.onNodeWithText("Rotated").assertIsDisplayed()
 
+        // The keyboard is up from that text input, and the form's button row is at the end of the
+        // body it is resizing: put it away and wait for the layout to stop moving before aiming at
+        // Cancel, or the tap is injected against bounds the row has already left.
+        hideSoftKeyboard()
         compose.onNode(hasText("Cancel") and hasClickAction()).performScrollTo().performClick()
         // Cancel finishes this window. The workspace behind it comes back asynchronously, and an
         // assertion that does not wait for it is an assertion about whichever window is in front.
