@@ -243,9 +243,21 @@ class AnsiTerminalBuffer(
      * a phone this is not hypothetical: the pty is eighty columns wide by default, whatever the screen
      * shows, and the view fits about half that - so every one of `top`'s rows would have reflowed.
      *
-     * Set by an upward cursor move that a sequence asked for, which is the tell: output that flows only
-     * ever goes down. Cleared when the screen scrolls under flowing output, which is the opposite tell
-     * and is how the flag lets go - `top`'s own exit does it.
+     * Set by absolute addressing - a sequence that says *which row* to put the cursor on, and does not
+     * move it down - and that is the tell. Output that flows only ever goes down, and a program that
+     * names a row is stating where the whole screen's contents belong rather than appending to them.
+     *
+     * A relative move is deliberately not part of that test, although it once was. readline repaints a
+     * wrapped input line by moving up with `ESC [ A` and writing the line again, so *editing* any
+     * command longer than the screen - a backspace, a Ctrl-A, a completion - used to mark the screen
+     * painted and switch word wrapping off for the rest of the session. That is the state the user sees
+     * as a long line clipped at the right edge instead of flowing onto the row below, with the cursor
+     * drawn past the edge and the view panning after it. Measured through a real pty at 46 columns:
+     * editing one long line emits ten `ESC [ A`; `top`, `less`, `nano`, `vi` and `watch`, run the same
+     * way, emit none between them and home with `ESC [ H` instead.
+     *
+     * Cleared when the screen scrolls under flowing output, which is the opposite tell and is how the
+     * flag lets go - `top`'s own exit does it.
      *
      * And cleared by `ESC [ 3 J`, which is what makes `clear` not a false positive. Measured on this
      * machine at 80x12: `clear` writes `ESC[H ESC[2J ESC[3J`, and `top`'s startup writes `ESC[H ESC[2J`
@@ -747,8 +759,8 @@ class AnsiTerminalBuffer(
      */
     private fun consumeSs3(char: Char) {
         when (char) {
-            'A' -> moveCursorRow(cursorRow - 1)
-            'B' -> moveCursorRow(cursorRow + 1)
+            'A' -> setCursorRow(cursorRow - 1)
+            'B' -> setCursorRow(cursorRow + 1)
             'C' -> setCursorColumn(cursorColumn + 1)
             'D' -> setCursorColumn(cursorColumn - 1)
             'H' -> setCursorColumn(0)
@@ -782,12 +794,12 @@ class AnsiTerminalBuffer(
         val private = prefix == '?'
         revision++
         when (final) {
-            'A' -> { moveCursorRow(cursorRow - first); wrapPending = false }
-            'B', 'e' -> { moveCursorRow(cursorRow + first); wrapPending = false }
+            'A' -> { setCursorRow(cursorRow - first); wrapPending = false }
+            'B', 'e' -> { setCursorRow(cursorRow + first); wrapPending = false }
             'C', 'a' -> setCursorColumn(cursorColumn + first)
             'D' -> setCursorColumn(cursorColumn - first)
-            'E' -> { moveCursorRow(cursorRow + first); setCursorColumn(0) }
-            'F' -> { moveCursorRow(cursorRow - first); setCursorColumn(0) }
+            'E' -> { setCursorRow(cursorRow + first); setCursorColumn(0) }
+            'F' -> { setCursorRow(cursorRow - first); setCursorColumn(0) }
             'G', '`' -> setCursorColumn((params.firstOrNull() ?: 1) - 1)
             'd' -> addressScreenRow((params.firstOrNull() ?: 1) - 1)
             'H', 'f' -> {
@@ -1023,24 +1035,29 @@ class AnsiTerminalBuffer(
     }
 
     /**
-     * A row move a sequence asked for, as opposed to one the output caused.
+     * [setScreenRow], recording that a program placed its cursor there *by naming the row*.
      *
-     * Only the sequences a program uses to place its cursor go through here and through
-     * [addressScreenRow]; DECOM, DECSTBM and DECRC call [setCursorRow]/[setScreenRow] directly, because
-     * those move the cursor as a side effect of something else and a shell drawing a two-line prompt
-     * with `ESC 7`/`ESC 8` is not a program painting a screen.
+     * This, and nothing else, is what marks a screen painted - and what it keys on is the shape of the
+     * sequence rather than the direction of the move. `ESC [ H` and `ESC [ d` say *which row* the cursor
+     * belongs on, which is a statement about the whole screen that only a program meaning to own it
+     * makes. A relative move says merely how far, and the one thing that emits those while a shell is on
+     * screen is the line editor putting a wrapped command line back - which is not a repaint, and
+     * treating it as one is what [positionalScreen] records the cost of.
+     *
+     * The one direction that is still excluded is down: a name for a row *below* the cursor is a jump
+     * forward into unwritten space, which is output resuming somewhere else rather than a screen being
+     * rewritten. Naming the row the cursor is already on is not excluded, because a program that homes
+     * to the top-left on a screen it has nothing above is beginning a repaint, and `top`'s first frame
+     * can be exactly that.
+     *
+     * DECOM, DECSTBM and DECRC call [setScreenRow]/[setCursorRow] directly, because those move the
+     * cursor as a side effect of something else and a shell drawing a two-line prompt with
+     * `ESC 7`/`ESC 8` is not a program painting a screen.
      */
-    private fun moveCursorRow(row: Int) {
-        val from = cursorRow
-        setCursorRow(row)
-        if (cursorRow < from) positionalScreen = true
-    }
-
-    /** [setScreenRow], recording that a program placed its cursor there. See [moveCursorRow]. */
     private fun addressScreenRow(row: Int) {
         val from = cursorRow
         setScreenRow(row)
-        if (cursorRow < from) positionalScreen = true
+        if (cursorRow <= from) positionalScreen = true
     }
 
     private fun setCursorColumn(column: Int) {

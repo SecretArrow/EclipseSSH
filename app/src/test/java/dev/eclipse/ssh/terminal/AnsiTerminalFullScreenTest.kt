@@ -11,6 +11,15 @@ private val ESCAPE: String = Char(0x1B).toString()
 private fun chars(vararg codes: Int): String = codes.map { Char(it) }.joinToString("")
 
 /**
+ * The line typed in the two wrapping tests, character for character as it was typed into a real pty.
+ *
+ * Long enough to overflow both the 46-column pty and a 20-column view, and made of ordinary words so
+ * that a break has somewhere to land other than inside a token.
+ */
+private const val LONG_COMMAND =
+    "echo hello world this is a fairly long command line with several words in it"
+
+/**
  * The capabilities that separate a terminal from a log view: the alternate screen, scroll regions,
  * the modes a full-screen program negotiates before it draws, the replies it waits for, and the
  * viewport the renderer is actually handed.
@@ -415,7 +424,10 @@ class AnsiTerminalFullScreenTest {
      * rows positional on the *primary* screen - the load averages are on row one because row one is
      * where they were put - and re-wrapping row three into two rows on a phone whose view is narrower
      * than the pty would push the rest of its screen down. `alternateScreen` cannot see this, so the
-     * buffer reports an upward cursor move, which is the thing output that flows never does.
+     * buffer reports the absolute addressing instead: a sequence that names a row is stating where the
+     * whole screen belongs, and no shell doing ordinary work ever names one.
+     *
+     * The complementary test is the one below, which pins what is deliberately *not* a repaint.
      */
     @Test
     fun `homing the cursor to repaint marks the primary screen as painted`() {
@@ -518,13 +530,115 @@ class AnsiTerminalFullScreenTest {
     fun `the two screens do not inherit each other's mark`() {
         val buffer = AnsiTerminalBuffer(columns = 40, rows = 6, scrollbackLimit = 50)
         buffer.feed("$ vi notes\n")
-        // Homed from the second row, because entering the alternate screen already put the cursor on the
-        // first one and a move to the row it is on is not a move up.
+        // What vi does on the way in: take the alternate screen, paint two rows, then home and paint
+        // again - the home being the repaint this test is about.
         buffer.feed("${ESCAPE}[?1049h~ one\n~ two\n${ESCAPE}[H~ file")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
 
         buffer.feed("${ESCAPE}[?1049l")
+
+        assertThat(buffer.frame().positionalScreen).isFalse()
+    }
+
+    /**
+     * The line editor putting a wrapped command back is not a program painting a screen, however much
+     * the cursor moves look like one.
+     *
+     * This is the regression the flag was reading wrongly. The rule used to be "an upward move", and
+     * the one thing that moves up while a shell is on screen is readline: a command longer than the
+     * window is redrawn by stepping back up over the rows it occupies and writing them again, so
+     * *editing* any long command - a backspace, a Ctrl-A, a completion - marked the screen painted and
+     * switched word wrapping off for the rest of the session. The user sees the result as a long line
+     * clipped at the right edge instead of flowing onto the row below, with the cursor drawn past the
+     * edge and the view panning after it.
+     *
+     * Measured through a real pty at 46 columns: editing one long line emits ten `ESC [ A`; `top`,
+     * `less`, `nano`, `vi` and `watch`, run the same way, emit none between them and home with `ESC [ H`
+     * instead. The tell is therefore the shape of the sequence and not its direction - and the shell's
+     * own line editor is what proves it.
+     */
+    @Test
+    fun `the line editor rewriting a wrapped command never marks the screen as painted`() {
+        val buffer = AnsiTerminalBuffer(columns = 46, rows = 20, scrollbackLimit = 50)
+        buffer.feed("$ ")
+        buffer.feed(LONG_COMMAND)
+        assertThat(buffer.frame().positionalScreen).isFalse()
+
+        // Ctrl-A on a line that has wrapped, byte for byte from a real bash at 46 columns: up one row,
+        // carriage return, then forward to the column the cursor belongs on.
+        buffer.feed("${ESCAPE}[A\r${ESCAPE}[C${ESCAPE}[C")
+        assertThat(buffer.frame().positionalScreen).isFalse()
+
+        // And the rest of the relative row moves: the two that go up, which each used to set the mark,
+        // and the two that go down, which never did and still must not.
+        buffer.feed("${ESCAPE}[2A") // CUU, up
+        buffer.feed("${ESCAPE}[F") // CPL, up and to column zero
+        buffer.feed("${ESCAPE}[B") // CUD, down
+        buffer.feed("${ESCAPE}[E") // CNL, down and to column zero
+        buffer.feed("${ESCAPE}OA") // the SS3 arrow, which is the same move an arrow key sends
+        assertThat(buffer.frame().positionalScreen).isFalse()
+    }
+
+    /**
+     * And the consequence, which is what the user reported: the long line still flows onto the row
+     * below instead of being clipped at the right edge.
+     *
+     * The pty is 46 columns and the view is 20, which is the shipped situation on a phone - a command
+     * that fits the pty does not fit the screen. [terminalLayout] is where the wrapping happens and the
+     * only layer the reader sees, so the frame is read twice from the same buffer: once as it comes,
+     * and once as the bug used to present it, marked painted. The two must not agree.
+     */
+    @Test
+    fun `an edited command line still flows onto the next row`() {
+        val buffer = AnsiTerminalBuffer(columns = 46, rows = 20, scrollbackLimit = 50)
+        buffer.feed("$ ")
+        buffer.feed(LONG_COMMAND)
+        buffer.feed("${ESCAPE}[A\r${ESCAPE}[K${ESCAPE}[C")
+
+        val frame = buffer.frame()
+        val flowing = terminalLayout(frame, width = 20, maxRows = 24)
+        val clipped = terminalLayout(frame.copy(positionalScreen = true), width = 20, maxRows = 24)
+
+        // Every row fits the view, so nothing needs panning to be readable...
+        assertThat(flowing.rows.map { it.width }.max()).isAtMost(20)
+        // ...and the line took more than one row to do it, which is the wrapping itself.
+        assertThat(flowing.rows.size).isGreaterThan(clipped.rows.size)
+        // The bug's reading of the same frame: one row per grid line, reaching past the view's edge.
+        assertThat(clipped.rows.size).isEqualTo(frame.lines.size)
+        assertThat(clipped.contentColumns).isGreaterThan(20)
+    }
+
+    /**
+     * A home to the row the cursor is already on still marks, because that is `top`'s first frame.
+     *
+     * procps' startup is `ESC [ H ESC [ 2 J` followed by its grid, sent when the cursor is wherever the
+     * shell left it - and on a screen with nothing above it, that is row one. Reading the tell as "a move
+     * up" rather than "a row named" misses that frame and lays it out reflowed, which is the same damage
+     * §28.2 was about, arriving through the one program that section is named for.
+     */
+    @Test
+    fun `homing to the row the cursor is already on still marks the screen`() {
+        val buffer = AnsiTerminalBuffer(columns = 40, rows = 6, scrollbackLimit = 50)
+
+        // The top row of a fresh screen, with nothing above the cursor to move up from.
+        buffer.feed("${ESCAPE}[H")
+
+        assertThat(buffer.frame().positionalScreen).isTrue()
+    }
+
+    /**
+     * And the direction that is not honoured, which is the pair to the test above.
+     *
+     * A name for a row *below* the cursor is a jump forward into space nothing has been written to, so it
+     * is output resuming somewhere else rather than a screen being rewritten. Nothing observed does this
+     * - it is here so that dropping the direction test altogether is a change a test notices.
+     */
+    @Test
+    fun `a jump to a row below the cursor is not a repaint`() {
+        val buffer = AnsiTerminalBuffer(columns = 40, rows = 6, scrollbackLimit = 50)
+
+        buffer.feed("${ESCAPE}[5;1H")
 
         assertThat(buffer.frame().positionalScreen).isFalse()
     }
