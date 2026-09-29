@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §79, *Releasing 1.13.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §80, *The line editor's repaint was read as a program painting a screen*, which is the version after the one this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -2906,10 +2906,14 @@ used to justify the rule.
 `AnsiTerminalBuffer` now reports a second flag, `positionalScreen`, and `terminalLayout` suppresses
 wrapping for either it or `alternateScreen`.
 
-* **Set** by an upward row move that a sequence asked for — `CUU`, `CPL`, `VPA`, `CUP`/`HVP` — because
-  output that flows only ever goes down. `DECOM`, `DECSTBM` and `DECRC` move the cursor as a side effect of
-  something else and deliberately do not set it: a shell drawing a two-line prompt with `ESC 7`/`ESC 8` is
-  not a program painting a screen.
+* **Set** by absolute addressing that does not move the cursor down — `CUP`/`HVP` and `VPA`, the
+  sequences that *name a row* — because a program that says where the cursor belongs is stating where the
+  whole screen's contents belong, and output that merely flows never names anything. A *relative* row
+  move is deliberately **not** part of the test, although it once was; §80 has the measurement that
+  removed it. A jump to a row *below* the cursor is not part of it either, because that is output
+  resuming in unwritten space rather than a screen being rewritten. `DECOM`, `DECSTBM` and `DECRC` move
+  the cursor as a side effect of something else and deliberately do not set it either: a shell drawing a
+  two-line prompt with `ESC 7`/`ESC 8` is not a program painting a screen.
 * **Cleared** when output reaches the bottom row and scrolls the screen, which is the opposite tell and is
   a stream behaving like one. `top`'s own exit does exactly that, so the mark cannot outlive the program.
   Both screen switches and both resets clear it too, so neither screen inherits the other's mode.
@@ -9203,3 +9207,82 @@ was opened the way §69 records rather than with `ci-window.sh open`, which disp
 closes when that run settles. The deadline was recorded before the flip, `main` was guarded from that
 moment (the apply took two attempts, which is the retry §71's follow-up added), and the close came after
 the validation had settled, verified by reading the visibility back as `private`.
+
+## 80. The line editor's repaint was read as a program painting a screen, so editing a long command turned word wrapping off for the rest of the session
+
+Reported by the user, in their words: in Fit screen mode a line that reaches the width of the display is
+cut per character rather than broken per word as JuiceSSH breaks it, and a long line "piles up" with the
+cursor drawn past the right edge instead of moving down onto the row below. Both symptoms are one fault,
+and the fault was in the tell §28.3 chose for `positionalScreen`.
+
+**What the rule was.** The mark was set by *any upward row move a sequence asked for* — `CUU`, `CPL`,
+`VPA`, `CUP`/`HVP` — on the reasoning that output that flows only ever goes down. `CUP` and `VPA` are
+right and are what `top` uses. `CUU` and `CPL` are not, because of one program that is always on screen:
+the shell's own line editor. A command longer than the terminal is not scrolled into place by readline;
+it is *repainted*, by stepping the cursor back up over the rows the line occupies and writing them again.
+
+**The measurement, through real ptys on this host rather than from the manual.** At 46 columns — a phone's
+worth, and narrower than the 80-column pty the app asks for — typing one long line and then editing it
+emits ten `ESC [ A`, one per row the line occupies, every time the line is touched. `top -d 1` over eight
+repaints emitted eight `ESC [ H` and **zero** `CUU`. `less`, `nano`, `vi` and `watch`, driven the same
+start-edit-quit way, emitted 1, 4, 51 and 13 absolute homes between them and **zero** upward moves. So
+every program that genuinely paints a screen was already using the absolute form, and the relative form
+was being produced only by the one program the mark must not catch.
+
+**The cost, in the state the user sees.** Editing any long command — a backspace, a Ctrl-A, a Tab
+completion — set the mark on the primary screen, and nothing took it off until the screen scrolled or was
+cleared. `terminalLayout` suppresses wrapping for the marked screen, by design (§28.3), so from that
+keystroke on the shell's output was laid out one row per grid line: a 46-column line on a 20-column view
+was clipped at the right edge exactly as reported, the cursor was drawn at `cursorColumn * cellWidth`
+past it, and `panForCursor` dragged the view sideways to follow it. The bug therefore outlived the
+keystroke that caused it, which is why it read as "the terminal is broken" rather than "that line was
+drawn oddly".
+
+**The change.** The mark is now set by absolute addressing and nothing else — with one direction still
+excluded, a name for a row *below* the cursor, which is output resuming in unwritten space rather than a
+screen being rewritten. Naming the row the cursor is already on is *not* excluded, so a program that
+homes to the top-left of a screen it has nothing above still marks it; `top`'s first frame can be that
+case, and the older rule's `<` would have missed it. `moveCursorRow` is deleted
+and `addressScreenRow` — which already existed for `CUP` and `VPA` — is the only setter; the four
+relative sequences (`CUU`, `CUD`, `CNL`, `CPL`, plus the two SS3 arrows) go through `setCursorRow`, which
+moves the cursor and bumps the revision, and stop there. The clearing rules are untouched: a scroll
+under flowing output and `ESC [ 3 J` both still take the mark off, which is how `top`'s exit releases it.
+
+**What this does not claim.** A program that repainted the primary screen *only* with relative moves and
+never named a row would now be wrapped instead of marked. None was found among the five probed, and the
+alternate-screen programs (`less`, `vi`, `nano`, `htop`) are caught by `alternateScreen` in any case —
+but the guarantee is narrower than "no program is misread", and it is narrower on measurement rather than
+on argument. Column moves are not part of the test in either direction, so readline's `ESC [ C` runs and
+`ESC [ 4 G` are ignored as they were.
+
+**The tests.** Six tests already pinned the set and clear rules and all six still pass, because each
+drives the mark through `ESC [ H`. Four were added beside them: `the line editor rewriting a wrapped
+command never marks the screen as painted`, which feeds the measured byte shapes — `ESC [ A` then `\r`
+then the column moves, and the four relative row moves — and asserts the flag; `an edited command line
+still flows onto the next row`, which reads one frame twice through `terminalLayout` and asserts that the
+flowing reading fits the view in more than one row while the painted reading is the over-wide clipping
+the user reported; and a pair pinning the direction that is still excluded and the one that is not —
+`homing to the row the cursor is already on still marks the screen`, which is `top`'s first frame, and
+`a jump to a row below the cursor is not a repaint`. All four were checked against three mutants of the
+rule before this was pushed — relative moves marking again (kills the first two), `<` instead of `<=`
+(kills the third), and the direction test dropped (kills the fourth) — so each one is a test that fails
+for the reason it names rather than a test that merely passes.
+
+**A second trigger of the same symptom, measured and deliberately left open.** Pressing Ctrl-L at a bash
+prompt emits `ESC [ H` and `ESC [ 2 J` and **no** `ESC [ 3 J`, so under the rule §28.6 chose the mark
+stays set — the erase that `clear` uses to release it is missing — and the screenful that follows is laid
+out unwrapped, which is the same clipping this section is about, from a different key. The reason is
+mechanical and checkable: readline redraws with terminfo's `clear` string, which for `xterm-256color` is
+`\E[H\E[2J`, while the `clear` binary and `tput clear` also emit `E3`, an *extended* capability that
+`infocmp -1` does not print and readline never reads. Both measured here: `clear | od -c` is
+`033 [ H 033 [ 2 J 033 [ 3 J`, the pty probe's Ctrl-L is the first two sequences only.
+
+Releasing the mark on `ESC [ 2 J` would fix it, and §28.6 rejected exactly that to keep `top`'s first
+frame — `ESC [ H ESC [ 2 J` and then a grid — from being laid out reflowed until its next repaint. That
+is a real cost and this fix does not pay it: `top` repaints with `ESC [ H` every frame, so the window
+would close within one refresh interval, and Ctrl-L's window closes only when the screen scrolls. The
+two are indistinguishable in the byte stream at the moment the erase arrives, so the choice is which
+frame to get wrong. It was *not* made here. The readline fix changes neither side of it, and the interop
+test asserts the mark on a real `top` in both directions, so reversing §28.6 deserves its own pass with
+its own measurement of how long `top`'s window actually stays open.
+
