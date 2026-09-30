@@ -79,6 +79,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -256,6 +257,7 @@ import dev.eclipse.ssh.ui.remotedesktop.RdpConfigDialog
 import dev.eclipse.ssh.ui.settings.ClipboardClearActivity
 import dev.eclipse.ssh.ui.settings.DiagnosticsActivity
 import dev.eclipse.ssh.ui.settings.ExportBackupActivity
+import dev.eclipse.ssh.ui.settings.ExportProfilesActivity
 import dev.eclipse.ssh.ui.hosts.HostDetailsActivity
 import dev.eclipse.ssh.ui.settings.HostFormActivity
 import dev.eclipse.ssh.ui.settings.KeepAliveActivity
@@ -919,7 +921,7 @@ private fun EclipseWorkspace(
         val pass = pendingAccountExportPassphrase
         pendingAccountExportHost = null
         pendingAccountExportPassphrase = null
-        if (uri != null && host != null && pass != null) viewModel.exportAccount(host, pass, uri)
+        if (uri != null && host != null && pass != null) viewModel.exportProfiles(listOf(host), pass, uri)
     }
     val accountImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         pickerActive = false
@@ -1514,7 +1516,7 @@ private fun EclipseWorkspace(
                     activeHost = activeHost,
                     onStopForward = viewModel::stopForwarding,
                     onImportVault = { pickerActive = true; importPicker.launch(arrayOf("*/*")) },
-                    onImportAccount = { pickerActive = true; accountImportPicker.launch(arrayOf("*/*")) },
+                    onImportProfiles = { pickerActive = true; accountImportPicker.launch(arrayOf("*/*")) },
                     onImportSshConfig = { pickerActive = true; configImportPicker.launch(arrayOf("text/plain", "*/*")) },
                     onBiometric = ::setBiometric,
                     onDarkTheme = viewModel::setDarkTheme,
@@ -1709,7 +1711,7 @@ private fun EclipseWorkspace(
                     activeHost = activeHost,
                     onStopForward = viewModel::stopForwarding,
                     onImportVault = { pickerActive = true; importPicker.launch(arrayOf("*/*")) },
-                    onImportAccount = { pickerActive = true; accountImportPicker.launch(arrayOf("*/*")) },
+                    onImportProfiles = { pickerActive = true; accountImportPicker.launch(arrayOf("*/*")) },
                     onImportSshConfig = { pickerActive = true; configImportPicker.launch(arrayOf("text/plain", "*/*")) },
                     onBiometric = ::setBiometric,
                     onDarkTheme = viewModel::setDarkTheme,
@@ -1889,26 +1891,28 @@ private fun EclipseWorkspace(
     }
     if (showAccountExportDialog) {
         PassphraseDialog(
-            title = "Export account profile",
+            title = "Export profile",
             confirmLabel = "Choose file",
             onDismiss = { showAccountExportDialog = false; pendingAccountExportHost = null },
             onConfirm = { pass ->
                 showAccountExportDialog = false
                 pendingAccountExportPassphrase = pass
                 pickerActive = true
-                accountExportPicker.launch("${safeFileName(pendingAccountExportHost?.name ?: "account")}.eclipse-account")
+                accountExportPicker.launch("${safeFileName(pendingAccountExportHost?.name ?: "account")}.eclipse-profile")
             },
             onPasteSecret = viewModel::pasteSecret,
         )
     }
     if (showAccountImportDialog) {
         PassphraseDialog(
-            title = "Import account profile",
+            // "profiles", not "account": one file may carry a whole selection of them, and the same
+            // door imports both. The row that opens it says the same thing.
+            title = "Import profiles",
             confirmLabel = "Import",
             onDismiss = { showAccountImportDialog = false; pendingAccountImportUri = null },
             onConfirm = { pass ->
                 showAccountImportDialog = false
-                pendingAccountImportUri?.let { viewModel.importAccount(pass, it) }
+                pendingAccountImportUri?.let { viewModel.importProfiles(pass, it) }
                 pendingAccountImportUri = null
             },
             onPasteSecret = viewModel::pasteSecret,
@@ -2321,7 +2325,7 @@ private fun WorkspaceScaffold(
     onRemoveHost: (HostProfile) -> Unit,
     /** Toggles the star on one host - the card menu's Favorite item. */
     onToggleFavoriteHost: (HostProfile) -> Unit = {},
-    /** Opens the per-host account export dialog - the card menu's Export account item. */
+    /** Opens the per-host account export dialog - the card menu's Export profile item. */
     onExportAccount: (HostProfile) -> Unit = {},
     /** Saves a copy of one host under a new id - the card menu's Duplicate item. */
     onDuplicateHost: (HostProfile) -> Unit = {},
@@ -2418,7 +2422,7 @@ private fun WorkspaceScaffold(
     activeHost: HostProfile? = null,
     onStopForward: (String) -> Unit = {},
     onImportVault: () -> Unit = {},
-    onImportAccount: () -> Unit = {},
+    onImportProfiles: () -> Unit = {},
     onImportSshConfig: () -> Unit = {},
     onBiometric: (Boolean) -> Unit,
     onDarkTheme: (Boolean) -> Unit,
@@ -2510,7 +2514,7 @@ private fun WorkspaceScaffold(
         // names itself in the navigation bar at the bottom, so the bar above repeated that name (and
         // the global-search icon beside it) in vertical space the document on screen could use; the
         // screens felt noticeably tighter for it. Hosts is the one destination with actions that
-        // belong to no row on it (Add, Import account), and those stay, actions-only.
+        // belong to no row on it (Add, Import profiles), and those stay, actions-only.
         topBar = {
             if (destination == Destination.HOSTS) {
                 TopAppBar(
@@ -2548,7 +2552,7 @@ private fun WorkspaceScaffold(
                         )
                     },
                     actions = {
-                        IconButton(onClick = onImportAccount) { Icon(Icons.Default.CloudDownload, "Import account") }
+                        IconButton(onClick = onImportProfiles) { Icon(Icons.Default.CloudDownload, "Import profiles") }
                         IconButton(onClick = onAddHost) { Icon(Icons.Default.Add, "Add host") }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -2644,6 +2648,7 @@ private fun WorkspaceScaffold(
                 Destination.SETTINGS -> SettingsScreen(
                     state, activeHost, linuxUserspace, onBiometric, onDarkTheme, onStopForward,
                     onImportVault,
+                    onImportProfiles,
                     onLegacyAlgorithms = onLegacyAlgorithms,
                     onBlockScreenshots = onBlockScreenshots,
                     onReconnectAskFirst = onReconnectAskFirst,
@@ -2865,7 +2870,7 @@ private fun HostCard(
                             onClick = { menuOpen = false; onToggleFavorite(host) },
                         )
                         DropdownMenuItem(
-                            text = { Text("Export account") },
+                            text = { Text("Export profile") },
                             leadingIcon = { Icon(Icons.Default.Upload, null) },
                             onClick = { menuOpen = false; onExportAccount(host) },
                         )
@@ -5209,6 +5214,7 @@ private fun SettingsScreen(
     onDarkTheme: (Boolean) -> Unit,
     onStopForward: (String) -> Unit,
     onImportVault: () -> Unit,
+    onImportProfiles: () -> Unit,
     // Six `onXxx: (Int) -> Unit` callbacks used to sit here - keep-alive, clipboard, font size,
     // terminal width, reconnect delay and vault auto-lock. They existed only to carry a dialog's
     // answer back up to the ViewModel; those six answers are now written directly to the settings
@@ -5428,7 +5434,11 @@ private fun SettingsScreen(
         // have to be one motion: the picker leaves the app, and the passphrase must not be left
         // behind in a list that has already scrolled on.
         SettingRow(Icons.Default.CloudUpload, "Export encrypted backup", "Hosts and settings, passphrase-protected") { TextButton(onClick = { context.startActivity(Intent(context, ExportBackupActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Export encrypted backup" }) { Text("Export") } }
+        // Beside the vault export and deliberately not the same thing: this one carries the secrets
+        // and no settings, that one the settings and no secrets. See [ExportProfilesActivity].
+        SettingRow(Icons.Default.Person, "Export profiles", "One or more accounts, credentials included") { TextButton(onClick = { context.startActivity(Intent(context, ExportProfilesActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Export profiles" }) { Text("Export") } }
         SettingRow(Icons.Default.CloudDownload, "Import backup", "Restore hosts and settings") { TextButton(onClick = onImportVault) { Text("Import") } }
+        SettingRow(Icons.Default.Person, "Import profiles", "Restore one or more saved accounts") { TextButton(onClick = onImportProfiles) { Text("Import") } }
         SettingRow(Icons.Default.Computer, "Import OpenSSH config", "Parse Host blocks from ssh_config") { TextButton(onClick = onImportSshConfig) { Text("Import") } }
     }
     Spacer(Modifier.height(14.dp))

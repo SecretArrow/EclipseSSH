@@ -51,15 +51,26 @@ import org.json.JSONObject
  * proxy password are never written to a vault backup. Every other host and settings field
  * round-trips losslessly, so restoring a vault reproduces the workspace apart from those secrets.
  *
- * A single-account export is the one deliberate exception, because its purpose is different: it
- * moves *one account* to another device, and an account that arrives without its password asks
- * the user for the one thing the export already knew. [toAccountJson] may therefore carry the
- * account's saved SSH password and key passphrase in an opt-in `credentials` block, inside the
- * same AES-GCM/PBKDF2 envelope as the rest of the payload — a block no vault backup ever writes
- * and no older build ever reads. Private keys stay out of both formats: the key is the credential
- * whose compromise is catastrophic, it already has its own export path from the Keys screen, and
- * the account file plus that separately exported key is a complete account without duplicating
- * key material.
+ * A profile export is the one deliberate exception, because its purpose is different: it moves
+ * *an account* to another device, and an account that arrives without its password asks the user
+ * for the one thing the export already knew. [toProfilesJson] therefore carries everything
+ * [dev.eclipse.ssh.data.credentials.HostCredentialStore] holds for each exported profile — the SSH
+ * password, the private key with its file name and detected type, the key passphrase, the SOCKS
+ * proxy password, and the RDP username, domain and password — in an opt-in `credentials` block,
+ * inside the same AES-GCM/PBKDF2 envelope as the rest of the payload: a block no vault backup ever
+ * writes and no older build ever reads.
+ *
+ * Key material used to be excluded from both formats, and that changed deliberately. The reason
+ * it was excluded was that a key has its own export path from the Keys screen, so a profile file
+ * could be complete without duplicating it — true of a file that carries *one* account the user is
+ * about to finish by hand, and false of the thing this format is now for. Selecting six profiles
+ * and exporting them is a request to move six working accounts, and an account that needs its key
+ * chosen and re-imported on the other side is a profile that arrived broken. The compromise the
+ * key represents is not changed by which door it leaves through: the whole payload is encrypted
+ * with the user's passphrase either way, and the file is written only at the user's explicit
+ * request, to a document they picked. [toJson] remains credential-free, so a *vault* backup — the
+ * whole-workspace file, which people mail to themselves and keep in cloud storage — still carries
+ * nothing secret and has to be paired with saved credentials that never left the device.
  *
  * Older payloads still import, and this is the property the format is built around rather than a
  * concession: every key is read with an `opt…(key, default)` whose default is the field's own shipped
@@ -389,38 +400,144 @@ object VaultBackup {
     private fun JSONObject.algorithmList(key: String): String? =
         if (isNull(key)) null else optString(key).trim().take(ALGORITHM_LIST_MAX_LENGTH).takeIf(String::isNotBlank)
 
-    /** Exports one connection profile using the same passphrase-encrypted format as a vault. */
-    fun toAccountJson(host: HostProfile, credentials: AccountCredentials? = null): String {
-        // Built on top of toJson rather than threaded through it, so the vault path cannot start
-        // carrying credentials by accident: the only writer of the block is this function.
-        val root = JSONObject(toJson(listOf(host), AppSettings(), emptyMap()))
-        if (credentials != null) {
-            val block = JSONObject()
-            credentials.password?.let { block.put("password", it) }
-            credentials.passphrase?.let { block.put("passphrase", it) }
-            // Absent by default, so exports from before the block existed and exports of accounts
-            // with nothing stored read the same way on import - and no version bump is needed.
-            if (block.length() > 0) root.put("credentials", block)
+    /**
+     * Exports one or more connection profiles, credentials included, in the vault's own encrypted
+     * format.
+     *
+     * Built on top of [toJson] rather than threaded through it, so the vault path cannot start
+     * carrying credentials by accident: this function is the only writer of the block. The hosts
+     * block is byte-for-byte what a vault would write for the same profiles, and the credentials
+     * block is the only difference — which is what lets the two doors share a reader and what
+     * [KIND] exists to tell apart.
+     *
+     * Keyed by host id rather than a list, because the block is a lookup and never an order: the
+     * hosts array already carries the order the user picked, and a profile whose credentials failed
+     * to be gathered is simply absent from the block rather than holding a placeholder beside its
+     * host.
+     */
+    fun toProfilesJson(hosts: List<HostProfile>, credentials: Map<String, ProfileCredentials> = emptyMap()): String {
+        val root = JSONObject(toJson(hosts, AppSettings(), emptyMap()))
+        root.put("kind", KIND)
+        val block = JSONObject()
+        hosts.forEach { host ->
+            // Skipped for the same reason toJson skips them: the local Ubuntu environment's id is
+            // synthesized at runtime, so a block keyed by one would describe a profile no device
+            // restores.
+            if (LocalLinuxHost.isLocalHost(host.id)) return@forEach
+            credentials[host.id]?.let { entry -> entry.toJsonObject().takeIf { it.length() > 0 }?.let { block.put(host.id, it) } }
         }
+        // Absent when there is nothing to carry, so a profile with nothing saved and an export
+        // written before the block existed read the same way on import - and no version bump is
+        // needed either way.
+        if (block.length() > 0) root.put("credentials", block)
         return root.toString()
     }
 
-    /** Reads one account export and rejects empty/multi-purpose payloads. */
-    fun fromAccountJson(json: String): ImportedAccount {
+    /**
+     * Reads a profile export of any size, and refuses a file written by a different door.
+     *
+     * The `kind` marker is what makes the refusal possible. A profile export's hosts block is a
+     * valid vault hosts block - that is deliberate, it is how the two share a writer - so without
+     * the marker a profile file dropped on "Import backup" would import its hosts and reset every
+     * *setting* to the default an account export carries, silently. The marker is absent from every
+     * file written before this function existed, so an absent one is read as "not a profile export"
+     * rather than as an error: an old single-account file still imports here, because the shape it
+     * has is the one the flat block below still handles.
+     */
+    fun fromProfilesJson(json: String): List<ImportedProfile> {
+        val root = try {
+            JSONObject(json)
+        } catch (error: Throwable) {
+            throw BackupFormatException("Profile export contents are not valid Eclipse SSH JSON", error)
+        }
+        val kind = root.optString("kind").trim().takeIf(String::isNotBlank)
+        if (kind != null && kind != KIND) throw BackupFormatException("That file is not a profile export")
         val hosts = fromJson(json).first
-        if (hosts.size != 1) throw BackupFormatException("Account export must contain exactly one host")
-        val block = runCatching { JSONObject(json) }.getOrNull()?.optJSONObject("credentials")
-        // Shape-checked like every other imported value: the block is untrusted input, so an
-        // over-long or blank field is dropped rather than stored or fatal.
-        val credentials = block?.let {
-            AccountCredentials(password = it.readAccountSecret("password"), passphrase = it.readAccountSecret("passphrase"))
-        }?.takeIf { it.password != null || it.passphrase != null }
-        return ImportedAccount(host = hosts.single(), credentials = credentials)
+        if (hosts.isEmpty()) throw BackupFormatException("That profile export contains no profiles")
+        val block = root.optJSONObject("credentials")
+        // The flat block is the shape the first account exports wrote: no host ids, and meaningful
+        // only because the file held exactly one host. Kept because those files are out there and
+        // were the only way to move an account until this function replaced that writer.
+        val flat = block?.takeIf { it.has("password") || it.has("passphrase") }
+        return hosts.map { host ->
+            val entry = block?.optJSONObject(host.id) ?: flat?.takeIf { hosts.size == 1 }
+            ImportedProfile(host = host, credentials = entry?.toProfileCredentials())
+        }
     }
 
+    /**
+     * True when a payload is a profile export rather than a vault backup.
+     *
+     * Exists for one caller and one consequence: a profile export's hosts block *is* a valid vault
+     * hosts block — that is what sharing a writer means — so "Import backup" would otherwise accept
+     * one, import its hosts, and reset every setting to the default the profile writer carries in
+     * its settings block, silently and with no way back. The reader cannot refuse it in [fromJson],
+     * which is the vault path's own entry point and has to stay able to read every file it ever
+     * wrote; so the check is a question the caller asks before it opens the door. False for anything
+     * that does not parse, because "not a profile export" is the honest answer for a file that is
+     * not a backup either — [fromJson] has a better sentence for that one.
+     */
+    fun isProfileExport(json: String): Boolean =
+        runCatching { JSONObject(json).optString("kind").trim() }.getOrNull() == KIND
+
     /** One credential field as imported: bounded, trimmed, and null when there is nothing usable. */
-    private fun JSONObject.readAccountSecret(key: String): String? =
-        if (isNull(key)) null else optString(key).trim().take(MAX_ACCOUNT_CREDENTIAL_LENGTH).takeIf(String::isNotBlank)
+    private fun JSONObject.readAccountSecret(key: String): String? = readBounded(key, MAX_ACCOUNT_CREDENTIAL_LENGTH)
+
+    /** A short per-host text field as imported — a file name or a type label, not a secret. */
+    private fun JSONObject.readBounded(key: String, max: Int): String? =
+        if (isNull(key)) null else optString(key).trim().take(max).takeIf(String::isNotBlank)
+
+    private fun ProfileCredentials.toJsonObject(): JSONObject = JSONObject().apply {
+        password?.let { put("password", it) }
+        keyBase64?.let { put("key", it) }
+        keyLabel?.let { put("keyLabel", it) }
+        keyType?.let { put("keyType", it) }
+        passphrase?.let { put("passphrase", it) }
+        socksPassword?.let { put("socksPassword", it) }
+        rdpUsername?.let { put("rdpUsername", it) }
+        rdpDomain?.let { put("rdpDomain", it) }
+        rdpPassword?.let { put("rdpPassword", it) }
+    }
+
+    /**
+     * One host's credentials block as imported, or null when nothing in it survived its check.
+     *
+     * Every field is bounded like the rest of the payload, and two relationships between fields are
+     * enforced here rather than left to the store:
+     *
+     * - **A key needs its label.** `StoredCredentials.hasKey` is `keyLabel != null`, so bytes that
+     *   arrived without a file name would be written into the vault and never read back — invisible
+     *   storage the user can neither see nor delete from the Saved credentials screen. The type is
+     *   dropped with them for the same reason: it describes a key that is not there.
+     * - **An RDP credential is all three fields or none.** `HostCredentialStore.rdpCredentials`
+     *   returns null unless a username *and* a password are stored, because an NLA answer is all
+     *   three or it is nothing; a file carrying one of the pair would leave the host with a
+     *   half-credential the store can never hand to a tunnel. A domain is the one optional field.
+     */
+    private fun JSONObject.toProfileCredentials(): ProfileCredentials? {
+        val keyLabel = readBounded("keyLabel", MAX_KEY_LABEL_LENGTH)
+        val keyBase64 = readBounded("key", MAX_KEY_BASE64_LENGTH)
+            // Shape-checked as well as bounded: the value is decoded here so that a hand-edited key
+            // is dropped as one bad field rather than throwing later, at the point a connection is
+            // being made with it.
+            ?.let { encoded -> encoded.takeIf { runCatching { Base64.getDecoder().decode(it) }.isSuccess } }
+            ?.takeIf { keyLabel != null }
+        val rdpUsername = readAccountSecret("rdpUsername")
+        val rdpPassword = readAccountSecret("rdpPassword")
+        val rdpPaired = rdpUsername != null && rdpPassword != null
+        val credentials = ProfileCredentials(
+            password = readAccountSecret("password"),
+            keyBase64 = keyBase64,
+            keyLabel = keyLabel.takeIf { keyBase64 != null },
+            keyType = readBounded("keyType", MAX_KEY_TYPE_LENGTH).takeIf { keyBase64 != null },
+            passphrase = readAccountSecret("passphrase"),
+            socksPassword = readAccountSecret("socksPassword"),
+            rdpUsername = rdpUsername.takeIf { rdpPaired },
+            rdpDomain = readAccountSecret("rdpDomain").takeIf { rdpPaired },
+            rdpPassword = rdpPassword.takeIf { rdpPaired },
+        )
+        return credentials.takeIf { !it.isEmpty }
+    }
 
     fun encrypt(plaintext: String, passphrase: String): String {
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
@@ -478,11 +595,34 @@ object VaultBackup {
     private const val DELIMITER = "."
 
     /**
+     * What a profile export calls itself, in the `kind` field of its root object.
+     *
+     * The one thing that separates the two kinds of file this object writes, and it has to be
+     * something: both are `toJson` output, so both are structurally valid backups, and the
+     * difference between them is which door may read them. See [fromProfilesJson].
+     */
+    const val KIND = "profiles"
+
+    /**
      * Bound on an imported account credential's length. Generous against any real password - longer
      * than every passphrase policy - and bounded against a hand-edited file, because the value goes
      * from the file straight into the credential store.
      */
     private const val MAX_ACCOUNT_CREDENTIAL_LENGTH = 4096
+
+    /**
+     * Bound on an imported private key's base64 length - about 24 KB of key material, several times
+     * the largest PEM this app writes (an RSA 4096 key is under 4 KB encoded). Bounded for the same
+     * reason as every other field, and separately from them because a key is two orders of magnitude
+     * larger than a password and would be truncated to uselessness by their bound.
+     */
+    private const val MAX_KEY_BASE64_LENGTH = 32_768
+
+    /** A picked file's name. A file name is not a secret, and no filesystem has one this long. */
+    private const val MAX_KEY_LABEL_LENGTH = 256
+
+    /** `RSA 3072`, `ED25519` - a label from `sshKeyTypeLabel`, so a short one. */
+    private const val MAX_KEY_TYPE_LENGTH = 64
 
     /**
      * Bound on the editor preferences blob's length inside a vault. The blob this app writes is
@@ -500,16 +640,48 @@ object VaultBackup {
 class BackupFormatException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /**
- * The credentials an account export may carry: the saved SSH password and the saved key passphrase,
- * nothing else. Private keys are deliberately absent - see [VaultBackup].
+ * Everything a profile export may carry for one host: the two secrets the credential store keeps
+ * that name the account (its SSH password and its key passphrase), the private key itself with the
+ * file name and detected type that make it usable, the SOCKS proxy password the host row holds, and
+ * the RDP credential a remote-desktop session answers an NLA challenge with.
+ *
+ * The private key is base64 because that is how [dev.eclipse.ssh.data.credentials.HostCredentialStore]
+ * holds it — preferences store strings, and a private key is not valid UTF-8 once it is DER — and
+ * because it keeps this type comparable: a `ByteArray` field would make the generated `equals`
+ * compare arrays by identity, so two identical credentials would read as different, which is exactly
+ * the kind of wrong answer the tests that round-trip this type are asking for.
  *
  * `toString` is redacted because this type travels through ViewModels where anything can end up in
  * a log; the values themselves are the entire point of the type, so the redaction has to be spelled
- * out rather than inherited from a generic data-class rendering.
+ * out rather than inherited from a generic data-class rendering. [keyType] and [rdpDomain] are left
+ * legible on purpose: neither is a secret — one is an algorithm name, the other is the domain half of
+ * a login the file already carries in the clear where it is stored.
  */
-data class AccountCredentials(val password: String? = null, val passphrase: String? = null) {
-    override fun toString(): String = "AccountCredentials(password=${if (password != null) "***" else "null"}, passphrase=${if (passphrase != null) "***" else "null"})"
+data class ProfileCredentials(
+    val password: String? = null,
+    val keyBase64: String? = null,
+    val keyLabel: String? = null,
+    val keyType: String? = null,
+    val passphrase: String? = null,
+    val socksPassword: String? = null,
+    val rdpUsername: String? = null,
+    val rdpDomain: String? = null,
+    val rdpPassword: String? = null,
+) {
+    /** The stored key as bytes, or null when there is none or it does not decode. */
+    fun keyBytes(): ByteArray? = keyBase64?.let { encoded -> runCatching { Base64.getDecoder().decode(encoded) }.getOrNull() }
+
+    /** Nothing here would reach any store, so the block carrying it is not worth writing. */
+    val isEmpty: Boolean
+        get() = password == null && keyBase64 == null && passphrase == null && socksPassword == null &&
+            rdpUsername == null && rdpPassword == null
+
+    override fun toString(): String = "ProfileCredentials(password=${redact(password)}, key=${redact(keyBase64)}, " +
+        "keyLabel=$keyLabel, keyType=$keyType, passphrase=${redact(passphrase)}, socksPassword=${redact(socksPassword)}, " +
+        "rdpUsername=${redact(rdpUsername)}, rdpDomain=$rdpDomain, rdpPassword=${redact(rdpPassword)})"
+
+    private fun redact(value: String?): String = if (value == null) "null" else "***"
 }
 
-/** One account export as imported: the profile, plus the credentials the file carried, if any. */
-data class ImportedAccount(val host: HostProfile, val credentials: AccountCredentials?)
+/** One profile of an export as imported: the profile, plus the credentials the file carried. */
+data class ImportedProfile(val host: HostProfile, val credentials: ProfileCredentials?)

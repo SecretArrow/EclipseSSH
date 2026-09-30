@@ -210,7 +210,7 @@ class NavigationRobolectricTest {
         // no separate search icon to look for.
         assertDisplayed("Search hosts, tags, or usernames")
         compose.onNodeWithContentDescription("Add host").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Import account").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Import profiles").assertIsDisplayed()
 
         tab("Terminal").performClick()
         assertDisplayed("No active sessions")
@@ -339,7 +339,7 @@ class NavigationRobolectricTest {
 
         // Icon-only buttons are unusable with TalkBack unless they carry a description.
         compose.onNodeWithContentDescription("Add host").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Import account").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Import profiles").assertIsDisplayed()
     }
 
     /**

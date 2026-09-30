@@ -36,13 +36,19 @@ catalog_version() { value gradle/libs.versions.toml "s/^$1[[:space:]]*=[[:space:
 android_value() { value app/build.gradle.kts "s/.*[^A-Za-z]$1[[:space:]]*=[[:space:]]*\"?([0-9][0-9A-Za-z.+-]*)\"?.*/\1/p"; }
 wrapper_version() { value gradle/wrapper/gradle-wrapper.properties "s/.*gradle-([0-9][0-9.]*)-bin\.zip.*/\1/p"; }
 
-# number <word-or-digit> -- 7 for both "7" and "seven". Small numbers only, which is all that occurs.
+# number <word-or-digit> -- 7 for both "7" and "seven". Small numbers only, which is all that occurs:
+# the README spells these counts out ("The six screens that are just a list of choices", "The eleven
+# remaining screens"), and the ceiling is where that prose actually got to rather than where it might.
+# `eleven` was added when a screen took the settings package past ten, and the failure it produced was
+# this function answering empty -- which reads as "the README stopped stating the count" rather than
+# "this script cannot spell it", so the list has to keep up with the document.
 # Defined here with the other readers rather than beside its first caller, because the sections below
 # run in file order and a function is only visible after the line that defines it.
 number() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     1|one) echo 1 ;; 2|two) echo 2 ;; 3|three) echo 3 ;; 4|four) echo 4 ;; 5|five) echo 5 ;;
     6|six) echo 6 ;; 7|seven) echo 7 ;; 8|eight) echo 8 ;; 9|nine) echo 9 ;; 10|ten) echo 10 ;;
+    11|eleven) echo 11 ;; 12|twelve) echo 12 ;;
     *) echo "" ;;
   esac
 }
@@ -561,7 +567,11 @@ cited_paths() {
   # and can be recognised. Two shapes are then dropped: an elided path ("app/src/.../X.kt", which is
   # prose shorthand rather than a reference) and anything carrying `<...>`, which is a path inside the
   # app's sandbox at run time and not a file in this repository.
-  grep -ohE '[A-Za-z0-9_./<>-]*(app|docs|freerdp|linux|scripts|testing)/[A-Za-z0-9_./-]+\.(kt|kts|sh|yml|yaml|md|json|xml|toml|pro|properties|txt)' "$1" \
+  #
+  # `py` is in the extension list because `scripts/check-icons.py` and `scripts/check-manifest.py` are
+  # cited by the documents that explain the bug class each one guards, and a citation of a script that
+  # was never committed is the same dead reference as a citation of a moved file.
+  grep -ohE '[A-Za-z0-9_./<>-]*(app|docs|freerdp|linux|scripts|testing)/[A-Za-z0-9_./-]+\.(kt|kts|sh|py|yml|yaml|md|json|xml|toml|pro|properties|txt)' "$1" \
     | grep -v -e '\.\.\.' -e '<'
 }
 
