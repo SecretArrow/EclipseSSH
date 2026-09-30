@@ -92,12 +92,20 @@ data class TerminalStyle(
  * characters belong on top of it.
  *
  * [value] is the cell's base and is always exactly one `Char`, so a line is an array of characters
- * that can be indexed by a column. That is what the whole emulator is built on, and it is why the
- * width table's other arm is not acted on yet - see [terminalCharWidth]. [combining] holds the code
- * points that take no column of their own and belong to the character before them: an `e` followed by
- * U+0301 is one cell in two code points, and the zero-width joiner in a composed emoji is another.
- * They are stored here rather than in cells of their own because a cell *is* a column, and the program
- * on the far side of the pty does not count them as one - which is the bug this field exists to fix.
+ * that can be indexed by a column. That is what the whole emulator is built on. [combining] holds the
+ * code points that take no column of their own and belong to the character before them: an `e`
+ * followed by U+0301 is one cell in two code points, and the zero-width joiner in a composed emoji is
+ * another. They are stored here rather than in cells of their own because a cell *is* a column, and
+ * the program on the far side of the pty does not count them as one - which is the bug this field
+ * exists to fix.
+ *
+ * [wide] marks the left half of a character that takes **two** columns - a CJK ideograph, a fullwidth
+ * form, an emoji the standard widened. One cell cannot hold it: the far side counted two columns for
+ * it when it sent it, so the printer writes it here and leaves the cell after it as its right half,
+ * which is what keeps this buffer's cursor in step with the program's. That right half is an ordinary
+ * blank cell carrying the same style, so a background or an underline covers the whole character; see
+ * [clearUnit] for the rule that keeps the two together, and [repairLine] for what happens when
+ * something shifts them apart.
  *
  * Everything that draws or copies a cell reads [value] plus [combining]. Everything that addresses a
  * cell by column reads [value] alone and needs no part of [combining], because a mark always sits on
@@ -108,6 +116,8 @@ data class TerminalCell(
     val value: Char = ' ',
     val style: TerminalStyle = TerminalStyle(),
     val combining: String = "",
+    /** True on the left half of a two-column character; the cell after it is its right half. */
+    val wide: Boolean = false,
 )
 
 data class TerminalSnapshot(
@@ -600,6 +610,10 @@ class AnsiTerminalBuffer(
             if (index > startLine) out.append('\n')
             val lineStart = out.length
             for (column in from until to) {
+                // A wide character's right half contributes nothing: it is a column, not a character,
+                // and copying it as the space it is stored as would put a space in the middle of
+                // every CJK word the user selects.
+                if (column > 0 && line[column - 1].wide) continue
                 val cell = line[column]
                 out.append(cell.value)
                 // A mark is part of the character the user selected, not a cell of its own: an accent
@@ -634,7 +648,10 @@ class AnsiTerminalBuffer(
             // Right-trim this line only, never back past the separator: the same scope
             // joinToString gave each line's own trimEnd().
             val lineStart = out.length
-            line.forEach { cell ->
+            line.forEachIndexed { column, cell ->
+                // The right half of a wide character is a cell rather than a character, and the space
+                // it is stored as is not part of the text - see [textIn].
+                if (column > 0 && line[column - 1].wide) return@forEachIndexed
                 out.append(cell.value)
                 // The same cluster [textIn] writes, for the same reason: this is the text a person
                 // reads, and the reason the two have to agree is spelled out above.
@@ -1128,13 +1145,23 @@ class AnsiTerminalBuffer(
             attachCombining(codePoint)
             return
         }
-        // An astral character the width table does not call zero-width is written as the two code units
-        // it is made of, one per cell. That is what this printer has always done with them, and it is
-        // what keeps a composed emoji drawing as a single glyph: the renderer joins the cells of a
-        // style run before it measures them, so the two halves are shaped together even though they
-        // are stored apart. Two cells is also the right count for the emoji the far side counts two
-        // columns for. A *narrow* astral character - a mathematical alphanumeric, say - still gets two
-        // where the far side counts one, which is a defect this change neither fixes nor worsens.
+        // A character the far side counts two columns for takes two cells, and it took two long before
+        // this printer existed: writing it into one cell and letting its ink spill over the neighbour
+        // is what put this buffer's cursor one cell behind the program's, which is the defect the
+        // width table's `2` arm is for. It is written by [putWide] instead, which reserves the second
+        // cell and moves the cursor over both.
+        if (terminalCharWidth(codePoint) == 2 && codePoint <= Char.MAX_VALUE.code) {
+            putWide(codePoint.toChar())
+            return
+        }
+        // An astral character is written as the two code units it is made of, one per cell. That is
+        // what this printer has always done with them, and it is what keeps a composed emoji drawing
+        // as a single glyph: the renderer joins the cells of a style run before it measures them, so
+        // the two halves are shaped together even though they are stored apart. Two cells is also the
+        // right count for the emoji the far side counts two columns for. A *narrow* astral character -
+        // a mathematical alphanumeric, say - still gets two where the far side counts one, which is a
+        // defect this change neither fixes nor worsens: a cell's base is one `Char`, and half a
+        // surrogate pair is not a character.
         if (codePoint > Char.MAX_VALUE.code) {
             val pair = Character.toChars(codePoint)
             putUnit(pair[0])
@@ -1142,6 +1169,102 @@ class AnsiTerminalBuffer(
             return
         }
         putUnit(codePoint.toChar())
+    }
+
+    /**
+     * Writes a two-column character: its cell and the blank cell that is its right half.
+     *
+     * The pair is what the far side counted when it sent the character, so the cursor moves over both,
+     * and the two are written together so that no state exists in which one is there without the other
+     * - see [clearUnit] for the rule that keeps that true as cells are overwritten and erased.
+     *
+     * A character with no room left on the line goes to the next row whole rather than being split
+     * across the margin, which is what every terminal does and what the alternative would cost: half a
+     * glyph at the last column, and a cursor on a row the program did not put it on. With autowrap off
+     * there is no next row to defer to, so it is placed as far right as it fits and overprints.
+     */
+    private fun putWide(char: Char) {
+        if (wrapPending) {
+            if (autoWrap) {
+                cursorColumn = 0
+                lineFeed()
+            } else {
+                cursorColumn = columns - 1
+            }
+            wrapPending = false
+        }
+        // Nothing to defer to when the line cannot hold the pair, so make room by moving to the row
+        // below - the same thing a character at the last column does with autowrap on.
+        if (autoWrap && cursorColumn >= columns - 1) {
+            cursorColumn = 0
+            lineFeed()
+        }
+        if (cursorColumn > columns - 2) cursorColumn = (columns - 2).coerceAtLeast(0)
+        val glyph = translate(char)
+        val line = lines[cursorRow]
+        clearUnit(line, cursorColumn)
+        clearUnit(line, cursorColumn + 1)
+        line[cursorColumn] = TerminalCell(glyph, style, wide = true)
+        if (cursorColumn + 1 < line.size) line[cursorColumn + 1] = TerminalCell(' ', style)
+        lastPrinted = glyph
+        if (cursorColumn + 2 >= columns) wrapPending = true else cursorColumn += 2
+        revision++
+    }
+
+    /**
+     * Destroys the whole character at [column]: the cell, and the other half of a wide character.
+     *
+     * The one rule that keeps the two cells of a wide character from coming apart, and every erase and
+     * every overwrite goes through it. A half-character is not a thing a screen can show: clearing the
+     * left half of a wide glyph would leave the program's own idea of "two blank columns" with ink
+     * still drawn across it, which is exactly the overlap a user sees and cannot explain.
+     *
+     * Deliberately narrow. It clears the cell asked for and, only when that cell is half of a wide
+     * character, the other half; it does not clear neighbours of ordinary cells.
+     */
+    private fun clearUnit(line: MutableList<TerminalCell>, column: Int) {
+        if (column !in line.indices) return
+        if (line[column].wide) {
+            if (column + 1 < line.size) line[column + 1] = TerminalCell()
+            line[column] = TerminalCell()
+            return
+        }
+        if (column > 0 && line[column - 1].wide) {
+            line[column - 1] = TerminalCell()
+            line[column] = TerminalCell()
+            return
+        }
+        line[column] = TerminalCell()
+    }
+
+    /**
+     * Reunites or destroys the wide characters on a line whose cells have moved under them.
+     *
+     * An insert, a delete or a truncation slides cells sideways, and a wide character's two halves can
+     * end up apart - its right half pushed off the end of the line, or the pair pulled out from under
+     * it so that the left half is now followed by a character rather than by its own blank. There is no
+     * way to put that back together: the glyph is two columns wide and the cells no longer are. So the
+     * character is dropped, which is what a terminal does when a program cuts one in half, and the
+     * screen is left with the blanks the program asked for rather than with ink across two unrelated
+     * cells.
+     *
+     * What counts as still having a right half is the blank cell the pair was written with and nothing
+     * else. A left half followed by a *character* is the case this has to catch rather than allow: the
+     * glyph is drawn across both columns, so a letter that slid into the second one would be drawn
+     * underneath the ink of a character the program believes it deleted - the overlap a user sees and
+     * cannot account for.
+     */
+    private fun repairLine(line: MutableList<TerminalCell>) {
+        for (index in line.indices) {
+            if (!line[index].wide) continue
+            if (!hasRightHalf(line, index)) line[index] = TerminalCell()
+        }
+    }
+
+    /** Whether the cell at [index] is still followed by the blank half its pair was written with. */
+    private fun hasRightHalf(line: List<TerminalCell>, index: Int): Boolean {
+        val next = line.getOrNull(index + 1) ?: return false
+        return !next.wide && next.value == ' ' && next.combining.isEmpty()
     }
 
     /**
@@ -1163,9 +1286,19 @@ class AnsiTerminalBuffer(
         val glyph = translate(char)
         val line = lines[cursorRow]
         if (insertMode) {
+            // An insert inside a wide character pushes its right half along with everything else, and
+            // what is left is a two-column glyph with a character under its right half. The character
+            // it cuts in half goes, exactly as [repairLine] would have decided for it.
+            if (cursorColumn in 1 until line.size && line[cursorColumn - 1].wide) {
+                clearUnit(line, cursorColumn - 1)
+            }
             line.add(cursorColumn, TerminalCell(glyph, style))
             while (line.size > columns) line.removeAt(line.lastIndex)
+            repairLine(line)
         } else {
+            // Overwriting either half of a wide character destroys the whole one: a glyph with a new
+            // character under one of its two columns is the overlap this is all for.
+            clearUnit(line, cursorColumn)
             line[cursorColumn] = TerminalCell(glyph, style)
         }
         lastPrinted = glyph
@@ -1192,7 +1325,16 @@ class AnsiTerminalBuffer(
      * repeating an accent instead of the character under it would be a new way to be wrong.
      */
     private fun attachCombining(codePoint: Int) {
-        val column = if (wrapPending) cursorColumn else cursorColumn - 1
+        val written = if (wrapPending) cursorColumn else cursorColumn - 1
+        // A wide character's base is the cell it starts at, and the cursor stands one cell past that
+        // once it has been written - so a mark arriving after one lands on the right half and has to
+        // be handed back to the left. A mark on the right half alone would be drawn twice over two
+        // columns and copied as a character of its own.
+        val column = if (written > 0 && written in lines[cursorRow].indices && lines[cursorRow][written - 1].wide) {
+            written - 1
+        } else {
+            written
+        }
         val line = lines[cursorRow]
         if (column !in line.indices) return
         val cell = line[column]
@@ -1357,9 +1499,11 @@ class AnsiTerminalBuffer(
     private fun eraseLine(mode: Int) {
         val line = lines[cursorRow]
         when (mode) {
+            // A whole line goes in one move, so there is no half-character to leave behind: nothing on
+            // it survives to be overprinted by the other half of a wide glyph.
             2 -> line.fill(TerminalCell())
-            1 -> for (i in 0..cursorColumn.coerceAtMost(columns - 1)) line[i] = TerminalCell()
-            else -> for (i in cursorColumn.coerceIn(0, columns - 1) until columns) line[i] = TerminalCell()
+            1 -> for (i in 0..cursorColumn.coerceAtMost(columns - 1)) clearUnit(line, i)
+            else -> for (i in cursorColumn.coerceIn(0, columns - 1) until columns) clearUnit(line, i)
         }
         wrapPending = false
         revision++
@@ -1369,7 +1513,7 @@ class AnsiTerminalBuffer(
     private fun eraseChars(count: Int) {
         val line = lines[cursorRow]
         val end = (cursorColumn + count).coerceAtMost(columns)
-        for (i in cursorColumn until end) line[i] = TerminalCell()
+        for (i in cursorColumn until end) clearUnit(line, i)
         wrapPending = false
         revision++
     }
@@ -1377,12 +1521,14 @@ class AnsiTerminalBuffer(
     private fun insertAtCursor() {
         lines[cursorRow].add(cursorColumn.coerceIn(0, columns - 1), TerminalCell())
         normalizeLine(lines[cursorRow])
+        repairLine(lines[cursorRow])
     }
 
     private fun deleteAtCursor() {
         if (cursorColumn >= columns) return
         lines[cursorRow].removeAt(cursorColumn)
         lines[cursorRow] += TerminalCell()
+        repairLine(lines[cursorRow])
     }
 
     /**
@@ -1471,6 +1617,9 @@ class AnsiTerminalBuffer(
     private fun normalizeLine(line: MutableList<TerminalCell>) {
         while (line.size < columns) line += TerminalCell()
         while (line.size > columns) line.removeAt(line.lastIndex)
+        // A truncation can take a wide character's right half off the end of the line, which leaves the
+        // glyph drawn across the two cells of whatever comes after it in the renderer's run.
+        repairLine(line)
     }
 
     /** The primary screen, set aside while the alternate one is on display. */
@@ -1568,12 +1717,18 @@ class AnsiTerminalBuffer(
  * A cell's base is the whole test, and nothing here has to look at [TerminalCell.combining]: a
  * zero-width character is only ever put on a cell that already holds a base, so a cell carrying one is
  * painted or blank exactly as its base is, and the pan extent is unchanged by it.
+ *
+ * A wide character's right half is painted: it is blank, but it is the second of the two columns the
+ * glyph's ink covers. Stopping at the base would make that column unpannable, so a wide character on
+ * the last column of a wrapped row would be drawn with half of it past the edge the user can reach.
  */
 internal fun terminalPaintedWidth(line: List<TerminalCell>): Int {
     var index = line.size
     while (index > 0) {
         val cell = line[index - 1]
-        if (cell.value != ' ' || !cell.style.background.isDefault || cell.style.inverse) return index
+        if (cell.value != ' ' || !cell.style.background.isDefault || cell.style.inverse) {
+            return if (cell.wide && index < line.size) index + 1 else index
+        }
         index--
     }
     return 0

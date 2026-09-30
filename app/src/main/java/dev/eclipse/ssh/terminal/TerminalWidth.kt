@@ -13,6 +13,8 @@ package dev.eclipse.ssh.terminal
  * [AnsiTerminalBuffer.put] advances one cell per character it is handed. For a character this function
  * calls wide that is one cell too few, and for one it calls zero-width it is one cell too many. Both
  * are drift, and the drift is what leaves characters standing where a program believes it erased them.
+ * Both arms are acted on - see "What acts on this" below - so a wide character spends two cells and a
+ * zero-width one spends none, which is what keeps the two cursors counting the same column.
  *
  * ## Which table, and why that one
  *
@@ -60,12 +62,19 @@ package dev.eclipse.ssh.terminal
  *
  * ## What acts on this
  *
- * [AnsiTerminalBuffer] acts on the `0` arm and **only** on the `0` arm: a zero-width character is
- * attached to the cell before it and does not advance the cursor. The `2` arm is transcribed and tested
- * as data, but no cell is yet marked as the right half of a wide character, so a wide character still
- * occupies one cell here and can still be drawn over its neighbour. Acting on it is a separate change -
- * it needs a continuation cell and every erase, insert and delete to treat the two cells as a unit -
- * and until it lands, do not read [WIDE_RANGES] as a claim that wide characters are right.
+ * [AnsiTerminalBuffer] acts on both arms. A zero-width character is attached to the cell before it and
+ * does not advance the cursor; a character of width two is written with [TerminalCell.wide] set and the
+ * cell after it left as its right half, so the cursor moves over both and stays in step with the
+ * program on the far side of the pty. Every erase, insert and delete treats the two cells as one
+ * character - see `clearUnit` and `repairLine` there - and the text paths write the character once,
+ * which is what keeps a copied CJK word from arriving with a space in the middle of it.
+ *
+ * What is *not* acted on is the other half of that accounting: a **narrow astral** character - a
+ * mathematical alphanumeric, a private-use symbol from the supplementary planes - is still written as
+ * its two surrogate code units, one per cell, where the far side counts one column and the width table
+ * says one. A cell's base is a single `Char`, so the honest fix is a cell that can hold a code point,
+ * which is a change to every path this one touches and then some. Until it lands, do not read
+ * [WIDE_RANGES] as a claim that narrow astral characters are right.
  *
  * [terminalCellText] is the same rule read the other way: the buffer uses it to decide what a cell
  * holds, and that function uses it to say which characters in a line of text are not cells of their
@@ -95,6 +104,14 @@ internal fun terminalCharWidth(codePoint: Int): Int = when {
  * so in that text one can only ever appear as part of the cluster of the cell it was attached to. A
  * surrogate pair is left whole, because two characters is what it is and two cells is what the far side
  * counts for the emoji it spells; only a pair that is itself zero-width is removed.
+ *
+ * A wide character is the same rule from the other side, and it is why one is written here **twice**.
+ * The buffer allots it two cells and [AnsiTerminalBuffer.plainText] writes it once, so one character
+ * would sit where two columns are and every column after it would be off by one - exactly the
+ * misalignment this function exists to remove. Repeating it restores it, and the repeat costs nothing
+ * a caller can see: the string is only ever indexed by column, and what a copy gets is
+ * [AnsiTerminalBuffer.textIn]'s, which writes each cell once. A surrogate pair needs no repeat, having
+ * been two characters all along.
  */
 internal fun terminalCellText(text: String): String {
     val out = StringBuilder(text.length)
@@ -111,7 +128,11 @@ internal fun terminalCellText(text: String): String {
             index += 2
             continue
         }
-        if (terminalCharWidth(char.code) != 0) out.append(char)
+        val width = terminalCharWidth(char.code)
+        if (width != 0) {
+            out.append(char)
+            if (width == 2) out.append(char)
+        }
         index++
     }
     return out.toString()
@@ -542,8 +563,8 @@ private val ZERO_WIDTH_RANGES = listOf(
 )
 
 /**
- * Every code point the reference counts as two columns, transcribed the same way. Nothing acts on this
- * yet - see the note on the `2` arm at the top of this file.
+ * Every code point the reference counts as two columns, transcribed the same way. A run of these is
+ * what [AnsiTerminalBuffer] gives two cells to - see "What acts on this" at the top of this file.
  */
 private val WIDE_RANGES = listOf(
     0x01100..0x0115F,  // Hangul Jamo initial consonants

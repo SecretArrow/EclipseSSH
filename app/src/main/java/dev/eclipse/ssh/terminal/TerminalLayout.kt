@@ -145,18 +145,38 @@ private fun wrapBreak(line: List<TerminalCell>, start: Int, extent: Int, width: 
     if (extent - start <= width) return extent
     // The first column that does not fit, and therefore the first candidate: breaking here fills the row.
     val limit = start + width
+    // A wide character's two columns belong to one row. A margin falling between them moves the
+    // character down whole - one column early - and it does so even when that lands inside a word,
+    // because the alternative is half a glyph hanging off each row. That is why the right edge of a
+    // column of CJK text is ragged by one where a column of Latin text is not.
+    if (splitsCharacter(line, limit)) {
+        if (limit - 1 > start) return limit - 1
+        // And where the character starts the row, the row is narrower than the character itself: the
+        // pair takes the row whole rather than being parted for the sake of a margin it cannot fill.
+        return (limit + 1).coerceAtMost(extent)
+    }
     if (!splitsWord(line, limit)) return limit
     var candidate = limit - 1
     while (candidate > start) {
-        if (!splitsWord(line, candidate)) return candidate
+        if (!splitsWord(line, candidate) && !splitsCharacter(line, candidate)) return candidate
         candidate--
     }
     // Every break from here to the margin would land inside one token, so the token is wider than the
     // window: give it a row of its own, whole, and let the pan reach the rest of it.
     var end = limit + 1
-    while (end < extent && splitsWord(line, end)) end++
+    while (end < extent && (splitsWord(line, end) || splitsCharacter(line, end))) end++
     return end
 }
+
+/**
+ * Whether a break before column [at] would land between the two cells of one wide character.
+ *
+ * The cells of a pair are written and cleared together (see `AnsiTerminalBuffer.putWide`), and a row
+ * boundary is the one place left where they could be parted: the left half on one row and its own blank
+ * on the next, with the glyph's ink drawn across the gap between them.
+ */
+private fun splitsCharacter(line: List<TerminalCell>, at: Int): Boolean =
+    at in 1 until line.size && line[at - 1].wide
 
 /**
  * Whether a break before column [at] would land inside a word.
