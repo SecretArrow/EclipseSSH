@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §82, *Releasing 1.14.1*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §83. §82, *Releasing 1.14.1*, is the release this file's header names; §83 is a terminal change finished after it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9486,3 +9486,147 @@ reads **New Terminal** (#194). §81's measurements and its narrower guarantee ca
   reflection, or one whose owner is not itself kept — is as invisible to it as it was before.
 - **§81's three open items stand**, and one of them is the next pass: **§73's width-2 arm is untouched**,
   so a CJK, fullwidth or emoji character still occupies one cell and can still overprint its neighbour.
+## 83. The width table's `2` arm was data nothing acted on, so a two-column character spent one cell and every erase landed a column off
+
+The report is §70's, and it is worth putting its own table back on the page, because this change is its
+second row:
+
+| what the program sent | its columns | this buffer's cells | this buffer's cursor | cells left standing |
+|---|---|---|---|---|
+| a zero-width character | 0 | 1 | **ahead** | **to the left** ← the report §70 was given |
+| an East Asian Wide or Fullwidth character | 2 | 1 | **behind** | **to the right** |
+| the two halves of an emoji | 2 | 2 | level | none |
+
+§70 wrote that table to show which row the reported residue came from, and the answer is the first one:
+only a buffer running *ahead* of the program's column count leaves characters standing to the left of
+where the program believes the cursor is. Its fix was correct and it is not what is wrong here. What is
+wrong is that the table has three rows and only **one** of them was ever acted on. A zero-width character
+was attached to the cell before it and spent none; a wide character was written into one cell and spent
+one, where the program on the far side counted two.
+
+The consequence is exactly the class of defect §70 was answering, on the other side. A program that counts
+two columns for `中` and is told it wrote two columns will lay out everything after it from a column this
+buffer does not have. Every erase it sends — `ESC [ K` after a prompt, the `ESC [ n G` a progress bar
+returns with — begins one column to the right of where this buffer thinks the cursor is, so the cell the
+program believes it cleared is still on the grid, and the character it prints next lands on top of it.
+That is text over text, and it needs no exotic input: a `ls` of a directory with a CJK filename, a
+`git log` with a Chinese author, a shell prompt with an emoji in it.
+
+### The polarity: the base is marked, not the continuation
+
+§70 named the invariant the fix would have to hold — *"a continuation is set at `i` if and only if
+`i — 1` holds a width-2 base"* — and left the choice of which end of the pair carries the mark open. It is
+carried on the **base**: `TerminalCell.wide` is true on the left half, and the cell after it is an
+ordinary blank that is its right half. The invariant is the same statement read from the other end.
+
+The reason is that every question the buffer asks is asked *from the left*, at a column it already holds.
+"Does this cell start a two-column character" is what an erase, an overwrite, an insert, a delete, a
+truncation and a line's own repair all need to know, and each one has that column in hand. Marking the
+continuation instead would make every one of them look at `i — 1` first, and `i — 1` is `-1` at column
+zero. It is also what the renderer wants: a run is built left to right, and the cell that starts a
+character is the cell the run has to begin at.
+
+### One rule, and everything that erases or slides a cell goes through it
+
+A pair of cells is written and destroyed together, and that is the whole of the discipline:
+
+| where | what it does now |
+|---|---|
+| `putWide` | writes the glyph with `wide = true` and the blank right half beside it, and advances the cursor over **both** — which is the fix itself, and where the cursor comes back into step |
+| `clearUnit` | destroys a whole character: the cell asked for, and the other half when that cell is one of a pair. Every erase and every overwrite goes through it |
+| `repairLine` / `hasRightHalf` | what a line whose cells have **moved** needs: a pair pulled out from under itself is destroyed rather than left half-drawn |
+| `insertAtCursor` / `deleteAtCursor` / `normalizeLine` | call `repairLine`, because each slides cells sideways |
+
+`putWide` also answers the margin. A character with no room left for two columns goes to the next row
+whole rather than being split, which is what every terminal does and what the alternative costs: half a
+glyph in the last column and a cursor on a row the program did not put it on. With autowrap off there is
+no next row to defer to, so it is placed as far right as it fits and overprints.
+
+### The rule `repairLine` enforces was too weak, and a dump is what showed it
+
+The first version asked the cheap question — *is the cell after this one not the left half of another
+pair?* — which allows a wide base followed by a **character**. That is the case it had to catch rather
+than allow: the glyph is drawn across both of its columns, so a letter that has slid into the second one
+is drawn *underneath* the ink of a character the program believes it deleted, which is the overlap a user
+sees and cannot account for. `hasRightHalf` asks the narrow question instead — the cell after a base must
+be the blank half its pair was written with — and a base followed by anything else is dropped.
+
+It was found by dumping the cells rather than by reasoning about them, and that is worth recording for the
+three other assumptions the same dump overturned: a one-cell `ICH` and a `DCH` do **not** cut a wide
+character in half, they slide the pair along intact, and `resize` coerces its column count into `20..400`
+so a test written as `resize(4, 3)` is really a 20-column terminal. Six of the new buffer tests were
+written against the assumptions first and the dump second, and every one of the six was wrong.
+
+### The three paths that are not the buffer
+
+- **Text.** `plainText` and `textIn` write each character **once**: the right half of a pair contributes
+  nothing, so a copied CJK word does not arrive with a space in the middle of it. `terminalCellText` —
+  the same rule read the other way, for the one caller that indexes a string by column — writes a wide
+  character **twice**, because one character where the buffer has two columns would put every column after
+  it off by one. That is the one place this change moves a string a caller can see, and it is asserted.
+- **Layout.** `TerminalLayout` is pure and cell-indexed, and a row boundary is the last place the two
+  cells of a pair could be parted: the left half on one row and its own blank on the next, with the ink
+  drawn across the gap between them. `wrapBreak` gained `splitsCharacter`, so a margin falling inside a
+  character moves it down whole — one column early, and even inside a word, because the alternative is
+  half a glyph hanging off each row. That is why the right edge of a column of CJK text is ragged by one
+  where a column of Latin text is not. `terminalPaintedWidth` now counts the right half as painted, since
+  it is the second of the two columns the ink covers and stopping at the base would make it unpannable.
+- **The renderer.** `drawFrame` extends a style run by one cell when it ends on a wide base. A run's own
+  background is painted before its text, so a run beginning on the right half would paint its background
+  across the second column of the glyph — half a character, in any program that colours the text after
+  one.
+
+### What acts on it now
+
+`TerminalWidth.kt`'s note on the `2` arm said "nothing acts on this yet — do not read `WIDE_RANGES` as a
+claim that wide characters are right". The same sentence stands in three report sections: §73's "What this
+does not do", §79's *Releasing 1.13.0* and §81's, the last of them reading **"§73's width-2 arm is
+untouched. A CJK, fullwidth or emoji character still occupies one cell and can still overprint its
+neighbour."** Those sections are snapshots and are left as they were, per the header block; this one is
+the section that supersedes the sentence in all four places. The KDoc is not a snapshot and has been
+rewritten: the buffer acts on both arms now, and it says so.
+
+### Why this is a minor release
+
+The rule §41, §56, §67, §69, §71 and §79 set and §81 applied: **a patch number is honest when the
+artifact a user installs behaves as its predecessor's does.** A device that installs this lays out every
+CJK, fullwidth and wide-emoji character differently from the release before it, and lays out everything
+*after* one differently too — that is the cursor coming back into step. It is a difference in what is
+drawn, so it is a minor.
+
+### The tests
+
+Fifteen new methods in `AnsiTerminalBufferTest` (74 in the class), three in `TerminalLayoutTest` (22), and
+one expectation changed in `TerminalWidthTest` (17). The buffer's cases are the ones that would catch a
+future regression of the pair rule: overwriting either half clears the whole character, an erase beginning
+on the right half clears the whole character, a single-cell erase inside one clears both cells, a two-cell
+insert slides the pair intact, a delete through the right half destroys it, a character shifted into a
+right half destroys it, a shrink that truncates the right half drops the character, and a copy has no
+blank inside one. `TerminalLayoutTest` asserts the two properties that matter more than any case: no row
+boundary ever falls between the two cells — for **every** width from 1 to the line's length — and the
+rows stay contiguous while it does not happen.
+
+Alongside the new ones the whole terminal suite was run through the standalone harness on this host:
+`AnsiTerminalBufferTest`, `TerminalWidthTest`, `TerminalLayoutTest`, `TerminalSelectionTest`,
+`AnsiTerminalFullScreenTest`, `TerminalCursorRepaintTest`, `TerminalKeysTest` and `Utf8StreamDecoderTest`
+— 249 methods, all green. Nothing under `ui/terminal/` is compiled by that harness, so `TerminalView.kt`'s
+run extension is checked by compilation in CI and by nothing else.
+
+### What is not claimed
+
+- **No phone was involved, and no device check was performed.** The behaviour asserted here is the
+  buffer's, through the JVM suites; what a CJK glyph looks like on a phone's screen rests on the bundled
+  faces and the platform's fallback, and §73 records that neither of the bundled faces carries CJK.
+- **A narrow astral character is still wrong, in the direction this change does not touch.** A
+  mathematical alphanumeric or a private-use symbol from the supplementary planes is written as its two
+  surrogate code units, one per cell, where the far side counts one column. A cell's base is a single
+  `Char`, so the honest fix is a cell that holds a code point; `TerminalWidth.kt` says so where it used to
+  say it about the `2` arm.
+- **A font that draws a CJK glyph at one cell still defeats the renderer.** The run model in `drawFrame`
+  keeps `spendsOneCell`, so a face whose CJK advance is not two cells puts the ink of everything after it
+  off the grid — §73's defect, unchanged, and now reachable with a two-cell character as easily as with a
+  one-cell one.
+- **The pair rule drops a character rather than moving it.** Where a program cuts one in half — a delete
+  through its right half, a truncating resize — this destroys the whole character and leaves the blanks
+  the program asked for. That is what a terminal does, and it is a choice: moving it would put a glyph on
+  a row the program did not put it on.

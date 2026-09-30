@@ -1,6 +1,7 @@
 package dev.eclipse.ssh.terminal
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
 
 /**
@@ -285,6 +286,57 @@ class TerminalLayoutTest {
         assertThat(selected).isEqualTo(token)
         assertThat(textOf(layout, line)).contains(token)
     }
+
+    // --- Wide characters at a row boundary. A pair of cells is one character, and a row boundary is
+    // the last place the two could be parted: the glyph is drawn from its left column across both, so
+    // half on each of two rows would hang ink off the end of one of them.
+
+    @Test
+    fun `a margin that falls inside a wide character moves it to the next row whole`() {
+        val cells = wideCellsOf("abc中def", "中")
+        val layout = terminalLayout(cellFrameOf(listOf(cells), cells.size), width = 4, maxRows = 24)
+
+        // Not `abc中` / ` def`: the row ends one column early so that 中 keeps both of its columns.
+        assertThat(layout.rows).containsExactly(
+            TerminalVisualRow(line = 0, from = 0, to = 3),
+            TerminalVisualRow(line = 0, from = 3, to = 5),
+            TerminalVisualRow(line = 0, from = 5, to = 8),
+        ).inOrder()
+    }
+
+    @Test
+    fun `no row boundary ever falls between a wide character's two cells`() {
+        val cells = wideCellsOf("ab中文天ef", "中文天")
+        val frame = cellFrameOf(listOf(cells), cells.size)
+
+        // Every width the view can have, because the boundary is what moves and the width is what the
+        // user's window decides. The assertion is on the cells rather than on the text: a row that ends
+        // on a wide base has left that character's second column to the row below.
+        for (width in 1..cells.size) {
+            val layout = terminalLayout(frame, width = width, maxRows = 24)
+            for (row in layout.rows) {
+                assertWithMessage("width $width, row $row")
+                    .that(cells[row.to - 1].wide).isFalse()
+            }
+            // And the rows are still contiguous, so no column was dropped to achieve it.
+            assertWithMessage("width $width").that(layout.rows.first().from).isEqualTo(0)
+            assertWithMessage("width $width").that(layout.rows.last().to).isEqualTo(cells.size)
+            layout.rows.zipWithNext { left, right ->
+                assertWithMessage("width $width").that(right.from).isEqualTo(left.to)
+            }
+        }
+    }
+
+    @Test
+    fun `the second column of a wide character is painted so the pan can reach it`() {
+        val cells = wideCellsOf("ab中", "中")
+
+        // Three cells of text, four columns of ink: stopping at the base would leave the half of the
+        // glyph that hangs over the fourth column unpannable, and so unreadable at the window's edge.
+        assertThat(terminalPaintedWidth(cells)).isEqualTo(4)
+        assertThat(terminalLayout(cellFrameOf(listOf(cells), cells.size), width = 4, maxRows = 24).contentColumns)
+            .isEqualTo(4)
+    }
 }
 
 private fun layoutOf(
@@ -301,6 +353,19 @@ private fun layoutOf(
 /** The text of each visual row, which is what a reader would see. */
 private fun textOf(layout: TerminalLayout, line: String): List<String> =
     layout.rows.map { line.substring(it.from, it.to.coerceAtMost(line.length)) }
+
+/**
+ * The same line as cells, with each character named in [wide] written as the pair the buffer keeps: its
+ * own cell marked, and the blank cell that is its right half.
+ */
+private fun wideCellsOf(text: String, wide: String): List<TerminalCell> =
+    text.flatMap { char ->
+        if (char in wide) {
+            listOf(TerminalCell(char, wide = true), TerminalCell(' '))
+        } else {
+            listOf(TerminalCell(char))
+        }
+    }
 
 private fun frameOf(
     lines: List<String>,

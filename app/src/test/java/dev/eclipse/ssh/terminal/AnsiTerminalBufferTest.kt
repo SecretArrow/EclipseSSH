@@ -578,6 +578,255 @@ class AnsiTerminalBufferTest {
         assertThat(frame.cursorRow).isEqualTo(1)
     }
 
+    // --- Two-column characters. A CJK ideograph, a fullwidth form or an emoji the far side counts
+    // two columns for occupies two cells, and the program on the other end is counting on that: its
+    // cursor and this one have to move in step, or every erase it sends lands one column off. The
+    // second cell is the first one's right half - a column, not a character - and the rule the whole
+    // section is about is that the two are never left apart on screen: half a glyph is ink drawn
+    // across a column the program believes is blank.
+
+    @Test
+    fun `a two-column character takes two cells and moves the cursor over both`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[0].value).isEqualTo('中')
+        assertThat(line[0].wide).isTrue()
+        // The right half carries the blank rather than a copy of the glyph: it holds the character's
+        // second column, and a copy would draw the character twice.
+        assertThat(line[1].value).isEqualTo(' ')
+        assertThat(line[1].wide).isFalse()
+        assertThat(buffer.snapshot().cursorColumn).isEqualTo(2)
+    }
+
+    /**
+     * Writing one column where the program counted two is what the user sees as overlapping text.
+     *
+     * A shell printing a CJK word and repainting it - `\r`, the line erased, the line written again -
+     * is the everyday case. If each glyph had taken one cell, this buffer's cursor would sit one
+     * column behind the shell's for every wide character written, so the erase would stop short and
+     * the next paint would land on top of the ink that was supposed to be gone.
+     */
+    @Test
+    fun `the cursor stays in step with a program counting two columns per wide character`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文")
+        // Two characters, four columns: the shell's own count, and the count the repaint depends on.
+        assertThat(buffer.snapshot().cursorColumn).isEqualTo(4)
+
+        buffer.feed("\r$E[K$E[1G" + "done")
+
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("done")
+        assertThat(buffer.snapshot().cursorColumn).isEqualTo(4)
+    }
+
+    @Test
+    fun `a wide character with no room left at the margin goes to the next row whole`() {
+        val buffer = AnsiTerminalBuffer(columns = 5, rows = 3)
+
+        buffer.feed("abcd中")
+
+        // One column left and two needed: the pair moves down rather than being split, which is what
+        // every terminal does and what keeps half a glyph off the last column.
+        val frame = buffer.frame()
+        assertThat(frame.lines[0].text()).isEqualTo("abcd")
+        assertThat(frame.lines[1].text()).isEqualTo("中")
+        assertThat(frame.lines[1][0].wide).isTrue()
+    }
+
+    @Test
+    fun `a wide character filling the last two columns arms the wrap for the next one`() {
+        val buffer = AnsiTerminalBuffer(columns = 4, rows = 3)
+
+        buffer.feed("ab中")
+        buffer.feed("c")
+
+        val frame = buffer.frame()
+        assertThat(frame.lines[0].text()).isEqualTo("ab中")
+        assertThat(frame.lines[1].text()).isEqualTo("c")
+    }
+
+    @Test
+    fun `overwriting a wide character's right half clears the whole character`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文")
+        // Column 4 is the right half of 文. Writing there cannot leave the left half drawn.
+        buffer.feed("$E[1;4HX")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[2].value).isEqualTo(' ')
+        assertThat(line[2].wide).isFalse()
+        assertThat(line[3].value).isEqualTo('X')
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("中 X")
+    }
+
+    @Test
+    fun `overwriting a wide character's left half clears the whole character`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文")
+        buffer.feed("$E[1;3HX")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[2].value).isEqualTo('X')
+        assertThat(line[3].value).isEqualTo(' ')
+        // The character is gone and the X stands where its first column was, so the row reads as the
+        // X abutting 中 rather than one column further right.
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("中X")
+    }
+
+    @Test
+    fun `an erase beginning on a wide character's right half clears the whole character`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文")
+        // Column 4 is the right half of 文, so EL from here blanks both of its cells and leaves no
+        // half-glyph for the renderer to draw over the column it was told to clear.
+        buffer.feed("$E[1;4H$E[0K")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line.drop(2).none { it.wide }).isTrue()
+        assertThat(line[0].wide).isTrue()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("中")
+    }
+
+    @Test
+    fun `erasing a single cell inside a wide character clears both of its cells`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文天")
+        // ECH 1 at column 2 - the right half of 中 - is the narrowest erase there is.
+        buffer.feed("$E[1;2H$E[1X")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[0].wide).isFalse()
+        assertThat(line[1].wide).isFalse()
+        assertThat(line[2].wide).isTrue()
+        assertThat(line[4].wide).isTrue()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("  文天")
+    }
+
+    @Test
+    fun `an insert of two cells slides a wide character along with its own right half`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("ab中文")
+        buffer.feed("$E[1;3H$E[2@")
+
+        // Two blank cells at column 3: 中's pair moves right still adjacent, so nothing was cut and
+        // the word is still a word.
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[4].wide).isTrue()
+        assertThat(line[5].wide).isFalse()
+        assertThat(line[6].wide).isTrue()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("ab  中文")
+    }
+
+    /**
+     * A one-cell insert is the case that looks like it should cut a pair and does not: both cells of
+     * the character are pushed along together, so the pair is still a pair, one column to the right.
+     * The rule only ever has to fire where a shift can separate them, which is what the tests around
+     * this one are for.
+     */
+    @Test
+    fun `a one-cell insert moves a wide character without breaking it`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("ab中")
+        buffer.feed("$E[1;3H$E[1@")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[3].wide).isTrue()
+        assertThat(line[4].wide).isFalse()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("ab 中")
+    }
+
+    @Test
+    fun `deleting a wide character's right half destroys it rather than leaving half a glyph`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文")
+        // Column 2 is the right half of 中. DCH takes that cell, the character after it slides into
+        // the gap, and 中 is left with a neighbour where its own right half used to be.
+        buffer.feed("$E[1;2H$E[1P")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[0].wide).isFalse()
+        assertThat(line[1].wide).isTrue()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo(" 文")
+    }
+
+    /**
+     * The case the rule has to catch rather than tolerate: a character slides into the column a wide
+     * character's right half came from.
+     *
+     * 中 is drawn across two columns, so a letter standing in the second of them is drawn *under* the
+     * glyph - ink on top of ink, which is what a user reports as text overlapping text. The character
+     * has been cut in half by the delete, so it goes.
+     */
+    @Test
+    fun `a character shifted into a wide character's right half destroys it`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中X文")
+        buffer.feed("$E[1;2H$E[1P")
+
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[0].wide).isFalse()
+        assertThat(line[1].value).isEqualTo('X')
+        // 中 has gone, X stands where its first column was, and 文 slid down one intact - its right
+        // half is the blank the delete left behind.
+        assertThat(line[2].wide).isTrue()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo(" X文")
+    }
+
+    @Test
+    fun `a shrink that truncates a wide character's right half drops the whole character`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 6)
+
+        buffer.feed("a".repeat(19) + "中")
+        buffer.resize(20, 6)
+
+        // The screen is exactly the new width, so 中's right half fell off its end. What is left is a
+        // glyph drawn across the last column and the blank one beside it, so the character goes.
+        val line = buffer.snapshot().lines[0]
+        assertThat(line.size).isEqualTo(20)
+        assertThat(line.none { it.wide }).isTrue()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("a".repeat(19))
+    }
+
+    /**
+     * The right half is a column rather than a character, so a copy of the screen must not carry the
+     * space that holds the glyph's place: `中 文` is not what the screen says.
+     */
+    @Test
+    fun `copied text has no blank inside a wide character`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中文 x")
+
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("中文 x")
+        assertThat(buffer.textIn(0, 0, 0, 6)).isEqualTo("中文 x")
+    }
+
+    @Test
+    fun `a combining mark after a wide character attaches to the character it follows`() {
+        val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
+
+        buffer.feed("中\u0301")
+
+        // The cursor stands past the pair, so the mark's cell is the right half and the character it
+        // belongs to is the one before it. A mark on the blank cell would draw an accent on its own.
+        val line = buffer.snapshot().lines[0]
+        assertThat(line[0].combining).isEqualTo("\u0301")
+        assertThat(line[1].combining).isEmpty()
+        assertThat(buffer.snapshot().cursorColumn).isEqualTo(2)
+    }
+
     // --- Malformed input: every byte here is the server's word, and a terminal is fed by whatever
     // is on the other end of the socket. None of these may throw, hang, or grow without bound.
 

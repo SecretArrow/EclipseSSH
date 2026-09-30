@@ -711,6 +711,11 @@ private fun DrawScope.drawFrame(
                 sameStyle = { line[it].style == cell.style },
                 fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
             )
+            // A wide character's right half is a blank cell and belongs in that character's run. The
+            // run's own background is painted before its text, so a run that began on the right half
+            // would paint its background across the second column of the glyph - half a character, in
+            // any program that colours the text after one.
+            val runEnd = if (line[column].wide && end == column + 1 && end < lastColumn) end + 1 else end
             // A cell's ink is its base plus whatever zero-width characters were put on it, so a run is
             // built from the clusters and not from the bases. Appending the marks here is what lets the
             // font do the joining: the bundled face carries the combining marks at zero advance, so a
@@ -718,15 +723,15 @@ private fun DrawScope.drawFrame(
             // would silently drop every accent and every zero-width joiner from what is drawn - and,
             // since a run is measured as a whole, it would also shift the ink of every glyph after the
             // one that lost its mark.
-            val text = buildString(end - column) {
-                for (index in column until end) {
+            val text = buildString(runEnd - column) {
+                for (index in column until runEnd) {
                     append(line[index].value)
                     append(line[index].combining)
                 }
             }
             // Relative to the row, not to the line: a wrapped continuation is drawn from the left margin.
             val left = (column - visual.from) * cellWidth
-            val runWidth = (end - column) * cellWidth
+            val runWidth = (runEnd - column) * cellWidth
             if (resolved.background != null) {
                 drawRect(resolved.background, topLeft = Offset(left, top), size = Size(runWidth, cellHeight))
             }
@@ -734,7 +739,7 @@ private fun DrawScope.drawFrame(
                 val glyphs = measurer.measure(AnnotatedString(text), glyphStyle)
                 drawText(glyphs, topLeft = Offset(left, top))
             }
-            column = end
+            column = runEnd
         }
         if (selection != null && absoluteLine in selection.startLine..selection.endLine) {
             // Clipped to this row's columns, so a line selected across a wrap is tinted on each of the

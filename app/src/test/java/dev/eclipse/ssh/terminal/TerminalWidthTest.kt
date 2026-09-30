@@ -390,8 +390,10 @@ class TerminalWidthTest {
     fun `terminalCellText leaves ordinary text alone`() {
         assertThat(terminalCellText("")).isEmpty()
         assertThat(terminalCellText("plain ascii 123")).isEqualTo("plain ascii 123")
-        // Wide characters are one cell each in this buffer, so they stay one character each here.
-        assertThat(terminalCellText("中文 x")).isEqualTo("中文 x")
+        // A wide character takes two columns in this buffer, so it is two characters here: the string is
+        // indexed by column, and a column past the left half has to land inside the character rather than
+        // past it. Ordinary text is the case above; this is the one place the walk changes what it emits.
+        assertThat(terminalCellText("中文 x")).isEqualTo("中中文文 x")
         assertThat(terminalCellText("sandi-üñïçø∂é")).isEqualTo("sandi-üñïçø∂é")
     }
 }
