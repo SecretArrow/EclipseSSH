@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 49 / versionName 1.15.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 50 / versionName 1.16.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, which is written against a version that has not been released; §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are changes since 1.15.0 as well, and §84 is *Releasing 1.15.0*, the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §88, *Releasing 1.16.0*, the version this file's header names; §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are the three changes it carries, and §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10183,3 +10183,117 @@ manifest entry above.
 - **Nothing here re-keys or re-encrypts anything.** `socksPassword` arrives decrypted from the
   repository and leaves in the clear inside the envelope; the file is exactly as safe as the passphrase
   on it and no safer than the vault backup beside it.
+
+---
+
+## 88. Releasing 1.16.0
+
+1.15.0 was one change carried on an artifact that could pass its gate. 1.16.0 is the first release since
+1.13.0 to carry **three**, and all three answer a user's report rather than a pass over the code: a
+terminal whose scrolled rows began in the middle of a word, a "disconnect all" that ended every live
+shell without asking, and a profile export that left the private key behind on the other side.
+
+`git log v1.15.0..v1.16.0` is six commits — three merges and the three commits they merge.
+
+| | section | pull request | what it changed |
+|---|---|---|---|
+| 1 | §85 | #201 | `AnsiTerminalBuffer.frame` is told the width the view will paint at, and fits its window in the rows that will be **drawn** rather than in buffer lines |
+| 2 | §86 | #202 | closing every session asks first, through `ConfirmDisconnectAllDialog`, the way closing one already did |
+| 3 | §87 | #203 | a profile export carries the password, the private key with its name and type, the passphrase, the SOCKS password and the RDP credentials, for one profile or a whole selection |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71 and §79 set and §81 and §84 applied: **a patch number is honest when the
+artifact a user installs behaves as its predecessor's does.** This one fails that test three times, and
+none of the three failures needs a search to see.
+
+- **A scrolled terminal is drawn differently.** On 1.15.0 the window was cut as `viewportRows` **buffer
+  lines**, and a line the pty had wrapped at 80 is two rows at a phone's 44 — so the re-wrap overflowed
+  and the bottom-anchoring dropped the first rows. The screen's first row was then a **continuation row**:
+  the tail of a word whose head had just been thrown away, which is the `AL`, `No`, `My`, `Wo-`, `Th-`
+  the report showed against the left edge, changing with every scroll. The same arithmetic from the other
+  side is why a command longer than the window lost its head off the top while fifteen blank rows stayed
+  below it, with the cursor drawn on a row that no longer held the text it was editing.
+- **Closing every session is a different question.** On 1.15.0 one tap ended every live shell in the app:
+  the last row of the terminal's overflow menu, one thumb-width below "Save screen" and with no separator
+  between them, or a plain `TextButton` beside the session count. Nothing asked, nothing was saved, and
+  what followed was an empty tab strip with the shells still running on the servers until they noticed.
+- **A profile that leaves the app arrives working.** The export that existed carried a password and a
+  passphrase and deliberately left the key behind, which is honest for one account a user is about to
+  finish by hand and is not honest for six profiles moved at once: the account arrived needing its key
+  chosen again. The file carries everything `HostCredentialStore` holds for each profile now, and the
+  window that writes it is new.
+
+`versionCode` moves 49 → 50 and `versionName` 1.15.0 → 1.16.0.
+
+Nothing native is rebuilt. No file under `freerdp/` and none under `linux/` moves between the two tags —
+`git diff --stat v1.15.0..v1.16.0 -- freerdp linux` prints nothing — so the userspace and the RDP
+libraries a device runs are the ones 1.13.0 shipped. What differs in the artifact is Kotlin in the APK's
+dex: the buffer's window fit and the layout's row selection, a confirmation dialog and the two doors that
+raise it, the profile format's `profiles` kind and the window that writes one, plus the suites.
+
+### What a device gains
+
+- **The top row of a scrolled screen is a whole line.** `PgUp`, `PgDn` and a scroll gesture all move the
+  viewport in rows, so a line that wraps is kept whole at the top of the window instead of being cut with
+  its tail left standing at column 0.
+- **A line being typed stays on the screen.** The window is fitted upward from the cursor's line, so a
+  command that wraps to three rows keeps its head, the cursor is drawn on the row the text is on, and
+  blank rows below are the ones given up first — before any row carrying text. A single line taller than
+  the whole window still shows its end, where the cursor is.
+- **Closing every session asks first, and the question counts them.** "Close all 4 sessions?" rather than
+  "Close all 1 sessions?", the confirm button says "Close all" rather than "OK", and the body says what is
+  at stake: they are all still running, closing them ends each shell on the server, nothing is saved on
+  the way out. The count passed to each of the two doors is the same list the confirmed action iterates,
+  so the number in the question cannot disagree with what closing closes.
+- **A profile export carries the account, not half of it**: the nine per-profile secrets the app stores —
+  password, key bytes with their file name and detected type, passphrase, the SOCKS proxy password that
+  `toJson` has never written, and the RDP username, domain and password. One format serves one profile and
+  eight, so the host card's Export and the window's picker write the same bytes, and the file says which
+  kind it is *inside* the passphrase-encrypted envelope — a marker outside it would be a format every
+  earlier build's reader rejects outright. `toJson` is untouched, so a vault backup is still
+  credential-free.
+- **A settings window that reached CI declared in nothing is declared, and gated.** §87 found
+  `ExportProfilesActivity` with no `<activity>` entry by reading the manifest against the classes, which
+  is the only way to find one: nothing in a build fails for an undeclared activity, because nothing
+  resolves an activity class until an `Intent` names it — the module compiled, lint was silent, the APK
+  packaged and signed, and the first tap would have thrown `ActivityNotFoundException`.
+  `ExportProfilesActivityRobolectricTest` launches the window, which is itself the assertion, since a JVM
+  test resolves its activity against the release manifest.
+
+### The suites
+
+Against this tree CI reports **2,172 JVM/Robolectric tests, 0 failures, 0 errors, 7 skipped**, across 191
+result files, and the instrumented suite is 49 methods in 7 files. §85's own class,
+`TerminalScrollViewportTest`, is 24 of them, driving `buffer.frame(offset, 17, 44)` into
+`terminalLayout(frame, 44, 17)` and asserting on the rows a reader would see; the six suites that already
+covered the terminal are green unchanged at 198 tests and 119 `frame(` call sites still pass two
+arguments, which is the check that the new parameter's default really is the old behaviour rather than a
+claim that it is. §86's two tests assert the dialog opened **and** that `uiState.tabs` is still non-empty,
+the second being what tells a dialog that gates the action from one rendered beside it. §87's eight
+assert the window's opening frame, which is all it can reach with no document provider, and its format
+layer is covered by a standalone harness of 49 methods.
+
+### What is not claimed
+
+- **No device was involved in any of the three changes.** Every figure above comes from the JVM suites
+  through the standalone harness; §85's re-wrap, §86's dialog on a real screen and §87's picker under a
+  real document provider are device facts and are unverified here.
+- **The terminal's double wrap is untouched**, and a narrow astral character is still written as two
+  surrogate units, one per cell — §84's two open items, unchanged.
+- **Nothing else that ends a session was audited.** §86 answers the report about closing every window and
+  touches only that; a host's Remove and an app-level disconnect on a network change were not examined.
+- **The legacy account file still resets the settings**, and `ProfileExporter`'s gathering of six secrets
+  from `HostCredentialStore` has no test of its own — §87's two open items, unchanged.
+- **Neither scanner is wired into a job.** `scripts/check-manifest.py` and `scripts/check-icons.py` are
+  reproducing tools, documented in `docs/ci.md` alongside the other ways to reproduce a CI failure
+  locally; nothing runs them, and the gate for an undeclared activity is the Robolectric test.
+
+### The artifacts
+
+Built and signed by `tagged-release.yml` from the `v1.16.0` tag: the universal APK, the four per-ABI
+splits (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The
+signing identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so
+this build installs over 1.15.0 and every earlier release normally.
+
+---
