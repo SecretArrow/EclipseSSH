@@ -168,6 +168,15 @@ terminal is not a taller screen; it is a shell that prints a thousand lines of `
 before it pages any of them away, which is the difference between scrolling back through the output
 and re-running the command to see the part that went past.
 
+The two floors meet, and that meeting is why the view is told the width it paints at.
+`AnsiTerminalBuffer.frame` cuts a window that fits the **screen**, and because the pty is usually
+wider than the phone — 80 columns told, about 44 read — the lines it is handed are re-wrapped by
+`terminalLayout` and one buffer line is two screen rows. The window is therefore fitted in *wrapped
+rows*, walking up from the cursor's line while the rows still fit, so the top of a scrolled screen is
+the first row of a line rather than the middle of one. A window cut in buffer lines instead would be
+more rows than the screen has, and the overflow would come off the top — which is what drew the tail
+of a word at column 0 after `PgUp` (§85 of `AUDIT-REPORT.md`).
+
 The one exception is a host's own height, which is a ceiling: `TerminalGrid.atMostRows` lets it
 shorten the app-wide floor and never raise it, because telling one server its window is short is a
 real thing to want and a per-host value that raised the height would silently override the app-wide
@@ -212,7 +221,7 @@ is 28).
 
 ## Tests
 
-The suite is 2,130 JVM/Robolectric test methods in 180 test files and contacts nothing off the
+The suite is 2,154 JVM/Robolectric test methods in 181 test files and contacts nothing off the
 machine: the SSH and SFTP integration tests start a real Apache MINA SSHD server on a loopback port
 inside the test JVM, and a second class dials a real OpenSSH `sshd` that the `test` job starts on
 loopback first (`tools/local-sshd.sh`, because interop bugs live in the gap an in-JVM server cannot

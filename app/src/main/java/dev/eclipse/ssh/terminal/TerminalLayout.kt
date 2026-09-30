@@ -24,6 +24,21 @@ data class TerminalVisualRow(val line: Int, val from: Int, val to: Int) {
  * [rows] is bottom-anchored when wrapping produces more rows than fit. The bottom of a terminal is
  * where the cursor and the newest output are, so a screen that has to lose rows loses the oldest ones,
  * which are one flick of the scrollback away.
+ *
+ * What it never does is lose *content* while rows it could have given up sit blank below it, or leave
+ * a wrapped line's middle row at the top of the screen. Both used to happen, and both are the same
+ * fault seen from two sides: the window arriving here holds a fixed number of *buffer lines*, chosen
+ * without knowing how wide the window is, so wrapping turns it into more rows than the screen has.
+ * The top row then became the continuation of a line whose beginning was cut off - which draws the
+ * tail of a word at column 0 - and, when the cursor stood near the top of a tall screen, a row was
+ * dropped while fifteen blank rows waited below it.
+ *
+ * The repair for that is upstream, and it is the interesting half: [AnsiTerminalBuffer.frame] is told
+ * the window's width and fits its line window to the screen in wrapped rows, so a frame and a layout
+ * agree on the count and nothing has to be dropped at all. The bottom-anchoring here is kept for the
+ * one case that route cannot cover - a frame built for a window size the view has since left, which is
+ * the frame or two either side of a rotation - and it drops blank rows before it drops text, so even
+ * a stale frame cannot cut a line the user is reading in half while blank space remains below it.
  */
 class TerminalLayout(
     val rows: List<TerminalVisualRow>,
@@ -70,7 +85,7 @@ class TerminalLayout(
  */
 fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayout {
     if (frame.lines.isEmpty() || maxRows <= 0) return TerminalLayout.EMPTY
-    val wrap = width > 0 && !frame.alternateScreen && !frame.positionalScreen
+    val wrap = wrapsForDisplay(frame.alternateScreen, frame.positionalScreen, width)
     val rows = ArrayList<TerminalVisualRow>(frame.lines.size)
     frame.lines.forEachIndexed { index, line ->
         val extent = paintedExtent(frame, index, line)
@@ -85,7 +100,7 @@ fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayo
             }
         }
     }
-    val shown = if (rows.size <= maxRows) rows else rows.subList(rows.size - maxRows, rows.size)
+    val shown = fittedRows(rows, frame, maxRows)
     var cursorRow = -1
     var cursorColumn = 0
     if (frame.cursorVisible && frame.cursorRow >= 0) {
@@ -109,6 +124,73 @@ fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayo
         cursorRow = cursorRow,
         cursorColumn = cursorColumn,
     )
+}
+
+/**
+ * Whether [width] is a width this frame's lines may be re-wrapped for.
+ *
+ * The one place the rule is written, because two callers need it and they see the screen from opposite
+ * ends: this file, which holds the frame, and [AnsiTerminalBuffer.frame], which is asked for a window
+ * fitted to wrapped rows and has to know whether the view will wrap it at all. A frame that is not
+ * wrapped must not be fitted either - a fitted window of a painted screen would be a `vim` whose top
+ * half is off-screen.
+ *
+ * `0` means "no window to fit", and it is the state of every caller with no screen: a snapshot, the
+ * PNG export renderer, and every test that drives the buffer directly.
+ */
+internal fun wrapsForDisplay(alternateScreen: Boolean, positionalScreen: Boolean, width: Int): Boolean =
+    width > 0 && !alternateScreen && !positionalScreen
+
+/**
+ * How many rows [line]'s columns `[0, extent)` occupy in a window [width] columns wide.
+ *
+ * Walks [wrapBreak] exactly as [terminalLayout] does, and that is the whole point of it existing as a
+ * function: [AnsiTerminalBuffer.frame] has to know the count *before* a frame exists, and a second
+ * implementation of the rule would be a second thing to keep in step. The two agreeing is asserted
+ * rather than assumed - see `TerminalScrollViewportTest.theLayoutAndTheWindowCountRowsTheSame`.
+ */
+internal fun displayRowCount(line: List<TerminalCell>, extent: Int, width: Int): Int {
+    if (width <= 0 || extent <= width) return 1
+    var rows = 0
+    var start = 0
+    while (start < extent) {
+        start = wrapBreak(line, start, extent, width)
+        rows++
+    }
+    return rows
+}
+
+/**
+ * [rows], cut to [maxRows] with as little lost as the count allows.
+ *
+ * Two rules, in order. Rows that paint nothing go first, and only from the bottom: a blank row costs a
+ * screen row and shows nothing, and dropping it moves no text, because every row above it keeps its
+ * index. That rule is what stops the case that made a typed line disappear - the cursor's line one row
+ * over the budget while fifteen blank rows sat underneath it - from eating the line instead.
+ *
+ * Only then are rows dropped from the top, which is the documented bottom-anchoring: the newest output
+ * and the cursor are at the bottom, so the oldest rows are the ones a reader is least likely to be
+ * looking at, and they are one flick of the scrollback away.
+ *
+ * A row is blank when its columns are blank, which is not the same as a *line* being blank: a wrapped
+ * line whose second row is empty still has that row drawn, and it is dropped here like any other.
+ */
+private fun fittedRows(rows: List<TerminalVisualRow>, frame: TerminalFrame, maxRows: Int): List<TerminalVisualRow> {
+    if (rows.size <= maxRows) return rows
+    val cursorLine = if (frame.cursorVisible) frame.cursorRow else -1
+    var end = rows.size
+    while (end > maxRows && rows[end - 1].line != cursorLine && rowIsBlank(frame, rows[end - 1])) end--
+    return if (end > maxRows) rows.subList(end - maxRows, end) else rows.subList(0, end)
+}
+
+/** Whether the row paints nothing at all: every column of it outside the line, or blank within it. */
+private fun rowIsBlank(frame: TerminalFrame, row: TerminalVisualRow): Boolean {
+    val line = frame.lines.getOrNull(row.line) ?: return true
+    for (column in row.from until row.to) {
+        val cell = line.getOrNull(column) ?: continue
+        if (cell.value != ' ' || cell.combining.isNotEmpty()) return false
+    }
+    return true
 }
 
 /**

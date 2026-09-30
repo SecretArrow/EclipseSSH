@@ -2449,6 +2449,19 @@ class MainViewModel @Inject constructor(
         viewportSizes[sessionKey]?.visibleRows ?: buffer.viewportRows
 
     /**
+     * The width the view will paint at, or zero before any view has reported one.
+     *
+     * Handed to [AnsiTerminalBuffer.frame] alongside the height so the buffer can fit its window in
+     * *wrapped* rows: the pty is told at least 80 columns by default while a phone in portrait fits
+     * about 44, so one line of output is two rows on screen and a window of N lines is more than N
+     * rows. Zero means "not wrapped for a screen", which is what the buffer did for every caller before
+     * this number existed, and remains right for a snapshot, the export renderer, and every test that
+     * drives the buffer without a view.
+     */
+    private fun visibleColumnsOf(sessionKey: String): Int =
+        viewportSizes[sessionKey]?.visibleColumns ?: 0
+
+    /**
      * Keeps scrolled-back text still while new output arrives underneath it.
      *
      * The offset is measured from the window's anchor - the cursor's line - because that is the
@@ -2477,7 +2490,7 @@ class MainViewModel @Inject constructor(
         if (offset <= 0) return
         val growth = buffer.cursorLine - anchorBefore
         if (growth <= 0) return
-        val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer))
+        val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
         scrollOffsets[sessionKey] = (offset + growth).coerceIn(0, ceiling)
     }
 
@@ -2500,7 +2513,11 @@ class MainViewModel @Inject constructor(
     private fun publishTerminalFrame(sessionKey: String, buffer: AnsiTerminalBuffer) {
         if (!isDisplaying(sessionKey, buffer)) return
         if (terminalFrames.subscriptionCount.value == 0) return
-        val frame = buffer.frame(scrollOffsets[sessionKey] ?: 0, visibleRowsOf(sessionKey, buffer))
+        val frame = buffer.frame(
+            scrollOffsets[sessionKey] ?: 0,
+            visibleRowsOf(sessionKey, buffer),
+            visibleColumnsOf(sessionKey),
+        )
         // Asked a second time, from inside the update: the check above only decides whether the frame
         // is worth building. See [isDisplaying] for why the write is where the question has to be
         // settled. [newerTerminalFrame] settles the other question the write has to answer: whether
@@ -2531,7 +2548,11 @@ class MainViewModel @Inject constructor(
                 // per open session and a session that is printing can publish a newer one in between.
                 sessionKey to newerTerminalFrame(
                     current[sessionKey],
-                    buffer.frame(scrollOffsets[sessionKey] ?: 0, visibleRowsOf(sessionKey, buffer)),
+                    buffer.frame(
+                        scrollOffsets[sessionKey] ?: 0,
+                        visibleRowsOf(sessionKey, buffer),
+                        visibleColumnsOf(sessionKey),
+                    ),
                 )
             }
         }
@@ -2786,7 +2807,7 @@ class MainViewModel @Inject constructor(
     /** Scrolls [sessionKey]'s terminal to [offset] lines above the live bottom; 0 follows the output again. */
     fun scrollTerminal(sessionKey: String, offset: Int) {
         val buffer = terminalBuffers[sessionKey] ?: return
-        val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer))
+        val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
         val clamped = offset.coerceIn(0, ceiling)
         if (clamped == 0) scrollOffsets.remove(sessionKey) else scrollOffsets[sessionKey] = clamped
         publishTerminalFrame(sessionKey, buffer)
@@ -2927,7 +2948,7 @@ class MainViewModel @Inject constructor(
                 // Measured against the window the user is looking through, which is what the offset was
                 // recorded in. The grid's own height would now be the taller of the two and would clear
                 // an offset that is still perfectly valid.
-                val ceiling = buffer.maxScrollOffset(viewport.visibleRows)
+                val ceiling = buffer.maxScrollOffset(viewport.visibleRows, viewport.visibleColumns)
                 if (offset > ceiling) {
                     if (ceiling <= 0) scrollOffsets.remove(sessionKey) else scrollOffsets[sessionKey] = ceiling
                 }
