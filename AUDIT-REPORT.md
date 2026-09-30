@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 47 / versionName 1.14.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 48 / versionName 1.14.1 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §81, *Releasing 1.14.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §82, *Releasing 1.14.1*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9373,3 +9373,116 @@ Built and signed by `tagged-release.yml` from the `v1.14.0` tag: the universal A
 identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this
 build installs over 1.13.0 and every earlier release normally.
 
+
+---
+
+## 82. Releasing 1.14.1
+
+1.14.0 was published at 03:06:33Z on 2026-09-30 and pulled back to draft twenty-one minutes later by its
+own gate — the moment `android-release-test.yml` filed issue #197. Both emulator legs had run the
+instrumented suite against the published asset and both had failed on the same line:
+
+```
+NoClassDefFoundError: Failed resolution of: Landroidx/core/view/WindowInsetsCompat$Type;
+```
+
+This is §41's shape, second occurrence and same mechanism: 1.2.0 was published and pulled back by the
+same workflow for `WindowCompat`, and the fix shipped as 1.2.1. 1.14.1 is that release here. 1.14.0 is
+not withdrawn in the sense that matters — the fix it carried, §80's word wrapping, is in this build too,
+and so is #194's *New Terminal* — but the artifact it produced never passed the one workflow that
+installs an app, and it is not the artifact a device should have.
+
+### What the two legs said, and what they did not
+
+Both legs — API 30 and API 35, x86_64, `pixel_6`, commit `d76770c` — ran 49 tests and failed exactly one:
+`theAddHostFormSurvivesARotation(dev.eclipse.ssh.ReleaseChaosJourneyTest)`. The crash scan was clean on
+both (0 signature matches), and the APK validation passed on both: package `dev.eclipse.ssh`,
+versionCode 47, versionName 1.14.0, signer `0c69794b…`, `sha256 29c73dda…`, 19,438,555 bytes. Nothing
+about the application is in question here. What failed is a *test* naming a class the release dex no
+longer had, which is the only class of failure the pair of them can produce and is the reason the keep
+file exists.
+
+The method's name is worth a word, because the same name is a known timing-marginal flake in a
+Robolectric suite. This is not that. The failure is a missing symbol, it is identical on two different
+system images, and it is reproducible here without an emulator at all: with the rule below removed,
+`scripts/check-instrumentation-keeps.sh` names exactly the class neither leg could resolve.
+
+### The mechanism, and why the guard was green
+
+`assembleReleaseAndroidTest` compiles the test APK against the **minified** release dex, so a class the
+test names by hand has to survive R8 — §36–§39 built the keep list for that, and §41.1 records the first
+failure of it. The reference that broke is `insets.getInsets(WindowInsetsCompat.Type.ime())`, added to
+`ReleaseChaosJourneyTest.imeInset` by the same change that added the `ViewCompat` keep (§81, #193): the
+journey waits for the soft keyboard's inset to reach zero before it taps the form's Cancel.
+
+`androidx.core.view.WindowInsetsCompat` is kept. `WindowInsetsCompat.Type` is a class declared **inside**
+it, and `-keep class X { *; }` covers X's fields and methods rather than the types nested in it — the app
+never calls `Type.ime()` itself, its route to the inset is `WindowCompat`, so R8 had no other reason to
+carry the nested class and removed it. The keep file's own derivation is written in terms of classes; this
+one is reached through its outer name and belongs to no import of its own.
+
+Which is why the check that was supposed to catch this was green on the same commit. It reads the
+instrumentation sources' **imports**, and `import androidx.core.view.WindowInsetsCompat` is answered by the
+rule that was already there. The miss is a reference *shape*, not a missing import, and no import-shaped
+check can see it — the same blind spot that let 1.2.0 reach an emulator, in a new spelling.
+
+### The fix, and the guard that now sees this shape
+
+Two files. `app/proguard-instrumentation.pro` gains
+`-keep class androidx.core.view.WindowInsetsCompat$Type { *; }`, narrow, beside the rule for its outer
+class, with the run and the stack line in the history block above it.
+
+`scripts/check-instrumentation-keeps.sh` gains a second pass over `Owner.Nested` spellings in the
+instrumentation sources. It is narrowed the way the file's other scopes are: comments are removed first,
+so a nested class named in prose is not a reference — this suite's own KDoc says
+`WindowInsetsControllerCompat.Impl30` in a sentence about Robolectric; the owner must be the simple name
+of a class the keep list already carries, so a spelling whose owner is an app class, a class travelling
+in the test APK's own dex, or the tail of a string literal is not this pass's business; and the nested
+name must read as a type, so the SCREAMING_SNAKE constants this suite names through their owners
+(`TimeUnit.SECONDS`, `Build.SUPPORTED_ABIS`, `Charsets.UTF_8`, `Intent.ACTION_VIEW`) are skipped. The
+namespace scope is the import pass's, for the reason that pass states.
+
+It reports the miss it was written for and nothing else: with the rule in place the check is green
+(7 in-scope imports and 2 nested-class references over 750 kept classes), and with the rule removed it
+fails with one line naming `androidx.core.view.WindowInsetsCompat$Type`.
+
+### Why this is a patch and not a minor
+
+The rule §41, §56 and §67 set, which §81 applied upward to make 1.14.0 a minor: **a patch number is
+honest when the artifact a user installs behaves as its predecessor's does.** Nothing under `app/src`
+moves between the two tags — `git diff --stat v1.14.0..v1.14.1 -- app/src` prints nothing, and no
+composable, screen, buffer or test changes. What changes is which of the application's classes R8 is
+still allowed to remove, plus the check that would have caught the omission before a release was
+published. A device that installs 1.14.1 behaves exactly as one that installed 1.14.0 — and, unlike
+1.14.0, it is an artifact that passed the workflow which installs it. `versionCode` moves 47 → 48 and
+`versionName` 1.14.0 → 1.14.1.
+
+Nothing native is rebuilt: `git diff --stat v1.14.0..v1.14.1 -- freerdp linux` prints nothing, so the
+userspace and the RDP libraries are still 1.13.0's, and the signing identity is still `0c69794b…`.
+
+### The tag, and the draft
+
+The `v1.14.0` tag is **not moved** — §40.6's rule, which 1.2.0 wrote: the tag resolves to the commit that
+was never shipped, which is where that commit belongs. `git rev-parse v1.14.0` still answers `d76770c`.
+Its draft release was deleted on 2026-09-30, as 1.2.0's was on 2026-09-22: a draft release is invisible
+to `GET /releases/tags/{tag}`, and one whose asset can never pass the gate is a standing invitation to
+publish it by mistake. The evidence is not lost with it — the run, its artifacts, issue #197 and the
+figures quoted above are all still there.
+
+### What a device gains
+
+Everything 1.14.0 was cut for, since none of it changed: **a line that reaches the display's width is
+broken per word and flows onto the row below, and editing a long command no longer turns word wrapping
+off for the rest of the session** (§80, §81), and the item that opens a second terminal on the same host
+reads **New Terminal** (#194). §81's measurements and its narrower guarantee carry over unchanged.
+
+### What is not claimed
+
+- **No device was involved in this either.** The fix's own verification is the checker on this host and
+  the validation run that follows this release — which is the workflow that found the defect, and the
+  only thing here that installs an artifact.
+- **The keep list is still a hand-derived list.** This pass closes the *shape* the checker could not see,
+  not the class of all misses: it reads sources, and a reference the sources do not spell — one built by
+  reflection, or one whose owner is not itself kept — is as invisible to it as it was before.
+- **§81's three open items stand**, and one of them is the next pass: **§73's width-2 arm is untouched**,
+  so a CJK, fullwidth or emoji character still occupies one cell and can still overprint its neighbour.

@@ -35,6 +35,10 @@
 #     would produce a list of names that do not need keeping, and a guard that cries wolf is worse
 #     than one with a stated limit.
 #
+# One shape that needs no import is covered by a pass of its own below, because a whole release
+# reached an emulator without it: a **nested class reached through its outer name**
+# (`WindowInsetsCompat.Type`), where the import names only the outer class the keep list already has.
+#
 # Usage: scripts/check-instrumentation-keeps.sh [keep-file]
 set -uo pipefail
 
@@ -46,6 +50,7 @@ test_dir="app/src/androidTest"
 
 failures=0
 checked=0
+nested_checked=0
 
 fail() {
   printf 'FAIL %s\n' "$*" >&2
@@ -123,8 +128,59 @@ done < <(
     sed -E 's/^import //' | sort -u
 )
 
+# A nested class reached through its outer name. An import names the outer class and nothing else, so
+# `WindowInsetsCompat.Type` in the sources is invisible to the import loop above: the outer class is
+# kept, the nested one is not, and R8 is free to rename or remove it. That is release-test run
+# 36662918191 (2026-09-30, v1.14.0), which failed both legs with
+#   NoClassDefFoundError: Failed resolution of: Landroidx/core/view/WindowInsetsCompat$Type;
+# while this script was green on the same commit - the one shape of miss the import scan cannot see.
+#
+# The scan is over `Owner.Nested` spellings in the sources with their comments removed, and it is
+# narrowed twice so that it stays a check rather than a rule generator:
+#
+#   - `Owner` has to be the simple name of a class the keep list already carries. A spelling whose
+#     owner is not a kept class is not this check's business: it is an app class, a class travelling in
+#     the test APK's own dex, or the tail of a string literal.
+#   - `Nested` has to be spelled like a type, so SCREAMING_SNAKE is skipped. There is no way to tell a
+#     nested class from a static field by name alone, and that is the line the two sides actually fall
+#     on here: `Lifecycle.State` is a type, `TimeUnit.SECONDS`, `Build.SUPPORTED_ABIS`, `Charsets.UTF_8`
+#     and `Intent.ACTION_VIEW` are members.
+#
+# What it cannot see, like the import scan it stands beside: a nested class reached through a variable
+# rather than by name (`state::class`), through a name the sources spell only as a string, or one whose
+# owner is not itself kept. It is source-side, and it is silent where the source is silent.
+while IFS= read -r nested_ref; do
+  owner="${nested_ref%%.*}"
+  nested="${nested_ref#*.}"
+  printf '%s' "$nested" | grep -qE '^[A-Z0-9_]+$' && continue
+  # Every kept class whose simple name is the owner, in the `$`-nested form R8 sees. Deduplicated
+  # because a nest kept more than once - `WindowInsetsCompat` and `WindowInsetsCompat$Type` - reduces
+  # to the same owner, and the same reference must not be reported twice.
+  owners="$(printf '%s\n' "$kept" | sed -E 's/\$.*//' | grep -E "\.${owner}$" | sort -u || true)"
+  [ -n "$owners" ] || continue
+  while IFS= read -r outer; do
+    [ -n "$outer" ] || continue
+    # The same namespace scope the import pass uses, for the same reason it states: the application's
+    # own namespace is out of scope on purpose. `dev.eclipse.ssh.linux.LinuxUserspaceState.Stopped` is
+    # the case - the app constructs that object, so R8 cannot remove it, and the name it keeps appears
+    # here only because the keep file carries the outer class by hand.
+    in_scope "$outer" || continue
+    nested_checked=$((nested_checked + 1))
+    if ! printf '%s\n' "$kept" | grep -qxF "$outer\$$nested" &&
+      ! printf '%s\n' "$kept" | grep -qxF "$outer.$nested"; then
+      fail "the instrumentation sources reach $outer.$nested, and $outer is kept while its nested class is not - R8 may rename or remove it. Add: -keep class $outer\$$nested { *; }"
+    fi
+  done <<< "$owners"
+done < <(
+  # Comments are removed first: a nested class named in prose is not a reference, and this suite's
+  # KDoc says `WindowInsetsControllerCompat.Impl30` in a sentence about what Robolectric does not ship.
+  perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' \
+    $(find "$test_dir" -name '*.kt' -not -name '.*') |
+    grep -ohE '\b[A-Z][A-Za-z0-9_]*\.[A-Z][A-Za-z0-9_]*\b' | sort -u
+)
+
 if [ "$failures" -gt 0 ]; then
-  printf '%s\n' "$failures reference(s) the keep file must answer; $checked in-scope import(s) checked." >&2
+  printf '%s\n' "$failures reference(s) the keep file must answer; $checked in-scope import(s) and $nested_checked nested-class reference(s) checked." >&2
   exit 1
 fi
-echo "Instrumentation keeps: $checked in-scope import(s) checked against $(printf '%s\n' "$kept" | wc -l) kept classes, all answered."
+echo "Instrumentation keeps: $checked in-scope import(s) and $nested_checked nested-class reference(s) checked against $(printf '%s\n' "$kept" | wc -l) kept classes, all answered."

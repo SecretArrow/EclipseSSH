@@ -840,6 +840,19 @@
 # "Check the instrumentation keep list against the test sources" in the APKs
 # job rather than a release-test leg - which is what that checker is for - and
 # it named the rule to add.
+#
+# The same change had a second half that the checker could not see, and
+# release-test run 36662918191 (2026-09-30, v1.14.0) found it on both legs:
+#   NoClassDefFoundError: Failed resolution of:
+#   Landroidx/core/view/WindowInsetsCompat$Type;
+# `imeInset` reads the keyboard's inset with
+# `insets.getInsets(WindowInsetsCompat.Type.ime())`, and the class it names by
+# hand is the NESTED one. Keeping the outer class keeps the outer class: `{ *; }` covers its fields and methods, not
+# the types declared inside it, and the app never calls `Type.ime()` itself, so
+# R8 had no other reason to keep it. The import is satisfied by the keep above,
+# which is why a source-side check written against imports was silent - the miss
+# is a reference shape, not a missing import. The checker now scans for these
+# spellings as well, and it is what named this rule.
 # ---------------------------------------------------------------------------
 -keep class androidx.activity.ComponentActivity { *; }
 -keep class androidx.activity.compose.ComponentActivityKt { *; }
@@ -854,6 +867,7 @@
 -keep class androidx.core.view.ViewGroupKt { *; }
 -keep class androidx.core.view.WindowCompat { *; }
 -keep class androidx.core.view.WindowInsetsCompat { *; }
+-keep class androidx.core.view.WindowInsetsCompat$Type { *; }
 -keep class androidx.core.view.WindowInsetsControllerCompat { *; }
 -keep class androidx.lifecycle.Lifecycle { *; }
 -keep class androidx.lifecycle.Lifecycle$Event { *; }
