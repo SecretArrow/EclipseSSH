@@ -385,6 +385,7 @@ fun TerminalView(
             ptyRows = ptyRows,
             bufferRows = grid.rows,
             visibleRows = visible.rows,
+            visibleColumns = visible.columns,
         )
         // Reported on every size change, including the one the software keyboard causes: the pty has
         // to know the window it is drawing into or a full-screen program wraps its own status line.

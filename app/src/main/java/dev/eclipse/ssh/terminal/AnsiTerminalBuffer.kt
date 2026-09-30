@@ -450,19 +450,56 @@ class AnsiTerminalBuffer(
      * output arrives below: the caller adds the growth back, which cancels the anchor's own movement
      * exactly as it used to cancel the buffer's. Offsets past the top are clamped rather than
      * rejected, because the buffer shrinks under the view whenever the scrollback limit evicts a line.
+     *
+     * [windowColumns] is the width the view will *paint* at, which is not this buffer's width whenever
+     * the pty is wider than the phone - the app-wide width floor makes that the default, and the view
+     * re-wraps the lines it is given. A window of [viewportRows] lines is then not a window of
+     * [viewportRows] screen rows: at 80 columns on a phone that fits 44, one line of `ls` output is two
+     * rows, and the view used to be handed more rows than it had - so it dropped the overflow from the
+     * top, and the screen's first row was the *tail* of a line whose beginning was off-screen. That is
+     * a word fragment at column 0, and it changed shape with every scroll because it was a different
+     * line each time. The fix belongs here rather than in the layout, because this is the only place
+     * that can walk: the window is fitted while it is being built, taking lines from the cursor
+     * upwards until the *wrapped* row count reaches [viewportRows], so the frame and the screen agree
+     * on the count and nothing has to be dropped at all.
+     *
+     * The walk always keeps at least one line, even one taller than the screen - a line longer than
+     * the whole window has to be shown in part, and the part that matters is the end, where the cursor
+     * is. Zero or a negative [windowColumns] means "not wrapped for a window": the window is
+     * [viewportRows] lines, exactly as it was before this parameter existed, which is what the
+     * snapshot, the export renderer and the tests that drive this class directly all want.
      */
     @Synchronized
-    fun frame(scrollOffset: Int = 0, viewportRows: Int = rows): TerminalFrame {
-        val take = viewportRows.coerceIn(1, lines.size)
-        // Never above the cursor, and never so near the start that the window would begin before the
-        // buffer does - the lower bound is what stops a cursor on row 3 of a tall screen from pulling
-        // the window up past the first line the terminal ever wrote.
-        val anchor = (cursorRow + 1).coerceIn(take, lines.size)
-        val offset = scrollOffset.coerceIn(0, anchor - take)
-        val first = anchor - take - offset
+    fun frame(scrollOffset: Int = 0, viewportRows: Int = rows, windowColumns: Int = 0): TerminalFrame {
+        val budget = viewportRows.coerceIn(1, lines.size)
+        // A painted screen is never re-wrapped by the view - see [wrapsForDisplay] - so a window fitted
+        // for wrapping would cut `vim`'s screen in half. The rule is asked, not repeated.
+        val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
+        val anchor = if (fitWidth > 0) {
+            // The cursor's line, or the last line there is; the fit decides where the window starts, so
+            // there is no lower bound to hold it away from the buffer's own beginning.
+            (cursorRow + 1).coerceIn(1, lines.size)
+        } else {
+            // Never above the cursor, and never so near the start that the window would begin before
+            // the buffer does - the lower bound is what stops a cursor on row 3 of a tall screen from
+            // pulling the window up past the first line the terminal ever wrote.
+            (cursorRow + 1).coerceIn(budget, lines.size)
+        }
+        val offset = scrollOffset.coerceIn(0, windowCeiling(anchor, budget, fitWidth))
+        var end = anchor - offset
+        var first = if (fitWidth > 0) fittedStart(end, budget, fitWidth) else end - budget
+        if (first <= 0) {
+            // The window ran into the first line the terminal ever wrote. Fill it downward instead, so
+            // the screen holds as much as it can rather than the cursor's line and nothing after it -
+            // the state a freshly connected session is in, where the prompt is on row 2 and every row
+            // below it is blank until the view has something to scroll.
+            if (fitWidth > 0) end = fittedEnd(0, budget, fitWidth)
+            first = 0
+        }
+        val take = end - first
         val window = ArrayList<List<TerminalCell>>(take)
         var content = 0
-        for (index in first until first + take) {
+        for (index in first until end) {
             val line = lines[index]
             window += line.toList()
             val painted = terminalPaintedWidth(line)
@@ -488,6 +525,74 @@ class AnsiTerminalBuffer(
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
         )
+    }
+
+    /**
+     * The first line of the window ending at [end]: walked up from the cursor's line while the wrapped
+     * rows still fit [budget].
+     *
+     * The line at `end - 1` is always kept whatever its height, because a line taller than the whole
+     * window has to be shown in part and the part worth showing is the end, where the cursor is. Every
+     * line above it is kept only while the screen has room for it whole - which is what makes the top
+     * row of the screen the first row of a line rather than the middle of one.
+     */
+    private fun fittedStart(end: Int, budget: Int, width: Int): Int {
+        var rows = 0
+        var index = end
+        while (index > 0) {
+            val height = displayRowCount(lines[index - 1], windowExtent(index - 1), width)
+            if (index < end && rows + height > budget) break
+            rows += height
+            index--
+        }
+        return index
+    }
+
+    /**
+     * The line after the last one that fits [budget] wrapped rows, starting at [start] - the window's
+     * other end, for the case where the cursor is near the top of a tall screen and the screen has to
+     * be filled downward.
+     */
+    private fun fittedEnd(start: Int, budget: Int, width: Int): Int {
+        var rows = 0
+        var index = start
+        while (index < lines.size) {
+            val height = displayRowCount(lines[index], windowExtent(index), width)
+            if (index > start && rows + height > budget) break
+            rows += height
+            index++
+        }
+        return index
+    }
+
+    /**
+     * The largest offset [frame] will honour for a window anchored at [anchor].
+     *
+     * [maxScrollOffset]'s own arithmetic, shared so the two cannot disagree: an offset the view is
+     * allowed to set that the frame then clamps away is a scroll that stops responding at the point the
+     * user is trying hardest to reach - the top of the scrollback.
+     */
+    private fun windowCeiling(anchor: Int, budget: Int, width: Int): Int =
+        if (width > 0) (anchor - fittedEnd(0, budget, width)).coerceAtLeast(0) else anchor - budget
+
+    /**
+     * How many columns of the line at [index] the view has to place: its painted width, plus the cell
+     * being typed into when the cursor is on it, bounded by the line's own length.
+     *
+     * [dev.eclipse.ssh.terminal.paintedExtent]'s arithmetic, from the buffer rather than from a frame -
+     * the frame does not exist yet when the window is being fitted, which is the whole reason these
+     * two numbers have to be kept in step. The cursor's column is bounded the way [frame] bounds it in
+     * the frame it returns, so the two agree to the column.
+     */
+    private fun windowExtent(index: Int): Int {
+        val line = lines[index]
+        val painted = terminalPaintedWidth(line)
+        val withCursor = if (index == cursorRow && cursorVisible) {
+            maxOf(painted, cursorColumn.coerceIn(0, columns - 1) + 1)
+        } else {
+            painted
+        }
+        return withCursor.coerceAtMost(line.size)
     }
 
     /**
@@ -529,18 +634,30 @@ class AnsiTerminalBuffer(
         @Synchronized get() = rows
 
     /**
-     * How far back the view may scroll while showing [viewportRows] lines.
+     * How far back the view may scroll while showing [viewportRows] lines in a [windowColumns]-wide
+     * window.
      *
      * Measured to the cursor rather than to the end of the buffer, because [frame] anchors there: the
      * distance that matters is from the cursor up to the first line of scrollback, and measuring to
      * the buffer's last line instead would hand the view a range of offsets whose upper half draws
      * exactly the same screen. A tall pty with a little output is where that shows - 960 offsets that
      * all clamp to the top of the buffer is a scroll gesture that stops responding.
+     *
+     * [windowColumns] has to be the same width the frame was built with, and it is: the two share
+     * [windowCeiling] rather than keeping the arithmetic twice. A view that could scroll to an offset
+     * the frame then clamps away would simply stop moving at the top of the scrollback, which is the
+     * one place a reader is certainly trying to reach.
      */
     @Synchronized
-    fun maxScrollOffset(viewportRows: Int): Int {
-        val take = viewportRows.coerceIn(1, lines.size)
-        return (cursorRow + 1).coerceIn(take, lines.size) - take
+    fun maxScrollOffset(viewportRows: Int, windowColumns: Int = 0): Int {
+        val budget = viewportRows.coerceIn(1, lines.size)
+        val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
+        val anchor = if (fitWidth > 0) {
+            (cursorRow + 1).coerceIn(1, lines.size)
+        } else {
+            (cursorRow + 1).coerceIn(budget, lines.size)
+        }
+        return windowCeiling(anchor, budget, fitWidth)
     }
 
     @Synchronized
@@ -549,7 +666,8 @@ class AnsiTerminalBuffer(
     /**
      * The line [frame] anchors its window at: the cursor's own line, or the last line there is.
      *
-     * The frame's window is `[cursorLine - viewportRows - offset, cursorLine - offset)`, so this is the
+     * The frame's window *ends* here, at `cursorLine - offset`, whatever its start is: the fitted start
+     * for a wrapped window, `cursorLine - offset - viewportRows` for an unwrapped one. So this is the
      * single number that decides where the window sits, and moving it by one moves the window by one.
      * That is why the caller that keeps a scrolled-back view still ([MainViewModel.pinScrollback]) reads
      * it before and after feeding output and gives the difference back: the line count is the same

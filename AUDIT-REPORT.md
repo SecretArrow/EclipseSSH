@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §84, *Releasing 1.15.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §85, *The window was cut in buffer lines and drawn in wrapped rows*, which records a change since 1.15.0 and is not in the release the header names. The last release section is §84, *Releasing 1.15.0*. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9707,3 +9707,193 @@ splits (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SU
 signing identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so
 this build installs over 1.14.1, over the 1.14.0 artifact where one was installed, and over 1.13.0 and
 every earlier release normally.
+
+---
+
+## 85. The window was cut in buffer lines and drawn in wrapped rows, so the top of a scrolled screen was the middle of a line
+
+The report is a user's, with a screenshot: after `PgUp` or `PgDn` the screen shows text like `AL`, `No`,
+`My`, `Wo-`, `Th-` against the left edge, and the fragments change as the viewport moves. Everything else
+on the screen is right. Their hypothesis was stale pixels — a partial redraw leaving part of the previous
+frame standing — and they asked for it to be **proved rather than assumed**, which is why the first thing
+done here was to look for the redraw.
+
+There is no partial redraw to find. `TerminalView`'s `drawFrame` walks `layout.rows` from the top on every
+frame and paints each cell; `BoxWithConstraints` gives the canvas its background through
+`modifier.background(background)`; there is no framebuffer, no damage tracking, no dirty rectangle and no
+line-render cache anywhere between the buffer and the pixels. The whole grid is repainted every frame, so
+nothing from a previous frame can survive one. The hypothesis is disproved, and the artifact is **content
+of the current frame** rather than residue of the last. That distinction is the whole of the diagnosis:
+a fragment at column 0 was put there by the layout, on purpose, from a line it was handed.
+
+### Two widths, and the count that was computed from the wrong one
+
+The app has a **width floor**, and it is on by default: `DEFAULT_TERMINAL_MIN_COLUMNS` is 80, so the pty
+is told 80 columns even though a phone in portrait fits about 44. The far end wraps its output at 80 and
+the buffer stores it wrapped at 80. The view then re-wraps what it is given at the width it actually
+paints — `terminalLayout(frame, visible.columns, visible.rows)`, and 44 is not 80.
+
+A line of `ls` output is therefore **two screen rows**, and that is where the two halves of the screen
+stopped agreeing. `AnsiTerminalBuffer.frame(scrollOffset, viewportRows)` cut its window as
+`viewportRows` **buffer lines** — a number chosen by asking the *view* how many rows fit, and used
+against lines that will occupy more rows than that when drawn. Handed a 17-line window, `terminalLayout`
+re-wrapped it into, say, 24 rows for a 17-row screen, and the bottom-anchor did what it has always done
+with an overflow:
+
+```kotlin
+val shown = if (rows.size <= maxRows) rows else rows.subList(rows.size - maxRows, rows.size)
+```
+
+It kept the last 17 and dropped the first 7. The screen's first row was then a **continuation row** —
+the second half of a line whose first half had just been thrown away. Drawn, that is the tail of a word
+at column 0 with nothing before it. `AL` is what is left of `TERMINAL` when the wrap falls after the
+fourth letter; `Wo-` is what is left of a hyphenated word; `My`, `No` and `Th-` are the same accident
+landing on different words. It changed with every scroll because each offset sliced a different line, and
+it was in the frame rather than on the screen because each frame was built that way from scratch.
+
+So the bug needed no stale pixel and no partial repaint, and it needed no change to the parser, the PTY or
+the scrollback. It needed the count of rows taken to be the count of rows *drawn*.
+
+### The same fault is why a typed line went off the top
+
+The second report — *"when the text I type is longer than one line, the display does not shift up, so the
+text is covered and the cursor is not where the text is"* — is the same arithmetic from the other side.
+The cursor stands on a line that wraps to three rows; the window is 17 lines and the cursor's line is the
+18th row; `subList(rows.size - 17, rows.size)` drops the cursor's own line and keeps the fifteen blank
+rows underneath it. The head of the command goes off the top of the screen while blank space sits below
+it, and the cursor is drawn on a row that no longer holds the text it is editing. Bug two is not a
+second bug. It is the first one with the overflow at the cursor instead of at a word.
+
+### The fix: the buffer is told the width, and fits its window in rows
+
+`AnsiTerminalBuffer.frame` takes a third parameter, `windowColumns` — the width the view will paint at —
+and fits the window while it builds it, walking up from the cursor's line while the **wrapped** row count
+still fits:
+
+```kotlin
+private fun fittedStart(end: Int, budget: Int, width: Int): Int {
+    var rows = 0; var index = end
+    while (index > 0) {
+        val height = displayRowCount(lines[index - 1], windowExtent(index - 1), width)
+        if (index < end && rows + height > budget) break
+        rows += height; index--
+    }
+    return index
+}
+```
+
+The line at `end - 1` is always kept whatever its height, so a single line taller than the whole window
+is still shown — in part, and the part is its end, where the cursor is. When the walk reaches line 0
+there is nothing above to give, so `fittedEnd` fills **downward** instead: that is the state of a freshly
+connected session, where the prompt is on row 2 and the screen below it is blank until there is output to
+scroll, and it is what makes the screen full rather than "the cursor's line and nothing after it".
+
+Three properties were made structural rather than kept in step by hand:
+
+- **`wrapsForDisplay(alternateScreen, positionalScreen, width)`** is now the single definition of "this
+  frame may be re-wrapped", asked by both `terminalLayout` and `AnsiTerminalBuffer.frame`. It has to be
+  asked rather than repeated: a window fitted for wrapping would cut `vim`'s screen in half, and the
+  buffer owns the frame where `alternateScreen` and `positionalScreen` live.
+- **`displayRowCount(line, extent, width)`** walks `wrapBreak` exactly as `terminalLayout` does, so the
+  fit and the layout agree by construction. A test asserts the agreement across many line shapes and
+  widths 1..80 rather than trusting it.
+- **`windowCeiling`** is shared by `frame` and `maxScrollOffset`, so a view cannot be allowed to set an
+  offset the frame will then clamp away. That would read as a scroll gesture that stops responding
+  exactly at the top of the scrollback, which is the one place a reader is certainly trying to reach.
+
+`terminalLayout`'s drop rule stays, because a frame built for a window size the view has since left —
+the frame or two either side of a rotation — still has to lose something. It loses in a better order now:
+rows that paint **nothing** go first, and only from the bottom, and only while they are not the cursor's
+line. Dropping a blank row moves no text, because every row above it keeps its index; dropping it is what
+stops the typed-line case from eating the line when blank space is available. Only when no blank row can
+be spared does the old bottom-anchoring run, which is still the right rule for the newest output and the
+cursor at the bottom of the screen.
+
+Backwards compatibility is exact: `windowColumns` defaults to `0`, `wrapsForDisplay` is false for it, and
+the old arithmetic runs unchanged. That is not a courtesy — it is what the snapshot, the PNG export
+renderer and the 119 existing `frame(` call sites in the test tree all want, and the default is what
+keeps them from having to say so.
+
+### The evidence, as dumps rather than as argument
+
+A probe built a buffer at 48 columns with a screen of 44 columns and 17 rows — the report's own geometry
+— and printed the frame each way. Scrolled back one line, before and after:
+
+```
+---- scrolled back by 1 (offset=1)
+  BEFORE (frame(offset, 17) - width unknown):   firstLine=43
+    0|now plus a tail|
+    1|output line 52 with some words on it here|
+    2|now plus a tail|
+    3|output line 53 with some words on it here|
+    ...
+  AFTER  (frame(offset, 17, 44)):               firstLine=52
+    0|output line 52 with some words on it here|
+    1|now plus a tail|
+    ...
+```
+
+Every row of the BEFORE column begins with `now plus a tail` — the tail of a line whose beginning is not
+on the screen. That is the reported fragment, reproduced from the code, with no screenshot involved. The
+typed-line case, same probe:
+
+```
+  BEFORE (frame(offset, 17) - width unknown):   firstLine=0
+    0|32345678|
+    1|90 4234567890 5234567890|
+    2||
+    ... fifteen blank rows
+  AFTER  (frame(offset, 17, 44)):               firstLine=0
+    0|user@host:~$ echo 1234567890 2234567890|
+    1|32345678|
+    2|90 4234567890 5234567890|
+    3||
+```
+
+The BEFORE screen lost `user@host:~$ echo 1234567890 2234567890` off the top and kept fifteen blank rows
+below, with the cursor on row 1 — the user's second report, exactly.
+
+### Files and functions
+
+| file | change |
+|---|---|
+| `terminal/AnsiTerminalBuffer.kt` | `frame(scrollOffset, viewportRows, windowColumns)`; `maxScrollOffset(viewportRows, windowColumns)`; new `fittedStart`, `fittedEnd`, `windowCeiling`, `windowExtent`; `cursorLine`'s KDoc corrected — the window **ends** there |
+| `terminal/TerminalLayout.kt` | `wrapsForDisplay`, `displayRowCount`; `fittedRows` and `rowIsBlank` replace the bare `subList` |
+| `terminal/TerminalViewport.kt` | `visibleColumns`, the width the view paints at |
+| `ui/terminal/TerminalView.kt` | reports `visible.columns` in the viewport it publishes |
+| `presentation/MainViewModel.kt` | `visibleColumnsOf`; the three `maxScrollOffset` calls and the two `frame` calls pass it |
+
+Nothing in `TerminalExportRenderer` changes and nothing can need to: it takes `plainText()`, never a
+frame and never a layout, so the shared desktop renderer is not on this path at all. The parser, the PTY,
+the writers and the scrollback contents are untouched — a test asserts that a scroll leaves `plainText()`,
+the line count and the revision byte-identical.
+
+### What was run
+
+`TerminalScrollViewportTest` is new: 24 tests driving the real pipeline — `buffer.frame(offset, 17, 44)`
+into `terminalLayout(frame, 44, 17)` and asserted on the **image**, the rows a reader would see. They
+cover the report's own list: the live bottom; one `PgUp`; many `PgUp`s walking a line at a time; many
+`PgDn`s returning to the bottom; up and down landing on the same screen; the very top of the scrollback;
+the very end; long output that wraps; the pty-48/screen-44 pair; a 60-row grid; a style surviving the
+scroll; the cursor returning to the line it is typing on; a resize after scrolling; output arriving
+underneath a scrolled-back view; that no row of a scrolled screen starts mid-line; and that scrolling
+writes nothing into the scrollback. Two of them pin the exact failures above: a typed line longer than
+the window stays whole, and a single line taller than the whole screen shows its end.
+
+The six suites that already covered this area — `AnsiTerminalBufferTest` (74), `AnsiTerminalFullScreenTest`
+(47), `TerminalLayoutTest` (22), `TerminalWidthTest` (17), `TerminalSelectionTest` (21),
+`TerminalCursorRepaintTest` (17) — are green unchanged, 198 tests, which is the check that the
+`windowColumns = 0` default really is the old behaviour rather than a claim that it is.
+
+### What this does not claim
+
+- **No phone was involved.** Every figure above comes from the standalone JVM harness; the E2E claim is
+  still a device check, as §63 says of the userspace work.
+- **The re-wrap itself is untouched.** The view still re-wraps at its own width, and a line the pty
+  wrapped at 80 still becomes two rows at 44. What changed is that the window is now chosen after that
+  is known. Removing the double wrap would mean telling the pty the screen's width, which is the width
+  floor's decision and not this one's.
+- **An unbreakable token is still one over-wide row.** Four hundred `z` characters have no break
+  opportunity and are not given one; the row is reachable by panning, as before. A test pins it.
+- **A genuinely full screen still loses its top.** With every row in the window carrying text the
+  bottom-anchoring runs, and the oldest rows go — that is the design, not a defect.
