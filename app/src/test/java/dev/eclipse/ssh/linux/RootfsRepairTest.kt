@@ -485,6 +485,35 @@ class RootfsRepairTest {
         assertThat(members).isGreaterThan(0)
         assertThat(warnings.joinToString("\n")).contains("usr/")
         assertThat(rootfs.resolve("bin/bash").readText()).isEqualTo("fake shell\n")
+        // And it is still a *file*: `bin/sh` is a link to `bin/bash`, and writing the archive's
+        // `bin/sh` entry at the link's target — which is what resolving a member's own name through
+        // it does — deletes the shell and leaves a self-referential link where it was.
+        assertThat(Files.isSymbolicLink(rootfs.resolve("bin/bash").toPath())).isFalse()
+        assertThat(Files.readSymbolicLink(rootfs.resolve("bin/sh").toPath()).toString()).isEqualTo("bash")
+    }
+
+    @Test
+    fun `a restore writes a member where its own name is, not where a link at that name points`() = runBlocking {
+        val installed = installFixture()
+        val rootfs = installed.installer.rootfsDir
+        // A link whose target is another *member* of the same archive, which is what a usrmerged
+        // Ubuntu is full of (`/bin -> usr/bin`, `/bin/sh -> dash`, `/lib64 -> usr/lib64`) and what
+        // makes this the common case rather than a corner. Resolving the member's own name through
+        // that link — what canonicalising the whole path, leaf included, does — writes the archive's
+        // `bin/sh` entry at the file the link points at, so that file is deleted and a link left in
+        // its place, while `bin/sh` still points at it.
+        val pointedAt = File(rootfs, "bin/target")
+        pointedAt.writeText("a member that is not the shell\n")
+        assertThat(File(rootfs, "bin/sh").delete()).isTrue()
+        Files.createSymbolicLink(File(rootfs, "bin/sh").toPath(), java.nio.file.Path.of("target"))
+
+        assertThat(installed.installer.restoreFromPinnedTarball(setOf("bin/sh"))).containsExactly("bin/sh")
+
+        // The archive's link is written at the link's own name...
+        assertThat(Files.readSymbolicLink(File(rootfs, "bin/sh").toPath()).toString()).isEqualTo("bash")
+        // ...and the member it used to point at is untouched, still a file holding its own bytes.
+        assertThat(Files.isSymbolicLink(pointedAt.toPath())).isFalse()
+        assertThat(pointedAt.readText()).isEqualTo("a member that is not the shell\n")
     }
 
     @Test

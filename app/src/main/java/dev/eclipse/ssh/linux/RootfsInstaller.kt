@@ -1063,6 +1063,47 @@ class RootfsInstaller(
     private fun resolveInside(root: File, name: String): File = resolveInsideRoot(root, name)
 
     /**
+     * The file a *repair* writes [name] at: every directory along the way expanded inside [root], and
+     * the member's own segment taken literally.
+     *
+     * Deliberately not [resolveInside], and the difference is the whole of AUDIT-REPORT §89's tenth
+     * finding. `resolveInside` canonicalises the **whole** path, leaf included — which is right where
+     * it was written, over an archive being extracted into an empty tree, and wrong over a live
+     * rootfs, where a member's own name is a link more often than not: `/bin -> usr/bin` under
+     * usrmerge, `/bin/sh -> dash`, `/lib64 -> usr/lib64`. Canonicalising the leaf turns the archive's
+     * `bin/sh` entry into a link written at `bin/bash` — the file the existing link pointed at — so
+     * the shell is deleted and a self-referential link is left where it was, and every later read of
+     * `bin/bash` is `ELOOP`, which is a base system the overlay destroyed while reporting that it
+     * had rewritten it.
+     *
+     * The parent *is* canonicalised, so `/bin/bash` and `/usr/bin/bash` are still one file, exactly
+     * as they are under proot, and a directory on the way out of the tree is still refused by the
+     * guard extraction uses. What is written is the name the archive carries and nothing else: an
+     * entry naming a link replaces the link.
+     *
+     * Every refusal here is one [resolveInside] made too, so no member the repair path accepted
+     * before is refused now: an absolute name, a name that climbs above the root, and a name whose
+     * last segment is `..` or `.`. The last two are not members at all — they name a directory — and
+     * they are refused rather than resolved to the root, which is what `resolveInside` did with them:
+     * a write loop handed [root] for the entry `./` would clear the whole rootfs to satisfy an entry
+     * that means "this directory exists". The callers skip those names before asking, so a real
+     * tarball's leading `./` entry is never seen here.
+     *
+     * @throws IOException for those four — the refusals the callers report and skip
+     */
+    private fun memberPath(root: File, name: String): File {
+        val cleaned = name.removePrefix("./").trimEnd('/')
+        if (cleaned.startsWith("/")) throw IOException("Archive entry names an absolute path: $name")
+        val cut = cleaned.lastIndexOf('/')
+        val parent = if (cut < 0) "" else cleaned.substring(0, cut)
+        val leaf = if (cut < 0) cleaned else cleaned.substring(cut + 1)
+        if (leaf.isEmpty() || leaf == "." || leaf == "..") {
+            throw IOException("Archive entry does not name a member: $name")
+        }
+        return File(if (parent.isEmpty()) root else resolveInside(root, parent), leaf)
+    }
+
+    /**
      * Applies the mode bits that matter under Android: the executable bit from the tar entry, read
      * and write for the owner. Group/other bits are dropped — they are meaningless when every
      * file has the same owner, and `setExecutable(false, false)` on a directory would break
@@ -1397,6 +1438,8 @@ class RootfsInstaller(
                 val entry = tar.nextTarEntry ?: break
                 val name = entry.name.removePrefix("./")
                 if (name !in memberNames) continue
+                // The leading `./` entry every tarball carries names the root itself, not a member.
+                if (name == ".") continue
                 // Refused for the same reason the overlay refuses it, and not left to the caller:
                 // no repair writes a preserved member — `/home`, the package database, the state
                 // trees (see [isPreservedMember]) — however the member set was built. Today's callers
@@ -1409,8 +1452,10 @@ class RootfsInstaller(
                 // "restore three of these four files" into "restore nothing", which is the answer
                 // that costs the user every package they installed: the ladder reads an empty
                 // restore as "the archive has nothing to offer" and climbs to the rebuild. The
-                // tolerance is [memberIsPresent]'s, applied to the same question.
-                val target = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+                // tolerance is [memberIsPresent]'s, applied to the same question. The member's own
+                // segment is taken literally — [memberPath] — because this writes into a live rootfs,
+                // where that segment is very often a link.
+                val target = runCatching { memberPath(rootfsDir, name) }.getOrNull()
                 if (target == null) {
                     skipped++
                     warnings += "$name was not restored: its path does not resolve inside the rootfs"
@@ -1522,15 +1567,18 @@ class RootfsInstaller(
             while (true) {
                 val entry = tar.nextTarEntry ?: break
                 val name = entry.name.removePrefix("./")
-                if (name.isEmpty() || isPreservedMember(name)) continue
+                if (name.isEmpty() || name == "." || isPreservedMember(name)) continue
                 // A member this rootfs will not let the archive write — a directory on the way to
                 // it is a symlink out of the tree — is skipped and named, never fatal: the same
                 // trade [restoreFromPinnedTarball] makes, and for the same reason. Aborting the pass
                 // over one name wrote *nothing*, which the ladder above reads as "this rung had
                 // nothing to do" and answers by rewriting the whole rootfs — the repair that costs
                 // the user every package they installed. What the overlay did manage is still
-                // verified afterwards by the setup run, so a skip that mattered is not hidden.
-                val target = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+                // verified afterwards by the setup run, so a skip that mattered is not hidden — and
+                // the member goes where its own name says rather than where a link at that name
+                // points, which over a usrmerged rootfs is the difference between rewriting the base
+                // system and destroying it: see [memberPath].
+                val target = runCatching { memberPath(rootfsDir, name) }.getOrNull()
                 if (target == null) {
                     warnings += "$name was not written: its path does not resolve inside the rootfs"
                     continue

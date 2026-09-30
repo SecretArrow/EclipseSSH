@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §89, *The pty was given back twice — and eight more endings that went wrong the same way*, the userspace endings 1.17.0 will carry; §88, *Releasing 1.16.0*, is the release this file's header names, and §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are the three changes it carries; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §89, *The pty was given back twice — and nine more endings that went wrong the same way*, the userspace endings 1.17.0 will carry; §88, *Releasing 1.16.0*, is the release this file's header names, and §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are the three changes it carries; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10298,7 +10298,7 @@ this build installs over 1.15.0 and every earlier release normally.
 
 ---
 
-## 89. The pty was given back twice — and eight more endings that went wrong the same way
+## 89. The pty was given back twice — and nine more endings that went wrong the same way
 
 The userspace repair work recorded in §75–§78 was audited rather than extended: every path that *ends*
 something on the device — a local terminal's pty, a session, an install, a repair pass, an uninstall, an
@@ -10310,8 +10310,13 @@ them wrong:
 - **is it recorded?** — an ending that did *not* happen has to leave the world saying so, or the next
   launch reads a state that is no longer true.
 
-The nine fixes are in four files — the channel, the manager, the installer and the distribution manager —
-and the tests are ten new JVM methods. What they have in common is
+A tenth, J, is the same question one level down — what a repair *writes* when it does run — and it was
+found by the first CI run of the nine rather than by the reading: the nine's own new test failed on it.
+It is kept here because it is the same cluster, found by the same pass, and because a fix that had shipped
+without it would have been worse than the bug it repaired.
+
+The ten fixes are in four files — the channel, the manager, the installer and the distribution manager —
+and the tests are eleven new JVM methods. What they have in common is
 worth stating, because it is why they were found together: **each one is the same ending reached by a
 different door**, and in every case exactly one door was wrong — the reader's reap but not the app's
 close, the throw path but not the cancel path, the base packages but not the extra ones.
@@ -10325,6 +10330,7 @@ close, the throw path but not the cancel path, the base packages but not the ext
 | I | an install | the `installing` marker survived one window, so the next launch called it interrupted **for ever** | `LinuxUserspaceManager.kt` |
 | D | a package-database restore | swallowed the **cancellation**, and the typed cause with it | `RootfsInstaller.kt` |
 | E | a repair / overlay pass | one unresolvable member **aborted the other 20,000** | `RootfsInstaller.kt` |
+| J | the same pass, writing | resolved the member's own name **through a link**, so the repair rewrote the wrong file | `RootfsInstaller.kt` |
 | F | an uninstall | left **a whole rootfs** on disk | `RootfsInstaller.kt` |
 | G | an extras install | had **no dpkg repair pass**, so the whole selection died one package at a time | `UbuntuDistributionManager.kt` |
 
@@ -10460,9 +10466,45 @@ every one refused in 1–2 seconds.** The fix is the base path's own recovery, i
 same reason, followed by one more `--fix-missing` retry — that flag's own attempt above was spent on the
 interrupted database, which is the one combination not yet tried.
 
+### J. A repair wrote a member where a link at its name pointed
+
+Found by the tests above rather than by the reading. The first CI run of this branch failed on the new
+overlay test with `Too many levels of symbolic links` — which is not what a test asserts about a symlink;
+it is what *reading* one produces when it points at itself.
+
+`resolveInsideRoot` canonicalises the **whole** path, leaf included. Over an archive being extracted into
+an empty tree that is right, and it is what makes `bin/bash` and `usr/bin/bash` one file. Over a **live**
+rootfs it is wrong, and wrong in the commonest case there is: a member's own name is a link more often
+than not — `/bin -> usr/bin` under usrmerge, `/bin/sh -> dash`, `/lib64 -> usr/lib64` — so `bin/sh`
+resolved *through* its own link to `bin/bash`, and the archive's `bin/sh` entry was written there. The
+file the link pointed at was deleted and a symlink left in its place; `bin/bash -> bash` is a link to
+itself, and every later read of it is `ELOOP`.
+
+Both repair write loops now resolve with `memberPath`: the **parent** is canonicalised exactly as before,
+so the two spellings of a usrmerged path are still one file and a directory on the way out of the tree is
+still refused, and the member's **own segment is taken literally**, so an entry naming a link replaces the
+link. That is the rule `memberIsPresent` has used since it was written — "the link itself, not what it
+points at" — and the write path was the one place it was not applied. The rest of `resolveInside`'s
+refusals are kept: an absolute name, a name that climbs above the root, and a name whose last segment is
+`..` or `.` are all refused, the last two rather than resolved to the root as they used to be, because a
+write loop handed the rootfs for the `./` entry every tarball carries would clear the whole rootfs to
+satisfy an entry that means "this directory exists".
+
+**Why this is a base-system failure and not one wrong file.** The overlay is the rung that rewrites the
+base system from the pinned archive, and the shell is the member a usrmerged rootfs names through a link.
+A device that reached that rung would have had `bin/bash` replaced by a self-referential link while the
+pass counted the member as written, drew its percentage, and left the ladder to report success: an
+environment with no shell, repaired by the rung that exists to put it back. The restore pass has the same
+bug with a smaller blast radius — the members it writes are the ones the health check found missing.
+
+The fix is deliberately narrow. `resolveInsideRoot` itself is untouched: it is correct where it was
+written, and it is also what the extraction guard, `RootfsArchive` and the workspace archive use, over
+trees that are being *built* rather than repaired. Only the two loops that write into a live rootfs
+changed.
+
 ### The tests
 
-Ten new JVM methods, one or two per fix, and CI's own count moves from 2172 to **2182**.
+Eleven new JVM methods, one or two per fix, and CI's own count moves from 2172 to **2183**.
 
 - **A** — `LocalTerminalChannelTest`: a teardown after a shell that ended by itself never closes the pty
   again, and an app-side close is the path that gives it back. Two tests because the flag has two arms and
@@ -10478,6 +10520,11 @@ Ten new JVM methods, one or two per fix, and CI's own count moves from 2172 to *
   hard-link case above — a fixture whose `bin/tool` hard-links `usr/bin/apt-get`, with `usr` replaced by a
   symlink out of the tree. The third fails with an escaping `IOException` before the fix and returns
   `["bin/bash"]`, named warning and all, after it.
+- **J** — `RootfsRepairTest`: with `bin/sh` a link to another *member* of the same archive — which is what
+  a usrmerged Ubuntu is full of — a restore writes the archive's link at `bin/sh` and leaves the member it
+  used to point at untouched. It fails before the fix on the first thing it reads: the link still says
+  `target`. The overlay test above gained the same two assertions about the shell, and they are the ones
+  CI failed on, which is how the finding was made.
 - **F** — `RootfsRepairTest`: deleting the rootfs takes the parked copy with it.
 - **G** — `UbuntuDistributionManagerTest`: a failed bulk extras install is repaired before the per-package
   fallback — asserting two repair passes, three bulk attempts, and that the per-package fallback never
@@ -10486,7 +10533,7 @@ Ten new JVM methods, one or two per fix, and CI's own count moves from 2172 to *
 
 ### What is not claimed
 
-- **No device was involved.** Every one of these nine was found and closed by reading the code and running
+- **No device was involved.** Every one of these ten was found and closed by reading the code and running
   the JVM suites; that the pty race no longer loses a terminal, that a real proot refusal now lands as a
   Repair card rather than a crash, and that the extras recover on a real dpkg are device facts and are
   unverified here. A is the one that most needs the device: the window it closes is a race, and a test can
