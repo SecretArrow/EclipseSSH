@@ -3453,6 +3453,10 @@ private fun TerminalSessionsScreen(
     val context = LocalContext.current
     // The platform's own time format, so a 24-hour device shows 24-hour times.
     val timeFormat = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
+    // Raised by the header's "Disconnect all" and answered here. Held in this screen rather than
+    // hoisted, because the number the question needs is this screen's own subject: the list it is
+    // about to empty.
+    var confirmDisconnectAll by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
@@ -3463,7 +3467,7 @@ private fun TerminalSessionsScreen(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onDisconnectAll) { Text("Disconnect all") }
+            TextButton(onClick = { confirmDisconnectAll = true }) { Text("Disconnect all") }
         }
         // LazyColumn rather than a scrolling Column: the length of this screen is decided by how many
         // sessions the user opened, and only the rows on screen should be composed.
@@ -3490,6 +3494,14 @@ private fun TerminalSessionsScreen(
                 )
             }
         }
+    }
+    // Outside the Column, so the scrim covers the screen and not a row of it.
+    if (confirmDisconnectAll) {
+        ConfirmDisconnectAllDialog(
+            sessionCount = state.tabs.size,
+            onConfirm = { confirmDisconnectAll = false; onDisconnectAll() },
+            onDismiss = { confirmDisconnectAll = false },
+        )
     }
 }
 
@@ -3776,6 +3788,55 @@ private fun ConfirmCloseSessionDialog(
 }
 
 /**
+ * The confirmation "Disconnect all" asks, which it did not ask before.
+ *
+ * The asymmetry was the finding: one tab's X asked, and the action that closes *every* tab - offered
+ * as a plain `TextButton` in the session list's header and as a `DropdownMenuItem` in the terminal's
+ * own menu, one tap each, neither of them anywhere near a confirmation - did not. A stray tap on the
+ * menu item ended every live shell in the app, and the only thing that said so afterwards was an
+ * empty tab strip.
+ *
+ * [sessionCount] is in the title because it is the fact that makes the tap worth stopping over: the
+ * difference between "close all 2 sessions" and "close all 9 sessions" is the difference between a
+ * nuisance and an afternoon. It counts what will actually be closed - the caller passes the same list
+ * it would have iterated - so the number cannot disagree with the outcome.
+ *
+ * App-themed like [ConfirmCloseSessionDialog], and for the same reason: a modal surface with its own
+ * scrim follows the app's palette, not the terminal's.
+ */
+@Composable
+private fun ConfirmDisconnectAllDialog(
+    sessionCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (sessionCount == 1) "Close the open session?" else "Close all $sessionCount sessions?",
+            )
+        },
+        text = {
+            Text(
+                if (sessionCount == 1) {
+                    "It is still running. Closing it ends the shell on the server; nothing is saved on the way out."
+                } else {
+                    "They are all still running. Closing them ends each shell on the server, and nothing is " +
+                        "saved on the way out. This cannot be undone."
+                }
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text(if (sessionCount == 1) "Close session" else "Close all") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/**
  * The characters of buffer line [line], one per cell, so that [TerminalSelection.wordAt]'s column
  * indexes them directly.
  *
@@ -3931,6 +3992,10 @@ private fun TerminalTabStrip(
     // a live shell, and the X sits a thumb-width from the chip a user is aiming for - the same reason
     // Remove on a host card asks first.
     var confirmClose by remember { mutableStateOf<SessionTab?>(null) }
+    // The same question for the menu item that closes *every* tab. It is a `DropdownMenuItem`, one
+    // tap, in a menu whose neighbouring items save files - and the action behind it ends every live
+    // shell in the app, so it asks here exactly as the single X beside it does.
+    var confirmDisconnectAll by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = 2.dp, end = 4.dp, top = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -4041,7 +4106,7 @@ private fun TerminalTabStrip(
                 }
                 DropdownMenuItem(text = { Text("Save text") }, onClick = { menuOpen = false; onSaveText() })
                 DropdownMenuItem(text = { Text("Save screen") }, onClick = { menuOpen = false; onSaveScreen() })
-                DropdownMenuItem(text = { Text("Disconnect all") }, onClick = { menuOpen = false; onDisconnectAll() })
+                DropdownMenuItem(text = { Text("Disconnect all") }, onClick = { menuOpen = false; confirmDisconnectAll = true })
             }
         }
     }
@@ -4172,6 +4237,15 @@ private fun TerminalTabStrip(
             tab = tab,
             onConfirm = { confirmClose = null; onCloseTab(tab) },
             onDismiss = { confirmClose = null },
+        )
+    }
+    if (confirmDisconnectAll) {
+        // `tabs.size`, the same list the confirmed action would iterate, so the count in the question
+        // is the count that gets closed.
+        ConfirmDisconnectAllDialog(
+            sessionCount = tabs.size,
+            onConfirm = { confirmDisconnectAll = false; onDisconnectAll() },
+            onDismiss = { confirmDisconnectAll = false },
         )
     }
 }
