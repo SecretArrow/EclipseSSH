@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 48 / versionName 1.14.1 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 49 / versionName 1.15.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §83. §82, *Releasing 1.14.1*, is the release this file's header names; §83 is a terminal change finished after it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §84, *Releasing 1.15.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9630,3 +9630,80 @@ run extension is checked by compilation in CI and by nothing else.
   through its right half, a truncating resize — this destroys the whole character and leaves the blanks
   the program asked for. That is what a terminal does, and it is a choice: moving it would put a glyph on
   a row the program did not put it on.
+
+## 84. Releasing 1.15.0
+
+1.14.1 was the release that carried 1.14.0's behaviour on an artifact that could pass its gate. 1.15.0 is
+the terminal release in the other sense: it is the version in which a character the program on the far
+side counts **two columns** for is drawn as two columns here, and the cursor stops falling behind it.
+§83 is the change; this section is the release.
+
+One pull request stands between the two tags, and it is §83's. **#199** gives a wide character two cells —
+its own with `TerminalCell.wide` set, and the blank cell that is its right half — writes and destroys the
+pair together, and drops a character whose two cells have been slid apart rather than leaving half a glyph
+drawn over a neighbour. `git log v1.14.1..v1.15.0` is two commits, which is that merge and the commit it
+merges.
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71 and §79 set and §81 applied: **a patch number is honest when the artifact
+a user installs behaves as its predecessor's does.** This one fails that test, and in a way a reader can
+see on the first screen of output that contains one of the characters.
+
+On 1.14.1 a CJK ideograph, a fullwidth form or a wide emoji was written into **one** cell while the
+program that sent it had counted two columns, so this buffer's cursor ran one column behind the program's
+for every one of them. Everything the program then addressed — its erases, its cursor moves, its
+repaints — was measured from a column this buffer did not have, so the cells the program believed it had
+cleared were still on the grid and the text it printed next landed on top of what was there. A device that
+installs 1.15.0 draws every such character differently, and draws everything **after** one differently
+too. `versionCode` moves 48 → 49 and `versionName` 1.14.1 → 1.15.0.
+
+Nothing native is rebuilt. No file under `freerdp/` and none under `linux/` moves between the two tags —
+`git diff --stat v1.14.1..v1.15.0 -- freerdp linux` prints nothing — so the userspace and the RDP
+libraries a device runs are the ones 1.13.0 shipped. What differs in the artifact is Kotlin in the APK's
+dex: the terminal buffer's cell model, the layout's row boundaries, the width table's note and the one
+measurement the renderer makes of a run, plus the suites.
+
+### What a device gains
+
+- **A character two columns wide takes two columns, and the two cursors count the same column.** The
+  reported symptom was text over text, and this is the half of it §70 left: §70's own table has both rows
+  on it, and only the zero-width one was acted on. A `ls` of a directory with a CJK filename, a `git log`
+  with a Chinese author, or a prompt with an emoji in it was enough to put the program's column count and
+  this buffer's out of step for the rest of the line.
+- **A pair of cells is one character everywhere it matters.** Overwriting either half clears the whole
+  character; an erase beginning on the right half clears the whole character; an insert and a delete slide
+  the pair whole; a truncation or a shift that parts it drops the character rather than leaving half a
+  glyph drawn across two unrelated cells; and a copy of CJK text arrives with no blank inside a word.
+- **A row boundary never falls between a character's two cells.** A margin that lands inside one moves it
+  to the next row whole — one column early, and even inside a word — so half a glyph is never hung off the
+  end of a row. That is why the right edge of a column of CJK text is ragged by one where a column of
+  Latin text is not.
+- **The second column of a wide character is pannable**, so a wide character at the window's edge keeps
+  the half of its ink that hangs over the boundary reachable rather than cutting it off.
+- **A shell that was on 1.13.0 also gains §80's word wrapping and #194's New Terminal** — 1.14.0's two
+  behaviour changes, which 1.14.1 carried on an artifact that passed its gate.
+
+### What is not claimed
+
+- **No device was involved in §83 and no device check was performed.** Its evidence is the terminal suites
+  through the standalone harness — 249 methods, all green — and what a CJK glyph looks like on a phone's
+  screen rests on the bundled faces and the platform's fallback. §73 records that neither bundled face
+  carries CJK.
+- **A narrow astral character is still wrong.** A mathematical alphanumeric or a supplementary-plane
+  private-use symbol is written as its two surrogate code units, one per cell, where the far side counts
+  one column. A cell's base is a single `Char`, so the honest fix is a cell that holds a code point, and
+  that is a separate change.
+- **A face that draws CJK at one cell still defeats the renderer's run model**, which is §73's defect and
+  is unchanged: the run is measured from the font's advances, so a glyph whose advance is not two cells
+  puts the ink of everything after it off the grid.
+- **The pair rule destroys a character rather than moving it.** Where a program cuts one in half this
+  leaves the blanks the program asked for. That is what a terminal does, and it is a choice.
+
+### The artifacts
+
+Built and signed by `tagged-release.yml` from the `v1.15.0` tag: the universal APK, the four per-ABI
+splits (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The
+signing identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so
+this build installs over 1.14.1, over the 1.14.0 artifact where one was installed, and over 1.13.0 and
+every earlier release normally.
