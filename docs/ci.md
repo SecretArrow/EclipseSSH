@@ -351,3 +351,18 @@ available.
 The emulator jobs cannot be reproduced this way — they need a booted device, which is what the five
 workflows above that boot one exist to provide. `focused-test.yml` is not among them: it runs a JVM
 task against a `--tests` filter and has no emulator in it.
+
+Two static guards reproduce a compile failure without the toolchain at all, and each one was written
+after its failure reached CI rather than from a checklist:
+
+```sh
+# A Material icon use with no import is an UNRESOLVED_REFERENCE, and this finds it in a second.
+python3 scripts/check-icons.py
+
+# An Activity class with no <activity> entry compiles, lints and packages; the first tap throws.
+python3 scripts/check-manifest.py
+```
+
+Both are also the cheap half of a gate CI has: the icon error does fail the build, ten minutes in, and
+the manifest omission is what `createAndroidComposeRule<X>()` catches for the one class that has such a
+test. Neither script is wired into a job — they are for the minute before a push.

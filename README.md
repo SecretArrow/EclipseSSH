@@ -64,18 +64,24 @@ them — Ed25519 keys generated elsewhere are read too — manage
 known-hosts entries, lock the app with a PIN or biometrics, toggle `FLAG_SECURE`, and let a copied
 password clear itself from the clipboard — a wipe that survives the process being killed. Passwords,
 passphrases and private keys are encrypted with a hardware-backed key and are kept out of logs,
-exceptions, vault backups and `adb backup`. A single-account export is the one deliberate exception:
-it may carry the account's saved password and key passphrase inside its own passphrase-encrypted
-envelope, so importing it on another device connects without re-entering them; private keys never
-travel in an export.
+exceptions, vault backups and `adb backup`. Exporting profiles is the one deliberate exception: a
+profile export is the user asking to move a working account to another device, so the file may carry
+that account's saved password, its private key and key passphrase, and its remote-desktop credential
+inside its own passphrase-encrypted envelope — importing it elsewhere connects without re-entering
+any of them. Keys have left the app on their own since the key screen existed and that path is
+unchanged; what is new is that a profile file may carry one, which is why it is the file to keep.
+Nothing writes a key anywhere without the passphrase the picker asks for, and the vault backup beside
+it stays credential-free.
 
 **Extras.** Local, remote and dynamic (SOCKS) port forwarding; server stats; a quick-connect home-screen
-widget and a Quick Settings tile; vault export/import.
+widget and a Quick Settings tile; vault export/import, and profile export/import for one account or a
+whole selection of them.
 
 **Settings, one window per subject.** Every Settings entry opens an Activity of its own rather than
 a dialog over the list — the Ubuntu userspace first, then key generation, PIN lock, auto-lock, known
 hosts, saved credentials, keep-alive, clipboard auto-clear, font size, the shortcut bar, terminal
-width and height, the encrypted backup export, reconnect delay, connection diagnostics, and About —
+width and height, the encrypted backup export, profiles export, reconnect delay, connection
+diagnostics, and About —
 and Add Host /
 Edit host opens the same kind of window. Each one edits a store the Settings list already reads, so
 a change is visible when the list resumes without a result code being handed back. The one
@@ -154,10 +160,10 @@ The shared shell is `ui/settings/SettingsScaffold.kt` and the rows every screen 
 `ui/settings/SettingsComponents.kt`. The six screens that are just a list of choices — keep-alive,
 clipboard auto-clear, reconnect delay, auto-lock, terminal width and terminal height — are six
 Activities inside
-`ui/settings/SettingsDestinations.kt`, next to the base classes all of them extend. The ten remaining
-screens have a file each beside it: the nine heavier ones (key generation, PIN lock, known hosts,
-saved credentials, shortcut bar, font size, backup export, diagnostics, Ubuntu) and the host form.
-About keeps its own home in `ui/about/`.
+`ui/settings/SettingsDestinations.kt`, next to the base classes all of them extend. The eleven
+remaining screens have a file each beside it: the ten heavier ones (key generation, PIN lock, known
+hosts, saved credentials, shortcut bar, font size, backup export, profiles export, diagnostics,
+Ubuntu) and the host form. About keeps its own home in `ui/about/`.
 
 **Terminal width and height are both floors**, and each is bought differently. Width: the app-wide
 value and a host's own combine into the wider of the two, the pty is told at least that many columns,
@@ -221,7 +227,7 @@ is 28).
 
 ## Tests
 
-The suite is 2,156 JVM/Robolectric test methods in 181 test files and contacts nothing off the
+The suite is 2,172 JVM/Robolectric test methods in 182 test files and contacts nothing off the
 machine: the SSH and SFTP integration tests start a real Apache MINA SSHD server on a loopback port
 inside the test JVM, and a second class dials a real OpenSSH `sshd` that the `test` job starts on
 loopback first (`tools/local-sshd.sh`, because interop bugs live in the gap an in-JVM server cannot

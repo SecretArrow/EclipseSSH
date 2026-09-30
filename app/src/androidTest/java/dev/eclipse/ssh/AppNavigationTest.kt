@@ -123,7 +123,7 @@ class AppNavigationTest {
 
         // Icon-only buttons are unusable with TalkBack unless they carry a description.
         compose.onNodeWithContentDescription("Add host").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Import account").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Import profiles").assertIsDisplayed()
     }
 
     /**

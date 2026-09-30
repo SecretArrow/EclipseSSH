@@ -492,7 +492,7 @@ class HostAndThemeUiRobolectricTest {
     }
 
     /**
-     * Export account from the menu opens the same passphrase dialog the sheet's button used to.
+     * Export profile from the menu opens the same passphrase dialog the sheet's button used to.
      *
      * The export never had a screen of its own, only this prompt, so reaching the prompt is the whole
      * wiring under test - the encryption and file writing behind it are covered by the vault tests.
@@ -504,12 +504,12 @@ class HostAndThemeUiRobolectricTest {
      * sixty seconds and die as AppNotIdleException rather than answer the question.
      */
     @Test
-    fun exportAccountFromTheMenuOpensTheExportDialog() {
+    fun exportProfileFromTheMenuOpensTheExportDialog() {
         val host = addHost("Exportable", hostname = "export.example.test", username = "exporter")
         val before = ShadowDialog.getShownDialogs().size
 
-        openKebabMenu(host.name, "Export account")
-        compose.onNodeWithText("Export account").performClick()
+        openKebabMenu(host.name, "Export profile")
+        compose.onNodeWithText("Export profile").performClick()
         pump()
 
         // The only dialog this menu item can open is the export prompt, so the latest showing one

@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §86, *Closing one session asked first and closing every session did not*, which is written against a version that has not been released; §85, *The window was cut in buffer lines and drawn in wrapped rows*, is a change since 1.15.0 as well, and §84 is *Releasing 1.15.0*, the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, which is written against a version that has not been released; §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are changes since 1.15.0 as well, and §84 is *Releasing 1.15.0*, the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9980,3 +9980,206 @@ added: every one of them calls `viewModel.disconnectAll()` directly, so none of 
   window and touches only that. The single-tab X already asked, and the actions that end a session
   indirectly — a host's Remove, which closes its tabs, an app-level disconnect on a network change —
   were not examined and may have the same asymmetry.
+
+---
+
+## 87. Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account
+
+The report, in its own words: *"add import/export profile, one at a time or several profiles, complete
+with the password or email or everything stored in the profile."* Three of those clauses name a fact
+that was not true of the app, and the third is the one that matters: **there was nothing to export but
+half an account.**
+
+What existed was a single-account export, reached from one host card's own menu, and it wrote four
+things about the account — its profile row, its SSH password, its key passphrase — and deliberately not
+its private key. The exclusion was not an oversight and the KDoc said so: *"a key has its own export
+path from the Keys screen, so a profile file could be complete without duplicating it."* That is a true
+statement about a file carrying **one** account the user is about to finish by hand. It is false about
+the thing the report is asking for, and the request is what overturns it.
+
+There is also no email field, and there never has been. The report lists "password or email or
+everything" the way a user lists the fields they remember typing, not the fields this app has: what a
+profile holds is a `username` and, separately, an RDP `username`. Both travel. Nothing was added to
+make the sentence true, because inventing an email column to satisfy a turn of phrase would be a worse
+answer than saying so.
+
+### The reversal, and the boundary that keeps it honest
+
+Selecting six profiles and pressing Export is a request to move **six working accounts**. A profile that
+arrives on the other side needing its key chosen and re-imported is a profile that arrived broken, and
+the user has to remember which of the six needed it. So `toProfilesJson` now carries everything
+`HostCredentialStore` holds for each exported profile:
+
+| what travels | where it lives | how it used to arrive |
+|---|---|---|
+| SSH password | credential store | travelled |
+| key passphrase | credential store | travelled |
+| private key bytes | credential store | **did not travel** |
+| key file name (`keyLabel`) | credential store | **did not travel** |
+| key type (`keyType`) | credential store | **did not travel** |
+| SOCKS proxy password | the host row itself | **did not travel** |
+| RDP username | credential store | **did not travel** |
+| RDP domain | credential store | **did not travel** |
+| RDP password | credential store | **did not travel** |
+
+The compromise a private key represents is not changed by which door it leaves through. The whole
+payload is already encrypted with the user's passphrase and written only where the user pointed a
+picker; what changed is that the file is now *complete*. `toJson` — the vault path, the whole-workspace
+file people mail to themselves — is untouched and still writes no credential, and the two formats are
+distinguished in the file itself by the marker below. That is the boundary: a **vault backup** is
+settings that move between installs, and a **profile export** is accounts that move between devices,
+and only the second one is about secrets.
+
+### One format for one profile or eight
+
+The profile payload *is* a vault payload — same AES-GCM/PBKDF2 envelope, same host array, same
+version — plus one block:
+
+```json
+{ "version": 3, "kind": "profiles", "hosts": [ … ], "credentials": { "<host id>": { … } } }
+```
+
+so the reader for it is a thin layer over `fromJson` rather than a second parser: the hosts come back
+through the existing code, and each one's credentials are looked up by its own id. **One profile is not
+a special case** — it is a one-entry map, and the single-account export the host card offers and the
+multi-profile export the Settings window offers write the identical bytes for the same host. The block
+is keyed by host id rather than zipped against the array by index, because index-order is the kind of
+coupling that survives exactly until someone sorts a list.
+
+A `credentials` block written by a build between this one and the next is still readable: when the block
+carries the credential keys directly rather than under a host id, the reader accepts it for a
+single-host file, which is the shape that could only ever have been written for one.
+
+### The marker, and the door it closes
+
+`kind: "profiles"` is one string, and it is load-bearing. "Import backup" and "Import profiles" are two
+rows in Settings that open the same kind of picker for the same kind of file, and before this change
+picking the wrong one was not a refusal — the vault path would read the host array out of a profile
+export, apply it, and **reset every setting to the file's `AppSettings()`**. A user who meant to add six
+accounts would have found their theme, font size, scrollback and reconnect settings replaced.
+
+Now `importVault` refuses it. The check has to run on the **plaintext**, and finding that out was a
+defect in this change's own first draft: the guard asked the *file* whether it was a profile export,
+and the file on disk is `salt.iv.ciphertext`, so `isProfileExport` answered `false` for every document
+that exists — including the one it was written to refuse. A marker outside the envelope would have
+worked only by changing the envelope, which is the format every earlier build's reader rejects
+outright. So the order is decrypt, then look, and the cost is that the user has typed a passphrase
+before being told the file is the wrong kind; that is the price of the marker being secret, and the
+alternative is a marker an attacker can read. `the kind marker is inside the envelope, so it is read
+after decrypting` pins both halves of it.
+
+The reverse is deliberately *not* refused: a document with no marker at all — a vault backup, or a
+profile file written by an older build — imports through the profile door, because that file's hosts
+are real hosts and its credentials are its own to import. Only a marker naming a *different* kind is an
+error, and `isProfileExport` answers `false` for anything that is not JSON at all rather than throwing
+on a file the user picked by mistake.
+
+### Four facts the reader has to know, or it stores rubbish
+
+The credentials block is written by this app and read by this app, and it is still **untrusted input** —
+it is a file, it can be hand-edited, and `docs/linux-userspace.md:414`'s rule about imported archives
+applies to it verbatim. Four of the store's own properties decide what a well-formed file even looks
+like, and each one is a way for a plausible-looking file to store something the app would then refuse
+to use:
+
+- **`StoredCredentials.hasKey` is `keyLabel != null`**, so key *bytes* with no label are invisible
+  storage — saved, never listed, never selectable. The writer pairs the label and the type only with
+  bytes that are actually there, and the reader drops bytes with no label and a label with no bytes.
+- **A key that is not base64 is dropped rather than decoded later.** `keyBytes()` would answer `null` at
+  connect time on a value that looked fine in the file, which is a failure at the worst possible moment
+  and the least diagnosable.
+- **`rdpCredentials` answers `null` unless a username *and* a password are stored** — the credential is
+  all three or nothing, and the domain is the one field that is genuinely optional. A file with half a
+  pair has that half dropped rather than stored as a remote desktop the app will not offer.
+- **`socksPassword` is a column on the host row, not a credential-store entry**, which is why it has a
+  row of its own in the table above: `toJson` has never written it, so an imported profile used to
+  arrive with its proxy configured and no password for it.
+
+Every field is length-capped on the way in — 4096 for a secret, 32 768 for the base64 key (ten times an
+RSA-4096 PEM, the largest thing that is a real key), 256 for a file name, 64 for a type label — and an
+over-long value is truncated rather than refused, because refusing a file for one absurd field loses the
+other five profiles in it.
+
+### What the user does
+
+Settings gains two rows beside the vault's own pair, and they are deliberately named apart from it:
+**Export profiles** ("one or more accounts, credentials included") and **Import profiles** ("restore one
+or more saved accounts"). Export opens a window: every profile with a checkbox, Select all and Clear
+selection, a passphrase field with the paste button, and a button whose label is the count —
+"Export 6 profile(s)" — enabled only once something is chosen and a passphrase typed. The host card's
+own menu item, renamed **Export profile**, exports that one through the same code path and the same
+dialog. Both write `*.eclipse-profile`. Import is the one existing door: **Import profiles** asks for a
+passphrase and reports "Imported 6 profile(s)", or "Imported 5 of 6 profile(s)" when one profile's
+credentials could not be saved and its host arrived without them.
+
+### The line the build cannot check
+
+`ExportProfilesActivity` reached CI, compiled, was linted, and was packaged into a signed APK without
+the one thing it cannot open without: its `<activity>` entry in `app/src/main/AndroidManifest.xml`.
+**Nothing in the build fails when an activity class is undeclared.** The module compiles, `lintRelease`
+is silent, the APK is built and signed, the boot gate boots it — the class is never resolved, because
+nothing resolves an activity class until an `Intent` names it, and the only symptom is
+`ActivityNotFoundException` the first time a user taps the button that reaches it. It was found by
+reading the manifest against the classes, not by any job, and `scripts/check-manifest.py` — written
+after the fact, and positive-controlled against the manifest as it stood before this change — is that
+reading done mechanically: it walks every `*Activity`/`*Application` class in the app source set and
+fails on one the manifest does not declare, naming both spellings the manifest may use.
+
+The gate that would have caught it is a JVM test that lets Android resolve the class, which is what
+`createAndroidComposeRule<X>()` does: the variant's unit tests resolve their activity against the
+release manifest, and an activity registered in none is one the rule cannot launch. That is why every
+other settings destination in this tree has an `XActivityRobolectricTest`, and why this change adds
+`ExportProfilesActivityRobolectricTest` — **a settings destination without one of those classes is a
+destination nothing checks** — and the new class's own KDoc says so, because the next person to add a
+window will not find this section.
+
+Two smaller slips in the same change were caught by the build rather than by reading, and are recorded
+here for the same reason. A composable called `Icons.Default.Person` twice with no
+`androidx.compose.material.icons.filled.Person` import, which is an unresolved reference in a file the
+build had not compiled yet; and `onImportProfiles` was added to the `SettingsScreen` signature without
+being passed from the `WorkspaceScaffold` call site that supplies it. CI's first compile reported all
+three. `scripts/check-icons.py` — the same kind of guard, written for exactly this shape of error —
+reproduces both icon lines against the pre-fix file, at the two line numbers CI named (5436 and 5438),
+and reports the tree clean after it.
+
+### The tests
+
+Fourteen in `VaultBackupTest`, all through the format layer and all pure JVM:
+
+- three round trips — one host with nothing saved (which must write **no** credentials block), one host
+  with every secret (the key bytes are compared as bytes, through `keyBytes()`), and three hosts whose
+  credentials are checked against their own ids with a null in the middle;
+- the marker: that a profile export carries it, that a vault backup does not, that it survives the
+  envelope (the defect above), that a foreign `kind` is refused, and that a legacy flat block still
+  imports;
+- each of the four drop rules as its own case: an unlabelled key, a half RDP pair, a non-base64 key, and
+  a credential past the cap (which truncates to 4096 rather than failing);
+- an empty host array is refused, and the local environment is never written.
+
+The format layer was run outside Gradle, against three labelled stubs and under a plain JUnit runner,
+because it needs no Android and a type error should cost two seconds rather than a CI cycle:
+**49 methods, all green.** CI remains the authority for the rest of it, and for everything in this
+change that is not the format layer — including the window's own class,
+`ExportProfilesActivityRobolectricTest`, whose eight methods assert the opening frame it can reach
+without a document provider (the bar, both card headers, the empty-list sentence, the passphrase field
+and its paste button, the action refusing while nothing is chosen) and, by launching at all, the
+manifest entry above.
+
+### What is not claimed
+
+- **No device was involved.** Nothing here has been tapped on a phone. The window's own layout, the
+  picker's behaviour with a real document provider, and whether a 34 MB key file survives a round trip
+  through a cloud provider are all device facts, and they are unverified.
+- **The legacy account file still resets the settings.** A `.eclipse-account` written by an older build
+  has no marker, so "Import backup" still reads its `AppSettings()` and applies it. The marker closes
+  that door for *profile* files and does not close it for that one. Fixing it properly means the vault
+  reader refusing to import settings from a payload that has no settings, which is a behaviour change to
+  the vault path and is left for its own change.
+- **`ProfileExporter`'s gathering is not unit-tested.** The format layer is covered exhaustively;
+  the code that asks `HostCredentialStore` for six secrets and pairs a label with bytes that are
+  actually there has no test of its own, because the store is a DataStore-backed singleton with no
+  test double in the suite. Its correctness rests on the pairing rules being enforced *again* by the
+  reader — a writer bug that stores a label with no bytes is dropped on the way back in.
+- **Nothing here re-keys or re-encrypts anything.** `socksPassword` arrives decrypted from the
+  repository and leaves in the clear inside the envelope; the file is exactly as safe as the passphrase
+  on it and no safer than the vault backup beside it.

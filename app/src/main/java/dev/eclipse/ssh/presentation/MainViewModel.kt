@@ -11,8 +11,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.eclipse.ssh.data.HostRepository
 import dev.eclipse.ssh.data.TransferRepository
-import dev.eclipse.ssh.data.backup.AccountCredentials
 import dev.eclipse.ssh.data.backup.BackupFormatException
+import dev.eclipse.ssh.data.backup.ProfileCredentials
+import dev.eclipse.ssh.data.backup.ProfileExporter
 import dev.eclipse.ssh.data.backup.VaultBackup
 import dev.eclipse.ssh.data.backup.VaultExporter
 import dev.eclipse.ssh.data.credentials.HostCredentialStore
@@ -172,6 +173,7 @@ class MainViewModel @Inject constructor(
     private val wakeOnLan: WakeOnLan,
     private val transferNotifier: TransferNotifier,
     private val vaultExporter: VaultExporter,
+    private val profileExporter: ProfileExporter,
     val filesExplorer: FilesExplorerController,
     val linuxUserspace: LinuxUserspaceController,
     /**
@@ -4559,58 +4561,125 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun exportAccount(host: HostProfile, passphrase: String, uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+    /**
+     * Exports one or more profiles — with everything the credential store holds for each — to a
+     * document the user picked.
+     *
+     * The gathering and the encryption are [ProfileExporter]'s, because the multi-profile picker is a
+     * window of its own and cannot reach this view model; this is the host card's single-profile path
+     * through the same code, so the two doors cannot drift into writing different files. The message
+     * is deliberately generic: the snackbar is readable over a shoulder and in a screenshot, and
+     * whether a file carries passwords is not its business.
+     */
+    fun exportProfiles(hosts: List<HostProfile>, passphrase: String, uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
         guardBackup("Export failed") {
-            // The saved password and key passphrase ride along so the account is complete on the
-            // other device - the point of an account export. Read via the same plaintext accessors
-            // duplicateHost uses, guarded on what stored() says exists so an account with nothing
-            // saved exports without the credentials block at all. The private key is deliberately
-            // not included: it has its own export path, and the key is the credential whose
-            // compromise is catastrophic.
-            val stored = runCatching { credentialStore.stored(host.id) }.getOrDefault(StoredCredentials())
-            val credentials = AccountCredentials(
-                password = if (stored.hasPassword) credentialStore.password(host.id) else null,
-                passphrase = if (stored.hasPassphrase) credentialStore.passphrase(host.id) else null,
-            ).takeIf { it.password != null || it.passphrase != null }
-            writeDocument(uri, VaultBackup.encrypt(VaultBackup.toAccountJson(host, credentials), passphrase))
-            // Generic on purpose: the snackbar is readable over a shoulder and in a screenshot,
-            // and whether this file carries a password is not its business.
-            report("Exported ${host.name}")
+            report("Exported ${profileExporter.export(hosts, passphrase, uri)} profile(s)")
         }
     }
 
-    fun importAccount(passphrase: String, uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+    /**
+     * Imports a profile export of any size: one profile or a whole selection, each saved with the
+     * credentials the file carried.
+     *
+     * The credentials are applied the way the host form applies them — a password as-is, a key with
+     * its file name and detected type, a passphrase — through the same three-state [HostCredentialUpdate]
+     * the form uses, so "the file had nothing for this field" leaves whatever is already stored on
+     * this device alone rather than clearing it. A passphrase now travels *beside* its key, so unlike
+     * the account files this replaced it no longer has to wait on the new device for a separate key
+     * import to attach itself to.
+     *
+     * One profile failing does not abort the rest: the hosts are saved one at a time and a credential
+     * write that fails is reported as one profile's problem while the others still land. Losing a
+     * twelve-profile import to a single unwritable secret would be the worse outcome, and the file is
+     * still there to import again.
+     */
+    fun importProfiles(passphrase: String, uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
         guardBackup("Import failed") {
-            val imported = VaultBackup.fromAccountJson(VaultBackup.decrypt(readDocument(uri), passphrase))
-            hostRepository.save(imported.host)
-            // The same decrypt-then-apply dance duplicateHost does. A password is applied as-is;
-            // a passphrase only when the host already has a key on this device, because the
-            // credential store drops a passphrase with no key to attach it to - the key itself
-            // never travels in the account file, so the passphrase waits for it here.
-            val stored = runCatching { credentialStore.stored(imported.host.id) }.getOrDefault(StoredCredentials())
-            val update = imported.credentials?.let { credentials ->
-                HostCredentialUpdate(
-                    password = credentials.password?.let { SecretEdit.Replace(it) } ?: SecretEdit.Keep,
-                    passphrase = if (stored.hasKey) {
-                        credentials.passphrase?.let { SecretEdit.Replace(it) } ?: SecretEdit.Keep
-                    } else SecretEdit.Keep,
-                )
-            } ?: HostCredentialUpdate()
-            if (!update.isNoop) {
-                runCatching { credentialStore.apply(imported.host.id, update) }
-                    .onFailure { error -> report("Imported ${imported.host.name}, but its credentials could not be saved", error) }
+            val imported = VaultBackup.fromProfilesJson(VaultBackup.decrypt(readDocument(uri), passphrase))
+            var applied = 0
+            imported.forEach { profile ->
+                val credentials = profile.credentials
+                // The SOCKS password is a column on the host row rather than a credential-store
+                // secret, and toJson never writes it — so it is written back here, onto the profile
+                // the repository is about to encrypt, or the imported host arrives with its proxy
+                // configured and no password for it.
+                val host = profile.host.copy(socksPassword = credentials?.socksPassword ?: profile.host.socksPassword)
+                hostRepository.save(host)
+                // Counted only when everything the file said about this profile landed. A host whose
+                // secret could not be written *is* imported — it is in the list, and its address and
+                // key material are right — but it is the one a user has to go and fix, so it is not
+                // counted as one of the profiles that arrived whole.
+                if (credentials == null || applyImportedCredentials(host, credentials)) applied++
             }
-            // One message, so the qualification is not spoken over by the plain confirmation.
-            val keyNote = if (imported.credentials?.passphrase != null && !stored.hasKey) {
-                " — import its private key to use the saved passphrase"
-            } else ""
-            report("Imported ${imported.host.name}$keyNote")
+            report(
+                when {
+                    applied == imported.size -> "Imported $applied profile(s)"
+                    else -> "Imported $applied of ${imported.size} profile(s) — the rest need their saved credentials re-entered"
+                },
+            )
         }
+    }
+
+    /**
+     * Writes one profile's imported secrets into the credential store, reporting rather than throwing,
+     * and answers whether every write landed.
+     *
+     * Split out because there are two stores behind one profile — [HostCredentialStore.apply] for the
+     * password, key and passphrase, and [HostCredentialStore.applyRdp] for the NLA triple — and each
+     * is a DataStore write that can fail on a full disk or an unreadable file. A failure is one
+     * profile's problem, named with the host it belongs to, and the import carries on.
+     */
+    private suspend fun applyImportedCredentials(host: HostProfile, credentials: ProfileCredentials): Boolean {
+        var complete = true
+        val key = credentials.keyBytes()
+        val label = credentials.keyLabel
+        // Both halves are required by the store — a key with no label reads back as "nothing stored"
+        // — so the pair is applied together or not at all. The reader already enforced this, and it
+        // is repeated here because this is the last place before the bytes are written.
+        val keyEdit = if (key != null && !label.isNullOrBlank()) KeyEdit.Replace(key, label, credentials.keyType) else KeyEdit.Keep
+        val update = HostCredentialUpdate(
+            password = credentials.password?.let { SecretEdit.Replace(it) } ?: SecretEdit.Keep,
+            key = keyEdit,
+            passphrase = credentials.passphrase?.let { SecretEdit.Replace(it) } ?: SecretEdit.Keep,
+        )
+        if (!update.isNoop) {
+            runCatching { credentialStore.apply(host.id, update) }
+                .onFailure { error ->
+                    complete = false
+                    report("Imported ${host.name}, but its credentials could not be saved", error)
+                }
+        }
+        if (credentials.rdpUsername != null && credentials.rdpPassword != null) {
+            runCatching {
+                credentialStore.applyRdp(
+                    host.id,
+                    RdpCredentialUpdate(
+                        username = SecretEdit.Replace(credentials.rdpUsername),
+                        domain = credentials.rdpDomain?.let { SecretEdit.Replace(it) } ?: SecretEdit.Keep,
+                        password = SecretEdit.Replace(credentials.rdpPassword),
+                    ),
+                )
+            }.onFailure { error ->
+                complete = false
+                report("Imported ${host.name}, but its remote desktop credential could not be saved", error)
+            }
+        }
+        return complete
     }
 
     fun importVault(passphrase: String, uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
         guardBackup("Import failed") {
-            val (hosts, settings, knownHosts) = VaultBackup.fromJson(VaultBackup.decrypt(readDocument(uri), passphrase))
+            // Decrypted first, because the kind is a fact about the *plaintext*: the envelope is
+            // `salt.iv.ciphertext`, so a marker on the outside would be a change to a format every
+            // earlier build's reader refuses outright. A profile export is a different kind of file —
+            // its hosts are real hosts and its settings block is all defaults — so importing one
+            // through this door would restore the profiles *and* quietly reset every setting on this
+            // device. See [VaultBackup.isProfileExport] and [VaultBackup.KIND].
+            val plaintext = VaultBackup.decrypt(readDocument(uri), passphrase)
+            if (VaultBackup.isProfileExport(plaintext)) {
+                throw BackupFormatException("That is a profile export, not a backup — use Import profiles instead")
+            }
+            val (hosts, settings, knownHosts) = VaultBackup.fromJson(plaintext)
             hosts.forEach { hostRepository.save(it) }
             sshConnectionManager.importKnownHosts(knownHosts)
             // All persisted settings are restored; the previous version silently dropped
@@ -4669,15 +4738,17 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Reads a picked document whole.
+     *
+     * The write that stood beside this is gone with the export that used it: both exports now go
+     * through their own singleton ([VaultExporter], [ProfileExporter]), because the profile picker is
+     * a window that cannot reach this view model and needed the same code. Leaving a second writer
+     * here would have been a second place for the `"wt"` truncation rule to be forgotten.
+     */
     private fun readDocument(uri: Uri): String =
         context.contentResolver.openInputStream(uri)?.use { String(it.readBytes(), Charsets.UTF_8) }
             ?: throw BackupFormatException("That file could not be opened")
-
-    private fun writeDocument(uri: Uri, payload: String) {
-        val stream = context.contentResolver.openOutputStream(uri, "wt")
-            ?: throw BackupFormatException("That location could not be written")
-        stream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-    }
 
     /**
      * Runs a database write on the view-model scope, reporting a failure instead of crashing.

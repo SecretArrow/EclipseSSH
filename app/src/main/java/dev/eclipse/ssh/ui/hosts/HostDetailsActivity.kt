@@ -143,7 +143,7 @@ class HostDetailsActivity : ComponentActivity() {
  *
  * The two rows that pass through the credentials line and the Monitoring block are the only
  * interactive things here, and both are answers rather than actions. What is deliberately *not* here
- * is the rest of the kebab menu - Connect, Port forwarding, Favorite, Export account, Edit and Remove
+ * is the rest of the kebab menu - Connect, Port forwarding, Favorite, Export profile, Edit and Remove
  * are all one tap away on the row this window was opened from, and repeating them here would be two
  * paths to each act.
  */

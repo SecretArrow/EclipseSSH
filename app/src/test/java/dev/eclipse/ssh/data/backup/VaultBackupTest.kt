@@ -433,10 +433,10 @@ class VaultBackupTest {
         assertThat(hosts[0].id).isNotEqualTo(hosts[1].id)
     }
 
-    // --- Single-account export ---
+    // --- Profile export: the same payload as a vault, plus an opt-in credentials block ---
 
     @Test
-    fun `an account export round trips one host`() {
+    fun `a profile export round trips one host with nothing saved for it`() {
         val host = HostProfile(
             id = "acct-1",
             name = "Shared box",
@@ -447,78 +447,249 @@ class VaultBackupTest {
             tags = listOf("ci"),
         )
 
-        val restored = VaultBackup.fromAccountJson(VaultBackup.toAccountJson(host))
+        val restored = VaultBackup.fromProfilesJson(VaultBackup.toProfilesJson(listOf(host)))
 
-        assertThat(restored.host).isEqualTo(host)
-        assertThat(restored.credentials).isNull()
+        assertThat(restored).hasSize(1)
+        assertThat(restored.single().host).isEqualTo(host)
+        assertThat(restored.single().credentials).isNull()
     }
 
     /**
-     * The reason the credentials block exists: an account export lands on another device as a
-     * complete account, password included, so first connect there does not ask for the one thing the
-     * export already knew. The passphrase travels too — only meaningful beside a key, but the key
-     * never travels in this file, so the passphrase waits on the new device for the key's own import.
+     * The reason the credentials block exists: a profile arrives on another device complete, so first
+     * connect there does not ask for the things the export already knew.
+     *
+     * This is also the assertion that pins the *whole* set of secrets, which is the point of the
+     * format: a private key, a passphrase beside it, a SOCKS proxy password and an RDP credential all
+     * travel, because "everything stored in the profile" is what a profile export means now. The
+     * per-host key is what the older account format deliberately left behind, and an exported profile
+     * that arrives without its key is a profile the user has to finish by hand.
      */
     @Test
-    fun `an account export carries the saved password and passphrase round trip`() {
+    fun `a profile export carries every stored secret round trip`() {
         val host = HostProfile(id = "acct-2", name = "Keyed box", host = "box.example.com", username = "ci")
-
-        val restored = VaultBackup.fromAccountJson(
-            VaultBackup.toAccountJson(host, AccountCredentials(password = "hunter2", passphrase = "open sesame")),
+        val credentials = ProfileCredentials(
+            password = "hunter2",
+            keyBase64 = "a2V5IGJ5dGVz",
+            keyLabel = "id_ed25519",
+            keyType = "ED25519",
+            passphrase = "open sesame",
+            socksPassword = "proxy secret",
+            rdpUsername = "CORP\\ci",
+            rdpDomain = "CORP",
+            rdpPassword = "rdp secret",
         )
 
-        assertThat(restored.host).isEqualTo(host)
-        assertThat(restored.credentials).isEqualTo(AccountCredentials(password = "hunter2", passphrase = "open sesame"))
+        val restored = VaultBackup.fromProfilesJson(VaultBackup.toProfilesJson(listOf(host), mapOf(host.id to credentials)))
+
+        assertThat(restored.single().host).isEqualTo(host)
+        assertThat(restored.single().credentials).isEqualTo(credentials)
+        assertThat(restored.single().credentials?.keyBytes()).isEqualTo("key bytes".toByteArray())
     }
 
-    /** Exports written before the block existed, and accounts with nothing stored: same read. */
+    /** Three profiles, one passphrase, one file: the case the multi-profile door was added for. */
     @Test
-    fun `an account export with a blank credentials block imports as one without`() {
+    fun `a profile export round trips several hosts against their own credentials`() {
+        val hosts = listOf(
+            HostProfile(id = "multi-1", name = "One", host = "one.example.com", username = "u"),
+            HostProfile(id = "multi-2", name = "Two", host = "two.example.com", username = "u"),
+            HostProfile(id = "multi-3", name = "Three", host = "three.example.com", username = "u"),
+        )
+
+        val restored = VaultBackup.fromProfilesJson(
+            VaultBackup.toProfilesJson(
+                hosts,
+                mapOf(
+                    "multi-1" to ProfileCredentials(password = "first"),
+                    // No entry for multi-2: a profile with nothing saved, beside two that have
+                    // something, must not pick up a neighbour's password on the way back in.
+                    "multi-3" to ProfileCredentials(password = "third", socksPassword = "proxy"),
+                ),
+            ),
+        )
+
+        assertThat(restored.map { it.host.id }).containsExactly("multi-1", "multi-2", "multi-3").inOrder()
+        assertThat(restored[0].credentials?.password).isEqualTo("first")
+        assertThat(restored[1].credentials).isNull()
+        assertThat(restored[2].credentials?.password).isEqualTo("third")
+        assertThat(restored[2].credentials?.socksPassword).isEqualTo("proxy")
+    }
+
+    /**
+     * A profile export says so in its own root, and a vault does not.
+     *
+     * Without the marker the two files are indistinguishable — a profile export's hosts block *is* a
+     * valid vault hosts block — and `importVault` would take one, import its hosts and reset every
+     * setting to the default the profile writer carries. This is the fact that lets that door refuse
+     * it; the refusal itself is the view model's.
+     */
+    @Test
+    fun `only a profile export carries the kind marker`() {
+        val host = HostProfile(id = "kind-1", name = "Box", host = "box.example.com", username = "u")
+
+        assertThat(VaultBackup.isProfileExport(VaultBackup.toProfilesJson(listOf(host)))).isTrue()
+        assertThat(VaultBackup.isProfileExport(VaultBackup.toJson(listOf(host), AppSettings(), emptyMap()))).isFalse()
+        // A file that is not a backup either answers false rather than throwing: fromJson has the
+        // better sentence for it, and this check runs first.
+        assertThat(VaultBackup.isProfileExport("not json at all")).isFalse()
+    }
+
+    /**
+     * The marker is inside the envelope, so the door that reads it must read the *plaintext*.
+     *
+     * This is the trap the guard in `importVault` fell into first: the file on disk is
+     * `salt.iv.ciphertext`, so asking a picked document whether it is a profile export answers false
+     * for every file that exists — including the profile export it was written to refuse. The check
+     * is only meaningful after `decrypt`, and this pins both halves of that: false for the envelope,
+     * true for what comes out of it.
+     */
+    @Test
+    fun `the kind marker is inside the envelope, so it is read after decrypting`() {
+        val host = HostProfile(id = "kind-2", name = "Box", host = "box.example.com", username = "u")
+        val envelope = VaultBackup.encrypt(VaultBackup.toProfilesJson(listOf(host)), "correct horse")
+
+        assertThat(VaultBackup.isProfileExport(envelope)).isFalse()
+        assertThat(VaultBackup.isProfileExport(VaultBackup.decrypt(envelope, "correct horse"))).isTrue()
+    }
+
+    /** Refused, not misread: a file written by another door is not a profile export. */
+    @Test
+    fun `a profile export rejects a payload that names a different kind`() {
+        val json = JSONObject(VaultBackup.toJson(listOf(HostProfile(id = "k", name = "B", host = "b", username = "u")), AppSettings(), emptyMap()))
+            .put("kind", "something-else")
+            .toString()
+
+        val error = assertThrows(BackupFormatException::class.java) { VaultBackup.fromProfilesJson(json) }
+
+        assertThat(error).hasMessageThat().contains("not a profile export")
+    }
+
+    /**
+     * The flat block the first account exports wrote still imports.
+     *
+     * Those files are out there, they were the only way to move an account until this format replaced
+     * that writer, and the block is unambiguous: it is keyed by nothing, so it can only mean the one
+     * host the file holds.
+     */
+    @Test
+    fun `a legacy flat credentials block imports beside the host it belongs to`() {
+        val host = HostProfile(id = "legacy-1", name = "Old box", host = "old.example.com", username = "u")
+        val legacy = JSONObject(VaultBackup.toJson(listOf(host), AppSettings(), emptyMap()))
+            .put("credentials", JSONObject().put("password", "hunter2").put("passphrase", "open sesame"))
+            .toString()
+
+        val restored = VaultBackup.fromProfilesJson(legacy)
+
+        assertThat(restored.single().host).isEqualTo(host)
+        assertThat(restored.single().credentials?.password).isEqualTo("hunter2")
+        assertThat(restored.single().credentials?.passphrase).isEqualTo("open sesame")
+    }
+
+    /** Exports with nothing stored: no block is written at all, which is the old shape exactly. */
+    @Test
+    fun `a profile export with nothing saved writes no credentials block`() {
         val host = HostProfile(id = "acct-3", name = "Old box", host = "old.example.com", username = "u")
-        val legacy = VaultBackup.toAccountJson(host)
-        assertThat(legacy).doesNotContain("credentials")
+        val blank = VaultBackup.toProfilesJson(listOf(host), mapOf(host.id to ProfileCredentials()))
 
-        val blankBlock = JSONObject(legacy).apply {
-            put("credentials", JSONObject().put("password", "  ").put("passphrase", ""))
-        }.toString()
+        assertThat(blank).doesNotContain("credentials")
+        assertThat(VaultBackup.fromProfilesJson(blank).single().credentials).isNull()
 
-        val restored = VaultBackup.fromAccountJson(blankBlock)
-        assertThat(restored.host).isEqualTo(host)
-        assertThat(restored.credentials).isNull()
+        // And a block of blanks — what a hand-edited or older file might carry — reads the same way.
+        val handEdited = JSONObject(blank)
+            .put("credentials", JSONObject().put(host.id, JSONObject().put("password", "  ").put("passphrase", "")))
+            .toString()
+
+        assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
     }
 
     /** The block is untrusted input like every other field: bounded, never fatal. */
     @Test
-    fun `an absurdly long account credential is truncated rather than rejected`() {
+    fun `an absurdly long profile credential is truncated rather than rejected`() {
         val host = HostProfile(id = "acct-4", name = "Stuffed box", host = "box.example.com", username = "u")
         val oversized = "x".repeat(10_000)
 
-        val restored = VaultBackup.fromAccountJson(
-            VaultBackup.toAccountJson(host, AccountCredentials(password = oversized)),
+        val restored = VaultBackup.fromProfilesJson(
+            VaultBackup.toProfilesJson(listOf(host), mapOf(host.id to ProfileCredentials(password = oversized))),
         )
 
-        assertThat(restored.credentials?.password).hasLength(4096)
+        assertThat(restored.single().credentials?.password).hasLength(4096)
+    }
+
+    /**
+     * A key the vault could never read back is dropped with its label, the same way an unopenable
+     * field is dropped everywhere else in this payload.
+     *
+     * `StoredCredentials.hasKey` is `keyLabel != null`, so bytes that arrive without a file name
+     * would be written into the credential store and never surfaced — invisible storage the user
+     * could neither see on the Saved credentials screen nor delete from it.
+     */
+    @Test
+    fun `a key with no label is dropped rather than stored invisibly`() {
+        val host = HostProfile(id = "acct-5", name = "Half a key", host = "box.example.com", username = "u")
+        val block = JSONObject()
+            .put("key", "a2V5")
+            .put("keyType", "ED25519")
+
+        val handEdited = JSONObject(VaultBackup.toProfilesJson(listOf(host)))
+            // Written by hand because the writer pairs the two: this is the shape a hand-edited file
+            // has, and the shape the reader has to refuse.
+            .put("credentials", JSONObject().put(host.id, block))
+            .toString()
+
+        assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
+    }
+
+    /**
+     * An RDP credential is all three fields or none, because that is what the store can hand a
+     * tunnel: `HostCredentialStore.rdpCredentials` returns null unless a username *and* a password
+     * are stored. A file carrying half the pair must not leave a half-credential behind.
+     */
+    @Test
+    fun `an RDP credential missing half of the pair is dropped`() {
+        val host = HostProfile(id = "acct-6", name = "Half an RDP", host = "box.example.com", username = "u")
+        val block = JSONObject().put("rdpUsername", "CORP\\ci").put("rdpDomain", "CORP")
+
+        val handEdited = JSONObject(VaultBackup.toProfilesJson(listOf(host)))
+            .put("credentials", JSONObject().put(host.id, block))
+            .toString()
+
+        assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
+    }
+
+    /** A key that is not base64 is one bad field, not a crash somewhere later. */
+    @Test
+    fun `a key that is not base64 is dropped rather than decoded at connect time`() {
+        val host = HostProfile(id = "acct-7", name = "Mangled key", host = "box.example.com", username = "u")
+        val block = JSONObject().put("key", "not base64 !!").put("keyLabel", "id_rsa")
+
+        val handEdited = JSONObject(VaultBackup.toProfilesJson(listOf(host)))
+            .put("credentials", JSONObject().put(host.id, block))
+            .toString()
+
+        assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
     }
 
     @Test
-    fun `a full vault cannot be imported as a single account`() {
-        val json = VaultBackup.toJson(
-            listOf(
-                HostProfile(name = "A", host = "a", username = "u"),
-                HostProfile(name = "B", host = "b", username = "u"),
-            ),
-            AppSettings(),
-            emptyMap(),
-        )
-
-        val error = assertThrows(BackupFormatException::class.java) { VaultBackup.fromAccountJson(json) }
-
-        assertThat(error).hasMessageThat().contains("exactly one host")
+    fun `a profile export with no hosts is rejected`() {
+        assertThrows(BackupFormatException::class.java) { VaultBackup.fromProfilesJson("{\"hosts\":[]}") }
     }
 
+    /**
+     * The local Ubuntu environment is not a profile anyone can move: its id is synthesized at runtime
+     * and it dials this device. Written into a file it would come back on another phone as a server
+     * called Local Ubuntu pointing at localhost.
+     */
     @Test
-    fun `an account export with no hosts is rejected`() {
-        assertThrows(BackupFormatException::class.java) { VaultBackup.fromAccountJson("{\"hosts\":[]}") }
+    fun `a profile export never writes the local environment`() {
+        val local = HostProfile(id = LocalLinuxHost.HOST_ID, name = "Local Ubuntu", host = "localhost", username = "u")
+        val real = HostProfile(id = "acct-8", name = "Box", host = "box.example.com", username = "u")
+
+        val json = VaultBackup.toProfilesJson(
+            listOf(local, real),
+            mapOf(local.id to ProfileCredentials(password = "local"), real.id to ProfileCredentials(password = "real")),
+        )
+
+        assertThat(json).doesNotContain(LocalLinuxHost.HOST_ID)
+        assertThat(VaultBackup.fromProfilesJson(json).map { it.host.id }).containsExactly(real.id)
     }
 
     // --- A backup file is untrusted input, and two of its fields feed the host-key trust store ---

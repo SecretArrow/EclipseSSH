@@ -365,6 +365,15 @@
             android:name=".ui.settings.ExportBackupActivity"
             android:exported="false"
             android:parentActivityName=".MainActivity" />
+        <!--
+          Next to the vault export on purpose: they are the two halves of a device migration, and the
+          file this one writes is the one that carries secrets. Nothing hands over through its intent,
+          same as every other destination here.
+        -->
+        <activity
+            android:name=".ui.settings.ExportProfilesActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
         <activity
             android:name=".ui.settings.UbuntuActivity"
             android:exported="false"
