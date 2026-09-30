@@ -58,6 +58,22 @@ class LocalTerminalChannel(
      * handed to something else, so exactly one caller proceeds.
      */
     private val released = AtomicBoolean(false)
+
+    /**
+     * Guards the pty *handle* itself, which is a narrower thing than [released].
+     *
+     * Two paths give the master fd back, and they are alternatives rather than steps: the reader's
+     * [PtyProcess.awaitExit] when the shell ends on its own, and [release]'s [PtyProcess.close] when
+     * the app lets go. [released] serialises close against discard and says nothing about the
+     * reader's reap, so an app-side teardown arriving after a shell that exited by itself used to
+     * close a handle the reader had already freed. The bridge cannot tell the two apart — it matches
+     * a slot by descriptor number — so a descriptor the process had since forked a *new* terminal
+     * onto would be closed by the old channel: SIGHUP to the wrong child, and a live reader left
+     * reading a freed slot. Whoever wins this flag owns the teardown; the other path leaves the
+     * handle alone.
+     */
+    private val ptyGivenUp = AtomicBoolean(false)
+
     private val droppedChunkCount = AtomicLong()
     private val lastActivityAt = AtomicLong(0)
 
@@ -159,7 +175,9 @@ class LocalTerminalChannel(
      * [SessionEnd.Released] unless the reader already reported the shell's own ending.
      *
      * Idempotent by [released]: whichever of close/discard arrives second returns immediately, so
-     * the master fd is closed exactly once however many ending paths race.
+     * the master fd is closed exactly once however many ending paths race — and [ptyGivenUp] extends
+     * that promise to the reader's own reap, which is the third of them and the one [released]
+     * cannot see.
      */
     private fun release() {
         if (!released.compareAndSet(false, true)) return
@@ -171,7 +189,9 @@ class LocalTerminalChannel(
         // and a close must not be held hostage by it — past the bound the writer's in-flight
         // write is refused by the native bridge's freed-slot guard instead.
         writer.join(DRAIN_WAIT_MS)
-        process.close()
+        // Not `process.close()` unconditionally: a shell that ended before this teardown began has
+        // already been reaped, and the fd was given back then. See [ptyGivenUp].
+        if (ptyGivenUp.compareAndSet(false, true)) process.close()
         // Closing the pty wakes the reader with end-of-stream; let it publish whatever it had
         // already read before the terminator goes in, or the marker lands *ahead* of the shell's
         // last lines — a terminal closed mid-banner would replay a blank screen. The wait is
@@ -220,7 +240,14 @@ class LocalTerminalChannel(
                 finish(SessionEnd.Released)
                 return
             }
-            val status = runCatching { process.awaitExit() }.getOrDefault(-1)
+            val status = if (ptyGivenUp.compareAndSet(false, true)) {
+                runCatching { process.awaitExit() }.getOrDefault(-1)
+            } else {
+                // A release closed the pty out from under this loop — which is what woke it. There
+                // is nothing here to reap, and an awaitExit on a freed handle would reap whatever
+                // the descriptor number names now.
+                -1
+            }
             finish(
                 when {
                     status in 129..255 -> SessionEnd.ShellEnded(

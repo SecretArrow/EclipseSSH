@@ -1214,6 +1214,23 @@ class UbuntuDistributionManager(
             warnings += "the extra packages needed a --fix-missing retry to install"
             return
         }
+        // The recovery the base packages get, in the same place and for the same reason: a bulk
+        // install that dies part-way is what *interrupts* dpkg — the packages it was unpacking leave
+        // their records in /var/lib/dpkg/updates — and apt then refuses every command in about a
+        // second without contacting a mirror. The per-package fallback below is exactly such a
+        // command, so without a pass between them it measures the database rather than the packages
+        // and loses the whole selection to identical refusals one at a time (the base set's case:
+        // E2E run 35056615874, 33 packages, every one refused in 1-2s). Then `--fix-missing` again,
+        // because that flag's own attempt above was spent on the interrupted database — the one
+        // combination not yet tried.
+        if (clearInterruptedDpkgState(onProgress)) {
+            val afterRepair =
+                runSetupCommand("$command --fix-missing", INSTALL_TIMEOUT_MS, lineTracker(onProgress))
+            if (afterRepair != null && afterRepair.exitCode == 0) {
+                warnings += "the extra packages needed a dpkg repair pass to install"
+                return
+            }
+        }
         diagnostics.record(
             UserspaceDiagnosticCategory.APT,
             "bulk extra-package install failed",

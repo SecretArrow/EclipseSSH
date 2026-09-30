@@ -4,6 +4,7 @@ import dev.eclipse.ssh.ssh.SessionEnd
 import java.io.File
 import java.io.IOException
 import java.util.Properties
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -127,17 +128,22 @@ class LinuxUserspaceManager(
         // button or a service-retry racing the UI's retry run exactly one install.
         storage.acquireInstallLock(distro.id, "install")
         try {
-            writeInstallingMarker("install")
-            // A repair-shaped install (from NeedsRepair) re-extracts, and re-extraction deletes
-            // the old rootfs — with the workspace inside it. The snapshot parks it where the
-            // restore at the end of this install picks it back up; a snapshot failure aborts,
-            // because proceeding would delete the user's projects with nothing in their place.
-            if (_state.value is LinuxUserspaceState.NeedsRepair && !installer.isExtracted() &&
-                workspace.exists() && workspace.fileCount() > 0
-            ) {
-                workspace.snapshotTo(backupFile)
-            }
             try {
+                // The marker first, and inside the try that types failures: it writes
+                // `installing=true`, which [initialState] reads back as "a previous install was
+                // interrupted" — needs-repair on every launch, for ever — so every way this run
+                // can end has to reach the catch below. The snapshot is one of those ways.
+                writeInstallingMarker("install")
+                // A repair-shaped install (from NeedsRepair) re-extracts, and re-extraction deletes
+                // the old rootfs — with the workspace inside it. The snapshot parks it where the
+                // restore at the end of this install picks it back up; a snapshot failure aborts,
+                // because proceeding would delete the user's projects with nothing in their place.
+                if (_state.value is LinuxUserspaceState.NeedsRepair && !installer.isExtracted() &&
+                    workspace.exists() && workspace.fileCount() > 0
+                ) {
+                    workspace.snapshotTo(backupFile)
+                }
+
                 // Whether this run has a rootfs half is decided before it can be consumed by the
                 // half itself: a repair that finds an extracted rootfs skips the download, and the
                 // percentage the user watches must start at 0 for the work that is actually left.
@@ -155,12 +161,15 @@ class LinuxUserspaceManager(
                 // The belt under the installer's own promise: an extraction that produced nothing
                 // must fail here — an install failure the UI can name — rather than deep inside
                 // setup, where it surfaces as a missing-file error that reads like corruption.
-                check(installer.isExtracted()) { "the extracted rootfs is incomplete - there is nothing to set up" }
+                check(installer.isExtracted()) {
+                    "the extracted rootfs is incomplete - there is nothing to set up"
+                }
                 storage.updateInstallLockPhase("setup")
                 // Not setUpAndVerify directly: an install whose only problem is something already on
                 // the device fixes it here rather than handing the user a failure and a Repair
                 // button. See setUpVerifyAndHeal for what bounds that.
-                val report = setUpVerifyAndHeal(plan, "Ubuntu installed but failed its health check", extras)
+                val report =
+                    setUpVerifyAndHeal(plan, "Ubuntu installed but failed its health check", extras)
 
                 writeInstalledState()
                 val warnings = (extractionWarnings + report.warnings).toMutableList()
@@ -758,7 +767,14 @@ class LinuxUserspaceManager(
     private suspend fun restoreDamaged(warnings: MutableList<String>): SetupReport? {
         val integrity = installer.inspectAgainstPinnedArchive(onProgress = ::emitArchiveProgress)
         if (integrity.whole) return null
-        val restored = installer.restoreFromPinnedTarball(integrity.damaged, onProgress = ::emitArchiveProgress)
+        val restored = installer.restoreFromPinnedTarball(
+            integrity.damaged,
+            onProgress = ::emitArchiveProgress,
+            // The members that would not go back are part of what this rung has to say: the report
+            // below names the ones that did, and a file the archive carries that the rootfs refused
+            // is the reason the next press of Repair will find it there again.
+            onWarning = { warnings += it },
+        )
         if (restored.isEmpty()) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.ROOTFS,
@@ -1038,11 +1054,32 @@ class LinuxUserspaceManager(
      * the state to NeedsRepair (the card disappears — it shows only when healthy); a failing probe
      * on a Running one does *not* stop anything, because live sessions may still be fine and Stop
      * is the user's call.
+     *
+     * A probe that cannot run at all is not a verdict, and it is still recorded: the Stopped
+     * userspace moves to NeedsRepair and the throwable is rethrown, exactly as [start] does it.
      */
     suspend fun refreshHealth(): HealthReport = transition.withLock {
         // Under the same mutex as every transition: a refresh racing a Start would otherwise
         // record a verdict about a userspace whose state changed underneath it.
-        val health = distribution.healthProbe()
+        val health = try {
+            distribution.healthProbe()
+        } catch (c: CancellationException) {
+            // Same rule as [noteSessionEnded]'s probe: a refresh the caller walked away from says
+            // nothing about the userspace, so it moves nothing.
+            throw c
+        } catch (t: Throwable) {
+            // A probe that cannot even run — proot refused to spawn — is the same case [start]
+            // answers, and for the same reason: it is a userspace that is broken, not a refresh
+            // that was inconclusive. Left unrecorded it was the one *failure* this method could not
+            // express, so the settings screen's Verify button answered a userspace it cannot start
+            // by leaving the card exactly as it was, with Repair offered nowhere — the very state
+            // [start] refuses to leave a user in. Rethrown rather than swallowed, because the
+            // caller's error line is where the reason belongs; the state is already NeedsRepair.
+            if (_state.value is LinuxUserspaceState.Stopped) {
+                _state.value = LinuxUserspaceState.NeedsRepair(t.message ?: t.javaClass.simpleName)
+            }
+            throw t
+        }
         _lastHealth.value = health
         if (!health.healthy && _state.value is LinuxUserspaceState.Stopped) {
             _state.value = LinuxUserspaceState.NeedsRepair(health.describe())
@@ -1063,10 +1100,15 @@ class LinuxUserspaceManager(
      * userspace implies (see [refreshHealth], which deliberately leaves a running environment alone):
      * the ending has to blame the userspace ([sessionEndBlamesUserspace]), no other local session may
      * still be live — a sibling terminal that is still typing is proof the environment works, whatever
-     * this one exit says — and the health probe has to disagree too. Only when all three hold does the
-     * state become NeedsRepair, and the probe is what keeps a user who typed a command that does not
-     * exist, or `exit 127` by hand, from being told their environment is broken: it passes, and the
-     * userspace stays exactly as it was.
+     * this one exit says — and the environment has to be unsound on its own account. Only when all
+     * three hold does the state become NeedsRepair, and the probe is what keeps a user who typed a
+     * command that does not exist, or `exit 127` by hand, from being told their environment is broken:
+     * it passes, and the userspace stays exactly as it was.
+     *
+     * "On its own account" is [HealthReport.sound] and not [HealthReport.healthy], and a probe that
+     * cannot run at all counts against the environment rather than for it — both stated at the two
+     * places below, because both are the kind of difference that only shows up on the device that
+     * has them.
      *
      * The probe runs here rather than being left to Repair's first rung, because by then the user has
      * pressed a button and the answer is already needed: a card that offers Repair for a healthy
@@ -1087,12 +1129,43 @@ class LinuxUserspaceManager(
             )
             return@withLock
         }
-        val health = distribution.healthProbe()
-        _lastHealth.value = health
-        if (health.healthy) {
+        // The probe is the only one of the three conditions that can *fail* rather than answer: it
+        // forks proot, so a userspace whose runtime will not start — which is what exit 127 may be
+        // saying — throws here. Uncaught it escaped onto the caller's scope (a plain
+        // `launch` on `Dispatchers.IO`, no handler), and a throwable nothing catches on a bare
+        // coroutine thread is the app's death, from a health check. A probe that cannot run is
+        // therefore read as the disagreement it is: the ending stands, and the sentence is the
+        // throwable's own, which is the same treatment [start] gives it.
+        val health = try {
+            distribution.healthProbe()
+        } catch (c: CancellationException) {
+            // The scope went away mid-probe (the screen closed, the ViewModel was cleared). That is
+            // not the environment disagreeing with anything, so it is not evidence — the throwable
+            // travels on and the ending is simply not acted on.
+            throw c
+        } catch (t: Throwable) {
+            val detail = t.message ?: t.javaClass.simpleName
             diagnostics.record(
                 UserspaceDiagnosticCategory.ROOTFS,
-                "a terminal session ended with exit 127; the environment still passes its health check",
+                "a terminal session ended with exit 127 and the health check could not run",
+                detail = detail,
+            )
+            _state.value = LinuxUserspaceState.NeedsRepair(detail)
+            return@withLock
+        }
+        _lastHealth.value = health
+        // `sound`, not `healthy`, and the difference is the whole point of this condition: the
+        // userspace can be condemned only for something a Repair could have put right, and the one
+        // field [HealthReport.healthy] adds is the network — which no repair of this rootfs fixes,
+        // and which a session that ended with exit 127 says nothing about. On [HealthReport.healthy]
+        // an offline device had its working environment replaced by "DNS does not resolve" the
+        // moment one shell ended badly, and Repair would have been offered to fix the resolver the
+        // reading was already complaining about. Same split as the ladder's own local-rung stop:
+        // see [repairLadder]'s note on [HealthReport.sound].
+        if (health.sound) {
+            diagnostics.record(
+                UserspaceDiagnosticCategory.ROOTFS,
+                "a terminal session ended with exit 127; the environment itself is still sound",
                 detail = health.describe(),
             )
             return@withLock

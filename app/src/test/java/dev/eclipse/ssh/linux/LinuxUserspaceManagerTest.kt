@@ -779,6 +779,79 @@ class LinuxUserspaceManagerTest {
     }
 
     @Test
+    fun `an ending does not condemn a userspace that is only offline`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        harness.manager.start()
+        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+
+        // The device loses its connection after the userspace is up: the resolver stops answering and
+        // nothing the environment itself is judged on changes. The shell that ended with 127 really
+        // did fail — but not for a reason this reading can see.
+        val healthyRespond = harness.spawner.respond
+        harness.spawner.respond = { command ->
+            if (command.startsWith("getent hosts")) 2 to "" else healthyRespond(command)
+        }
+
+        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+
+        // Running, and not NeedsRepair("DNS does not resolve"). The verdict this condition reads is
+        // [HealthReport.sound] — the environment on its own account — because the network is the one
+        // field `healthy` adds that no rung of Repair touches: the ladder's own setup rung refuses to
+        // start without a connection, so the Repair such a verdict offers cannot run, and the user
+        // pays for a press that was never going to fix the sentence it was answering. The offline
+        // device is already answered where it belongs, by the card's own health rule.
+        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+        assertThat(harness.distribution.diagnostics.export())
+            .contains("the environment itself is still sound")
+    }
+
+    @Test
+    fun `a health probe that cannot run at all is a repair state, not an app crash`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        harness.manager.start()
+
+        // proot will not fork at all — the runtime's own refusal, not a command that failed. The
+        // probe throws out of `runCommand` instead of answering, which is the one shape of failure
+        // that has no report to return.
+        harness.spawner.respond = { throw UserspaceFailure.TooManyTerminals(16) }
+
+        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+
+        // On the device this call arrives on a bare `launch` of the transport scope, which has no
+        // exception handler: a throwable escaping here reached the thread's default handler and took
+        // the process with it — the app dying from a health check. The ending stands instead, and the
+        // runtime's own sentence is the detail.
+        val state = harness.manager.state.value
+        assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+        assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
+    }
+
+    @Test
+    fun `a refresh whose probe cannot run still offers a Repair`() = runTest {
+        val harness = newHarness()
+        harness.manager.install()
+        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+
+        // The Verify button on a userspace whose runtime will not spawn. Nothing about the userspace
+        // changed except the thing the probe needs in order to look at it.
+        harness.spawner.respond = { throw UserspaceFailure.TooManyTerminals(16) }
+
+        val thrown = runCatching { harness.manager.refreshHealth() }.exceptionOrNull()
+
+        // The reason is rethrown, because the screen's error line is where it belongs...
+        assertThat(thrown).isNotNull()
+        // ...and the state is the one that offers the way out. Left as it was — Stopped, with no
+        // Repair anywhere — the screen answered a userspace it cannot start with the same card it
+        // shows for a healthy one, which is the state the manager's own Start refuses to leave a user
+        // in.
+        val state = harness.manager.state.value
+        assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+        assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
+    }
+
+    @Test
     fun `start names the Android groups, so an install made before the naming is corrected`() = runTest {
         // An install from a build that had no names to write, over a device whose app is in the
         // four groups the report named. The set is read on every start rather than only at install
