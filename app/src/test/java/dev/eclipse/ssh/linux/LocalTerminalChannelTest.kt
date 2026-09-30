@@ -138,6 +138,48 @@ class LocalTerminalChannelTest {
     }
 
     @Test
+    fun `a teardown after the shell ended by itself never closes the pty again`() {
+        val process = FakePtyProcess()
+        val channel = newChannel(process)
+
+        // The shell exits by itself: the reader reaps it, which is what gives the master fd back.
+        process.emit("bye")
+        process.exit(0)
+        val end = runBlocking { channel.awaitClosed() }
+        assertThat(end).isEqualTo(SessionEnd.ShellEnded(status = 0, signal = null))
+        assertThat(process.awaitExitCount.get()).isEqualTo(1)
+
+        // Stop Ubuntu's closeAll and a tab's own close both reach for a channel that has already
+        // ended, and each used to close a descriptor this channel had given back minutes ago — a
+        // number the process may have since forked the *next* local terminal onto, whose slot the
+        // bridge matches by that very number.
+        channel.close()
+        channel.discard(null)
+
+        assertThat(process.closeCount.get()).isEqualTo(0)
+        assertThat(process.awaitExitCount.get()).isEqualTo(1)
+        // And the ending the tab shows is the shell's own, not a teardown racing it.
+        assertThat(runBlocking { channel.awaitClosed() })
+            .isEqualTo(SessionEnd.ShellEnded(status = 0, signal = null))
+    }
+
+    @Test
+    fun `an app-side close is the path that gives the pty back`() {
+        val process = FakePtyProcess()
+        val channel = newChannel(process)
+
+        process.emit("still running")
+        channel.close()
+        runBlocking { channel.awaitClosed() }
+
+        // The mirror of the case above: when the app lets go first, the close is the one teardown
+        // — it is what SIGHUPs the child — and the reader must not then reap a handle it no longer
+        // owns.
+        assertThat(process.closeCount.get()).isEqualTo(1)
+        assertThat(process.awaitExitCount.get()).isEqualTo(0)
+    }
+
+    @Test
     fun `a resize after release never reaches the pty`() {
         val process = FakePtyProcess()
         val channel = newChannel(process)
@@ -194,6 +236,14 @@ internal open class FakePtyProcess : PtyProcess {
 
     val writes = LinkedBlockingQueue<ByteArray>()
     val closeCount = AtomicInteger()
+
+    /**
+     * How many times the handle was reaped. Counted beside [closeCount] because the two are the
+     * alternative ways a pty is given back — see [LocalTerminalChannel]'s own note — and a test
+     * asserting "exactly one teardown" has to be able to see both.
+     */
+    val awaitExitCount = AtomicInteger()
+
     var resizes = 0
         private set
     var lastResize: Pair<Int, Int>? = null
@@ -231,6 +281,7 @@ internal open class FakePtyProcess : PtyProcess {
     }
 
     override fun awaitExit(): Int {
+        awaitExitCount.incrementAndGet()
         exited.await()
         return exitStatus
     }

@@ -107,8 +107,17 @@ internal object TestTarballs {
      * @param dpkgStatus what the archive's `var/lib/dpkg/status` holds, or null to ship no such
      *   member. The two are different tests — a database the repair rung has to take from the archive,
      *   and an archive that cannot supply one at all — and this is the switch between them.
+     * @param hardlink an extra hard-link member, `name to source`, written after every base member so
+     *   its source is already in the archive. A repair resolves a link's *source* against the live
+     *   rootfs, so a source under a directory the user has replaced with a link out of the tree is the
+     *   one shape in which an archive member's own name resolves and its source does not — which is
+     *   what `RootfsRepairTest` needs to put a real archive in front of that path.
      */
-    fun writeRepairFixture(target: File, dpkgStatus: String? = dpkgStatusText()): File {
+    fun writeRepairFixture(
+        target: File,
+        dpkgStatus: String? = dpkgStatusText(),
+        hardlink: Pair<String, String>? = null,
+    ): File {
         val base = writeRootfsFixture(target.parentFile!!.resolve("base.tar.gz"))
         target.parentFile?.mkdirs()
         GZIPOutputStream(target.outputStream().buffered()).use { gzip ->
@@ -132,6 +141,7 @@ internal object TestTarballs {
                 if (dpkgStatus != null) putFile(out, "var/lib/dpkg/status", dpkgStatus.toByteArray())
                 putDirectory(out, "etc/ssh")
                 putFile(out, "etc/ssh/sshd_config", "Port 22\n".toByteArray())
+                if (hardlink != null) putHardlink(out, hardlink.first, hardlink.second)
             }
         }
         return target
@@ -244,8 +254,14 @@ internal object TestTarballs {
      * skip must be named, not silent.
      */
     private fun putForwardHardlink(tar: TarArchiveOutputStream, name: String, notYetExtractedTarget: String) {
+        putHardlink(tar, name, notYetExtractedTarget)
+    }
+
+    /** A hard-link entry, `name` linking `source` — the source's position in the archive is the
+     * caller's business, and is what separates a forward link from an ordinary one. */
+    private fun putHardlink(tar: TarArchiveOutputStream, name: String, source: String) {
         val entry = TarArchiveEntry(name, TarArchiveEntry.LF_LINK)
-        entry.linkName = notYetExtractedTarget
+        entry.linkName = source
         entry.size = 0
         tar.putArchiveEntry(entry)
         tar.closeArchiveEntry()

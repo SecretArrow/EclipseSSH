@@ -6,6 +6,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -69,6 +70,9 @@ class RootfsInstaller(
     /** Where the rootfs is unpacked before being moved into place. */
     private val stagingDir: File get() = storage.stagingDir
 
+    /** The rootfs [moveIntoPlace] replaced, kept beside the new one until a swap is decided. */
+    private val parkedRootfsDir: File get() = File(storage.rootDir, PARKED_ROOTFS)
+
     /** The completed, in-place rootfs. */
     val rootfsDir: File get() = storage.rootfsDir
 
@@ -122,11 +126,19 @@ class RootfsInstaller(
     /**
      * Deletes the download and every extracted tree — the uninstall path, which owns the "none of
      * it is kept" decision.
+     *
+     * Every tree includes the parked `rootfs.old`, and it did not always: [moveIntoPlace] renames
+     * the previous rootfs there and deletes it only on its *next* run, and [reclaimSpace] takes it
+     * only when a rootfs is in place beside it. So an uninstall that arrived mid-swap — or after a
+     * swap that failed and left the parked copy as the last whole rootfs on the device — removed
+     * the userspace and left a whole rootfs of it on disk, bytes the user was told were gone. It is
+     * [parkedRootfsDir], the same tree the swap parks and under the same name.
      */
     fun deleteRootfs() {
         tarballFile.delete()
         deleteTreeNoFollow(rootfsDir)
         deleteTreeNoFollow(stagingDir)
+        deleteTreeNoFollow(parkedRootfsDir)
     }
 
     /**
@@ -289,7 +301,7 @@ class RootfsInstaller(
         if (rootfsInPlace()) {
             // The condition is the whole safety of this line: a parked rootfs with nothing in place
             // is the user's system, mid-swap, and not this function's to delete.
-            reclaim("a previous rootfs", File(storage.rootDir, "rootfs.old"), freed)
+            reclaim("a previous rootfs", parkedRootfsDir, freed)
         }
         val total = recordReclaimed(freed, startedAt, "reclaimed space in the userspace")
         total
@@ -1006,7 +1018,7 @@ class RootfsInstaller(
         // The previous rootfs is parked beside the new one rather than deleted first: the old
         // delete-then-rename ordering had a window where a crash left *neither* root, and the
         // parked copy is also the rollback if the swap itself fails.
-        val parked = File(storage.rootDir, "rootfs.old")
+        val parked = parkedRootfsDir
         deleteTreeNoFollow(parked)
         var parkedPrevious = false
         if (rootfsDir.exists()) {
@@ -1125,7 +1137,15 @@ class RootfsInstaller(
 
         // Last resort, and the only one that needs anything outside the rootfs: one pass over the
         // pinned archive for the one member, exactly as the file-level restore makes one.
-        val restored = runCatching {
+        //
+        // Deliberately not a `runCatching`: it would swallow the caller's cancellation along with
+        // everything else — a repair the user has already left would go on climbing the ladder
+        // behind them — and it would throw the *typed* reason away, which is the whole difference
+        // between "the pinned archive is not on this device" (a rung the ladder must not spend a
+        // rebuild on) and "it is here, and the member would not write". The failure is recorded
+        // where it happens and kept as the cause of the one thrown below.
+        var archiveFailure: Throwable? = null
+        val restored = try {
             ensurePinnedArchive(onProgress)
             var written = false
             val warnings = mutableListOf<String>()
@@ -1142,7 +1162,18 @@ class RootfsInstaller(
                 }
             }
             written
-        }.getOrDefault(false)
+        } catch (c: CancellationException) {
+            throw c
+        } catch (t: Throwable) {
+            archiveFailure = t
+            diagnostics.record(
+                UserspaceDiagnosticCategory.APT,
+                "the package database could not be restored from the pinned archive",
+                durationMs = System.currentTimeMillis() - startedAt,
+                detail = t.message ?: t.javaClass.simpleName,
+            )
+            false
+        }
         if (restored && isReadablePackageDatabase(status)) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.APT,
@@ -1154,6 +1185,7 @@ class RootfsInstaller(
         }
         throw UserspaceFailure.PackageDatabaseUnreadable(
             detail = "($DPKG_STATUS could not be restored from $DPKG_STATUS_PREVIOUS or from the archive)",
+            cause = archiveFailure,
         )
     }
 
@@ -1340,16 +1372,25 @@ class RootfsInstaller(
      * @param memberNames archive-relative names, exactly as the tarball spells them (`usr/bin/rm`,
      *   not `/usr/bin/rm`). A name the archive does not carry is reported by its absence from the
      *   result rather than as a failure: a rootfs that is missing four things is not made worse by
-     *   restoring three.
+     *   restoring three. A name whose *path* the rootfs will not resolve is treated the same way and
+     *   for the same reason — see the note on the resolution inside.
+     * @param onWarning each member that could not be put back, and why, as it happens. The caller
+     *   puts them on the setup report the user reads; nothing here decides whether they are fatal,
+     *   because nothing here can: the members that did come back are exactly the ones the userspace
+     *   was missing.
      */
     suspend fun restoreFromPinnedTarball(
         memberNames: Set<String>,
         onProgress: (Progress) -> Unit = {},
+        onWarning: (String) -> Unit = {},
     ): List<String> {
         if (memberNames.isEmpty()) return emptyList()
         ensurePinnedArchive(onProgress)
         val restored = sortedSetOf<String>()
         val startedAt = System.currentTimeMillis()
+        // Members the archive carries whose path the rootfs cannot resolve, counted rather than
+        // thrown: see the resolution below.
+        var skipped = 0
         val warnings = mutableListOf<String>()
         openTarStream(tarballFile, DOWNLOAD_BUFFER) {}.use { tar ->
             while (true) {
@@ -1362,16 +1403,33 @@ class RootfsInstaller(
                 // never name one, and a caller that did would be writing the archive's `/home` over
                 // the user's.
                 if (isPreservedMember(name)) continue
-                val target = resolveInside(rootfsDir, name)
+                // Skipped, like a member the archive does not carry, when the path cannot be
+                // resolved inside the rootfs — a directory on the way to it is a symlink out of the
+                // tree. It used to abort the whole pass, and one stray link therefore turned
+                // "restore three of these four files" into "restore nothing", which is the answer
+                // that costs the user every package they installed: the ladder reads an empty
+                // restore as "the archive has nothing to offer" and climbs to the rebuild. The
+                // tolerance is [memberIsPresent]'s, applied to the same question.
+                val target = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+                if (target == null) {
+                    skipped++
+                    warnings += "$name was not restored: its path does not resolve inside the rootfs"
+                    continue
+                }
                 if (writeMember(name, target, entry, tar, warnings)) restored += name
             }
         }
+        // The same reporting the overlay does with its warnings: until now this pass collected them
+        // and dropped them, so a member the archive carries and the rootfs would not take left no
+        // trace anywhere a user or a bug report could see.
+        warnings.forEach(onWarning)
         diagnostics.record(
             UserspaceDiagnosticCategory.ROOTFS,
             "restored from the pinned archive",
             durationMs = System.currentTimeMillis() - startedAt,
             detail = "${restored.size} of ${memberNames.size} member(s) put back: " +
-                (restored.take(6).joinToString(", ").ifEmpty { "none" }),
+                (restored.take(6).joinToString(", ").ifEmpty { "none" }) +
+                (if (skipped > 0) "; $skipped could not be resolved inside the rootfs" else ""),
         )
         return restored.toList()
     }
@@ -1465,7 +1523,18 @@ class RootfsInstaller(
                 val entry = tar.nextTarEntry ?: break
                 val name = entry.name.removePrefix("./")
                 if (name.isEmpty() || isPreservedMember(name)) continue
-                val target = resolveInside(rootfsDir, name)
+                // A member this rootfs will not let the archive write — a directory on the way to
+                // it is a symlink out of the tree — is skipped and named, never fatal: the same
+                // trade [restoreFromPinnedTarball] makes, and for the same reason. Aborting the pass
+                // over one name wrote *nothing*, which the ladder above reads as "this rung had
+                // nothing to do" and answers by rewriting the whole rootfs — the repair that costs
+                // the user every package they installed. What the overlay did manage is still
+                // verified afterwards by the setup run, so a skip that mattered is not hidden.
+                val target = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+                if (target == null) {
+                    warnings += "$name was not written: its path does not resolve inside the rootfs"
+                    continue
+                }
                 if (!entry.isDirectory && target.isDirectory) {
                     deleteTreeNoFollow(target)
                     replacedDirectories++
@@ -1502,8 +1571,10 @@ class RootfsInstaller(
      * the device's own `/dev`, and creating them needs privileges the app does not have.
      *
      * @return whether the member is in place afterwards, which both callers report and count: a
-     *   device node is never written, and a hard link whose source is not in the rootfs cannot be
-     *   made — and neither of those is a member that came back, however the entry was visited.
+     *   device node is never written, a hard link whose source is not in the rootfs cannot be made,
+     *   and a link whose target leaves the userspace is refused by the same guard extraction uses —
+     *   and none of those is a member that came back, however the entry was visited. Every refusal
+     *   is named in [warnings], so a pass that skipped something says so.
      */
     private fun writeMember(
         name: String,
@@ -1516,27 +1587,43 @@ class RootfsInstaller(
         // a repair and not a failure: the member's meaning is "this directory exists", and it does.
         TarArchiveEntry.LF_DIR -> target.mkdirs() || target.isDirectory
         TarArchiveEntry.LF_SYMLINK -> {
-            target.parentFile?.mkdirs()
-            resolveLinkInsideRoot(rootfsDir, name, entry.linkName)
-            target.delete()
-            deleteTreeNoFollow(target)
-            java.nio.file.Files.createSymbolicLink(target.toPath(), java.nio.file.Path.of(entry.linkName))
-            true
+            // The guard runs *before* the old member is cleared, and a link it refuses is skipped
+            // rather than thrown: a repair pass is restoring thousands of members, and one archive
+            // entry naming a target outside the rootfs must not abort the other 20,000 — the same
+            // rule the callers apply to the members they resolve. `entry.linkName` is still used
+            // verbatim below, exactly as at extraction: the guard decides whether the link may
+            // exist, not what it says.
+            val linked = runCatching { resolveLinkInsideRoot(rootfsDir, name, entry.linkName) }
+            if (linked.isFailure) {
+                warnings += "$name was not restored: its link target '${entry.linkName}' leaves the userspace"
+                false
+            } else {
+                target.parentFile?.mkdirs()
+                target.delete()
+                deleteTreeNoFollow(target)
+                java.nio.file.Files.createSymbolicLink(target.toPath(), java.nio.file.Path.of(entry.linkName))
+                true
+            }
         }
         TarArchiveEntry.LF_LINK -> {
             target.parentFile?.mkdirs()
-            val source = resolveInside(rootfsDir, entry.linkName)
-            target.delete()
-            deleteTreeNoFollow(target)
-            if (linkFile(target, source)) {
-                true
-            } else if (source.isFile) {
-                // The platform refused the link (see [linkFile]): the source's bytes, as one copy.
-                source.copyTo(target, overwrite = true)
-                true
-            } else {
-                warnings += "hard link $name could not be made: ${entry.linkName} is not in the rootfs"
+            val source = runCatching { resolveInside(rootfsDir, entry.linkName) }.getOrNull()
+            if (source == null) {
+                warnings += "hard link $name could not be made: ${entry.linkName} does not resolve inside the userspace"
                 false
+            } else {
+                target.delete()
+                deleteTreeNoFollow(target)
+                if (linkFile(target, source)) {
+                    true
+                } else if (source.isFile) {
+                    // The platform refused the link (see [linkFile]): the source's bytes, as one copy.
+                    source.copyTo(target, overwrite = true)
+                    true
+                } else {
+                    warnings += "hard link $name could not be made: ${entry.linkName} is not in the rootfs"
+                    false
+                }
             }
         }
         TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
@@ -1696,6 +1783,15 @@ class RootfsInstaller(
          */
         private const val DPKG_STATUS = "var/lib/dpkg/status"
         private const val DPKG_STATUS_PREVIOUS = "var/lib/dpkg/status-old"
+
+        /**
+         * Where [moveIntoPlace] parks the rootfs it is replacing, until the swap is decided — the
+         * rollback if the swap itself should fail, since a rename that has already happened cannot
+         * be undone by anything else. Deliberately the same name `RootfsTransfer` parks an import's
+         * under, so either path's leftovers are reclaimed by the same code, and cleared with the
+         * rest of the userspace by [deleteRootfs].
+         */
+        private const val PARKED_ROOTFS = "rootfs.old"
 
         /**
          * The floor under a database that could still be read: the base image's own is a few hundred

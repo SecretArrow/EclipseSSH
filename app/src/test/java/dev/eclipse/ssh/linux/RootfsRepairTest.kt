@@ -50,16 +50,21 @@ class RootfsRepairTest {
     /** The entry names directly under [dir], for assertions about what a reclaim left behind. */
     private fun childrenOf(dir: File): List<String> = dir.listFiles()?.map { it.name } ?: emptyList()
 
-    /** A rootfs installed from [FIXTURE], with the download counter that install started. */
-    private suspend fun installFixture(): Installed {
+    /**
+     * A rootfs installed from [tarball], with the download counter that install started.
+     *
+     * The archive is a parameter because one member's *shape* has to differ for one test — see
+     * [HARDLINK_FIXTURE] — and every other test wants [FIXTURE], which is built once and shared.
+     */
+    private suspend fun installFixture(tarball: File = FIXTURE): Installed {
         val root = newRoot()
         var downloads = 0
         val installer = RootfsInstaller(
             root,
-            TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
+            TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(tarball)),
             HttpDownloader { url, target, onChunk ->
                 downloads++
-                TestTarballs.serving(FIXTURE).download(url, target, onChunk)
+                TestTarballs.serving(tarball).download(url, target, onChunk)
             },
         )
         installer.install()
@@ -391,6 +396,98 @@ class RootfsRepairTest {
     }
 
     @Test
+    fun `deleting the rootfs takes the parked copy with it`() = runBlocking {
+        val installed = installFixture()
+        // The state a swap that failed leaves: the previous rootfs parked beside the new one, and
+        // nothing that will ever delete it — the next swap deletes a parked tree only when it gets
+        // as far as parking one, and the disk rung takes it only when a rootfs is in place beside it.
+        val parked = File(installed.root, "rootfs.old")
+        writeFile(File(parked, "home/ubuntu/notes.txt"), "the previous rootfs\n")
+
+        installed.installer.deleteRootfs()
+
+        // Uninstall says "none of it is kept", and a whole rootfs left in the userspace root is
+        // exactly the bytes the user was told were gone.
+        assertThat(parked.exists()).isFalse()
+        assertThat(installed.installer.rootfsDir.exists()).isFalse()
+        assertThat(installed.installer.tarballFile.exists()).isFalse()
+    }
+
+    @Test
+    fun `a member whose path escapes the rootfs is skipped, not the whole restore`() = runBlocking {
+        val installed = installFixture()
+        val rootfs = installed.installer.rootfsDir
+        // `usr` replaced by a link out of the userspace: a half-restored tree or a user's own
+        // tinkering leaves this, and `resolveInside` refuses to write through it — correctly, since
+        // what is on the other side is not this userspace.
+        val outside = newRoot()
+        writeFile(File(outside, "bin/env"), "not the archive's env\n")
+        assertThat(rootfs.resolve("usr").deleteRecursively()).isTrue()
+        Files.createSymbolicLink(rootfs.resolve("usr").toPath(), outside.toPath())
+
+        val skipped = mutableListOf<String>()
+        val restored = installed.installer.restoreFromPinnedTarball(
+            setOf("usr/bin/env", "bin/bash"),
+            onWarning = { skipped += it },
+        )
+
+        // The one member the rootfs will not take is reported and passed over; the one it will take is
+        // restored. Aborting the pass instead — which is what one `resolveInside` refusal used to do —
+        // restored *nothing*, and the ladder reads an empty restore as "the archive has nothing to
+        // offer" and climbs to the rebuild, which costs the user every package they installed.
+        assertThat(restored).containsExactly("bin/bash")
+        assertThat(skipped.joinToString("\n")).contains("usr/bin/env")
+        assertThat(File(rootfs, "bin/bash").readText()).isEqualTo("fake shell\n")
+        // And nothing was written through the link: the file on the other side is untouched.
+        assertThat(File(outside, "bin/env").readText()).isEqualTo("not the archive's env\n")
+    }
+
+    @Test
+    fun `a hard link whose source the rootfs cannot resolve is skipped, not the whole restore`() = runBlocking {
+        val installed = installFixture(HARDLINK_FIXTURE)
+        val rootfs = installed.installer.rootfsDir
+        // The same tinkering as the test above, and the reason the *installer* needs its own guard:
+        // `bin/tool`'s own name sits under `bin`, which the rootfs resolves happily — it is the link's
+        // source, `usr/bin/apt-get`, that goes through the link out of the tree. One guard at the
+        // caller would not have covered this member.
+        val outside = newRoot()
+        assertThat(rootfs.resolve("usr").deleteRecursively()).isTrue()
+        Files.createSymbolicLink(rootfs.resolve("usr").toPath(), outside.toPath())
+
+        val skipped = mutableListOf<String>()
+        val restored = installed.installer.restoreFromPinnedTarball(
+            setOf("bin/tool", "bin/bash"),
+            onWarning = { skipped += it },
+        )
+
+        // Aborting here is not a smaller failure than it is for a member whose own name escapes: the
+        // pass stops where the member sits, and the ladder reads the short restore as "the archive has
+        // nothing to offer" and spends a rebuild on it.
+        assertThat(restored).containsExactly("bin/bash")
+        assertThat(skipped.joinToString("\n")).contains("bin/tool")
+        assertThat(File(rootfs, "bin/bash").readText()).isEqualTo("fake shell\n")
+    }
+
+    @Test
+    fun `an overlay skips the members it cannot resolve instead of writing nothing`() = runBlocking {
+        val installed = installFixture()
+        val rootfs = installed.installer.rootfsDir
+        val outside = newRoot()
+        assertThat(rootfs.resolve("usr").deleteRecursively()).isTrue()
+        Files.createSymbolicLink(rootfs.resolve("usr").toPath(), outside.toPath())
+
+        val warnings = mutableListOf<String>()
+        val members = installed.installer.overlayFromPinnedArchive(onWarning = { warnings += it })
+
+        // Everything outside `usr` was rewritten — the pass did its work rather than throwing on its
+        // first unresolvable name — and the names under the escaping link are named in the warnings
+        // the caller puts on the report, so a skip that mattered is visible rather than silent.
+        assertThat(members).isGreaterThan(0)
+        assertThat(warnings.joinToString("\n")).contains("usr/")
+        assertThat(rootfs.resolve("bin/bash").readText()).isEqualTo("fake shell\n")
+    }
+
+    @Test
     fun `a repair that cannot fetch the archive says so instead of reporting the rootfs broken`() = runBlocking {
         val installed = installFixture()
         val offline = RootfsInstaller(
@@ -436,6 +533,23 @@ class RootfsRepairTest {
         private val FIXTURE: File by lazy {
             TestTarballs.writeRepairFixture(
                 Files.createTempDirectory("linux-repair-fixture").toFile().resolve("rootfs.tar.gz"),
+            )
+        }
+
+        /**
+         * [FIXTURE] with one ordinary hard link added: `bin/tool` -> `usr/bin/apt-get`, written after
+         * every base member so its source is already in the archive.
+         *
+         * It exists for the one escape an archive can carry that the *entry's own name* does not show:
+         * a link whose source is under a directory the user has replaced with a link out of the rootfs.
+         * A member whose name escapes is refused before the installer is asked anything, so without
+         * this member the guard that resolves a link's source inside the rootfs has nothing to refuse —
+         * and the test that pins it would pass for the wrong reason.
+         */
+        private val HARDLINK_FIXTURE: File by lazy {
+            TestTarballs.writeRepairFixture(
+                Files.createTempDirectory("linux-repair-hardlink").toFile().resolve("rootfs.tar.gz"),
+                hardlink = "bin/tool" to "usr/bin/apt-get",
             )
         }
 

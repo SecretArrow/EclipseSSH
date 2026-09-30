@@ -745,7 +745,7 @@ class UbuntuDistributionManagerTest {
                     // The attempt after the recovery pass is the one that works, and it is the
                     // only reason three attempts are spent: the retry is one command where the
                     // fallback is one per package.
-                    if (bulkAttempts == 3) 0 to "" else 100 to "E: dpkg was interrupted, you must manually run 'dpkg --configure -a'"
+                    if (bulkAttempts == 3) 0 to "" else 100 to INTERRUPTED_DPKG_MESSAGE
                 }
                 command.startsWith("dpkg --configure -a") -> {
                     repairPasses++
@@ -1108,6 +1108,56 @@ class UbuntuDistributionManagerTest {
         assertThat(grouped.first()).contains("free space")
         // The install itself stands: only the extras were lost.
         assertThat(harness.distribution.isConfigured()).isTrue()
+    }
+
+    /**
+     * The base set's case (`a failed bulk install is repaired before the per-package fallback`), in
+     * the sibling path that never got the same treatment.
+     *
+     * The mechanism is not the base set's alone: the *extras'* own bulk install is what interrupts
+     * dpkg when it dies part-way, and the per-package fallback below it is the command apt then
+     * refuses in about a second without touching a mirror. So the selection was lost to identical
+     * refusals — and, because the extras are warned about rather than thrown, the install reported
+     * success while doing it.
+     */
+    @Test
+    fun `a failed bulk extras install is repaired before the per-package fallback`() = runTest {
+        val harness = Harness(distro(arch = "arm64"))
+        var bulkAttempts = 0
+        var repairPasses = 0
+        // The bulk command and its two retries, told apart from the per-package fallback by the
+        // space after the first package name: the fallback asks for one package, and only the bulk
+        // form has another one behind it.
+        val bulk = "apt-get install -y --no-install-recommends build-essential "
+        harness.scripted.respond = { command ->
+            when {
+                command.startsWith(bulk) -> {
+                    bulkAttempts++
+                    // The attempt after the recovery pass is the one that works: the retry is one
+                    // command where the fallback is one per package.
+                    if (bulkAttempts == 3) 0 to "" else 100 to INTERRUPTED_DPKG_MESSAGE
+                }
+                command.startsWith("dpkg --configure -a") -> {
+                    repairPasses++
+                    0 to ""
+                }
+                else -> baseline(command)
+            }
+        }
+
+        val report = harness.distribution.setup(extras = listOf(OptionalPackage.BUILD_TOOLS))
+
+        // The prologue's pass and the recovery pass, and the third bulk attempt exists only because
+        // the second of those exited 0 — which is what makes the order a fact rather than a
+        // coincidence of the fake.
+        assertThat(repairPasses).isEqualTo(2)
+        assertThat(bulkAttempts).isEqualTo(3)
+        assertThat(report.warnings).contains("the extra packages needed a dpkg repair pass to install")
+        // And the fallback never ran: the recovery rung answered first.
+        assertThat(
+            harness.scripted.commands
+                .none { it == "apt-get install -y --no-install-recommends build-essential" },
+        ).isTrue()
     }
 
     /**
@@ -1998,6 +2048,15 @@ class UbuntuDistributionManagerTest {
             "apt-get install -y --no-install-recommends " +
                 "apt-utils bash-completion ca-certificates cron curl git htop openssh-client " +
                 "sudo unzip wget zip"
+
+        /**
+         * What apt says when it finds the database interrupted — the sentence that names the state
+         * the two recovery passes exist to clear, and the one apt itself will not act on. Shared by
+         * the base set's recovery test and the extras', because the two are the same state reached
+         * through two different bulk commands.
+         */
+        const val INTERRUPTED_DPKG_MESSAGE =
+            "E: dpkg was interrupted, you must manually run 'dpkg --configure -a'"
 
         /**
          * How long a wedged read parks before releasing. Bounded so the test terminates on this

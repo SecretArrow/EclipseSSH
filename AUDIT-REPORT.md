@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §88, *Releasing 1.16.0*, the version this file's header names; §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are the three changes it carries, and §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §89, *The pty was given back twice — and eight more endings that went wrong the same way*, the userspace endings 1.17.0 will carry; §88, *Releasing 1.16.0*, is the release this file's header names, and §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are the three changes it carries; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10295,5 +10295,212 @@ Built and signed by `tagged-release.yml` from the `v1.16.0` tag: the universal A
 splits (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The
 signing identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so
 this build installs over 1.15.0 and every earlier release normally.
+
+---
+
+## 89. The pty was given back twice — and eight more endings that went wrong the same way
+
+The userspace repair work recorded in §75–§78 was audited rather than extended: every path that *ends*
+something on the device — a local terminal's pty, a session, an install, a repair pass, an uninstall, an
+extras step — was read for the two questions an ending has to answer, and nine of them answered one of
+them wrong:
+
+- **is it idempotent?** — an ending that runs twice must do the second run's work as a no-op, because
+  more than one path can reach it and the paths race;
+- **is it recorded?** — an ending that did *not* happen has to leave the world saying so, or the next
+  launch reads a state that is no longer true.
+
+The nine fixes are in four files — the channel, the manager, the installer and the distribution manager —
+and the tests are ten new JVM methods. What they have in common is
+worth stating, because it is why they were found together: **each one is the same ending reached by a
+different door**, and in every case exactly one door was wrong — the reader's reap but not the app's
+close, the throw path but not the cancel path, the base packages but not the extra ones.
+
+| # | the ending | what it did | file |
+|---|---|---|---|
+| A | a local terminal's pty | gave the master fd back **twice** | `LocalTerminalChannel.kt` |
+| B | a session that ended badly | a health probe that **could not run** crashed the app | `LinuxUserspaceManager.kt` |
+| C | the same ending | condemned the userspace for being **offline** | `LinuxUserspaceManager.kt` |
+| H | a manual **Verify** | a probe that could not run left the card as it was, Repair offered nowhere | `LinuxUserspaceManager.kt` |
+| I | an install | the `installing` marker survived one window, so the next launch called it interrupted **for ever** | `LinuxUserspaceManager.kt` |
+| D | a package-database restore | swallowed the **cancellation**, and the typed cause with it | `RootfsInstaller.kt` |
+| E | a repair / overlay pass | one unresolvable member **aborted the other 20,000** | `RootfsInstaller.kt` |
+| F | an uninstall | left **a whole rootfs** on disk | `RootfsInstaller.kt` |
+| G | an extras install | had **no dpkg repair pass**, so the whole selection died one package at a time | `UbuntuDistributionManager.kt` |
+
+### A. The pty was given back twice
+
+Two paths give the pty's master fd back and they are alternatives, not steps: the reader's
+`PtyProcess.awaitExit()` when the shell ends on its own, and `release()`'s `PtyProcess.close()` when the
+app lets go. `released` — the channel's existing `AtomicBoolean` — serialises *close against discard* and
+says nothing about the reader's own reap, so an app-side teardown arriving after a shell that had already
+exited closed a handle the reader had freed.
+
+**Why that is worse than a double-close.** The native bridge does not match a slot by identity but by
+**descriptor number** — `slot_for_master` in `linuxpty.c` scans its table for the fd — so
+`Java_…_LinuxPty_awaitExit` and `…_close` on a number the process has since reused reach the *new* pty.
+The consequence is a `SIGHUP` to the wrong child and a live reader reading a freed slot: one terminal's
+teardown killing another terminal's shell. It is also invisible in testing, because it needs a shell to
+exit by itself inside the window between the reader's reap and the app's release.
+
+The fix is the narrower flag the two paths actually need — `ptyGivenUp`, a second `AtomicBoolean` that
+guards the *handle* where `released` guards the *channel*. Whoever wins the CAS owns the teardown and the
+other path leaves the fd alone: `if (ptyGivenUp.compareAndSet(false, true)) process.close()`, and the
+reader's `awaitExit` becomes the other arm of the same test, answering `-1` when it lost. `awaitExit`
+never throws in production — every failure path in the bridge returns `-1` — so no extra handling was
+warranted there, and that was checked in the C rather than assumed from the Kotlin.
+
+### B, C, H. Three probes, three wrong answers
+
+All three are the same call, `distribution.healthProbe()`, and all three are about what its answer *means*.
+
+**B — a probe that cannot run is not a crash.** `noteSessionEnded` probes after a shell ends with
+127, to decide whether the environment is at fault. The probe forks proot, so it *throws* for a userspace
+whose runtime will not start — which is exactly the thing an exit 127 may be reporting. `noteSessionEnded`
+runs in a plain `launch` on `Dispatchers.IO` with no handler, so the throwable reached the root of a bare
+coroutine scope: **the app's death, from a health check**. It is now caught, recorded with its own
+sentence, and read as the disagreement it is — the ending stands and the state becomes `NeedsRepair`.
+`CancellationException` is rethrown first, because a screen that closed mid-probe is not evidence about
+anything.
+
+**C — the verdict was about the connection.** The same condition tested `health.healthy`, which is
+`sound && networkUp`. The userspace can only be condemned for something a Repair could have put right,
+and the network is the one field `healthy` adds that no repair of this rootfs fixes and a shell that
+exited 127 says nothing about. On the old reading an **offline device** had its working environment
+replaced by "DNS does not resolve" the moment one shell ended badly — and Repair was then offered to fix
+the resolver the reading was already complaining about. The condition is now `sound`
+(`shellWorks && accountCorrect && aptUsable && missingPrograms.isEmpty() && unusableTempDirs.isEmpty() &&
+unusablePackageLocks.isEmpty()`), which is the same split the ladder's own local-rung stop uses (§75).
+`healthy` keeps its exact value, so `shouldShowCard` and `refreshHealth` are untouched.
+
+**H — a Verify that could not verify left the card alone.** `refreshHealth` (the settings screen's Verify)
+had the same unguarded probe, and the failure was not a crash but a **silence**: a userspace it cannot
+start left the state exactly as it was, with Repair offered nowhere — the state `start()` explicitly
+refuses to leave a user in. It now moves a `Stopped` userspace to `NeedsRepair` and *rethrows*, because
+the caller's error line is where the reason belongs.
+
+### I. An install could stay interrupted for ever
+
+`install()` writes the `installing` marker before it does anything, and `initialState()` reads that marker
+back on every launch as `NeedsRepair("a previous install was interrupted")`. The marker is cleared by
+`onFailedInstallRun()` in the catch — but one window escaped both: the marker write and the workspace
+snapshot sat *before* the inner `try`, so a snapshot that failed aborted the run without reaching the
+catch, leaving `installing=true` on disk. **Every subsequent launch then reported an interrupted install
+that was not interrupted**, and no path cleared it, because every path that clears it is an install and
+every install begins by writing it again.
+
+The marker and the snapshot moved inside the failure-typing `try`, which is one level of indentation and
+the whole fix. What a *surviving* marker means now is the narrower thing the document says it means: a
+process that was killed mid-install, not a snapshot that threw.
+
+### D. A cancellation is not a failure to restore
+
+`restorePackageDatabase`'s last resort — one pass over the pinned archive for `var/lib/dpkg/status` — was
+wrapped in `runCatching { … }.getOrDefault(false)`, which is the wrong shape twice over:
+
+- it swallowed the caller's **`CancellationException`**, so a repair the user had already left went on
+  climbing the ladder behind them;
+- it threw the **typed reason** away. The difference between *"the pinned archive is not on this device"*
+  and *"it is here and the member would not write"* is the difference between a rung the ladder must not
+  spend a rebuild on and one it should retry — and `.getOrDefault(false)` collapsed both into `false`,
+  then into the same `PackageDatabaseUnreadable`.
+
+The catch is now split: `CancellationException` rethrown, everything else recorded where it happens and
+kept as the `cause` of the `PackageDatabaseUnreadable` thrown below — a parameter that class already had
+and nothing was passing.
+
+### E. One stray link turned "restore three of these four" into "restore nothing"
+
+`resolveInside` refuses a member whose path leaves the rootfs — and it *throws*, which is right where it
+was written (extraction) and wrong where it was reused. In `restoreFromPinnedTarball` and in the overlay
+pass, one archive member whose path a directory-symlink routes out of the tree aborted the whole pass.
+The caller then sees an **empty** restore, which the ladder reads as *"the archive has nothing to offer
+for these files"* — the answer that costs the user every package they installed, because the next rung is
+the rebuild.
+
+Both callers now resolve with `runCatching { … }.getOrNull()` and **skip and name** the member, which is
+the tolerance `memberIsPresent` already applies to a member the archive does not carry. The skip count
+goes into the diagnostic line (`"; N could not be resolved inside the rootfs"`), and `restoreFromPinnedTarball`
+gained an `onWarning` sink so the members it refused reach the setup report the user reads — it had been
+collecting warnings and dropping them.
+
+The same rule reached `writeMember`, one level down: its **symlink** branch called `resolveLinkInsideRoot`
+(which throws) and its **hard-link** branch called `resolveInside` (which throws), so an entry the
+*archive* carries could abort a pass the *callers* had already filtered. Both branches now refuse and
+name. Which half of that is reachable was checked rather than assumed: the callers pre-resolve every
+member name, so the symlink half needs an archive that diverges from the one extracted — **defense in
+depth** — while the **hard-link half is reachable with an untampered archive**, because a repair resolves
+a link's *source* against the live rootfs, and a source under a directory the user has symlinked out of
+the tree is the one shape where an entry's own name resolves and its source does not. That case is the
+one with a real test.
+
+### F. An uninstall left a whole rootfs on disk
+
+`deleteRootfs` is the uninstall path and it deletes the download, the rootfs and the staging tree.
+`moveIntoPlace` parks the previous rootfs at `rootfs.old` beside the new one — the rollback if the swap
+itself fails — and deletes it only on its *next* run. So an uninstall that arrived mid-swap, or after a
+swap that failed and left the parked copy as the last whole rootfs on the device, removed the userspace
+and left a whole rootfs of it on disk: **bytes the user was told were gone**.
+
+`deleteRootfs` now takes the parked tree too. The literal `File(storage.rootDir, "rootfs.old")` appears
+three times in the file — the park, the reclaim and the delete — and is now one `parkedRootfsDir`
+property with `PARKED_ROOTFS` beside it, so the name cannot drift between the three.
+
+### G. The extras had no dpkg repair pass
+
+A bulk `apt-get install` that dies part-way is what *interrupts* dpkg: the packages it was unpacking leave
+their records in `/var/lib/dpkg/updates`, and apt then refuses every command in about a second without
+contacting a mirror. `installBasePackages` has answered that since it was written — `clearInterruptedDpkgState`,
+which runs `dpkg --configure -a` — and `installExtraAptPackages` did not. The per-package fallback that
+follows a failed bulk install is exactly such a command, so without a pass between them it measured *the
+database* rather than the packages and lost the whole selection to identical refusals one at a time.
+
+The evidence for the size of that is an E2E run rather than a reading: **run 35056615874, 33 packages,
+every one refused in 1–2 seconds.** The fix is the base path's own recovery, in the same place and for the
+same reason, followed by one more `--fix-missing` retry — that flag's own attempt above was spent on the
+interrupted database, which is the one combination not yet tried.
+
+### The tests
+
+Ten new JVM methods, one or two per fix, and CI's own count moves from 2172 to **2182**.
+
+- **A** — `LocalTerminalChannelTest`: a teardown after a shell that ended by itself never closes the pty
+  again, and an app-side close is the path that gives it back. Two tests because the flag has two arms and
+  a one-armed test would pass on the old code.
+- **B, C** — `LinuxUserspaceManagerTest`: an ending does not condemn a userspace that is only offline, and
+  a health probe that cannot run at all is a repair state rather than an app crash. The second is written
+  to fail *as an escaping throwable* on the old code, which is what the app's death was.
+- **H** — `LinuxUserspaceManagerTest`: a refresh whose probe cannot run still offers a Repair.
+- **D** — no test of its own: the cancellation arm is a rethrow, and every existing repair test asserts the
+  typed failure that now carries a cause.
+- **E** — `RootfsRepairTest`, three tests: a member whose path escapes the rootfs is skipped rather than
+  aborting the restore, an overlay skips what it cannot resolve instead of writing nothing, and the
+  hard-link case above — a fixture whose `bin/tool` hard-links `usr/bin/apt-get`, with `usr` replaced by a
+  symlink out of the tree. The third fails with an escaping `IOException` before the fix and returns
+  `["bin/bash"]`, named warning and all, after it.
+- **F** — `RootfsRepairTest`: deleting the rootfs takes the parked copy with it.
+- **G** — `UbuntuDistributionManagerTest`: a failed bulk extras install is repaired before the per-package
+  fallback — asserting two repair passes, three bulk attempts, and that the per-package fallback never
+  ran. Its scripted guest answers the prefix apt prints for the *bulk* command, so it cannot be satisfied
+  by the fallback's own single-package line.
+
+### What is not claimed
+
+- **No device was involved.** Every one of these nine was found and closed by reading the code and running
+  the JVM suites; that the pty race no longer loses a terminal, that a real proot refusal now lands as a
+  Repair card rather than a crash, and that the extras recover on a real dpkg are device facts and are
+  unverified here. A is the one that most needs the device: the window it closes is a race, and a test can
+  only show that the flag orders the two paths, not that the race used to lose.
+- **E's symlink half is defense in depth**, and is reported as such: with the callers pre-resolving every
+  member name, reaching it needs an archive that diverges from the one that was extracted. The hard-link
+  half is the reachable one and is the one with a test.
+- **Four further findings were examined and declined**, each with a reason rather than a shrug: a
+  `renameTo` diagnostic nit; `configureAptSources` ignoring the last-good sidecar, which is
+  outcome-identical; `verifyResolution`'s timeout arm, which has no honest alternative type; and the
+  runtime-level refusals in the extra-package pipeline, which abort it by design and are not
+  extras-specific. Declining is recorded here so the next pass does not re-open them.
+- **Nothing else that ends something was audited.** The Android-side session endings — an app-level
+  disconnect, a host's Remove, the tabs a closed screen leaves behind — are a different cluster and were
+  not read. §86's note on the same gap stands.
 
 ---
