@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 46 / versionName 1.13.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 47 / versionName 1.14.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §80, *The line editor's repaint was read as a program painting a screen*, which is the version after the one this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §81, *Releasing 1.14.0*, which is the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9285,4 +9285,91 @@ two are indistinguishable in the byte stream at the moment the erase arrives, so
 frame to get wrong. It was *not* made here. The readline fix changes neither side of it, and the interop
 test asserts the mark on a real `top` in both directions, so reversing §28.6 deserves its own pass with
 its own measurement of how long `top`'s window actually stays open.
+
+---
+
+## 81. Releasing 1.14.0
+
+1.13.0 was the userspace release. 1.14.0 is the terminal release. It is the version in which a line that
+reaches the width of the display is broken per word and flows onto the row below with the cursor following
+it, because the tell that marked a screen as painted by a program was the line editor's own repaint —
+the symptom the user reported, diagnosed in §80. It is also the version whose terminal strip says **New
+Terminal** where 1.13.0 said **Duplicate terminal**. §80 is the behaviour change; this section is the
+release.
+
+Four pull requests stand between the two tags and two of them carry behaviour. **#195** is §80: the mark
+that says a program is painting the screen is set by absolute addressing rather than by any upward cursor
+move, so the shell's own line editor — which repaints a long command by stepping back up over the rows it
+occupies — no longer turns word wrapping off. **#194** renames the terminal strip's overflow item. It has
+no section of its own; one word in `MainActivity.kt` and the reasoning in its commit message: the item has
+always made a second terminal on the same host — its own tab, its own session, its own scrollback, nothing
+shared with the first shell but the account — and *Duplicate terminal* named the mechanism where *New
+Terminal* names what the user gets. The other two are not app behaviour: **#192** records what 1.13.0's
+validation run did, and **#193** adds `androidx.core.view.ViewCompat` to the instrumentation keep list,
+which is the test APK's R8 pass rather than anything a user runs. `git log v1.13.0..main` is nine commits,
+which is those four and the five they merge.
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56 and §67 set, and §69, §71 and §79 each applied: **a patch number is honest when the
+artifact a user installs behaves as its predecessor's does.** This one fails that test twice over, and
+either would be enough on its own.
+
+The first is §80. On 1.13.0, editing any long command at the shell — a backspace, a `Ctrl-A`, a Tab
+completion — set the mark that suppresses re-wrapping, and nothing took it off until the screen scrolled or
+was cleared. From that keystroke on, every line the shell printed was laid out one row per grid line: a
+46-column line on a 20-column view clipped at the right edge, the cursor drawn past it, and the view panned
+sideways to follow the cursor. A device that installs 1.14.0 therefore lays the shell's output out
+differently from 1.13.0 for the rest of the session, from a keystroke as ordinary as correcting a typo.
+
+The second is #194, and its own commit message already applied the rule: a differently-labelled menu is a
+difference the user can see. `versionCode` moves 46 → 47 and `versionName` 1.13.0 → 1.14.0.
+
+Nothing native is rebuilt. No file under `freerdp/` and none under `linux/` moves between the two tags —
+`git diff --stat v1.13.0..main -- freerdp linux` prints nothing — so the userspace and the RDP libraries a
+device runs are the ones 1.13.0 shipped. What differs in the artifact is Kotlin in the APK's dex: the
+terminal buffer's row handling, one string, and the classes the instrumentation keep list now preserves.
+
+### What a device gains
+
+- **A line that reaches the display's width is broken per word, and flows onto the row below.** The
+  reported symptom had two halves and one cause: the screen was marked as painted, `terminalLayout`
+  suppresses re-wrapping for a painted screen by design (§28.3), and so the line was laid out one row per
+  grid line — clipped at the edge, with the cursor drawn past it and the view panned sideways to follow.
+  The mark is now set by absolute addressing alone, which is what the programs that genuinely paint a
+  screen emit (`top`, `less`, `nano`, `vi` and `watch` between them: 8, 1, 4, 51 and 13 absolute homes,
+  and zero upward moves), rather than by the relative upward moves only the shell's line editor emits.
+- **Editing a long command no longer turns word wrapping off for the rest of the session.** Ten
+  `ESC [ A` per repaint, measured on a real pty at 46 columns, was the whole of the trigger, and the mark
+  is never set by it now — so the correction of a typo no longer changes how the next command's output is
+  drawn.
+- **A screen a program *is* painting is still laid out as the program drew it.** The change is to the tell,
+  not to the suppression: `top`'s frames, a `vi` screen and a `less` page are marked exactly as they were,
+  the one excluded direction is a name for a row *below* the cursor, and the clearing rules — a scroll
+  under flowing output, and `ESC [ 3 J` — are untouched.
+- **The item that opens a second terminal says New Terminal.**
+
+### What is not claimed
+
+- **No device was involved in §80 either.** Its measurements were taken through real ptys on this host, not
+  on a phone, and the one workflow here that installs an artifact — `android-release-test.yml` — launches
+  the app on an emulator rather than reading a terminal's screen.
+- **§80's guarantee is narrower than "no program is misread".** A program that repainted the primary screen
+  *only* with relative moves and never named a row would now be wrapped instead of marked. None was found
+  among the five probed, and the alternate-screen programs are caught by `alternateScreen` in any case —
+  but that narrowing rests on a measurement rather than on an argument.
+- **Ctrl-L still leaves the mark set.** `ESC [ H` with `ESC [ 2 J` and no `ESC [ 3 J` is what readline
+  emits, so the clear-screen key produces the same unwrapped layout from a different keystroke. §80
+  measured it and left it open deliberately: releasing the mark on `ESC [ 2 J` is exactly what §28.6
+  rejected to keep `top`'s first frame from being laid out reflowed, and reversing that deserves its own
+  pass with its own measurement of how long `top`'s window stays open.
+- **§73's width-2 arm is untouched.** A CJK, fullwidth or emoji character still occupies one cell and can
+  still overprint its neighbour.
+
+### The artifacts
+
+Built and signed by `tagged-release.yml` from the `v1.14.0` tag: the universal APK, the four per-ABI splits
+(`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The signing
+identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this
+build installs over 1.13.0 and every earlier release normally.
 
