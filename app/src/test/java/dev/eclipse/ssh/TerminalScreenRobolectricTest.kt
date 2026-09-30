@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.ViewModelProvider
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.model.SessionConnectionState
 import dev.eclipse.ssh.data.model.SessionTab
@@ -239,6 +240,72 @@ class TerminalScreenRobolectricTest {
         ).forEach { label ->
             compose.onNodeWithText(label).assertExists()
         }
+    }
+
+    /**
+     * "Disconnect all" asks first, and the sessions are still there after the tap that asks.
+     *
+     * The asymmetry this fixes was the finding: one tab's X asked before it killed a shell, and the
+     * menu item that kills *every* shell did not - one tap, inside a menu whose neighbouring items
+     * save files. The second assertion is the one that matters, because it is what tells a dialog that
+     * gates the action apart from a dialog that merely appears beside it: `disconnectAll` closes every
+     * tab, so a confirmation that let the teardown through would leave `tabs` empty here.
+     *
+     * Asserted at window level, like every other dialog assertion in this suite: a semantics query
+     * after the click would wait for the compose tree to go idle, and an open Compose dialog under
+     * Robolectric never gets there. Pumped rather than read after one frame, for the reason
+     * [closingATabAsksBeforeItClosesTheSession] spells out — the click only flips a remembered flag,
+     * the dialog composes on a later frame, and the `WindowManager.addView` that shows it is posted to
+     * the paused main looper, so how many frames that takes depends on what ran earlier in this JVM.
+     */
+    @Test
+    fun disconnectAllFromTheMenuAsksBeforeItClosesEverySession() {
+        openTerminalWithSession()
+        val before = ShadowDialog.getShownDialogs().size
+
+        tapMenuItem("Disconnect all")
+
+        pumpUntil(describe = { "the menu's Disconnect all closed every session without asking" }) {
+            ShadowDialog.getShownDialogs().size > before
+        }
+        assertWithMessage("no confirmation appeared for Disconnect all")
+            .that(ShadowDialog.getLatestDialog()?.isShowing)
+            .isTrue()
+        assertThat(viewModel().uiState.value.tabs).isNotEmpty()
+    }
+
+    /**
+     * The other door to the same action asks the same question.
+     *
+     * "Disconnect all" is reachable two ways and they are not the same gesture: a menu item inside the
+     * terminal, and a plain `TextButton` in the session list's own header, one tap with nothing between
+     * the thumb and the end of every live shell. Both are the same `onDisconnectAll`, so both have to
+     * be the same confirmation — a header that still fired immediately would be the defect this change
+     * is about, one screen further along.
+     *
+     * Reached by leaving the shell rather than by opening the list, because a session that is open owns
+     * the whole window: the strip's back arrow is the only way to the list while one is running.
+     *
+     * Pumped for the dialog the same way the menu's door is: `waitForText` gets the header's button on
+     * screen, and the confirmation behind the tap arrives on a later frame than any fixed count can
+     * name.
+     */
+    @Test
+    fun disconnectAllFromTheSessionListHeaderAsksTheSameQuestion() {
+        openTerminalWithSession()
+        compose.onNodeWithContentDescription("Show sessions").performClick()
+        waitForText("Disconnect all")
+        val before = ShadowDialog.getShownDialogs().size
+
+        compose.onNodeWithText("Disconnect all").performClick()
+
+        pumpUntil(describe = { "the session list's Disconnect all closed every session without asking" }) {
+            ShadowDialog.getShownDialogs().size > before
+        }
+        assertWithMessage("the session list's Disconnect all closed the sessions without asking")
+            .that(ShadowDialog.getLatestDialog()?.isShowing)
+            .isTrue()
+        assertThat(viewModel().uiState.value.tabs).isNotEmpty()
     }
 
     /**

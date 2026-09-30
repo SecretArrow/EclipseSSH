@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §85, *The window was cut in buffer lines and drawn in wrapped rows*, which records a change since 1.15.0 and is not in the release the header names. The last release section is §84, *Releasing 1.15.0*. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §86, *Closing one session asked first and closing every session did not*, which is written against a version that has not been released; §85, *The window was cut in buffer lines and drawn in wrapped rows*, is a change since 1.15.0 as well, and §84 is *Releasing 1.15.0*, the version this file's header names. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -9897,3 +9897,86 @@ The six suites that already covered this area — `AnsiTerminalBufferTest` (74),
   opportunity and are not given one; the row is reachable by panning, as before. A test pins it.
 - **A genuinely full screen still loses its top.** With every row in the window carrying text the
   bottom-anchoring runs, and the oldest rows go — that is the design, not a defect.
+
+---
+
+## 86. Closing one session asked first and closing every session did not
+
+The report, in its own words: *"give a confirmation dialog if someone wants to close all terminal
+windows, for safety."* It is one sentence and it names a real asymmetry, which is the part worth
+recording: **the smaller action was already guarded and the larger one was not.**
+
+A session tab's X had asked for confirmation since the tabs were built — `ConfirmCloseSessionDialog`,
+with the reason written into the code beside it: *"closing a session kills a live shell, and the X sits
+a thumb-width from the chip a user is aiming for."* Every word of that applies to `disconnectAll`, and
+`disconnectAll` had no confirmation at all. It is reachable two ways and both were one tap:
+
+| door | what it is | what it did |
+|---|---|---|
+| the terminal's overflow menu | a `DropdownMenuItem`, under "Save logs", "Save text", "Save screen" | ended every live shell in the app |
+| the session list's header | a plain `TextButton` beside the count of sessions | the same |
+
+The second one is worse than the first, and the menu is the one a user is more likely to hit: the menu
+is a list of save actions and the destructive item is the last row of it, one thumb-width below "Save
+screen" and with no separator between them. What followed a mis-tap was an empty tab strip — the
+sessions were gone, the shells on the servers were gone, and nothing had asked.
+
+### The dialog
+
+`ConfirmDisconnectAllDialog` is one composable, used by both doors, and it is `ConfirmCloseSessionDialog`'s
+shape deliberately: same app-theme palette rather than the terminal's, because a modal surface with its
+own scrim follows the app's palette, and same `onDismissRequest`, so the back gesture and a tap outside
+are Cancel rather than an answer.
+
+**The count is in the title.** `sessionCount` is a parameter and doesn't exist as a placeholder:
+
+```
+Close the open session?          Close all 4 sessions?
+It is still running. Closing     They are all still running. Closing them ends each
+it ends the shell on the           shell on the server, and nothing is saved on the way out.
+server; nothing is saved           This cannot be undone.
+on the way out.
+```
+
+The difference between "close all 2 sessions" and "close all 9 sessions" is the difference between a
+nuisance and an afternoon, so it is the fact the question is worth stopping over. Each caller passes
+**the same list the confirmed action would iterate** — `state.tabs.size` in the session list,
+`tabs.size` in the tab strip — so the number in the question cannot disagree with what closing actually
+closes. Singular and plural are written out rather than assembled from a template, because "Close all 1
+sessions?" is the kind of thing a user reads as a bug in something larger.
+
+The confirm button says what it does — "Close session" / "Close all" — rather than "OK", and the body
+says what is actually at stake: the shells are still running, closing them ends them *on the server*,
+and nothing is saved on the way out. A dialog that only asks "are you sure" tells a user nothing they
+did not already know when they tapped.
+
+### The tests
+
+Two, in `TerminalScreenRobolectricTest`, one per door, because they are different compositions and only
+one of them goes through the overflow menu.
+
+Each asserts the dialog opened **and** that `uiState.tabs` is still non-empty afterwards. The second
+assertion is the one that matters: it is what tells a dialog that *gates* the action from one that
+merely appears beside it. `disconnectAll` empties every tab, so a confirmation that let the teardown
+through would leave `tabs` empty and the first assertion would still have passed. Without that check
+these two tests would be satisfied by an `AlertDialog` rendered next to a button that had already
+disconnected everything.
+
+Both are asserted at **window level** through `ShadowDialog`, not through semantics, for the reason
+`HostAndThemeUiRobolectricTest` documents at length: `fetchSemanticsNodes` waits for the Compose tree to
+go idle before it reads, and an open Compose dialog under Robolectric never gets there — a semantics
+query after this click would hang for sixty seconds and die as `AppNotIdleException` rather than answer
+the question.
+
+No existing test clicked "Disconnect all" through the UI, which was checked before the confirmation was
+added: every one of them calls `viewModel.disconnectAll()` directly, so none of them meets the dialog.
+
+### What is not claimed
+
+- **No device was involved.** The dialog is asserted to exist and to gate the action; that it *looks*
+  right on a phone — its width over a long host list, the button order on a narrow screen — is
+  unverified here.
+- **Nothing else that ends a session was audited.** This change answers the report about closing every
+  window and touches only that. The single-tab X already asked, and the actions that end a session
+  indirectly — a host's Remove, which closes its tabs, an app-level disconnect on a network change —
+  were not examined and may have the same asymmetry.
