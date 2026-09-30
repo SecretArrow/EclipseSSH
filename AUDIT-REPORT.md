@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 50 / versionName 1.16.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 51 / versionName 1.17.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.7.1 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.19.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §89, *The pty was given back twice — and nine more endings that went wrong the same way*, the userspace endings 1.17.0 will carry; §88, *Releasing 1.16.0*, is the release this file's header names, and §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*, are the three changes it carries; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §90, *Releasing 1.17.0*, the version this file's header names; §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster it carries, and §88, *Releasing 1.16.0*, is the release before it, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10551,3 +10551,99 @@ Eleven new JVM methods, one or two per fix, and CI's own count moves from 2172 t
   not read. §86's note on the same gap stands.
 
 ---
+
+## 90. Releasing 1.17.0
+
+1.16.0 carried three changes that each answered a user's report. 1.17.0 carries **ten that answered no
+report at all**: an audit of every path in the Ubuntu userspace that *ends* something — a local terminal's
+pty, a session, an install, a repair pass, an uninstall, an extras step — read against the two questions an
+ending has to answer, **is it idempotent** and **is it recorded**. Nine of them answered one of the two
+wrongly, and the tenth is the same question one level down — what a repair *writes* when it does run —
+found by this branch's own first CI run rather than by the reading. §89 records each one, how it was found,
+and which half of it is demonstrable on a device rather than only in a JVM test.
+
+`git log v1.16.0..v1.17.0` is five commits — two merges and the three commits they merge.
+
+| | section | pull request | what it changed |
+|---|---|---|---|
+| 1 | §89 | #205 | the userspace's endings: the pty given back twice, a health probe that killed the app, a verdict about the connection rather than the userspace, an install marker that could never be cleared through one door, a cancelled restore that looked like a failed one, one unresolvable archive member aborting a whole repair, an uninstall that left a rootfs behind, and an extras install with no dpkg recovery — and, with them, the repair's own writes: a member resolved **through a link at its own name**, so the overlay wrote the archive's `bin/sh` entry over `bin/bash` and left a shell that is a link to itself |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84 and §88 set: **a patch number is honest when the artifact a
+user installs behaves as its predecessor's does.** This one fails that test in three places a user can
+reach without looking for them.
+
+- **A local terminal can no longer close another terminal's pty.** The master fd was given back twice —
+  once by the reader reaping a shell that ended by itself, and then again by the app's teardown — and the
+  native bridge matches a slot by **descriptor number**, so the second close reached whatever the process
+  had since forked onto that number: a `SIGHUP` to the wrong child. The window is a race, which is why this
+  is the fix that most needs a device rather than a test.
+- **A broken userspace no longer takes the app down with it.** A session that ended with exit 127 probed
+  the environment to decide whether the environment was at fault, and the probe forks proot — so a
+  userspace whose runtime will not start threw onto a bare `Dispatchers.IO` scope, which is the process
+  dying, from a health check.
+- **An offline device is no longer told its userspace is broken.** The same verdict used `healthy`, which
+  is `sound && networkUp`: a shell that ended badly while the device was offline replaced a working
+  environment with "DNS does not resolve", and offered Repair to fix the resolver the reading was already
+  complaining about.
+
+The other seven change behaviour too, in cases that are narrower: an install whose snapshot threw used to
+report itself as interrupted on **every** later launch, an ending on a userspace that cannot be probed used
+to leave the settings screen offering no Repair at all, a cancelled restore used to go on climbing the
+ladder behind the user, one unresolvable archive member used to lose a whole repair to the rebuild, an
+uninstall used to leave a whole rootfs on disk, a bulk extras install used to lose the entire selection to
+an interrupted package database, and a repair that put a member back wrote it where a link at its own name
+pointed — which over a usrmerged Ubuntu is another member, so the archive's `bin/sh` entry landed on
+`bin/bash` and left the shell a link to itself. Each is a case a device can be put into deliberately.
+
+`versionCode` moves 50 → 51 and `versionName` 1.16.0 → 1.17.0.
+
+Nothing native is rebuilt. No file under `freerdp/` and none under `linux/` moves between the two tags —
+`git diff --stat v1.16.0..v1.17.0 -- freerdp linux` prints nothing — so the userspace and the RDP libraries
+a device runs are the ones 1.13.0 shipped. What differs in the artifact is Kotlin in the APK's dex and the
+suites.
+
+### What a device gains
+
+- **One terminal's teardown cannot end another's shell.** The pty handle is given back exactly once, by
+  whichever of the two paths reaches it first, and the second path leaves it alone.
+- **A health check that cannot run is a repair state, not a crash.** §89's B: the app survives a userspace
+  it cannot probe, records the reason, and the card says what is wrong.
+- **An offline device keeps a working userspace.** The session-end verdict is about the userspace itself,
+  so a shell that ended badly while the network is down no longer rewrites the environment's state.
+- **A Verify that cannot verify offers Repair.** §89's H.
+- **An interrupted install stays interrupted for exactly as long as it is.** The marker is cleared by every
+  ending the install has, so what a surviving marker means is a process that was killed, and nothing else.
+- **A repair is not lost to one bad member.** §89's E, at both the caller and the member level.
+- **A repair puts a member back where its own name says.** §89's J: over a usrmerged rootfs the file a
+  member's name points at is another member, so the rung that rewrites the base system no longer writes
+  the shell out of existence while reporting that it restored it.
+- **An uninstall leaves nothing behind**, §89's F, and **the extras recover from an interrupted dpkg**,
+  §89's G.
+
+### The suites
+
+Against this tree CI reports **2,183 JVM/Robolectric tests, 0 failures, 0 errors, 7 skipped**, across 191
+result files, and the instrumented suite is 49 methods in 7 files. §89's eleven new methods are listed there
+with what each would have failed on before its fix — including the one CI itself failed on while this
+release was being cut, which is how the tenth ending was found at all.
+
+### What is not claimed
+
+- **No device was involved in any of the ten.** Nine were found and closed by reading the code and running
+  the JVM suites, and the tenth was found by the suites themselves — its test failed on the first CI run of
+  the branch — and closed by reading what that failure said. §89's "What is not claimed" records which of
+  them a device would still have to confirm, and the pty race is the first of them.
+- **The symlink half of §89's E is defense in depth** and is reported as such: the reachable half is the
+  hard link, which has a test.
+- **Nothing else that ends something was audited.** The Android-side endings — an app-level disconnect, a
+  host's Remove, the tabs a closed screen leaves behind — are a different cluster, and §86's and §89's notes
+  on the same gap stand.
+
+### The artifacts
+
+Built and signed by `tagged-release.yml` from the `v1.17.0` tag: the universal APK, the four per-ABI splits
+(`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The signing
+identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this build
+installs over 1.16.0 and every earlier release normally.
