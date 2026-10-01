@@ -17,7 +17,7 @@ package dev.eclipse.ssh.feature.about
 val OPEN_SOURCE_LICENSES: List<OpenSourceLicense> = listOf(
     OpenSourceLicense(
         name = "Apache MINA SSHD",
-        version = "2.19.0",
+        version = "2.20.0",
         license = "Apache License 2.0",
         purpose = "SSH transport, SFTP and port forwarding",
         url = "https://github.com/apache/mina-sshd",
@@ -73,7 +73,7 @@ val OPEN_SOURCE_LICENSES: List<OpenSourceLicense> = listOf(
     ),
     OpenSourceLicense(
         name = "SLF4J",
-        version = "2.0.19",
+        version = "2.0.20",
         license = "MIT License",
         purpose = "logging facade",
         url = "https://www.slf4j.org/license.html",
@@ -115,7 +115,7 @@ val OPEN_SOURCE_LICENSES: List<OpenSourceLicense> = listOf(
     ),
     OpenSourceLicense(
         name = "WorkManager",
-        version = "2.10.0",
+        version = "2.12.0",
         license = "Apache License 2.0",
         purpose = "background transfers",
         url = "https://github.com/androidx/androidx",

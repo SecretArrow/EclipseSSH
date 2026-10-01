@@ -93,7 +93,7 @@ mangled from it.
 
 The release APK's runtime classpath, by license:
 
-- **Apache-2.0** — Apache MINA SSHD 2.19.0 (`sshd-core`, `sshd-common`,
+- **Apache-2.0** — Apache MINA SSHD 2.20.0 (`sshd-core`, `sshd-common`,
   `sshd-sftp`), Apache Commons Compress 1.28.0 (tar and zip reading, and the
   Linux workspace snapshot), Kotlin and Kotlin Coroutines, Hilt/Dagger, and
   the AndroidX family the UI is built from: Compose and Material 3, Activity,
@@ -101,7 +101,7 @@ The release APK's runtime classpath, by license:
   `core-splashscreen`.
 - **Bouncy Castle Licence** — `bcprov-jdk18on` 1.86.
 - **MIT** — [vernacular-vnc][vernacular-vnc] (commit `f39cbe2`, the VNC
-  engine) and SLF4J 2.0.19.
+  engine) and SLF4J 2.0.20.
 - **CC0-1.0 (public domain)** — `net.i2p.crypto:eddsa` 0.3.0, Ed25519 key
   support.
 - **Public domain** — `org.tukaani:xz` 1.12, the `.tar.xz` codec for the
