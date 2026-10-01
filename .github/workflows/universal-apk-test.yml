@@ -308,6 +308,14 @@ jobs:
           fi
           test -w /dev/kvm || { echo "/dev/kvm is not openable"; exit 1; }
 
+      # The emulator allocates its whole userdata partition up front - 7,372.80
+      # MB on this image - and does it in the background, so a runner that is
+      # short dies in the *next* step with "adb never saw the emulator" while
+      # the real reason sits 200 lines up the emulator log. Make the room
+      # first, and fail here, with the number, if there is not enough.
+      - name: Free runner disk before the AVD
+        run: bash scripts/free-runner-disk.sh
+
       - name: Create and boot the headless AVD
         run: |
           set -euo pipefail
