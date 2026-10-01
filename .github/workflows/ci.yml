@@ -884,6 +884,44 @@ jobs:
           pattern: eclipse-ssh-*-apk
           path: apks
 
+      # Fail here, named for the reason, when the download brought nothing.
+      #
+      # `actions/download-artifact` reports success when its pattern matched no
+      # artifact, and the uploads it reads are `continue-on-error: true` (see the
+      # assemble job, and the account-level artifact quota the comment there
+      # explains), so an upload the quota refused also reports success. Both
+      # roads arrive at a gate whose whole job is to boot an APK, holding none.
+      #
+      # The next steps are the wrong place to find that out. The first of them
+      # that touches the directory does it inside a command substitution -
+      # `APK="$(find "$APK_DIR" -name '*.apk' | head -1)"` - and runs under
+      # `set -e`, so a directory that was never created kills the step at the
+      # `find` and prints `find: 'apks/eclipse-ssh-debug-apk': No such file or
+      # directory`: the missing file, and not the refused upload behind it. That
+      # is how run 36825344333 spent a red step reading as a broken build, on a
+      # commit whose assemble job was green.
+      - name: Fail if the download brought no APKs
+        run: |
+          set -euo pipefail
+          if [ ! -d apks ]; then
+            echo "::error::The download created no apks/ directory: nothing matched the pattern."
+            exit 1
+          fi
+          count="$(find apks -name '*.apk' | wc -l)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::The download brought no APKs, so this gate has nothing to boot."
+            echo "The assemble job uploads them with 'continue-on-error: true', which makes"
+            echo "a refused upload report success. Look in its log for:"
+            echo "  Failed to CreateArtifact: Artifact storage quota has been hit"
+            echo "The account's artifact storage is shared and small on the free plan, so"
+            echo "this is the expected outcome while the repository is private. Open a CI"
+            echo "window (scripts/ci-window.sh open --workflow ci.yml --yes) and run again."
+            find apks -maxdepth 3 | head -40 || true
+            exit 1
+          fi
+          echo "downloaded $count APK(s):"
+          find apks -name '*.apk' | sort
+
       # This job deliberately does not check the source out: it gates the APKs
       # the assemble job produced, not a rebuild of them. It needs the tree for
       # exactly one thing, the pre-flight below, so the tree is checked out into
