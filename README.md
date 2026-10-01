@@ -6,7 +6,7 @@ Keystore-backed vault — with VNC and RDP viewers, a real Ubuntu userland runni
 proot, and a text editor and an archive browser beside them.
 
 Package `dev.eclipse.ssh` · `minSdk 28` (Android 9) · `compileSdk 37`, `targetSdk 35` · Kotlin 2.4.20 ·
-Jetpack Compose (Material 3) · Hilt · Room · WorkManager · Apache MINA SSHD 2.19.0.
+Jetpack Compose (Material 3) · Hilt · Room · WorkManager · Apache MINA SSHD 2.20.0.
 
 ## What it does
 
