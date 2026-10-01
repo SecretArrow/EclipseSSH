@@ -232,19 +232,19 @@ class AppNavigationTest {
 
         option("Amber").performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Terminal theme, Amber").assertExists()
+        awaitTerminalTheme("Amber")
 
         // Written through to DataStore, not just to the composition.
         compose.activityRule.scenario.recreate()
         compose.waitForIdle()
         tab("Settings").performClick()
         compose.onNodeWithText("Terminal theme").performScrollTo()
-        compose.onNodeWithContentDescription("Terminal theme, Amber").assertExists()
+        awaitTerminalTheme("Amber")
 
         trigger().performClick()
         option("Dark").performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Terminal theme, Dark").assertExists()
+        awaitTerminalTheme("Dark")
     }
 
     /**
@@ -338,6 +338,31 @@ class AppNavigationTest {
     private fun awaitSeededRow(text: String) {
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodesWithText(text).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+    }
+
+    /**
+     * Waits for the picker to announce `Terminal theme, <label>`, and fails if it never does.
+     *
+     * The chosen theme reaches the trigger the same way a seeded row reaches the list, and by the
+     * same detour Compose's idle detection cannot see: the click calls a *suspend* DataStore write
+     * (`SettingsRepository.setTerminalTheme` is `editPrefs { ... }`), and the new value comes back
+     * only when the settings flow re-emits and the screen recomposes around it. `waitForIdle` after
+     * the click therefore proves nothing about it - composition is idle while the write is still in
+     * flight - and on a loaded emulator the round trip loses the race. That is how this test failed
+     * on run 36821970460, on the slower of the two runner shapes, while passing on the faster one:
+     * the click landed, the menu closed, and the trigger still said "Dark" when the assertion ran.
+     *
+     * The wait *is* the assertion, and the call site reads as the claim it makes
+     * (`awaitTerminalTheme("Amber")`). A timeout fails with Compose's own "condition still not
+     * satisfied after 10000 ms", so the report names the deadline and not the node - a second
+     * `assertExists` after the wait would never run on the failing path and would prove nothing on
+     * the passing one.
+     */
+    private fun awaitTerminalTheme(label: String) {
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithContentDescription("Terminal theme, $label")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
         }
     }
 
