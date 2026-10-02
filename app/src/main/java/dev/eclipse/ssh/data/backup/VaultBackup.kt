@@ -108,6 +108,13 @@ object VaultBackup {
             put("reconnectAskFirst", settings.reconnectAskFirst)
             put("terminalKeepSystemBars", settings.terminalKeepSystemBars)
             put("terminalScrollbackCountVisible", settings.terminalScrollbackCountVisible)
+            // The remaining display/transfer settings. Each is read back against its own shipped
+            // default (below), so a backup written before the field existed restores the behaviour it
+            // was taken from rather than a zero/false by accident.
+            put("terminalKeyRowVisible", settings.terminalKeyRowVisible)
+            put("terminalScrollback", settings.terminalScrollback)
+            put("terminalCursorStyle", settings.terminalCursorStyle)
+            put("transferBytesPerSecond", settings.transferBytesPerSecond)
             // Opt-keyed and length-capped like every untrusted string the vault round-trips: an
             // absent key is "old backup" (reader defaults the field), never a parse failure. The
             // blob's own codec decodes tolerantly, so a mangled value becomes defaults, not a
@@ -250,6 +257,21 @@ object VaultBackup {
                 "terminalScrollbackCountVisible",
                 defaults.terminalScrollbackCountVisible,
             ),
+            // The key row defaults on, which is the behaviour every install predating the backup had.
+            terminalKeyRowVisible = settingsObj.optBoolean("terminalKeyRowVisible", defaults.terminalKeyRowVisible),
+            // Clamped on the way in exactly as the setter and settingsFrom clamp it: a backup is
+            // untrusted input, and a hand-edited buffer size outside the range would be in force while
+            // the row showed a value nobody chose.
+            terminalScrollback = settingsObj.optInt("terminalScrollback", defaults.terminalScrollback)
+                .coerceIn(SettingsRepository.MIN_SCROLLBACK, SettingsRepository.MAX_SCROLLBACK),
+            // Shape-checked against the three styles the setter accepts; anything else is the default,
+            // never a cursor the renderer has no shape for.
+            terminalCursorStyle = settingsObj.optString("terminalCursorStyle", defaults.terminalCursorStyle)
+                .takeIf { it == "block" || it == "underline" || it == "bar" } ?: defaults.terminalCursorStyle,
+            // Clamped to 0..max like the setter: a negative or absurd cap from a hand-edited backup
+            // would throttle every transfer to a crawl or stall it.
+            transferBytesPerSecond = settingsObj.optLong("transferBytesPerSecond", defaults.transferBytesPerSecond)
+                .coerceIn(0L, SettingsRepository.MAX_BANDWIDTH_BYTES_PER_SECOND),
             // The blob is decoded by EditorPrefsCodec, which never throws — a hand-edited or
             // truncated value becomes the editor's defaults rather than a failed import. Capped
             // on the way in for the same reason every vault string is: a backup is untrusted.

@@ -335,8 +335,14 @@ class LinuxUserspaceManager(
         }
         storage.acquireInstallLock(distro.id, "repair")
         try {
-            writeInstallingMarker("repair")
             try {
+                // Mirrors install()'s own invariant ("every way this run can end has to reach the
+                // catch below"): the marker write is inside the inner try so a full-disk failure
+                // here lands in the catch at :355, runs onFailedInstallRun(), and moves _state to
+                // the failure — rather than escaping to the outer try, skipping onFailedInstallRun,
+                // and leaving _state at Stopped/NeedsRepair while the truncated state file now
+                // reads NotInstalled on the next construction.
+                writeInstallingMarker("repair")
                 val warnings = mutableListOf<String>()
                 val report = repairLadder(warnings)
                 writeInstalledState()

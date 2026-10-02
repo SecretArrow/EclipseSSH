@@ -25,6 +25,7 @@ import dev.eclipse.ssh.data.fs.UbuntuRootfsLocator
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.security.SecretCipher
 import dev.eclipse.ssh.security.SecureVault
+import dev.eclipse.ssh.ssh.SftpTransferManager
 import dev.eclipse.ssh.ssh.StoredKeyVaultSource
 import dev.eclipse.ssh.ssh.VaultKeySource
 import javax.inject.Singleton
@@ -81,6 +82,19 @@ object AppModule {
     @Singleton
     fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository =
         SettingsRepository(context)
+
+    /**
+     * The SFTP mover, given the settings store it reads the bandwidth cap from.
+     *
+     * Explicit rather than an `@Inject` constructor because the constructor's [SettingsRepository] is
+     * nullable-with-a-default (so tests can build one without a context) and Dagger would still need
+     * a binding for the non-null parameter. Stating the one production wiring here keeps that
+     * asymmetry from looking like an injection point that can be satisfied two ways.
+     */
+    @Provides
+    @Singleton
+    fun provideSftpTransferManager(settings: SettingsRepository): SftpTransferManager =
+        SftpTransferManager(settings)
 
     /**
      * The vault, behind the narrow interface everything that stores a secret depends on. Bound here

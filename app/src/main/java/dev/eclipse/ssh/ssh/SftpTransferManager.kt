@@ -1,5 +1,7 @@
 package dev.eclipse.ssh.ssh
 
+import dev.eclipse.ssh.data.settings.SettingsRepository
+import dev.eclipse.ssh.feature.bandwidth.RateLimiter
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -7,13 +9,52 @@ import java.util.EnumSet
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
-import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 import javax.inject.Singleton
 import kotlinx.coroutines.withContext
 import org.apache.sshd.sftp.client.SftpClient
 
+/**
+ * Moves file bytes over SFTP, and is the one place the bandwidth cap is enforced.
+ *
+ * [settings] is nullable so a test can construct this the way it always did — the call sites in
+ * `SshIntegrationTest` and `TransferProgressPersistenceTest` pass nothing — and a null repository
+ * means [limiter] answers `UNLIMITED`, which is the same object the "limit disabled" setting
+ * produces.
+ *
+ * Deliberately **not** `@Inject`-annotated, and provided by `AppModule` instead. A `@Inject`
+ * constructor whose parameter has a Kotlin default is a trap: the default is a Kotlin-only concept,
+ * so the generated factory must still be handed a real [SettingsRepository], and KSP emits a
+ * provider that reads the parameter as a normal injection point. That works, but it makes the
+ * nullable default above read as "injectable without a repository" when it is not, and the
+ * production graph would be one missing `@Provides` away from a compile error whose message points
+ * at `SettingsRepository` rather than at this class. An explicit provider states the one wiring that
+ * exists.
+ */
 @Singleton
-class SftpTransferManager @Inject constructor() {
+class SftpTransferManager(
+    private val settings: SettingsRepository? = null,
+) {
+    /**
+     * The limiter for one transfer, from the current setting.
+     *
+     * Built per transfer rather than held as a field for two reasons. The setting is a preference the
+     * user can change between two transfers, and a cached limiter would honour the old value until
+     * the process restarted; and a limiter carries a full bucket and a refill clock, so sharing one
+     * across concurrent transfers would let each of them spend the others' tokens and move up to N×
+     * the configured rate. One limiter per transfer is also what makes the token-bucket's total
+     * "burst" the per-transfer budget the setting's string describes.
+     *
+     * The read is the first value of a DataStore flow, and every caller already runs this inside
+     * `withContext(Dispatchers.IO)` — [upload] and [download] enter it there — so the read is
+     * off-main, and a blocked read cannot park the transfer on the main thread the way a Settings
+     * write could.
+     */
+    private suspend fun limiter(): RateLimiter {
+        val bytesPerSecond = settings?.settings?.first()?.transferBytesPerSecond ?: 0L
+        return if (bytesPerSecond <= 0L) RateLimiter.UNLIMITED else RateLimiter(bytesPerSecond)
+    }
+
     /**
      * Uploads [source] to [remotePath].
      *
@@ -35,7 +76,11 @@ class SftpTransferManager @Inject constructor() {
         totalBytes: Long? = null,
         onProgress: suspend (bytes: Long, total: Long?) -> Unit = { _, _ -> },
     ) = withContext(Dispatchers.IO) {
-        source.use { copy(it, sftp.write(remotePath), totalBytes, onProgress) }
+        // Resolved once, outside the loop: the limiter is a per-transfer object (see [limiter]), and
+        // reading the setting on every chunk would both re-read DataStore thousands of times and let
+        // a mid-transfer change swap the bucket out from under a transfer already in progress.
+        val limiter = limiter()
+        source.use { copy(it, sftp.write(remotePath), totalBytes, onProgress, limiter) }
     }
 
     /**
@@ -53,8 +98,9 @@ class SftpTransferManager @Inject constructor() {
         destination: OutputStream,
         onProgress: suspend (bytes: Long, total: Long?) -> Unit = { _, _ -> },
     ) = withContext(Dispatchers.IO) {
+        val limiter = limiter()
         val total = runCatching { sftp.stat(remotePath).size }.getOrNull()
-        destination.use { target -> copy(sftp.read(remotePath), target, total, onProgress) }
+        destination.use { target -> copy(sftp.read(remotePath), target, total, onProgress, limiter) }
     }
 
     suspend fun resumeDownload(
@@ -64,6 +110,7 @@ class SftpTransferManager @Inject constructor() {
         existingBytes: Long,
         onProgress: suspend (bytes: Long, total: Long?) -> Unit = { _, _ -> },
     ) = withContext(Dispatchers.IO) {
+        val limiter = limiter()
         val total = runCatching { sftp.stat(remotePath).size }.getOrNull()
         // Outermost, so the destination is released even when the open below throws — which is what
         // happens whenever the remote file was deleted or made unreadable while the transfer sat
@@ -75,6 +122,12 @@ class SftpTransferManager @Inject constructor() {
                 var offset = existingBytes
                 while (true) {
                     coroutineContext.ensureActive()
+                    // Charged before the read, against the buffer's full capacity: the read below may
+                    // return fewer bytes at the end of the file, so charging what was actually read
+                    // would need the charge to sit after a call that can block on the network — and
+                    // the transfer's whole cost is that round-trip. A slight over-charge on the last
+                    // partial buffer is the honest direction to be wrong in.
+                    limiter.await(buffer.size.toLong())
                     val count = sftp.read(handle, offset, buffer)
                     if (count < 0) break
                     target.write(buffer, 0, count)
@@ -104,6 +157,7 @@ class SftpTransferManager @Inject constructor() {
         totalBytes: Long? = null,
         onProgress: suspend (bytes: Long, total: Long?) -> Unit = { _, _ -> },
     ) = withContext(Dispatchers.IO) {
+        val limiter = limiter()
         val startAt = runCatching { sftp.stat(remotePath).size }.getOrNull()?.takeIf { it >= 0 } ?: existingBytes
         // Outermost for the same reason as in resumeDownload: sftp.open throws for a path that has
         // become unwritable, and the source descriptor has to be released on that path too.
@@ -117,6 +171,11 @@ class SftpTransferManager @Inject constructor() {
                     coroutineContext.ensureActive()
                     val count = input.read(buffer)
                     if (count < 0) break
+                    // Charged after the read and for what was actually read, unlike the download
+                    // sibling above: a local read costs nothing to wait on, so measuring exactly the
+                    // bytes this loop is about to push is free here. It is also what keeps the last
+                    // partial buffer from being charged as a full one.
+                    limiter.await(count.toLong())
                     sftp.write(handle, offset, buffer, 0, count)
                     offset += count
                     onProgress(offset, totalBytes)
@@ -178,6 +237,7 @@ class SftpTransferManager @Inject constructor() {
         output: OutputStream,
         totalBytes: Long?,
         onProgress: suspend (bytes: Long, total: Long?) -> Unit,
+        limiter: RateLimiter,
     ) = withContext(Dispatchers.IO) {
         input.use { source ->
             output.use { target ->
@@ -191,6 +251,14 @@ class SftpTransferManager @Inject constructor() {
                     coroutineContext.ensureActive()
                     val count = source.read(buffer)
                     if (count < 0) break
+                    // Charged after the read and for what was actually read. The read on the source
+                    // side is a local ContentResolver stream or a buffer the SFTP client already
+                    // holds, so waiting on the limiter here is waiting on the limiter and nothing
+                    // else — and charging before the read would spend a full buffer's tokens on the
+                    // final short read (or the -1 that ends the loop) and report a rate below the
+                    // configured one. [resumeDownload] charges before its read for the opposite
+                    // reason: there the read *is* the network round-trip.
+                    limiter.await(count.toLong())
                     target.write(buffer, 0, count)
                     copied += count
                     onProgress(copied, totalBytes)

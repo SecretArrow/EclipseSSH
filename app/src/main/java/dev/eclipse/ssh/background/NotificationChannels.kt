@@ -29,6 +29,16 @@ internal object NotificationChannels {
     const val ALERTS = "alerts"
     const val LINUX = "linux_userspace"
 
+    /**
+     * The channel id a previous build used for transfer results, before [TRANSFERS] was the only one.
+     *
+     * Kept as a constant rather than inlined into the deletion because it is a *historical* id: it
+     * belongs to no code that posts anymore, so the only thing it can be named for is removal, and
+     * naming it is what keeps a future reader from "fixing" the orphaned channel by pointing new
+     * notifications back at it.
+     */
+    private const val LEGACY_TRANSFERS = "transfer_results"
+
     /** Ongoing foreground-service notification. */
     const val ID_SERVICE = 4101
 
@@ -84,6 +94,20 @@ internal object NotificationChannels {
                     ).apply { description = context.getString(R.string.channel_linux_desc) },
                 ),
             )
+            // An earlier build registered a second transfer channel, "transfer_results", beside the
+            // one above; everything both were for now posts to [TRANSFERS]. Creating the channels is
+            // not enough to be rid of it — a channel is the user's, and the system keeps it until it
+            // is deleted, so it would sit in the app's notification settings forever with nothing
+            // ever posting to it, which is exactly the "which one do I mute?" question the merge was
+            // meant to answer. Deleting also drops any mute the user had applied to the old id, but
+            // it was a channel they could only ever have seen under this app's name for the same
+            // subject as the survivor, so the preference it stood for is preserved by [TRANSFERS]
+            // rather than lost.
+            //
+            // No API guard: [deleteNotificationChannel] is API 26 and minSdk is 28. Its own
+            // runCatching, so a failure to clean up an obsolete channel cannot stop the four
+            // channels above from having been created.
+            runCatching { manager.deleteNotificationChannel(LEGACY_TRANSFERS) }
         }
     }
 }

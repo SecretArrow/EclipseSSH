@@ -65,7 +65,7 @@ class QuickConnectTileService : TileService() {
             // is required from API 31+ and harmless below.
             val pendingIntent = android.app.PendingIntent.getActivity(
                 this,
-                0,
+                QuickConnectContract.REQUEST_LAST_HOST,
                 intent,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
             )

@@ -13,18 +13,20 @@ import kotlinx.coroutines.ensureActive
  * that finds the bucket empty waits the time it takes to accumulate the
  * tokens it needs.
  *
- * Two ways to use it:
- *  - **[await]**: call before each read/write, with the number of bytes the
- *    next operation will move. The coroutine suspends if the budget for this
- *    moment is exhausted, which is the right shape for an SFTP transfer
- *    loop: "I want to push N bytes, give me a green light".
- *  - **[wrap]**: returns a `RateLimitedInputStream` that throttles the
- *    wrapped stream's reads. Use this when the byte source is a content
- *    provider or a piped stream the transfer loop does not control.
+ * One way to use it:
+ *  - **[await]** (and its alias **[charge]**): call before each read/write with the number of bytes
+ *    that operation will move. The coroutine suspends if the budget for this moment is exhausted,
+ *    which is the right shape for an SFTP transfer loop: "I want to push N bytes, give me a green
+ *    light". [bytes] may exceed the bucket; see [await] for why it still terminates.
  *
- * `bytesPerSecond = 0` (or negative) is the "no limit" sentinel: [await]
- * returns immediately and [wrap] returns the original stream. The transfer
- * coordinator uses this so a "limit disabled" setting costs nothing.
+ * This class had a second entry point in an earlier draft — a `wrap()` returning a
+ * `RateLimitedInputStream` for byte sources the transfer loop does not drive — and it was never
+ * written; every transfer this app makes goes through [await] on a loop it owns, so a stream
+ * adapter has no caller. The KDoc promised it anyway, which is why the paragraph is gone rather
+ * than left as a description of code that is not here.
+ *
+ * `bytesPerSecond = 0` (or negative) is the "no limit" sentinel: [await] returns immediately. The
+ * transfer coordinator uses this so a "limit disabled" setting costs nothing.
  *
  * The bucket is not thread-safe; the only coroutine that touches a transfer
  * is the one driving the upload or download, so the lack of locking is
@@ -44,6 +46,15 @@ class RateLimiter(
     /**
      * Suspends until [bytes] tokens are available, then consumes them.
      *
+     * [bytes] may be larger than the bucket. The charge is taken in [bucketSize]-sized pieces, each
+     * of which fits, and it is that which makes the wait terminate: [refill] clamps the bucket at
+     * [bucketSize], so one request for more than the bucket can never be satisfied by any amount of
+     * waiting — the single `while (available >= bytes)` loop this replaces spun on the main
+     * transfer thread forever, and for the whole-file path that was every transfer of a file over
+     * [DEFAULT_BUCKET] once the SFTP read size was raised past it. Slicing also keeps the long-run
+     * average honest, which charging the whole amount only at the end would not: the wait for the
+     * last slice still happens.
+     *
      * Cooperative cancellation: a cancelled transfer wakes from the delay
      * the next time the bucket would refill. The poll loop's [ensureActive]
      * is the only guarantee here; the underlying [delay] is itself
@@ -53,17 +64,26 @@ class RateLimiter(
     suspend fun await(bytes: Long) {
         if (bytesPerSecond <= 0L) return
         if (bytes <= 0) return
-        while (true) {
+        var remaining = bytes
+        while (remaining > 0) {
             coroutineContext.ensureActive()
             refill()
-            if (available >= bytes) {
-                available -= bytes
-                return
+            // The most that can ever be taken at once. Sized against the bucket rather than against
+            // the start of [remaining], because a request that began larger than the bucket must
+            // still be paid in pieces — and the final piece is whittled down to what is left.
+            val slice = minOf(remaining, bucketSize)
+            if (available >= slice) {
+                available -= slice
+                remaining -= slice
+                continue
             }
-            val deficit = bytes - available
-            val waitMs = ((deficit * 1_000.0) / bytesPerSecond).toLong()
-                .coerceAtMost(POLL_INTERVAL_MS)
-            if (waitMs > 0) delay(waitMs)
+            // Wait for the whole slice, not for what is left of a partial bucket: charging a piece
+            // the moment it is affordable would let a series of sub-bucket reads pay nothing once
+            // the bucket is drained, and the average would drift above the configured rate. The
+            // floor of 1 ms matters — a fractional deficit that rounds to 0 would busy-spin here.
+            val deficit = slice - available
+            val waitMs = ((deficit * 1_000.0) / bytesPerSecond).toLong().coerceIn(1L, POLL_INTERVAL_MS)
+            delay(waitMs)
         }
     }
 
@@ -88,9 +108,8 @@ class RateLimiter(
 
         /**
          * No-op limiter for the "rate limiting off" case. Awaiting a charge
-         * returns immediately and [wrap] returns the original stream. The
-         * transfer coordinator does not special-case this object — it
-         * always goes through [await] / [charge].
+         * returns immediately. The transfer coordinator does not special-case
+         * this object — it always goes through [await] / [charge].
          */
         val UNLIMITED: RateLimiter = RateLimiter(0L)
     }

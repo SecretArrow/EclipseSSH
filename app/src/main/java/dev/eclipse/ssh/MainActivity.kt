@@ -2283,7 +2283,7 @@ private fun WorkspaceScaffold(
      */
     linuxUserspace: LinuxUserspaceController,
     /**
-     * The host list's "Local Ubuntu 22.04" card, as a flow for the same reason [frames] is: it is
+     * The host list's local userspace card, as a flow for the same reason [frames] is: it is
      * null until the userspace is installed and healthy, and reading it here would recompose this
      * scaffold for a card only the Hosts destination shows.
      */
@@ -2714,7 +2714,7 @@ private fun HostsScreen(
 }
 
 /**
- * The "Local Ubuntu 22.04" card: the userspace's front door, rendered only while the environment
+ * The local userspace card: the userspace's front door, rendered only while the environment
  * is installed and healthy (the flow feeding it is null in every other state).
  *
  * Shaped exactly like a [HostCard] — the same corner radii, the same paddings, the same one-tap
@@ -2738,7 +2738,7 @@ private fun LocalUbuntuCard(host: HostProfile, onConnect: (HostProfile) -> Unit)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(host.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Ubuntu 22.04 on this device · tap to open a terminal", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(LocalLinuxHost.cardSubtitle(host.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.Default.PlayArrow, "Open terminal on ${host.name}", tint = MaterialTheme.colorScheme.primary)
         }
@@ -4506,6 +4506,7 @@ private fun ColumnScope.FilesScreen(
                 if (entry.isDirectory) filesExplorer.navigate(entry.path, entry.name) else provider?.let { onPreviewFile(entry, it) }
             },
             onToggleSelect = filesExplorer::toggleSelected,
+            onDismissStatus = filesExplorer::dismissStatus,
             onOpenActions = { entry ->
                 // The row the window was opened on, kept here because the answer carries a verb and
                 // no subject - see [ActionAnswer]. Held across the launch for the same reason the

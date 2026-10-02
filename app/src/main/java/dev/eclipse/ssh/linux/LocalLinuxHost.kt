@@ -33,8 +33,14 @@ object LocalLinuxHost {
     /** Reserved: never persisted, never dialed. */
     const val HOST_ID = "local-linux-ubuntu"
 
-    /** The card's title, exactly as the feature spec names it. */
-    const val CARD_TITLE = "Local Ubuntu 22.04"
+    /**
+     * The card's title when the installed distro is not known — the feature spec's name for the
+     * environment, and only ever a fallback. [hostProfile] uses it as the default argument so a
+     * caller that has a distro in hand names the card after what is actually installed; a card
+     * titled "Local Ubuntu 22.04" over a 24.04 userspace was the app stating a version it had not
+     * checked.
+     */
+    const val CARD_TITLE = "Local Ubuntu"
 
     /** The group the synthesized profile claims, so it sorts apart from real servers. */
     const val GROUP = "On this device"
@@ -64,11 +70,17 @@ object LocalLinuxHost {
      * connect path never gets that far, because [isLocalHost] intercepts it first, but a stray
      * `localhost` dial that fails in two seconds is a better failure than a crash from a field
      * someone forgot to fill.
+     *
+     * [name] is the installed distribution's own [LinuxDistro.displayName] rather than a constant,
+     * so the card and its subtitle say which release is actually installed. It was the constant
+     * "Local Ubuntu 22.04" for every install, which is wrong twice over: the catalogue offers five
+     * LTS series and the chooser defaults to the newest, so most users got a card naming a release
+     * they had not installed — and it would keep naming it after an upgrade.
      */
     fun hostProfile(distro: LinuxDistro): HostProfile =
         HostProfile(
             id = HOST_ID,
-            name = CARD_TITLE,
+            name = distro.displayName,
             host = "localhost",
             username = "ubuntu",
             port = 22,
@@ -79,4 +91,15 @@ object LocalLinuxHost {
             // process - so the reconnect ladder must never schedule attempts for it.
             autoReconnect = false,
         )
+
+    /**
+     * The card's one-line description, naming the release the card is actually for.
+     *
+     * Derived from the same profile the title comes from rather than assembled at the call site, so
+     * the two lines of one card cannot disagree — which is exactly how the title went on saying
+     * "22.04" while the userspace ran something else. Falls back to [CARD_TITLE] when [name] is
+     * blank, the shape a synthesized profile should never have but which the caller's layout would
+     * render as an empty line rather than a wrong one.
+     */
+    fun cardSubtitle(name: String): String = "${name.ifBlank { CARD_TITLE }} on this device · tap to open a terminal"
 }

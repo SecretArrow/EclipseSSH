@@ -100,6 +100,7 @@ import dev.eclipse.ssh.ssh.PortForwardingManager
 import dev.eclipse.ssh.ssh.ForwardingHandle
 import dev.eclipse.ssh.background.SessionRegistry
 import dev.eclipse.ssh.background.TransferNotifier
+import dev.eclipse.ssh.widget.QuickConnectWidget
 import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.security.normalizePastedSecret
 import dev.eclipse.ssh.feature.terminallog.SessionLog
@@ -1428,6 +1429,22 @@ class MainViewModel @Inject constructor(
             // A cancellation is not a failed save, and everything below it presents a session that an
             // attempt replaced by another no longer has. See [rememberCredentials].
             .onFailure { if (it is CancellationException) throw it }
+            .onSuccess {
+                // The widget draws "Connect: <last host>", and this write is what makes that name
+                // true. It used to learn the new one only on its next AppWidgetProvider tick, which
+                // for a widget the user is not currently looking at is the next system-wide update -
+                // so a fresh host could sit behind the old one's name for hours. [QuickConnectWidget.refresh]
+                // was written for exactly this and had no caller at all: the method existed, the
+                // comment above it said "call after a successful connect", and nothing did.
+                //
+                // Fired here rather than in the caller because this is the line that decides what the
+                // widget will show: refreshing anywhere else would be refreshing on the strength of a
+                // write that may not have happened. `context` is the application context, and the
+                // broadcast carries no work, so a send from the IO dispatcher this runs on is
+                // ordinary. Wrapped because a widget that cannot be refreshed is not a reason for a
+                // connection to be treated as failed - the only reason it is inside `onSuccess`.
+                runCatching { QuickConnectWidget.refresh(context) }
+            }
         // Auto Login SFTP. Off means SSH only — nothing opens a second channel on this host until the
         // user asks for a listing — which is the point of the switch: an account with a shell and no
         // sftp-server subsystem otherwise greets every successful login with a failure about a feature
@@ -4696,6 +4713,17 @@ class MainViewModel @Inject constructor(
             settingsRepository.setTerminalTheme(settings.terminalTheme)
             settingsRepository.setBlockScreenshots(settings.blockScreenshots)
             settingsRepository.setReconnectAskFirst(settings.reconnectAskFirst)
+            // These six were parsed into the AppSettings above but never applied, so a vault written
+            // with any of them changed restored them to defaults with nothing to say so. The first two
+            // round-tripped in the file already; the last four now do too (see VaultBackup), and a
+            // field that survives the file but not the restore is the same silent drop in a different
+            // place.
+            settingsRepository.setTerminalKeepSystemBars(settings.terminalKeepSystemBars)
+            settingsRepository.setTerminalScrollbackCountVisible(settings.terminalScrollbackCountVisible)
+            settingsRepository.setTerminalKeyRowVisible(settings.terminalKeyRowVisible)
+            settingsRepository.setTerminalScrollback(settings.terminalScrollback)
+            settingsRepository.setTerminalCursorStyle(settings.terminalCursorStyle)
+            settingsRepository.setTransferBytesPerSecond(settings.transferBytesPerSecond)
             settingsRepository.setVaultAutoLockMinutes(settings.vaultAutoLockMinutes)
             // The blob is one key, so one call restores all six editor options at once. Its
             // codec decodes tolerantly, so a mangled import degrades to defaults, never a lockout.

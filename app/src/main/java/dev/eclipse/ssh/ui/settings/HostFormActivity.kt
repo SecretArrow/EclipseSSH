@@ -480,6 +480,11 @@ private fun HostFormFields(
                 runCatching { credentialStore.apply(profile.id, credentials) }
                     .onFailure { failure ->
                         reportFailure(report, "Saved ${profile.name}, but its credentials could not be stored", failure)
+                        // The profile landed but the password did not; the window stays so the user does
+                        // not lose the field they would have to retype (the contract in the KDoc above),
+                        // and finish() below is reached only when the credentials actually stored.
+                        saving = false
+                        return@launch
                     }
             }
             profile.fingerprint?.trim()?.takeIf(String::isNotBlank)?.let { pinned ->

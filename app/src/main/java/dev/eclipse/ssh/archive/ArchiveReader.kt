@@ -152,6 +152,13 @@ object ArchiveReader {
         if (declared < 0 || declared > Int.MAX_VALUE) {
             throw ArchiveCorruptException("Entry '${entry.path}' declares $declared byte(s) of data")
         }
+        // An empty file deflates to an empty stream - ZipOutputStream and Python's zipfile both emit
+        // one (the two-byte final empty block) - and there is nothing to inflate. The loop below only
+        // runs while produced < output.size, so for a zero-length entry it never enters, inflater is
+        // still !finished() at the check, and a valid empty file (a .gitkeep, an __init__.py, an empty
+        // .nojekyll) would be reported corrupt. Return the empty array its header declares; the size
+        // check still guards every non-zero entry.
+        if (declared == 0L) return@withContext ByteArray(0)
         // Inflater implements AutoCloseable (JNI-held native state), and the stdlib's use{} runs on
         // Closeable only - so the release is spelled by hand. Same shape as ByteArray above: the
         // block's exceptions must not leak the inflater's native memory.

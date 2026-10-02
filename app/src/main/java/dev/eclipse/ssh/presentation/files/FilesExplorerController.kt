@@ -135,6 +135,15 @@ data class ExplorerState(
     val crumbs: List<Crumb> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
+    /**
+     * The last operation's outcome, for the inline banner above the listing.
+     *
+     * Distinct from [error], which *replaces* the listing while it is set: a successful copy is news,
+     * not a failure state, and drawing it where [error] is drawn would take the folder off screen to
+     * say a file moved. This is the slot the controller's `report` writes; it is one value rather than
+     * a log, so a second outcome replaces the first.
+     */
+    val status: String? = null,
     /** Set while a search is running or showing; null during ordinary browsing. */
     val searchQuery: String? = null,
     val sort: ExplorerSort = ExplorerSort.NAME_ASC,
@@ -619,7 +628,7 @@ class FilesExplorerController @Inject constructor(
                 if (_state.value.activeSessionId == sessionId) {
                     val path = current.path
                     if (path != null && current.searchQuery == null) list(path) else refresh()
-                    report("$operation: done")
+                    report(sessionId, "$operation: done")
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -709,7 +718,7 @@ class FilesExplorerController @Inject constructor(
             }
             updateIfCurrent(sessionId) { it.copy(copy = null) }
             if (_state.value.activeSessionId == sessionId) list(directory)
-            report(if (failures == 0) "Copied ${sources.size} file(s) into the userspace" else "$failures of ${sources.size} copies failed")
+            report(sessionId, if (failures == 0) "Copied ${sources.size} file(s) into the userspace" else "$failures of ${sources.size} copies failed")
         }
     }
 
@@ -737,7 +746,7 @@ class FilesExplorerController @Inject constructor(
                         state.copy(copy = state.copy?.copy(progress = fraction.takeIf { it < 1f }))
                     }
                 }
-                report("Copied ${entry.name} to this device")
+                report(sessionId, "Copied ${entry.name} to this device")
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
@@ -791,6 +800,7 @@ class FilesExplorerController @Inject constructor(
             }
             updateIfCurrent(sessionId) { it.copy(copy = null) }
             report(
+                sessionId,
                 if (failures == 0) "Copied ${entries.size} file(s) to this device"
                 else "$failures of ${entries.size} copies failed",
             )
@@ -816,15 +826,29 @@ class FilesExplorerController @Inject constructor(
         }
     }
 
-    private fun report(message: String) {
-        // Kept separate from [ExplorerState.error], which is for failures; this is the status line.
-        _state.update { it.copy(error = null) }
-        lastStatus = message
+    /**
+     * Puts one operation's outcome in the Files tab's status slot.
+     *
+     * A status, not an error: the tab draws [ExplorerState.status] as a banner above the listing and
+     * [ExplorerState.error] in place of it, so a successful copy reports without hiding the folder it
+     * copied into. It used to write a `lastStatus` field that nothing read *and* clear `error`, which
+     * made the whole function a no-op in both directions — a failed copy's own message, set earlier in
+     * the same callback, was wiped a line before it could be seen. [sessionId] is threaded so the write
+     * is dropped when the user has left the session the operation ran in, the same rule [updateIfCurrent]
+     * applies everywhere else.
+     */
+    private fun report(sessionId: String, message: String) {
+        updateIfCurrent(sessionId) { it.copy(status = message) }
     }
 
-    /** The most recent operation's outcome, shown once; a one-slot status rather than a log. */
-    var lastStatus: String? = null
-        private set
+    /**
+     * Drops the status banner, once the user has read it.
+     *
+     * Not session-scoped: the banner is dismissed by the person looking at it, and by then it is
+     * whatever the visible tab is showing — the same reasoning that lets [clearSelection] act on the
+     * current state rather than on a captured session. The next operation to report writes it again.
+     */
+    fun dismissStatus() = _state.update { it.copy(status = null) }
 
     private companion object {
         /**

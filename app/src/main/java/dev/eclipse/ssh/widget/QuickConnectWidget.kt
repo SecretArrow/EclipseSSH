@@ -71,7 +71,7 @@ class QuickConnectWidget : AppWidgetProvider() {
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            0,
+            QuickConnectContract.REQUEST_LAST_HOST,
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

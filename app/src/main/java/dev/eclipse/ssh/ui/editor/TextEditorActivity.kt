@@ -13,6 +13,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ui.EclipseTheme
+import dev.eclipse.ssh.ui.settings.LocalSettingsReport
+import dev.eclipse.ssh.ui.settings.reportWriteFailure
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -97,12 +99,23 @@ class TextEditorActivity : ComponentActivity() {
             // unpressed OK button is a bug wearing a dialog's clothes.
             val scope = rememberCoroutineScope()
             EclipseTheme(darkTheme = darkTheme) {
+                // Read at composition, not inside the tap's lambda below. [LocalSettingsReport] is a
+                // composition local, so reading it is a composable call and cannot happen from
+                // `onPrefsChange`, which is a plain lambda - and capturing it once is the shape every
+                // other screen here uses ([SnippetsActivity], [KeyGenActivity] and the rest). What the
+                // failure needs is only that the reporter is the one this window mounted, which is
+                // true for the whole composition and not merely at the moment of the tap.
+                val report = LocalSettingsReport.current
                 TextEditorScreen(
                     openRequests,
                     prefs = prefs,
                     onPrefsChange = { updated ->
+                        // Caught because the persistence is a DataStore `edit`, which fails by
+                        // *throwing* - a full disk on a word-wrap toggle must report, not take the
+                        // editor window down through an uncaught throw in a launch.
                         scope.launch {
-                            settingsRepository.setEditorPrefsJson(EditorPrefsCodec.encode(updated))
+                            runCatching { settingsRepository.setEditorPrefsJson(EditorPrefsCodec.encode(updated)) }
+                                .onFailure { reportWriteFailure(report, "the editor settings", it) }
                         }
                     },
                     onClose = { finish() },

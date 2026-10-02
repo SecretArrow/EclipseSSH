@@ -141,6 +141,13 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
     private val closeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
+     * Serializes the start thread's field publication against teardown, so a stop() that lands while
+     * start() is still connecting and the start thread itself cannot both free the same native
+     * instance or forward: whoever reads a non-zero handle under this lock is the one that frees it.
+     */
+    private val lifecycleLock = Any()
+
+    /**
      * Opens the tunnel: forward, native instance, connect.
      *
      * [context] is the Application context, first and required where the VNC engine needs no
@@ -176,10 +183,20 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
                 val handle = runBlocking {
                     forwarding.startLocal(session, LOOPBACK, 0, target.host, target.port)
                 }
-                forward = handle
+                synchronized(lifecycleLock) { forward = handle }
+                // A stop()/abandon()/failure during the slow startLocal above would have torn nothing
+                // down - there was nothing published to find - so claim and free what we just set.
+                if (finished.get()) {
+                    tearDown()
+                    return@thread
+                }
                 val instance = LibFreeRDP.newInstance(context, eventListener, uiEventListener)
                 check(instance != 0L) { "FreeRDP would not create an instance" }
-                inst = instance
+                synchronized(lifecycleLock) { inst = instance }
+                if (finished.get()) {
+                    tearDown()
+                    return@thread
+                }
                 // The engine dials the forward's loopback port, never the target directly:
                 // the only route to the desktop is the SSH transport the viewer rode in on.
                 check(
@@ -197,6 +214,9 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
                 LibFreeRDP.connect(instance)
                 val settled = _state.value is RdpTunnelState.Connected || finished.get()
                 if (!settled) failSession(instance)
+                // A stop() that landed while connect() was blocking set finished but may have raced
+                // the publications above; tearDown is idempotent, so claim and free once more here.
+                if (finished.get()) tearDown()
             } catch (error: Throwable) {
                 onTunnelError(error)
             }
@@ -343,6 +363,7 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
 
         override fun OnGraphicsUpdate(x: Int, y: Int, width: Int, height: Int) {
             val instance = inst
+            if (instance == 0L) return
             val bitmap = frameBitmap ?: return
             // The blit runs on the native side, into our bitmap: updateGraphics is what makes
             // the dirty rect visible at all - skipping it would publish stale pixels.
@@ -450,16 +471,33 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
         credentialsRequest.getAndSet(null)?.complete(null)
         // Cancelled from the close job's own completion rather than a second launch, which could
         // win the race and drop the close it was meant to follow.
-        val close = closeScope.launch {
-            val instance = inst
-            if (instance != 0L) {
-                runCatching { LibFreeRDP.disconnect(instance) }
-                runCatching { LibFreeRDP.freeInstance(instance) }
-                inst = 0
-            }
-            runCatching { forward?.close() }
-        }
+        val close = closeScope.launch { tearDown() }
         close.invokeOnCompletion { runCatching { closeScope.cancel() } }
+    }
+
+    /**
+     * Claims the native instance and the forward and frees them, at most once between every caller.
+     * [release] runs it on [closeScope]; [start] runs it inline the moment it finds [finished]
+     * already set after publishing a resource, so a stop() that lands mid-connect never leaves the
+     * engine, the forward or the authenticated session behind. The claim - read-and-clear under
+     * [lifecycleLock] - is what makes two callers safe: whoever reads a non-zero handle is the only
+     * one that frees it, and clearing `inst` *before* the free is what lets every input method's
+     * `inst == 0` guard (and OnGraphicsUpdate's) mean the engine is gone, not merely going.
+     */
+    private fun tearDown() {
+        val instance: Long
+        val handle: ForwardingHandle?
+        synchronized(lifecycleLock) {
+            instance = inst
+            inst = 0
+            handle = forward
+            forward = null
+        }
+        if (instance != 0L) {
+            runCatching { LibFreeRDP.disconnect(instance) }
+            runCatching { LibFreeRDP.freeInstance(instance) }
+        }
+        runCatching { handle?.close() }
     }
 
     // ---------------------------------------------------------------------------------------------
