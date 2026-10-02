@@ -39,7 +39,9 @@ import dev.eclipse.ssh.data.settings.SnippetRepository
 import dev.eclipse.ssh.ui.actions.ActionAnswer
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.SnippetActionKind
+import dev.eclipse.ssh.ui.settings.LocalSettingsReport
 import dev.eclipse.ssh.ui.settings.SettingsDestinationWindow
+import dev.eclipse.ssh.ui.settings.reportFailure
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 
@@ -84,6 +86,11 @@ class SnippetsActivity : ComponentActivity() {
                 title = "Snippets",
                 onClose = { finish() },
             ) {
+                // Read here rather than in the removed row below: the reporter is a composition local
+                // and this lambda is the composable that owns it, so capturing it once is both the
+                // established shape ([ShortcutBarActivity]) and what keeps the row's own call out of
+                // the composable graph.
+                val report = LocalSettingsReport.current
                 Snippets(
                     snippets = snippets,
                     onSaveCurrent = {
@@ -99,7 +106,20 @@ class SnippetsActivity : ComponentActivity() {
                     // delete is a write it can make itself, and making it is what lets the row go
                     // under the finger that removed it. Answered instead, the row would sit there
                     // until the workspace came back to the front, which is not until the window closes.
-                    onDelete = { id -> scope.launch { snippetRepository.delete(id) } },
+                    //
+                    // Caught, because this is that write path: a DataStore `edit` that fails throws,
+                    // and an uncaught throw inside `rememberCoroutineScope().launch` reaches the
+                    // thread's handler and takes the process down - a full disk must not be able to
+                    // kill the app on a tap. Reported through [reportFailure] rather than
+                    // [reportWriteFailure] because its "Could not save" would name the wrong verb:
+                    // this row removes a snippet. The word is the store's own, matching the sentence
+                    // the view model used before this screen owned the write.
+                    onDelete = { id ->
+                        scope.launch {
+                            runCatching { snippetRepository.delete(id) }
+                                .onFailure { reportFailure(report, "Could not delete the snippet", it) }
+                        }
+                    },
                 )
             }
         }

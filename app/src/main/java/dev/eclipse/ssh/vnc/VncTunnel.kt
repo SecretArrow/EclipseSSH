@@ -125,6 +125,13 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
     private val closeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
+     * Serializes the start thread's field publication against teardown, so a stop() that lands while
+     * start() is still connecting and the start thread itself cannot both close the same socket,
+     * client or forward: whoever reads a non-null handle under this lock is the one that closes it.
+     */
+    private val lifecycleLock = Any()
+
+    /**
      * Opens the tunnel: forward, socket, handshake.
      *
      * [password] is what the tunnel answers the *first* VNC-auth challenge with, without
@@ -148,10 +155,20 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
                     forwarding.startLocal(session, LOOPBACK, 0, target.host, target.port)
                 }
                 forward = handle
+                // A stop()/abandon()/error during the slow startLocal above tore nothing down - there
+                // was nothing published to find - so claim and close what we just set.
+                if (finished.get()) {
+                    tearDown()
+                    return@thread
+                }
                 val socket = Socket()
                 socket.tcpNoDelay = true
                 socket.connect(InetSocketAddress(LOOPBACK, handle.boundPort), CONNECT_TIMEOUT_MS)
                 this.socket = socket
+                if (finished.get()) {
+                    tearDown()
+                    return@thread
+                }
                 val config = VernacularConfig().apply {
                     targetFramesPerSecond = framesPerSecond
                     // The one thing a viewer on a phone screen cannot leave to the server: cursor
@@ -182,6 +199,10 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
                 }
                 val vernacular = VernacularClient(config)
                 client = vernacular
+                if (finished.get()) {
+                    tearDown()
+                    return@thread
+                }
                 // Handshake included: start() only returns once the protocol version, security and
                 // ServerInit are exchanged, so the session below has real dimensions. A failure
                 // anywhere in there does not throw out of start() - it routes to the error listener,
@@ -191,6 +212,9 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
                 if (_state.value is VncTunnelState.Connecting || _state.value is VncTunnelState.AwaitingPassword) {
                     _state.value = VncTunnelState.Connected(fb.framebufferWidth, fb.framebufferHeight)
                 }
+                // A stop() that landed during the blocking handshake set finished but may have raced
+                // the publications above; tearDown is idempotent, so claim and close once more here.
+                if (finished.get()) tearDown()
             } catch (error: Throwable) {
                 onVncError(error)
             }
@@ -260,16 +284,37 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
     private fun release() {
         // Cancelled from the close job's own completion rather than a second launch, which could
         // win the race and drop the close it was meant to follow.
-        val close = closeScope.launch {
-            // Vernacular's stop() joins its own reader and writer threads, so it is never called
-            // from either of them (the error listener runs on the reader) - a join from a thread
-            // on itself is the one-second timeout spent on nothing. Closing the socket reaches
-            // both threads the same way, without the join.
-            runCatching { socket?.close() }
-            runCatching { client?.stop() }
-            runCatching { forward?.close() }
-        }
+        val close = closeScope.launch { tearDown() }
         close.invokeOnCompletion { runCatching { closeScope.cancel() } }
+    }
+
+    /**
+     * Claims the socket, client and forward and closes them, at most once between every caller.
+     * [release] runs it on [closeScope]; [start] runs it inline the moment it finds [finished]
+     * already set after publishing one of them, so a stop() that lands mid-handshake never leaves an
+     * authenticated RFB session, its socket or the forward behind. The claim - read-and-clear under
+     * [lifecycleLock] - is what makes two callers safe: whoever reads a non-null handle is the only
+     * one that closes it.
+     */
+    private fun tearDown() {
+        val socket: Socket?
+        val client: VernacularClient?
+        val handle: ForwardingHandle?
+        synchronized(lifecycleLock) {
+            socket = this.socket
+            this.socket = null
+            client = this.client
+            this.client = null
+            handle = forward
+            forward = null
+        }
+        // Vernacular's stop() joins its own reader and writer threads, so it is never called
+        // from either of them (the error listener runs on the reader) - a join from a thread
+        // on itself is the one-second timeout spent on nothing. Closing the socket reaches
+        // both threads the same way, without the join.
+        runCatching { socket?.close() }
+        runCatching { client?.stop() }
+        runCatching { handle?.close() }
     }
 
     // ---------------------------------------------------------------------------------------------

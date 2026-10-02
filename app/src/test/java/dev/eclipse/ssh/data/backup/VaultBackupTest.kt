@@ -193,6 +193,13 @@ class VaultBackupTest {
             // Opposite of its default as well, for the same reason: the whole-object comparison
             // below is the only thing that would notice the backup dropping this one.
             terminalScrollbackCountVisible = true,
+            // The last four display/transfer fields, each set away from its default so the
+            // whole-object comparison below fails if the backup drops it. Every value is inside the
+            // range the reader coerces to, so it must come back unchanged, not clamped.
+            terminalKeyRowVisible = false,
+            terminalScrollback = 12_345,
+            terminalCursorStyle = "underline",
+            transferBytesPerSecond = 1_048_576L,
             vaultAutoLockMinutes = 60,
             // Every field opposite its default for the same reason as blockScreenshots above.
             editorPrefsJson = "{\"wordWrap\":true,\"showLineNumbers\":false,\"tabSize\":2," +

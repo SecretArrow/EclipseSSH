@@ -589,19 +589,19 @@ class EclipseSessionService : LifecycleService() {
     private fun buildNotification(text: String, showProgress: Boolean = false, progress: Int = 0): Notification {
         val openIntent = PendingIntent.getActivity(
             this,
-            0,
+            REQUEST_OPEN,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stopIntent = PendingIntent.getService(
             this,
-            1,
+            REQUEST_STOP,
             Intent(this, EclipseSessionService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val refreshIntent = PendingIntent.getService(
             this,
-            2,
+            REQUEST_REFRESH,
             Intent(this, EclipseSessionService::class.java).setAction(ACTION_REFRESH),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -712,7 +712,21 @@ class EclipseSessionService : LifecycleService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        // Request codes 0..2 belong to the ongoing notification's open/stop/refresh intents.
+        /**
+         * Request codes for this service's own PendingIntents.
+         *
+         * They were bare 0/1/2 until the widget/tile pair proved the point: a PendingIntent's
+         * identity is its creator, its request code and its Intent filter, so two classes that each
+         * pick "1" for their own stop action are only kept apart by the Intent's component — a fact
+         * no reader of either file can see. Named here, the values cannot drift into each other, and
+         * the neighborhood is this service's: [REQUEST_RESTORE] = 3 stays where it was because it is
+         * written into notifications the user may still have on screen.
+         */
+        private const val REQUEST_OPEN = 0
+        private const val REQUEST_STOP = 1
+        private const val REQUEST_REFRESH = 2
+
+        /** Tap target for the alert notifications: see [restoreActivityIntent]. */
         private const val REQUEST_RESTORE = 3
     }
 }

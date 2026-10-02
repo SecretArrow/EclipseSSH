@@ -345,9 +345,21 @@
           one is up, and the auto-lock observer would otherwise start the re-lock countdown
           over a window the user is still working in.
 
-          No configChanges list, same reasoning as the rest: each of them re-reads its store
-          on creation, so a rotation costs one read. Not exported - Settings is the only
-          caller.
+          None of them carries a configChanges list, but not for the reason the block above
+          gives - "re-reads its store on creation" is not true of any of these five, and
+          saying it of them is how the KeyGen row kept a real bug. A rotation here destroys
+          the composition, so whatever a row holds in a `remember` goes with it. For four of
+          the five that is harmless: their in-flight work lives in places a re-creation does
+          not reach - the SAF pickers come back through the activity result registry, and the
+          gate and the userspace state are injected singletons. KeyGenActivity is the
+          exception and is left as it is deliberately: it holds a generated private key in a
+          `remember` and a [VaultUnlockGate] hold it never releases if the composition dies
+          mid-chain, so a rotation during generation loses the pair and leaves the countdown
+          suppressed for the life of the process. Adding the configChanges list would not fix
+          that - it would defer it, by keeping alive the composition that should not be
+          holding the key at all - so the repair is to move that state out of the composition
+          the way the gate itself was moved, which is its own change. Not exported - Settings
+          is the only caller.
         -->
         <activity
             android:name=".ui.settings.ShortcutBarActivity"

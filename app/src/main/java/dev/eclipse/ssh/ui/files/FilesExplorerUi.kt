@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -299,6 +300,55 @@ private fun SessionChip(session: ExplorerSession, selected: Boolean, onClick: ()
  */
 @Composable
 fun ExplorerList(
+    state: ExplorerState,
+    onOpen: (FsEntry) -> Unit,
+    onToggleSelect: (String) -> Unit,
+    onOpenActions: (FsEntry) -> Unit,
+    onDismissStatus: () -> Unit = {},
+) {
+    Column(Modifier.fillMaxSize()) {
+        // Above the listing, never in place of it: a copy that finished is news about the folder on
+        // screen, so the folder has to stay on screen to receive it. This is the whole distinction
+        // between `status` and `error` — `error` means nothing could be listed and replaces the body
+        // below, `status` means something happened to what is listed and sits over it.
+        state.status?.let { message -> StatusBanner(message, onDismissStatus) }
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            ExplorerBody(state, onOpen, onToggleSelect, onOpenActions)
+        }
+    }
+}
+
+/** The one-slot outcome of the last operation, dismissible so it does not age into furniture. */
+@Composable
+private fun StatusBanner(message: String, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    Icons.Default.Close,
+                    "Dismiss",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExplorerBody(
     state: ExplorerState,
     onOpen: (FsEntry) -> Unit,
     onToggleSelect: (String) -> Unit,

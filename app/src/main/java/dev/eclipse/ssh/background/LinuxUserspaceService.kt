@@ -184,7 +184,7 @@ class LinuxUserspaceService : LifecycleService() {
             getString(R.string.notif_timeout_body),
             PendingIntent.getActivity(
                 this,
-                0,
+                REQUEST_TIMEOUT_OPEN,
                 Intent(this, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ),
@@ -199,13 +199,13 @@ class LinuxUserspaceService : LifecycleService() {
     private fun buildNotification(state: LinuxUserspaceState, sessionCount: Int): Notification {
         val openIntent = PendingIntent.getActivity(
             this,
-            0,
+            REQUEST_OPEN,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stopIntent = PendingIntent.getService(
             this,
-            1,
+            REQUEST_STOP,
             Intent(this, LinuxUserspaceService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -281,5 +281,21 @@ class LinuxUserspaceService : LifecycleService() {
     companion object {
         /** The notification's Stop button — the one-stop gesture this service exists to offer. */
         const val ACTION_STOP = "dev.eclipse.ssh.background.LinuxUserspaceService.STOP"
+
+        // This service's own PendingIntent codes. They were bare 0 and 1, which collided on paper
+        // with every other class that also picked 0 or 1; the values themselves are not what keeps
+        // the identities apart (the Intent's component does), so they are named for the reader, and
+        // offset from the session service's 0..3 so no two of this app's services share a code at
+        // all. See the same note in [EclipseSessionService].
+        private const val REQUEST_OPEN = 10
+        private const val REQUEST_STOP = 11
+
+        /**
+         * The timeout alert's tap target, distinct from [REQUEST_OPEN]: nothing else about it
+         * differs — same class, no extras — so the code is the only thing separating "you can
+         * reopen the app" from "your userspace was paused", and a shared code would make the second
+         * silently become the first.
+         */
+        private const val REQUEST_TIMEOUT_OPEN = 12
     }
 }

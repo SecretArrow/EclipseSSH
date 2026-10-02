@@ -34,6 +34,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -264,10 +265,40 @@ class SshConnectionManager @Inject constructor(
         password: String? = null,
         keyPair: KeyPair? = null,
         onPhase: (SshConnectPhase) -> Unit = {},
+    ): ClientSession {
+        // The dialled session needs an owner on the cancellation path, the way bindOnIo owns a
+        // tracker: once the dial has produced a ClientSession, a cancellation landing anywhere in the
+        // uncancellable tail below (handshake, auth - none of them suspend) is observed only when
+        // withContext reaches its boundary, and withContext answers a cancelled caller by discarding
+        // the block's result and throwing CancellationException. A discarded session is the leak this
+        // file names at its close: authenticated, heartbeating at its configured interval, in no
+        // store, so neither closeTab nor disconnectAll can reach it. openAuthenticatedSession hands
+        // its session here the instant the dial returns, so the catch closes exactly that one.
+        var produced: ClientSession? = null
+        try {
+            return openAuthenticatedSession(profile, password, keyPair, onPhase) { produced = it }
+        } catch (cancelled: CancellationException) {
+            produced?.let { runCatching { it.close(false) } }
+            throw cancelled
+        }
+    }
+
+    private suspend fun openAuthenticatedSession(
+        profile: HostProfile,
+        password: String?,
+        keyPair: KeyPair?,
+        onPhase: (SshConnectPhase) -> Unit,
+        onProduced: (ClientSession) -> Unit,
     ): ClientSession = withContext(Dispatchers.IO) {
         onPhase(SshConnectPhase.HANDSHAKE)
         ensureStarted()
         val globalLegacy = applyLegacyAlgorithmsIfEnabled()
+        // applyLegacyAlgorithmsIfEnabled reads settings.first() inside a runCatching that would
+        // swallow a cancellation; the three ensureActive()s in this function turn a connect the user
+        // cancelled while suspended into the stop they asked for, rather than a dial that proceeds and
+        // then has its authenticated session discarded. The blocking tail has no suspension point, so
+        // these three plus the owner in connect() are the whole of the cancellation contract here.
+        ensureActive()
         // Clamped rather than trusted: the profile can also arrive from an imported vault backup or a
         // parsed ssh_config, neither of which the Add Host validation ever saw. A zero would make
         // `verify` time out instantly and look like an unreachable server.
@@ -300,6 +331,7 @@ class SshConnectionManager @Inject constructor(
         val globalKeepAlive = runCatching { settingsRepository.settings.first().keepAliveSeconds }
             .getOrDefault(DEFAULT_KEEP_ALIVE_SECONDS)
             .coerceIn(KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last)
+        ensureActive()
         val keepAlive = resolveKeepAliveSeconds(profile, globalKeepAlive)
         /*
          * Everything the session has to be told before it finishes being built.
@@ -342,6 +374,7 @@ class SshConnectionManager @Inject constructor(
         } else {
             emptyList()
         }
+        ensureActive()
         /*
          * The connection context, which is how per-host configuration reaches session construction.
          *
@@ -375,10 +408,16 @@ class SshConnectionManager @Inject constructor(
             // CANCEL_ON_INTERRUPT were passed - on expiry it cancels the future itself, and the
             // client's connect listeners close the session and the socket under it. A cancel
             // added here would be cancelling a future the library has already cancelled.
-        } finally {
-            // The underlying client owns the socket; this is the only thing this frame owns.
+        } catch (error: Throwable) {
+            // A failed dial must still drop the registry entry; the library has already closed the
+            // socket under the cancelled verify (see above). The successful-dial path deliberately
+            // keeps the entry until the handshake below has read it - that is the whole point.
             tunnelled?.let(tunnelledTargets::remove)
+            throw error
         }
+        // The session now exists and is live; hand it to connect() so a cancellation observed in the
+        // uncancellable tail below closes it at the withContext boundary instead of leaking it.
+        onProduced(session)
         try {
             awaitHandshake(session, timeout)
             // The transport is up and the key exchange is done; everything from here is the server
@@ -410,6 +449,11 @@ class SshConnectionManager @Inject constructor(
             // tries up to 3 times) do not accumulate half-open sessions.
             runCatching { session.close(false) }
             throw error
+        } finally {
+            // The tunnelled-target entry is dropped here, not in the dial's catch above, because its
+            // only reader - the known-hosts verifier - runs inside awaitHandshake, which is after
+            // MINA's ConnectFuture resolves on the bare socket. Kept registered until it has read it.
+            tunnelled?.let(tunnelledTargets::remove)
         }
     }
 

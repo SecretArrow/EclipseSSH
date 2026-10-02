@@ -25,6 +25,24 @@ object QuickConnectContract {
     const val EXTRA_QUICK_CONNECT_LAST: String = "dev.eclipse.ssh.QUICK_CONNECT_LAST"
 
     /**
+     * The PendingIntent request code both quick-connect surfaces build their tap intent under.
+     *
+     * Shared rather than local, because a PendingIntent's identity is its creator, its request code
+     * and its Intent filter — extras are **not** part of it. The widget and the tile therefore used
+     * to build the *same* PendingIntent: same package, code 0, and an Intent differing only in the
+     * extras, which is exactly the pair the platform treats as one object. Each surface's
+     * `FLAG_UPDATE_CURRENT` then rewrote the other's stored extras, so a widget tap fired whatever
+     * the tile had last put there.
+     *
+     * One constant for both is the fix, not two: the two surfaces deliberately *want* the same
+     * behaviour (dial the last host), so the honest model is that they share one intent — and
+     * agreeing on the code here is what keeps the identity that of one known object rather than an
+     * accident of two small literals. A future surface that needs different extras needs a
+     * different code beside this one, not a re-used 0.
+     */
+    const val REQUEST_LAST_HOST: Int = 7001
+
+    /**
      * Reads the intent and returns whether the caller is asking for a
      * quick connect. Centralised so every entry point applies the same
      * rule: any intent whose action is `ACTION_VIEW` with the extra

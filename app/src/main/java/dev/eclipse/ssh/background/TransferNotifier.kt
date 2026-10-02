@@ -22,19 +22,16 @@ class TransferNotifier @Inject constructor(@ApplicationContext private val conte
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     init {
+        // Only the terminal channel is built here. The transfer channel lives in
+        // [NotificationChannels], because there used to be two of them: this class registered
+        // "transfer_results" for the completion notices while [NotificationChannels] registered
+        // "transfer_progress" for the same subject, so a user who muted one in the system settings
+        // still got the other, and the app's own transfer switch lived in a screen that could not
+        // show both. One id, one place to mute it.
         runCatching {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_TRANSFERS,
-                    "Transfer results",
-                    NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
-            // A sibling channel rather than the transfers one: "your command finished" is a
-            // different kind of event from a transfer's progress, and a user who mutes transfers
-            // should not lose terminal notifications with them (or vice versa). Declared here the
-            // same way as the first, which is this class's established pattern for the channels it
-            // owns.
+            // A channel of its own, not the transfers one: "your command finished" is a different
+            // kind of event from a transfer's result, and a user who mutes transfers should not lose
+            // terminal notifications with them (or vice versa).
             notificationManager.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_TERMINAL,
@@ -88,7 +85,7 @@ class TransferNotifier @Inject constructor(@ApplicationContext private val conte
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(context, CHANNEL_TRANSFERS)
+        val notification = NotificationCompat.Builder(context, NotificationChannels.TRANSFERS)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(text)
@@ -105,7 +102,11 @@ class TransferNotifier @Inject constructor(@ApplicationContext private val conte
     }
 
     companion object {
-        const val CHANNEL_TRANSFERS = "transfer_results"
+        /**
+         * Terminal notifications only — see the [init] block for why the transfer channel is not
+         * declared here. The former `CHANNEL_TRANSFERS = "transfer_results"` id is gone with it; the
+         * surviving one is [NotificationChannels.TRANSFERS].
+         */
         const val CHANNEL_TERMINAL = "terminal_events"
     }
 }

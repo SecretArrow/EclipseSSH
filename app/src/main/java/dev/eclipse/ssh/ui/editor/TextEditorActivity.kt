@@ -13,6 +13,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ui.EclipseTheme
+import dev.eclipse.ssh.ui.settings.LocalSettingsReport
+import dev.eclipse.ssh.ui.settings.reportWriteFailure
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -101,8 +103,16 @@ class TextEditorActivity : ComponentActivity() {
                     openRequests,
                     prefs = prefs,
                     onPrefsChange = { updated ->
+                        // [LocalSettingsReport] is read inside the tap's own lambda, not captured at
+                        // composition: the write only exists once the toggle happens, and reading it
+                        // here is also what makes the failure land in this window's snackbar rather
+                        // than nowhere. Caught because the persistence is a DataStore `edit`, which
+                        // fails by *throwing* - a full disk on a word-wrap toggle must report, not
+                        // take the editor window down through an uncaught throw in a launch.
+                        val report = LocalSettingsReport.current
                         scope.launch {
-                            settingsRepository.setEditorPrefsJson(EditorPrefsCodec.encode(updated))
+                            runCatching { settingsRepository.setEditorPrefsJson(EditorPrefsCodec.encode(updated)) }
+                                .onFailure { reportWriteFailure(report, "the editor settings", it) }
                         }
                     },
                     onClose = { finish() },

@@ -66,7 +66,11 @@ class LocalLinuxHostTest {
 
         assertThat(LocalLinuxHost.isLocalHost(profile.id)).isTrue()
         assertThat(LocalLinuxHost.isLocalHost("any-real-host")).isFalse()
-        assertThat(profile.name).isEqualTo(LocalLinuxHost.CARD_TITLE)
+        // The card is named after the release actually installed, not a constant: the catalogue
+        // offers five LTS series, so a fixed "22.04" told most users they were running a version
+        // they had not chosen.
+        assertThat(profile.name).isEqualTo(distro.displayName)
+        assertThat(LocalLinuxHost.cardSubtitle(profile.name)).startsWith(distro.displayName)
         // The connect path intercepts the reserved id and routes to the local terminal; if that
         // ever regresses, the placeholder must at least fail fast rather than authenticate
         // against localhost with someone's saved password.

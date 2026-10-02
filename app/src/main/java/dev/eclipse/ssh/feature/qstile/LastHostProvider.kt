@@ -31,10 +31,17 @@ class LastHostProviderImpl @Inject constructor(
     private val repository: HostRepository,
 ) : LastHostProvider {
     override suspend fun lastConnected(): HostProfile? {
-        // The repository exposes a Flow<List<HostProfile>>; `first()`
-        // takes the first emission. The host list is loaded eagerly on
-        // app start, so the first emission arrives within a frame.
-        val all = repository.hosts.first()
+        // The repository exposes a Flow<List<HostProfile>>; `first()` takes the first emission. The
+        // host list is loaded eagerly on app start, so the first emission arrives within a frame.
+        //
+        // Guarded because this runs in the tile's click handler and the widget's onUpdate, both of
+        // which are the system's threads and neither of which is allowed to take the process down:
+        // the previous unguarded `first()` let a failed read - the vault unlocked by a signed key
+        // after a boot the store cannot decrypt, or a query error on the database - surface as an
+        // uncaught exception out of a system callback. An empty list is the same answer the caller
+        // already handles: it means "no last host", the tile shows its hint and the tap is a no-op,
+        // which is the honest state when the host list could not be read. A crash is not.
+        val all = runCatching { repository.hosts.first() }.getOrDefault(emptyList())
         return all
             .filter { it.lastConnectedAt != null }
             .maxByOrNull { it.lastConnectedAt ?: 0L }

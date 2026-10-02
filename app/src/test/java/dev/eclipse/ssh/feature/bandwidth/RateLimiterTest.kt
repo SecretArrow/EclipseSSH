@@ -46,4 +46,21 @@ class RateLimiterTest {
         val elapsed = measureTimeMillis { lim.await(1024) }
         assertThat(elapsed).isLessThan(500L)
     }
+
+    @Test
+    fun `a charge larger than the bucket terminates instead of spinning`() = runTest {
+        // The exact shape that used to hang: more bytes than the bucket can
+        // ever hold. refill() clamps `available` at bucketSize, so the old
+        // single `while (available >= bytes)` loop could never be satisfied —
+        // it spun on the transfer thread forever, which is every whole-file
+        // transfer over DEFAULT_BUCKET once the SFTP read size passed it. The
+        // slice fix charges in bucket-sized pieces, so it must complete.
+        val lim = RateLimiter(bytesPerSecond = 10_000_000, bucketSize = 1024)
+        val elapsed = measureTimeMillis { lim.await(1024L * 3) }
+        // Reaching this line at all is the regression proof — before the fix
+        // the coroutine never returned and the suite hung. The bound only
+        // guards against a new way to stall; at 10 MB/s the two refills past
+        // the first full bucket cost well under a millisecond.
+        assertThat(elapsed).isLessThan(2_000L)
+    }
 }
