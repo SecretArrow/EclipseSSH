@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §90, *Releasing 1.17.0*, the version this file's header names; §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster it carries, and §88, *Releasing 1.16.0*, is the release before it, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §91, *The split verifier asked `file` what architecture a binary was*, which is a fix rather than a release; §90, *Releasing 1.17.0*, is the version this file's header names, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster it carries, and §88, *Releasing 1.16.0*, is the release before it, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10647,3 +10647,60 @@ Built and signed by `tagged-release.yml` from the `v1.17.0` tag: the universal A
 (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), the AAB, and the `SHA256SUMS.txt` over them. The signing
 identity is unchanged from the releases before it — `0c69794b…`, the key the CI secret holds — so this build
 installs over 1.16.0 and every earlier release normally.
+
+## 91. The split verifier asked `file` what architecture a binary was
+
+**What it was.** Three hand-kept copies of one table, each saying which architecture each Android ABI's
+libraries must be: one in `testing/verify-release-splits.sh`, one in `ci.yml`'s `:freerdp` job and one in its
+`:linux` job. All three wrote the expectation in `file`'s vocabulary — `ARM aarch64`, `ARM, EABI5`, `x86-64`,
+`Intel 80386` — and all three decided by matching `file`'s description of the binary against it.
+
+**The defect.** `file` describes a binary in prose, and that prose is not stable. Version 5.46 renames
+e_machine 3 to `Intel i386`; 5.45 spells it `Intel 80386`. Every check that matched the wording therefore
+reports a *correct* x86 binary as **"is not a Intel 80386 ELF"** — the same sentence a genuinely wrong-ABI
+split produces, which makes this worse than an ordinary false red: it is a false red that reads like the
+exact defect the check exists to catch. §55 recorded it happening and named it as the thing to fix — *"what
+remains unchecked is the script itself on a host whose `file` says `Intel i386`… because the next person to
+run it will read the same eight messages and has no reason to doubt them"* — and §71 had already filed it
+under host artifacts, as *"worth naming so it is not mistaken for a defect next time"*. The only reason CI
+never failed is that the runner image happens to carry `file` 5.45.
+
+**What it gated.** `tagged-release.yml` calls `testing/verify-release-splits.sh` on the five APKs it is about
+to publish, so this is the gate on the artifact a user downloads: a `file` bump on the runner image stops a
+release being cut, with a message that accuses the artifact. The same prose decides the two native jobs in
+`ci.yml`, which run on every pull request.
+
+**The reproduction, on the published artifact.** The repository's own verifier, run against the assets
+`v1.17.0` published, printed eight failures for the x86 split — one per FreeRDP library — on this host, and
+none of them was real. That is the check disagreeing with a release that CI built, signed and verified.
+
+**The fix.** `testing/verify-elf-arch.sh` is new and is the table's one home: an ABI maps to its `Class:` and
+`Machine:` as **readelf** prints them, and the ABI names both, so a caller names one thing and cannot name it
+half-right. readelf prints the machine name from binutils' own table, which has not been reworded, so the
+expectation is stable across hosts and versions. `verify-split-apk.sh` calls it for every library it is given
+and no longer takes an ELF signature from its caller — the third argument is gone, and with it the
+`expectedElf` field of the verdict JSON, because naming the architecture twice is how the two came to be able
+to disagree. `verify-release-splits.sh` and both `ci.yml` native jobs call it instead of their own copies of
+the table. The `:linux` job's static-linking assertion stopped grepping `file` for `statically linked` and now
+reads the dynamic section, since that is the same class of prose dependency and the same file: `readelf -d`
+says *"There is no dynamic section in this file"* about a static binary and prints a dynamic section for a
+dynamic one.
+
+**The evidence.** Before the change, `testing/verify-release-splits.sh` over `v1.17.0`'s published APKs failed
+the x86 split with eight `Intel i386` messages. After it, the same command over the same five files reports
+`all per-ABI release splits verified`, with the x86 split's eight libraries and the other three splits' eleven
+apiece. The checker was made to disagree on purpose as well, because one that has never disagreed is not
+evidence: an x86 library handed to it as `x86_64`, an arm64 library handed to it as `x86`, an ABI the table
+does not carry, a file that is not an ELF and a path that does not exist each exit non-zero with the readelf
+lines that say why. The static assertion was checked the same way over the three ABIs the userspace builds:
+`libproot.so` and `libproot-loader.so` report no dynamic section on all three, and `liblinuxpty.so`, which is
+dynamically linked, is reported as such rather than passing.
+
+**What it does not change.** The library mapping, the ABI purity check (`lib/` carrying exactly one ABI
+directory), `extractNativeLibs`, and every other field of the verdict JSON are as they were. Nothing here
+builds anything: the checks are artifact checks and this section is a claim about the checker.
+
+**What is not claimed.** No device was involved, and none of this says the userspace runs — the split checks
+have never said that. What is established is narrower and was the open item: the gate that decides whether a
+release may be published now answers the same thing on a host with `file` 5.46 as on the runner image with
+5.45, so the failure it produces from here on is about the artifact and not about the machine that looked.

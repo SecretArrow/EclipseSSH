@@ -163,25 +163,20 @@ jobs:
         # per ABI, and the bridge .so is an ELF binary for the architecture it
         # is filed under. A wrong-ABI library is exactly the failure packaging
         # would otherwise hide until install time - the same check the FreeRDP
-        # spike used.
+        # spike used. The architecture is readelf's, through the one table in
+        # testing/verify-elf-arch.sh, and not `file`'s: `file` describes a
+        # binary in prose, and its prose for e_machine 3 changed in 5.46.
         run: |
           set -euo pipefail
           ./gradlew --stacktrace :freerdp:assembleDebug
-          declare -A ELF_SIGNATURE=(
-            [arm64-v8a]='ARM aarch64'
-            [armeabi-v7a]='ARM, EABI5'
-            [x86_64]='x86-64'
-            [x86]='Intel 80386'
-          )
           for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
             for LIB in libfreerdp-android libfreerdp3 libfreerdp-client3 libwinpr3 \
                        libcrypto libssl libcjson liburiparser; do
               SO="freerdp/build/native/jniLibs/${ABI}/${LIB}.so"
               test -f "${SO}" || { echo "missing ${SO}"; exit 1; }
             done
-            file "freerdp/build/native/jniLibs/${ABI}/libfreerdp-android.so" \
-              | grep -F "${ELF_SIGNATURE[${ABI}]}"
-            echo "verified ${ABI}: ${ELF_SIGNATURE[${ABI}]}"
+            testing/verify-elf-arch.sh \
+              "freerdp/build/native/jniLibs/${ABI}/libfreerdp-android.so" "$ABI"
           done
 
       - name: Install patch (proot-patches are applied by fetchLinuxSource)
@@ -204,30 +199,27 @@ jobs:
         # userspace's exec model depends on: libproot.so and
         # libproot-loader.so must be static executables. A dynamic proot
         # would resolve its interpreter outside nativeLibraryDir and die at
-        # exec time - a failure packaging cannot see. make, readelf and awk
-        # (proot's makefile uses them) are preinstalled on the runner image.
+        # exec time - a failure packaging cannot see. Both answers are read
+        # out of the file rather than out of `file`'s prose: the architecture
+        # from readelf's header through testing/verify-elf-arch.sh, the
+        # static one from the absence of a dynamic section. make, readelf and
+        # awk (proot's makefile uses them) are preinstalled on the runner
+        # image.
         run: |
           set -euo pipefail
           ./gradlew --stacktrace :linux:assembleDebug
-          declare -A ELF_SIGNATURE=(
-            [arm64-v8a]='ARM aarch64'
-            [armeabi-v7a]='ARM, EABI5'
-            [x86_64]='x86-64'
-          )
           for ABI in arm64-v8a armeabi-v7a x86_64; do
             for LIB in libproot libproot-loader liblinuxpty; do
               SO="linux/build/native/jniLibs/${ABI}/${LIB}.so"
               test -f "${SO}" || { echo "missing ${SO}"; exit 1; }
             done
-            file "linux/build/native/jniLibs/${ABI}/libproot.so" \
-              | grep -F "${ELF_SIGNATURE[${ABI}]}"
-            file "linux/build/native/jniLibs/${ABI}/libproot.so" \
-              | grep -F 'statically linked'
-            file "linux/build/native/jniLibs/${ABI}/libproot-loader.so" \
-              | grep -F 'statically linked'
-            file "linux/build/native/jniLibs/${ABI}/liblinuxpty.so" \
-              | grep -F "${ELF_SIGNATURE[${ABI}]}"
-            echo "verified ${ABI}: ${ELF_SIGNATURE[${ABI}]}"
+            testing/verify-elf-arch.sh "linux/build/native/jniLibs/${ABI}/libproot.so" "$ABI"
+            testing/verify-elf-arch.sh "linux/build/native/jniLibs/${ABI}/liblinuxpty.so" "$ABI"
+            for LIB in libproot libproot-loader; do
+              readelf -d "linux/build/native/jniLibs/${ABI}/${LIB}.so" \
+                | grep -qF 'There is no dynamic section in this file' \
+                || { echo "${ABI}/${LIB}.so is dynamically linked; proot and its loader must be static"; exit 1; }
+            done
           done
 
   lint:
