@@ -7,9 +7,13 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.lifecycle.ViewModelProvider
+import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.ssh.SshKeyAlgorithm
 import dev.eclipse.ssh.ui.settings.KeyGenActivity
+import dev.eclipse.ssh.ui.settings.KeyGenViewModel
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,9 +32,13 @@ import org.robolectric.annotation.Config
  * on `Dispatchers.Default` searching for primes, or a Storage Access Framework picker belonging to
  * another app, and neither is reachable from here. In particular the two write paths and the
  * "Generating the key pair…" status line are deliberately not asserted: the first needs a document
- * the test cannot choose, and the second exists only while [KeyGenActivity]'s `busy` flag is up, which
- * only a tap on the action raises. Asserting the status line's *absence* here is the honest half of
- * that, and it is what would catch a screen that opened mid-chain.
+ * the test cannot choose, and the second exists only while [KeyGenViewModel]'s `busy` flag is up,
+ * which only a tap on the action raises. Asserting the status line's *absence* here is the honest
+ * half of that, and it is what would catch a screen that opened mid-chain.
+ *
+ * One test here goes past the opening state without touching either of those: a tap on a chip, which
+ * is the D2 finding's own territory. It needs no generation to demonstrate, because what it asks is
+ * where the chain's state is kept. The chain's behaviour is `KeyGenViewModelTest`'s, one class over.
  *
  * The chips are asserted *displayed* rather than merely present, and nothing is scrolled before them.
  * That is the claim this promotion is for: the dialog's strip of chips hid the algorithms that did not
@@ -135,5 +143,43 @@ class KeyGenActivityRobolectricTest {
 
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText(explanation).assertIsDisplayed()
+    }
+
+    /**
+     * The chain's state belongs to the window's view model, not to the composition that draws it.
+     *
+     * This is the audit's D2 finding, pinned at the level it was found. The chain — the chosen
+     * algorithm, the generated pair, the flag that says a generation is running, the hold on
+     * [dev.eclipse.ssh.feature.vault.VaultUnlockGate] — used to live in this screen's `remember`, so
+     * re-creating the window destroyed all of it at once. The private key the chain exists to produce
+     * exists nowhere else at that moment: not in a file, not in an Intent. And the hold stayed up for
+     * the rest of the process's life, suspending the auto-lock countdown with nothing on screen to
+     * say so.
+     *
+     * A `remember` is the one place that state must not be, and the tap below is what tells the two
+     * apart: the chip's choice has to land in the view model the window is keeping, not in a copy the
+     * composition keeps to itself. The algorithm is the subject rather than a generated pair, because
+     * a generation is a background thread and the pickers belong to other apps and neither is
+     * reachable from here.
+     *
+     * What this file cannot assert is the survival itself. This suite records the semantics of a
+     * re-created activity in two places — `TerminalSessionLifecycleRobolectricTest` ("a new ViewModel
+     * with empty maps") and `ConnectionMatrixRobolectricTest` ("the activity is recreated, which drops
+     * the view model") — so `scenario.recreate()` models a teardown, not a configuration change, and
+     * an identity check across it would pin Robolectric rather than the app. The framework's own
+     * contract for `by viewModels()` is what carries the state through a rotation; what this file can
+     * hold to account is that the state is in the view model. The rest of the chain, which needs no
+     * window to drive, is `KeyGenViewModelTest`'s: the hold, the pair, and the release that
+     * `onCleared` performs when the window closes for good.
+     */
+    @Test
+    fun theChainStateBelongsToTheWindowsViewModelNotToTheComposition() {
+        compose.waitForIdle()
+        val viewModel = ViewModelProvider(compose.activity)[KeyGenViewModel::class.java]
+        assertThat(viewModel.selected).isEqualTo(SshKeyAlgorithm.RSA_2048)
+
+        compose.onNodeWithText("ECDSA P-256").performClick()
+
+        assertThat(viewModel.selected).isEqualTo(SshKeyAlgorithm.ECDSA_P256)
     }
 }

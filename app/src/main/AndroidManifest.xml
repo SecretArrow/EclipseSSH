@@ -351,15 +351,18 @@
           the composition, so whatever a row holds in a `remember` goes with it. For four of
           the five that is harmless: their in-flight work lives in places a re-creation does
           not reach - the SAF pickers come back through the activity result registry, and the
-          gate and the userspace state are injected singletons. KeyGenActivity is the
-          exception and is left as it is deliberately: it holds a generated private key in a
-          `remember` and a [VaultUnlockGate] hold it never releases if the composition dies
-          mid-chain, so a rotation during generation loses the pair and leaves the countdown
-          suppressed for the life of the process. Adding the configChanges list would not fix
-          that - it would defer it, by keeping alive the composition that should not be
-          holding the key at all - so the repair is to move that state out of the composition
-          the way the gate itself was moved, which is its own change. Not exported - Settings
-          is the only caller.
+          gate and the userspace state are injected singletons. KeyGenActivity was the
+          exception: it held a generated private key in a `remember` and a [VaultUnlockGate]
+          hold it never released if the composition died mid-chain, so a rotation during
+          generation lost the pair and left the countdown suppressed for the life of the
+          process. Adding the configChanges list would not have fixed that - it would defer
+          it, by keeping alive the composition that should not be holding the key at all. The
+          repair moved that state out of the composition the way the gate itself was moved:
+          the chain - the algorithm, the pair, the running flag and the hold - now lives in
+          KeyGenViewModel, which is scoped to this window, survives the re-creation of it,
+          and gives the gate back in `onCleared` when the user leaves for good. So the list
+          stays off, and this block is now true of all five. Not exported - Settings is the
+          only caller.
         -->
         <activity
             android:name=".ui.settings.ShortcutBarActivity"
