@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 51 / versionName 1.17.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 52 / versionName 1.18.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §91, *The split verifier asked `file` what architecture a binary was*, which is a fix rather than a release; §90, *Releasing 1.17.0*, is the version this file's header names, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster it carries, and §88, *Releasing 1.16.0*, is the release before it, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §92, *Releasing 1.18.0*, which is the version this file's header names; §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10704,3 +10704,82 @@ builds anything: the checks are artifact checks and this section is a claim abou
 have never said that. What is established is narrower and was the open item: the gate that decides whether a
 release may be published now answers the same thing on a host with `file` 5.46 as on the runner image with
 5.45, so the failure it produces from here on is about the artifact and not about the machine that looked.
+
+---
+
+## 92. Releasing 1.18.0
+
+1.17.0 was ten changes found by reading the Ubuntu userspace. 1.18.0 is an audit of everything *else*: every
+path that ends something, frees something, or computes an outcome that nothing reads, taken one at a time and
+checked against what the code does rather than what its names promise. The audit's own record — each finding,
+the evidence that confirmed it, the fix, the test that pins it, and the one finding that was deferred with its
+reason — is the audit cycle's report rather than a section here. What this section carries is the release.
+
+`git log v1.17.0..v1.18.0` is seven merges: four that change the artifact a user installs, and three that
+change only the machinery that builds and certifies it.
+
+| | pull request | what it changed |
+|---|---|---|
+| 1 | #209 | the emulator legs make room for the AVD's userdata before `adb` asks for it (`scripts/free-runner-disk.sh`), and the smoke gate checks the tree out where it goes looking for it — tests and CI, no artifact |
+| 2 | #210 | ten dependency updates: Gradle 9.7.1 → 9.8.0, `navigation` 2.10.1 → 2.10.2, `work` 2.10.0 → 2.12.0, **Apache MINA SSHD 2.19.0 → 2.20.0**, `slf4j` 2.0.19 → 2.0.20, `core-ktx` 1.19.0 → 1.19.1, and the rest of what the lockfile carries with them |
+| 3 | #211 | the smoke gate says it has no APK to boot, instead of letting `find` report a missing file — CI, no artifact |
+| 4 | #212 | the audit's batch fixes: notifications, intents, the files explorer, the widget and the userspace |
+| 5 | #213 | the key-generation chain — the algorithm, the generated pair, the running flag and the hold on the vault gate — moves out of the composition into a view model scoped to the window |
+| 6 | #214 | an hour of headroom for the three Gradle-heavy jobs — CI, no artifact |
+| 7 | #215 | the per-ABI split verifier asks `readelf` instead of matching `file`'s prose (§91) — tooling, no artifact |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88 and §90 set: **a patch number is honest when the
+artifact a user installs behaves as its predecessor's does.** This one fails that test in places a user
+reaches without looking for them.
+
+- **A tunnel cannot free an engine that input still reaches.** `RdpTunnel` and `VncTunnel` started and
+  released their native session without a common owner, so a stop that landed during a connect could free a
+  handle the other path was still using — for RDP, input reaching a freed engine; for VNC, an authenticated
+  desktop session left open when the stop arrived mid-handshake. Both now serialize start and release on one
+  lock, and `tearDown()` is idempotent, so a stop that races a connect claims and closes exactly once.
+- **An empty file inside an archive is no longer reported as a corrupt one.** A DEFLATE entry whose header
+  declares zero length returns the empty array it promises instead of falling through to the corrupt-archive
+  path. `ZipOutputStream` and Python's `zipfile` both emit a two-byte empty deflate block for an empty file,
+  so a vault export containing a `.gitkeep`, an `__init__.py` or an empty `.nojekyll` failed to restore.
+- **The widget and the tile no longer open each other's host.** Both surfaces built the same `PendingIntent`
+  — same action, same request code, no distinguishing data — so the last one to be refreshed decided where
+  the other one went. Both now build their tap intent under a shared `REQUEST_LAST_HOST`, and the two
+  services offset their own request codes from each other.
+- **A copy or a delete that fails says so.** The files explorer cleared the error row and then wrote the
+  outcome into a field nothing rendered, so a failed move was silent. The outcome now lands in
+  `ExplorerState.status` and renders as a dismissible inline banner, and every report carries the session id
+  so it cannot surface on the wrong tab.
+- **A repair no longer stops on a userspace the machine would reject.** The early-stop verdict in
+  `LinuxUserspaceManager` had to be one `initialState()` would also accept, and the in-flight marker's write
+  failure is now reported as the failure it is rather than escaping the try that types failures.
+- **A key generation survives the window.** The chain that owns the chosen algorithm, the generated pair,
+  the running flag and the hold on `VaultUnlockGate` lived in the composition, so a configuration change
+  restarted it; it is now a view model scoped to the window (`KeyGenViewModel`), which is the fix the
+  rotation test pins.
+
+The other half of #212 changes behaviour in narrower cases: a proxy jump's tunnel is torn down after the
+handshake that reads it rather than before, two suspension points in `connect()` no longer swallow
+cancellation, a backup round-trips the four display and transfer fields it always claimed to, a snippet or
+editor write failure reaches the window's reporter instead of the thread's handler, a rate-limit charge
+larger than its bucket completes instead of spinning, and a duplicate transfer notification channel is merged
+and its orphan deleted on startup.
+
+### A watch item this release carries
+
+`sshd` 2.19.0 → 2.20.0 is a change to the library whose class-initialization path is the only thing that has
+ever crashed this app on open — v1.1.12 through v1.1.16 died in `ECCurves.<clinit>`, which resolved EC
+parameters through the platform's stripped "BC" provider, and was fixed by `EclipseApp`'s bundled-provider
+swap in PR #50. Nothing in 2.20.0's initialization path has been read against that fix. The leg that covers
+it is not a JVM test: it is the instrumented suite run against the **published** release APK, which is what
+`android-release-test.yml` does on publication — and a red leg there pulls the release back to draft rather
+than leaving it published.
+
+### What this release does not claim
+
+No device has been involved in any of it. The audit's claims and this release's are claims about code, CI and
+a signed artifact; the userspace end-to-end claims of §63, including the ones 1.17.0's changes affect most,
+still need the x86_64 emulator leg or a phone. The gate that certifies the artifact — signature, version,
+per-ABI splits, each library's architecture and `extractNativeLibs` — establishes that the APK is correct,
+not that the userspace runs.
