@@ -10,7 +10,10 @@
 #
 # Each split is passed to verify-split-apk.sh, which checks the ABI it carries
 # and no other, the libraries, that each is an ELF of the architecture it is
-# filed under, and extractNativeLibs. Fails on the first bad split.
+# filed under, and extractNativeLibs. Fails on the first bad split. The
+# ABI-to-architecture mapping the last of those needs is not here: it is
+# testing/verify-elf-arch.sh's, so the ABI a split is filed under and the
+# architecture its libraries must be are one table rather than three.
 #
 # Usage: verify-release-splits.sh <apk-dir> <out-dir>
 set -euo pipefail
@@ -19,12 +22,6 @@ APK_DIR="${1:?the directory holding the per-ABI release APKs must be named}"
 OUT_DIR="${2:?the directory for the per-ABI verdict JSON must be named}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-declare -A ELF_SIGNATURE=(
-  [arm64-v8a]='ARM aarch64'
-  [armeabi-v7a]='ARM, EABI5'
-  [x86_64]='x86-64'
-  [x86]='Intel 80386'
-)
 FREERDP_LIBS=(libfreerdp-android libfreerdp3 libfreerdp-client3 libwinpr3
               libcrypto libssl libcjson liburiparser)
 LINUX_LIBS=(libproot libproot-loader liblinuxpty)
@@ -41,8 +38,7 @@ for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
   fi
   "$HERE/verify-split-apk.sh" \
     "$APK_DIR/app-${ABI}-release.apk" \
-    "$ABI" "${ELF_SIGNATURE[${ABI}]}" \
-    "$OUT_DIR/${ABI}.json" "${LIBS[@]}"
+    "$ABI" "$OUT_DIR/${ABI}.json" "${LIBS[@]}"
 done
 
 echo "all per-ABI release splits verified"

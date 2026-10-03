@@ -10,23 +10,35 @@
 # is the question nobody was asking. The splits are what users download, and
 # before this script the only thing CI checked about one was its signature.
 #
-# The caller names the ABI, the ELF signature and the libraries, for the same
-# reason verify-release-apk.sh's caller names the ABI: a checker that assumes
-# cannot check the artifact it was handed. It also means the same script checks
+# The caller names the ABI and the libraries, for the same reason
+# verify-release-apk.sh's caller names the ABI: a checker that assumes cannot
+# check the artifact it was handed. It also means the same script checks
 # whichever split a caller cares about, rather than there being one hard-coded
-# blessed ABI and four unexamined ones.
+# blessed ABI and four unexamined ones. What the caller does *not* name is the
+# ELF identity: that follows from the ABI, and verify-elf-arch.sh holds the
+# mapping once, so a caller cannot name an ABI and an architecture that
+# disagree - which is what the three hand-kept copies of that table used to
+# allow between this script, verify-release-splits.sh and ci.yml.
 #
-# Usage: verify-split-apk.sh <apk> <expected-abi> <expected-elf-signature> <out-json> <lib> [<lib>...]
-#   e.g. verify-split-apk.sh app-arm64-v8a-release.apk arm64-v8a 'ARM aarch64' \
+# Usage: verify-split-apk.sh <apk> <expected-abi> <out-json> <lib> [<lib>...]
+#   e.g. verify-split-apk.sh app-arm64-v8a-release.apk arm64-v8a \
 #          out/split.json libproot libproot-loader liblinuxpty libfreerdp-android ...
 set -euo pipefail
 
 APK="$1"
 EXPECTED_ABI="$2"
-EXPECTED_ELF="$3"
-OUT_JSON="$4"
-shift 4
+OUT_JSON="$3"
+shift 3
 LIBS=("$@")
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ELF_ARCH="$HERE/verify-elf-arch.sh"
+# Named here rather than inlined at the call so that a missing helper is one
+# clear sentence instead of an error per library that reads like a bad split.
+[ -x "$ELF_ARCH" ] || {
+  echo "verify-split-apk.sh: $ELF_ARCH is missing or not executable, so no library's architecture can be checked" >&2
+  exit 1
+}
 
 : "${ANDROID_HOME:?ANDROID_HOME must be set}"
 : "${BUILD_TOOLS:?BUILD_TOOLS must be set}"
@@ -77,11 +89,15 @@ for LIB in "${LIBS[@]}"; do
   fi
   present+=("$LIB")
   unzip -p "$APK" "$entry" > "$tmp/${LIB}.so"
-  desc="$(file -b "$tmp/${LIB}.so")"
-  case "$desc" in
-    *"$EXPECTED_ELF"*) ;;
-    *) errors+=("$entry is not a ${EXPECTED_ELF} ELF: $desc") ;;
-  esac
+  # The architecture decision is readelf's, through the one place the
+  # ABI-to-architecture mapping is written down - never `file`'s, whose
+  # description of a binary is prose that `file` 5.46 reworded underneath this
+  # very check. verify-elf-arch.sh carries the why.
+  if ! arch="$("$ELF_ARCH" "$tmp/${LIB}.so" "$EXPECTED_ABI" 2>&1)"; then
+    # Its message opens with the path it was handed, which is a temporary file
+    # here; the entry inside the APK is the name worth reporting.
+    errors+=("$entry ${arch#"$tmp/${LIB}.so is "}")
+  fi
 done
 
 # ------------------------------------------------------- extractNativeLibs
@@ -117,17 +133,18 @@ if [ "${#errors[@]}" -gt 0 ]; then
   STATUS="fail"
 fi
 
-# JSON via python so escaping is never a hand-rolled bug.
-python3 - "$OUT_JSON" "$STATUS" "$EXPECTED_ABI" "$EXPECTED_ELF" "$apk_sha256" "$apk_bytes" \
+# JSON via python so escaping is never a hand-rolled bug. No `expectedElf` field:
+# the ELF identity is the ABI's, and naming it twice is how the two came to be
+# able to disagree.
+python3 - "$OUT_JSON" "$STATUS" "$EXPECTED_ABI" "$apk_sha256" "$apk_bytes" \
   "${#present[@]}" "${errors[@]+"${errors[@]}"}" <<'PY'
 import json, sys
-out, status, abi, elf, sha, size, lib_count = sys.argv[1:8]
-errors = sys.argv[8:]
+out, status, abi, sha, size, lib_count = sys.argv[1:7]
+errors = sys.argv[7:]
 doc = {
     "status": status,
     "split": {
         "expectedAbi": abi,
-        "expectedElf": elf,
         "librariesVerified": int(lib_count),
         "sha256": sha,
         "bytes": int(size),
