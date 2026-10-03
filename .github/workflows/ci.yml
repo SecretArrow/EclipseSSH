@@ -234,7 +234,7 @@ jobs:
     name: Lint (release variant)
     needs: native
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out
@@ -325,7 +325,7 @@ jobs:
     name: Unit and integration tests
     needs: native
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Check out
@@ -478,7 +478,7 @@ jobs:
     name: APKs, AAB and signatures
     needs: native
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Check out
