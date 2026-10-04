@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 52 / versionName 1.18.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 53 / versionName 1.19.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §92, *Releasing 1.18.0*, which is the version this file's header names; §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §93, *Releasing 1.19.0*, which is the version this file's header names; §92, *Releasing 1.18.0*, is the release before it, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10783,3 +10783,77 @@ a signed artifact; the userspace end-to-end claims of §63, including the ones 1
 still need the x86_64 emulator leg or a phone. The gate that certifies the artifact — signature, version,
 per-ABI splits, each library's architecture and `extractNativeLibs` — establishes that the APK is correct,
 not that the userspace runs.
+
+---
+
+## 93. Releasing 1.19.0
+
+1.18.0 was an audit of everything that ends, frees or computes something. 1.19.0 is two reports from one
+screen, hours apart, about the same thing: the terminal would not scroll.
+
+The first was text sticking. Scrolling the terminal up or down left the previous screen's text behind, and
+the user's own diagnosis was the correct one — each row was cleared only where the new text would be
+written, so a row that had held a long line kept its tail. That is what the renderer did: `drawFrame` paints
+a rectangle only for a run whose style sets a background and glyphs only where there is text, and the erase
+that was supposed to cover the rest belonged to an ancestor two nodes above, on the far side of
+`clipToBounds()`, while `terminalLayout` drops trailing blanks as a matter of course — so a row is routinely
+drawn *shorter* than the last frame drew it. The node that draws the frame now erases the frame, and the
+layout memo is keyed on what `terminalLayout` actually reads rather than on a proxy for it.
+
+The second was the scroll losing to the output. One finger already scrolled the terminal, which is why the
+report arrived as a feature request three times: a user scrolls back precisely when something is printing,
+and that is when the scroll was thrown away. Two lost updates did it. A frame the collector built at the
+live bottom was published over a frame the user's scroll had just put on screen — a scroll does not advance
+the buffer's revision, so the ordering rule that compares revisions could not tell them apart — and
+`pinScrollback` applied the lines that had arrived below the window to an offset it had read *before* the
+user scrolled. The first is now dropped rather than reordered, because a frame built at an offset the user
+has left is a picture of a different screen and no ordering makes it the right one to draw; the second goes
+through `ConcurrentHashMap.compute`, so the growth is added to the offset that is there when the write
+happens.
+
+The cycle's own record — each finding, the evidence that confirmed it, the fix, the test that pins it, and
+the three things neither fix can claim in this environment — is the pass's report rather than a section here.
+What this section carries is the release.
+
+`git log v1.18.0..v1.19.0` is two merges, and both change the artifact a user installs. Nothing in this
+release is build machinery only: there is no tooling merge to list, which is the first time that has been
+true of a release in this file.
+
+| | pull request | what it changed |
+|---|---|---|
+| 1 | #217 | the terminal erases the grid in the draw that paints it, and the layout memo is keyed on the ten inputs `terminalLayout` reads instead of a proxy for them |
+| 2 | #218 | a frame built at a scroll offset the user has left is not published, and a growing scrollback holds the text the reader is on rather than the offset the collector read |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88, §90 and §92 set: **a patch number is honest when the
+artifact a user installs behaves as its predecessor's does.** Both of these fail that test where a user
+reaches without looking for them.
+
+- **The screen is cleaner after a scroll.** A row drawn shorter than it was is now erased by the code that
+  shortened it, so the previous screen's tail no longer mixes into the new one. This is visible on any
+  session with long lines in it — `ls -l`, `git log --stat` — and it is the reported symptom, not a
+  side effect of the repair.
+- **A scroll survives the output that keeps arriving.** Scrolling back while a program is printing now
+  holds the position instead of snapping to the live end, and the scrollback growth that used to be applied
+  to a stale offset no longer undoes the gesture.
+
+Neither is a rendering detail a user has to look for. Both are the behaviour of the terminal under the two
+things a user does most with it.
+
+### What this release does not claim
+
+No device has been involved in either fix, and for these two that is the whole of the verification story:
+**no test in this repository can see either failure.** There is no usable emulator on the build host, and
+`captureToImage` pixel readback is documented as not working here, so the erase is correct by construction
+and unproven on a screen; the publish race is a window between two threads that no test can promise to lose,
+so what is tested is the two pure rules it is decided by, not the interleaving. Both loops close the same
+way, on a phone, and the check is written down in the pass's report: long lines scrolled back and forward
+for the erase, and a scroll made **while output is still arriving** for the race. If the second still snaps
+to the bottom, the cause is the gesture path in `TerminalView` rather than the publish path, and that is the
+next lever.
+
+The gate that certifies the artifact — signature, version, per-ABI splits, each library's architecture and
+`extractNativeLibs` — establishes that the APK is correct, not that either behaviour is fixed. The leg that
+runs the instrumented suite against the **published** APK is what covers the app coming up at all, and a red
+leg there pulls the release back to draft rather than leaving it published.
