@@ -337,6 +337,61 @@ class TerminalLayoutTest {
         assertThat(terminalLayout(cellFrameOf(listOf(cells), cells.size), width = 4, maxRows = 24).contentColumns)
             .isEqualTo(4)
     }
+
+    // ---- the memo key ------------------------------------------------------------------------------
+
+    @Test
+    fun `every input the layout is a function of is in the key`() {
+        // The view memoizes [terminalLayout], and the key it memoizes on has to be the inputs and not a
+        // proxy for them: a key that is nearly right serves the layout of one frame for another one, and
+        // the new frame's lines are then drawn through the old frame's row geometry - rows that no longer
+        // hold that text still showing it. One case per field, so dropping one is a failing test.
+        val frame = frameOf(listOf("ready", "$ "), cursorRow = 1, cursorColumn = 2)
+        val key = layoutKey(frame, columns = 20, rows = 24)
+
+        assertThat(layoutKey(frame, columns = 20, rows = 24)).isEqualTo(key)
+        assertThat(layoutKey(frame, columns = 21, rows = 24)).isNotEqualTo(key) // the window widened
+        assertThat(layoutKey(frame, columns = 20, rows = 23)).isNotEqualTo(key) // the screen lost a row
+        assertThat(layoutKey(frame.copy(revision = 2), columns = 20, rows = 24)).isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(firstLine = 1), columns = 20, rows = 24)).isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(lines = frame.lines + listOf(listOf(TerminalCell('x')))), 20, 24))
+            .isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(cursorRow = 0), columns = 20, rows = 24)).isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(cursorColumn = 3), columns = 20, rows = 24)).isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(cursorVisible = false), columns = 20, rows = 24)).isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(alternateScreen = true), columns = 20, rows = 24)).isNotEqualTo(key)
+        assertThat(layoutKey(frame.copy(positionalScreen = true), columns = 20, rows = 24)).isNotEqualTo(key)
+    }
+
+    @Test
+    fun `the two screen flags are in the key because they change the layout`() {
+        // Not every field is a change worth memoizing on, and these two are the ones that are: the same
+        // frame and the same width, wrapped on the flowing screen and left over-wide on the painted one.
+        val prose = "hello world and some more words"
+        val flowing = frameOf(listOf(prose), cursorRow = 0, cursorColumn = 0)
+        val painted = frameOf(listOf(prose), cursorRow = 0, cursorColumn = 0, alternateScreen = true)
+
+        assertThat(layoutKey(flowing, columns = 8, rows = 24))
+            .isNotEqualTo(layoutKey(painted, columns = 8, rows = 24))
+        assertThat(terminalLayout(flowing, width = 8, maxRows = 24).rows.size)
+            .isGreaterThan(terminalLayout(painted, width = 8, maxRows = 24).rows.size)
+    }
+
+    @Test
+    fun `a scroll the window clamps away produces the same key, so the memo holds`() {
+        // The window is anchored on the cursor and fitted to the screen in wrapped rows, so the offset the
+        // view records is clamped by the buffer: a scroll that runs past the top describes the window it
+        // is already on, and the key of that window has to be the key it already had. Differing here would
+        // lay the frame out again on every gesture frame and redraw a screen that had not changed.
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 6)
+        buffer.feed((1..40).joinToString("\r\n") { "line $it" } + "\r\n")
+        val ceiling = buffer.maxScrollOffset(viewportRows = 6, windowColumns = 20)
+        val atTop = buffer.frame(scrollOffset = ceiling, viewportRows = 6, windowColumns = 20)
+        val past = buffer.frame(scrollOffset = ceiling + 5, viewportRows = 6, windowColumns = 20)
+
+        assertThat(past).isEqualTo(atTop)
+        assertThat(layoutKey(past, columns = 20, rows = 6)).isEqualTo(layoutKey(atTop, columns = 20, rows = 6))
+    }
 }
 
 private fun layoutOf(

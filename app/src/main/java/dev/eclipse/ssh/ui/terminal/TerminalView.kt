@@ -48,6 +48,7 @@ import dev.eclipse.ssh.terminal.TerminalCell
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalLayout
 import dev.eclipse.ssh.terminal.TerminalSelection
+import dev.eclipse.ssh.terminal.layoutKey
 import dev.eclipse.ssh.terminal.terminalLayout
 import dev.eclipse.ssh.terminal.TerminalColor
 import dev.eclipse.ssh.terminal.TerminalStyle
@@ -399,14 +400,13 @@ fun TerminalView(
         val pan = remember { mutableFloatStateOf(0f) }
         val visibleWidthPx = visible.columns * metrics.width
         // Where every row of this frame goes once lines too wide for the window have been wrapped at a
-        // word boundary. Keyed on what the answer depends on rather than on the frame, whose equality is
-        // a comparison of several thousand cells: the revision covers every mutation of the buffer and
-        // `firstLine` covers a scroll, which moves the window without mutating anything.
+        // word boundary. Keyed on everything the answer is made of - see [layoutKey] - rather than on the
+        // frame itself, whose equality is a comparison of several thousand cells.
         //
         // The height here is the *visible* one. A tall grid is a taller pty, not a taller screen, and the
         // frame the buffer hands over is already the window around the cursor - laying it out for a
         // thousand rows would wrap and bottom-anchor against space that is not on the phone.
-        val layout = remember(frame.revision, frame.firstLine, frame.lines.size, visible.columns, visible.rows) {
+        val layout = remember(layoutKey(frame, visible.columns, visible.rows)) {
             terminalLayout(frame, visible.columns, visible.rows)
         }
         // Read from the long-lived gesture handlers, which are keyed on the metrics and would otherwise
@@ -543,6 +543,20 @@ fun TerminalView(
                     )
                 }
                 .drawBehind {
+                    // Erased first, and erased here rather than by anything above: this is the node that
+                    // paints the frame, so it is the node that has to clear it.
+                    //
+                    // What it clears is the scope - the whole area the grid can reach - and it is drawn
+                    // *outside* the translate below on purpose, so a panned grid cannot leave the strip
+                    // it moved off uncovered. [drawFrame] paints a rectangle only where a cell's own style
+                    // sets a background, and glyphs only where there is text, so without this line every
+                    // other column and every row the fitted window leaves over at the bottom is left to
+                    // whatever the parent happened to paint - and a terminal that draws its rows shorter
+                    // than the last frame drew them (which is the common case: [terminalLayout] drops
+                    // trailing blanks) then keeps the tail of the longer line it replaced. "Something
+                    // above me is opaque" is not a contract this view can hold, and the one time it is
+                    // not honoured the artifact is invisible to every test in this repository.
+                    drawRect(background)
                     // Translated rather than drawn from the corner, so the half-cell that does not
                     // divide evenly is shared between the two edges - see [TerminalCellMetrics.gridIn].
                     // The pan is part of the same translate, which is why panning costs a redraw and
