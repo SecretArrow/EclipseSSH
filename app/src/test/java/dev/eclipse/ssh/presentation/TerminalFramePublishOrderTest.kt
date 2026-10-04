@@ -105,6 +105,12 @@ class TerminalFramePublishOrderTest {
  *
  * [heldOffset] is also where the ordering of the two steps lives - the growth is applied to the offset
  * that is there when the write happens, not to the one the collector read before feeding the buffer.
+ *
+ * Every assertion here names the object it expects by identity, and passes two *different* frames
+ * wherever the rule is a choice between them. A branch that cannot be told apart from its alternative
+ * is not covered by a test that passes either way, so `isSameInstanceAs` is doing the work - an assertion
+ * that would hold for `newerTerminalFrame(published, built)` and for `newerTerminalFrame(built, published)`
+ * alike proves nothing about the rule it is named after.
  */
 class TerminalScrollPinTest {
 
@@ -139,10 +145,74 @@ class TerminalScrollPinTest {
     fun `a scroll back to where the frame was built is published again`() {
         // The drop is not permanent: what makes a frame publishable is the offset being the current one,
         // so scrolling back to it publishes exactly as it did the first time.
+        //
+        // The two frames are deliberately different objects. An earlier version of this test passed one
+        // frame as both arguments, which cannot see which branch answered - it would have passed
+        // unchanged if `publishableFrame` returned `published` every time, and the offset check it is
+        // here to cover could have been deleted without a red test.
         buffer.feed((1..40).joinToString("\r\n") { "line $it" })
+        val live = buffer.frame(scrollOffset = 0)
         val scrolledBack = buffer.frame(scrollOffset = 12)
-        assertThat(publishableFrame(published = scrolledBack, built = scrolledBack, builtOffset = 12, currentOffset = 12))
-            .isSameInstanceAs(scrolledBack)
+        assertThat(scrolledBack).isNotSameInstanceAs(live)
+
+        val onScreen = publishableFrame(published = live, built = scrolledBack, builtOffset = 12, currentOffset = 12)
+        assertThat(onScreen).isSameInstanceAs(scrolledBack)
+        assertThat(onScreen).isNotSameInstanceAs(live)
+    }
+
+    @Test
+    fun `a frame built below a scrolled-back view is not published either`() {
+        // The mirror of the first test, and the direction the suite did not cover: the collector builds
+        // at the live end while the user is reading the scrollback, and the user is back at the live end
+        // before the write happens. A frame built back in the scrollback would land on top of output the
+        // user has already scrolled past, which is the same wrong screen seen from the other side.
+        buffer.feed((1..40).joinToString("\r\n") { "line $it" })
+        val live = buffer.frame(scrollOffset = 0)
+        val scrolledBack = buffer.frame(scrollOffset = 12)
+
+        assertThat(publishableFrame(published = live, built = scrolledBack, builtOffset = 12, currentOffset = 0))
+            .isNull()
+    }
+
+    @Test
+    fun `an out-of-order build is rejected even when the offset matches`() {
+        // The ordering rule, reached through the viewport check rather than around it. Class one covers
+        // `newerTerminalFrame` on its own; nothing exercised the two rules composed, so a rewrite that
+        // dropped the delegate would have gone unnoticed here.
+        buffer.feed("$ uname -a\r\n")
+        val older = buffer.frame(scrollOffset = 0)
+        buffer.feed("Linux eclipse 6.12.86\r\n")
+        val newer = buffer.frame(scrollOffset = 0)
+        assertThat(newer.revision).isGreaterThan(older.revision)
+
+        assertThat(publishableFrame(published = newer, built = older, builtOffset = 0, currentOffset = 0))
+            .isSameInstanceAs(newer)
+    }
+
+    @Test
+    fun `a newer build at the offset the user is on replaces the published frame`() {
+        buffer.feed("$ uname -a\r\n")
+        val older = buffer.frame(scrollOffset = 0)
+        buffer.feed("Linux eclipse 6.12.86\r\n")
+        val newer = buffer.frame(scrollOffset = 0)
+
+        assertThat(publishableFrame(published = older, built = newer, builtOffset = 0, currentOffset = 0))
+            .isSameInstanceAs(newer)
+    }
+
+    @Test
+    fun `a republished viewport at an equal revision wins over the one on screen`() {
+        // Equal revisions keep the incoming frame, and the incoming frame here is a *different object*:
+        // a rebuild of an unchanged buffer - a foreground republish, a resize, a scroll landing back on
+        // the live end. Same assertion as class one's, reached through the viewport check.
+        buffer.feed((1..40).joinToString("\r\n") { "line $it" })
+        val onScreen = buffer.frame(scrollOffset = 0)
+        val rebuilt = buffer.frame(scrollOffset = 0)
+        assertThat(rebuilt).isNotSameInstanceAs(onScreen)
+        assertThat(rebuilt.revision).isEqualTo(onScreen.revision)
+
+        assertThat(publishableFrame(published = onScreen, built = rebuilt, builtOffset = 0, currentOffset = 0))
+            .isSameInstanceAs(rebuilt)
     }
 
     @Test
@@ -162,8 +232,29 @@ class TerminalScrollPinTest {
     }
 
     @Test
+    fun `a negative offset is left to move as well`() {
+        // The guard reads `offset <= 0` and only the zero half was exercised. A negative offset is not
+        // reachable from the call site - every writer clamps to `maxScrollOffset` - but the guard is what
+        // says so, and a guard whose negative half is never run is a guard nobody has checked.
+        assertThat(heldOffset(current = -7, growth = 3, ceiling = 1000)).isNull()
+        assertThat(heldOffset(current = -7, growth = 0, ceiling = 1000)).isNull()
+    }
+
+    @Test
     fun `holding on past the top of the scrollback clamps to what exists`() {
         assertThat(heldOffset(current = 50, growth = 40, ceiling = 60)).isEqualTo(60)
+        // Landing exactly on the ceiling is the same branch as overshooting it, and it is the case that
+        // happens most: the offset grows by one line at a time and stops where the scrollback stops.
+        assertThat(heldOffset(current = 50, growth = 10, ceiling = 60)).isEqualTo(60)
+        assertThat(heldOffset(current = 50, growth = 10, ceiling = 1)).isEqualTo(1)
+    }
+
+    @Test
+    fun `an offset already past the ceiling is pulled back to it`() {
+        // The view is holding a position that no longer exists - the scrollback limit evicted lines from
+        // the top, or a resize shortened the buffer, between the read and the write. Holding still then
+        // means moving *down*, to the top of what is left, rather than sticking to a line that is gone.
+        assertThat(heldOffset(current = 80, growth = 5, ceiling = 60)).isEqualTo(60)
     }
 
     @Test
@@ -178,5 +269,15 @@ class TerminalScrollPinTest {
     fun `nothing appended below leaves the offset where the user put it`() {
         assertThat(heldOffset(current = 50, growth = 0, ceiling = 1000)).isEqualTo(50)
         assertThat(heldOffset(current = 50, growth = -4, ceiling = 1000)).isEqualTo(50)
+    }
+
+    @Test
+    fun `an add that wraps degrades to live rather than to a stuck screen`() {
+        // Stated rather than assumed. `offset + growth` is Int arithmetic and wraps, and no writer can
+        // reach a wrap: every one of them clamps to `AnsiTerminalBuffer.maxScrollOffset`, which is bounded
+        // by the scrollback limit. The interesting half is which way it fails if that ever stops being
+        // true - the wrapped value is negative, the clamp sends it to zero, and zero reads as "live", so
+        // the screen follows the output instead of sticking at an offset that does not exist.
+        assertThat(heldOffset(current = Int.MAX_VALUE - 1, growth = 8, ceiling = Int.MAX_VALUE)).isNull()
     }
 }
