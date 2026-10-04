@@ -95,3 +95,88 @@ class TerminalFramePublishOrderTest {
     private fun TerminalFrame.asDrawn(): String =
         lines.joinToString(separator = "\n") { row -> row.joinToString(separator = "") { it.value.toString() } }
 }
+
+/**
+ * The rule that keeps a scroll from being undone by a writer that read the offset before it happened.
+ *
+ * Same shape of bug as the one above and the same reason it cannot be reproduced on demand: the two
+ * writers run on different threads and the loser is decided by which one is preempted between reading
+ * and writing. Both rules are pure functions, so both are tested as functions.
+ *
+ * [heldOffset] is also where the ordering of the two steps lives - the growth is applied to the offset
+ * that is there when the write happens, not to the one the collector read before feeding the buffer.
+ */
+class TerminalScrollPinTest {
+
+    private val buffer = AnsiTerminalBuffer(columns = 40, rows = 8)
+
+    @Test
+    fun `a frame built at a scroll position the user has left is not published`() {
+        buffer.feed((1..40).joinToString("\r\n") { "line $it" })
+        val live = buffer.frame(scrollOffset = 0)
+        val scrolledBack = buffer.frame(scrollOffset = 12)
+        // Same revision: a scroll moves the window without mutating anything, which is why the frame
+        // on screen cannot be defended by revision alone.
+        assertThat(scrolledBack.revision).isEqualTo(live.revision)
+
+        // What the ordering rule alone does with the collector's frame - it wins, and the screen goes
+        // back to the bottom the user has just scrolled away from.
+        assertThat(newerTerminalFrame(published = scrolledBack, built = live)).isSameInstanceAs(live)
+        // What the viewport check does with it instead.
+        assertThat(publishableFrame(published = scrolledBack, built = live, builtOffset = 0, currentOffset = 12))
+            .isNull()
+    }
+
+    @Test
+    fun `a frame built at the offset the user is on is published`() {
+        buffer.feed("$ uname -a\r\n")
+        val frame = buffer.frame(scrollOffset = 0)
+        assertThat(publishableFrame(published = null, built = frame, builtOffset = 0, currentOffset = 0))
+            .isSameInstanceAs(frame)
+    }
+
+    @Test
+    fun `a scroll back to where the frame was built is published again`() {
+        // The drop is not permanent: what makes a frame publishable is the offset being the current one,
+        // so scrolling back to it publishes exactly as it did the first time.
+        buffer.feed((1..40).joinToString("\r\n") { "line $it" })
+        val scrolledBack = buffer.frame(scrollOffset = 12)
+        assertThat(publishableFrame(published = scrolledBack, built = scrolledBack, builtOffset = 12, currentOffset = 12))
+            .isSameInstanceAs(scrolledBack)
+    }
+
+    @Test
+    fun `pinning adds the growth to the offset the view is on now`() {
+        // The user scrolled to 80 while the collector had 50 in hand. Adding the growth to the stale
+        // reading is the write that snaps the view back; adding it to the current one holds the text
+        // the user is reading exactly where it is.
+        assertThat(heldOffset(current = 50, growth = 3, ceiling = 1000)).isEqualTo(53)
+        assertThat(heldOffset(current = 80, growth = 3, ceiling = 1000)).isEqualTo(83)
+    }
+
+    @Test
+    fun `a view that is live is left to move`() {
+        // Both spellings of "following the output": the entry is absent, or it holds zero.
+        assertThat(heldOffset(current = null, growth = 3, ceiling = 1000)).isNull()
+        assertThat(heldOffset(current = 0, growth = 3, ceiling = 1000)).isNull()
+    }
+
+    @Test
+    fun `holding on past the top of the scrollback clamps to what exists`() {
+        assertThat(heldOffset(current = 50, growth = 40, ceiling = 60)).isEqualTo(60)
+    }
+
+    @Test
+    fun `a clamp to nothing reports no entry rather than a zero`() {
+        // The scrollback shrank under the view - the limit evicting lines from the top, or a resize -
+        // to the point where there is nothing above the live end to hold. A stored zero would read as
+        // "live" at every place the map is read, so removing it keeps the entries meaning one thing.
+        assertThat(heldOffset(current = 2, growth = 5, ceiling = 0)).isNull()
+    }
+
+    @Test
+    fun `nothing appended below leaves the offset where the user put it`() {
+        assertThat(heldOffset(current = 50, growth = 0, ceiling = 1000)).isEqualTo(50)
+        assertThat(heldOffset(current = 50, growth = -4, ceiling = 1000)).isEqualTo(50)
+    }
+}

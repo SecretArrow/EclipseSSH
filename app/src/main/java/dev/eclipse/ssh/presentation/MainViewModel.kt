@@ -2503,14 +2503,20 @@ class MainViewModel @Inject constructor(
      * line that no longer exists.
      *
      * A view that is already live is left alone - it is *supposed* to move.
+     *
+     * Applied as a compare-and-set rather than a read, an add and a write, because this runs on the
+     * collector's thread while the user's finger sets the same entry from the main thread. The three
+     * steps lose that race in the worst way available: the user scrolls to 80, the collector - holding
+     * the 50 it read a moment ago - writes 50 + growth, and the view jumps to a position the user has
+     * already left. It is also the direction the bug is felt in, since a user scrolls back precisely
+     * when output is arriving: "the terminal will not scroll while something is printing" is this
+     * write. [heldOffset] adds the growth to whatever the offset is *now*.
      */
     private fun pinScrollback(sessionKey: String, buffer: AnsiTerminalBuffer, anchorBefore: Int) {
-        val offset = scrollOffsets[sessionKey] ?: return
-        if (offset <= 0) return
         val growth = buffer.cursorLine - anchorBefore
         if (growth <= 0) return
         val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
-        scrollOffsets[sessionKey] = (offset + growth).coerceIn(0, ceiling)
+        scrollOffsets.compute(sessionKey) { _, current -> heldOffset(current, growth, ceiling) }
     }
 
     /**
@@ -2532,18 +2538,28 @@ class MainViewModel @Inject constructor(
     private fun publishTerminalFrame(sessionKey: String, buffer: AnsiTerminalBuffer) {
         if (!isDisplaying(sessionKey, buffer)) return
         if (terminalFrames.subscriptionCount.value == 0) return
+        val offset = scrollOffsets[sessionKey] ?: 0
         val frame = buffer.frame(
-            scrollOffsets[sessionKey] ?: 0,
+            offset,
             visibleRowsOf(sessionKey, buffer),
             visibleColumnsOf(sessionKey),
         )
         // Asked a second time, from inside the update: the check above only decides whether the frame
         // is worth building. See [isDisplaying] for why the write is where the question has to be
-        // settled. [newerTerminalFrame] settles the other question the write has to answer: whether
-        // this frame is still the newest one anybody built.
+        // settled. [publishableFrame] settles the other two questions the write has to answer: whether
+        // this frame is still a description of the screen the user is looking at, and, if it is,
+        // whether it is the newest one anybody built.
         terminalFrames.update { current ->
             if (!isDisplaying(sessionKey, buffer)) current
-            else current + (sessionKey to newerTerminalFrame(current[sessionKey], frame))
+            else {
+                val publishable = publishableFrame(
+                    published = current[sessionKey],
+                    built = frame,
+                    builtOffset = offset,
+                    currentOffset = scrollOffsets[sessionKey] ?: 0,
+                )
+                if (publishable == null) current else current + (sessionKey to publishable)
+            }
         }
     }
 
@@ -5566,10 +5582,69 @@ internal const val NEVER_RAN_MS = 3_000L
  * the buffer and the frame together, so a later session's revision 0 is never compared against an
  * earlier session's revisions. Equal revisions keep the incoming frame, because a rebuild of an unchanged buffer is
  * a new *viewport* of it - a scroll, a resize, a foreground republish - and those are built on the
- * main thread in the order they were asked for.
+ * main thread in the order they were asked for. The collector rebuilds viewports too, on a background
+ * dispatcher, and that is the one case this rule gets wrong; [publishableFrame] is what catches it.
  */
 internal fun newerTerminalFrame(published: TerminalFrame?, built: TerminalFrame): TerminalFrame =
     if (published != null && published.revision > built.revision) published else built
+
+/**
+ * The frame to put on screen for a session, or `null` when [built] must not be published at all.
+ *
+ * [newerTerminalFrame] answers *which of two frames* wins. This answers the question in front of it:
+ * whether the frame is still a description of the screen the user is looking at.
+ *
+ * A frame is built at a scroll offset and published a moment later, and building one is the expensive
+ * half - [AnsiTerminalBuffer.frame] allocates a fresh list per row plus a list per row's cells, up to
+ * thirty times a second. Scrolling does not advance [AnsiTerminalBuffer.revision] either, so a frame
+ * the collector built at the live bottom while the user was scrolling away carries *the same revision*
+ * as the frame the scroll published - and "equal revisions keep the incoming frame" then hands the
+ * screen back to the collector's older viewport. The user scrolls up, and the view jumps back down to
+ * the live output. Neither writer is doing anything wrong, and the race is not rare: it is won or lost
+ * inside the window between reading the offset and writing the frame, and the user scrolls back
+ * precisely when output is arriving, which is when the collector is publishing at full rate.
+ *
+ * So the answer is not to reorder the two frames - a frame built at an offset the user has left is not
+ * an out-of-order picture of the current screen, it is a picture of a *different* screen, and no
+ * ordering makes it the right one to draw. It is dropped, and the next collector tick builds the right
+ * one. Nothing is lost by dropping it: the scroll that superseded it has already published a frame of
+ * its own, and when the user scrolls back to where the collector's frame was built, that offset is the
+ * current one again and the frame is published like any other.
+ */
+internal fun publishableFrame(
+    published: TerminalFrame?,
+    built: TerminalFrame,
+    builtOffset: Int,
+    currentOffset: Int,
+): TerminalFrame? =
+    if (builtOffset != currentOffset) null else newerTerminalFrame(published, built)
+
+/**
+ * Where a scrolled-back view has to move to stay on the same text after [growth] lines arrived below it.
+ *
+ * `null` means "no entry for this session": the view is live, or was never scrolled back, and a live
+ * view is *supposed* to move. An offset of zero is the same statement spelled differently - see
+ * [scrollTerminal], which removes the entry rather than storing one - and is treated the same way.
+ *
+ * The growth is added to [current] and not to an offset the caller read earlier, because the caller read
+ * it before the buffer was fed and the user may have scrolled in between. Applying it to the stale value
+ * is a write that undoes that scroll. Adding it to the current one is right in both orders: lines
+ * appended below the window push the text up, so a view holding still has to move up by exactly that
+ * many lines from wherever the user has since put it.
+ *
+ * Clamped by the ceiling the caller measured, because a frame of the buffer can be shorter than the
+ * offset once the scrollback limit starts evicting lines from the top. A clamp that lands on zero is
+ * reported the same way as a view that was never scrolled: there is nothing above the live end to hold,
+ * and an entry holding zero is only ever read as "absent" anyway - see [scrollTerminal], which removes
+ * the entry for that value rather than storing it.
+ */
+internal fun heldOffset(current: Int?, growth: Int, ceiling: Int): Int? {
+    val offset = current ?: return null
+    if (offset <= 0) return null
+    if (growth <= 0) return offset
+    val held = (offset + growth).coerceIn(0, ceiling)
+    return if (held <= 0) null else held
+}
 
 /**
  * Whether the far end explicitly disconnected a session that had only just come up, in which case the
