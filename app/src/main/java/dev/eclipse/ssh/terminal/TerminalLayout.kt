@@ -142,6 +142,64 @@ internal fun wrapsForDisplay(alternateScreen: Boolean, positionalScreen: Boolean
     width > 0 && !alternateScreen && !positionalScreen
 
 /**
+ * Everything [terminalLayout]'s answer is a function of, as one value a caller can memoize on.
+ *
+ * Written down because the view memoizes the layout and the memo's key used to be a *proxy* for this
+ * list: the revision, the window's first line, the window's height and the two screen dimensions. That
+ * key was correct for as long as every mutation in [AnsiTerminalBuffer] advanced [TerminalFrame.revision]
+ * - a discipline `TerminalCursorRepaintTest` exists to enforce, and which was written for the left-arrow
+ * bug whose cause was exactly a frame drawn from a layout memoized on a revision that had not moved. A
+ * key that is *nearly* the dependency set is a bug waiting for the one mutation that forgets, and the
+ * bug it produces is worse than a stale pixel: the new frame's lines are drawn through the previous
+ * frame's row geometry, so rows that no longer hold that text still show it.
+ *
+ * So the inputs are named rather than inferred, in the one place that also owns the layout:
+ *
+ * - [revision], because the lines themselves are the layout's input and the buffer's revision is their
+ *   identity - [AnsiTerminalBuffer.frame] copies the window out, and two windows of one revision hold
+ *   the same cells;
+ * - [firstLine] and [lines], because which window it is and how tall it is are not in the revision: a
+ *   scroll moves the window without mutating anything;
+ * - [alternateScreen] and [positionalScreen], because [wrapsForDisplay] turns wrapping on and off and
+ *   neither flag is a property of the text;
+ * - [cursorRow], [cursorColumn] and [cursorVisible], because the cursor's cell is laid out whether or
+ *   not anything is in it ([paintedExtent]) and it decides which row the layout reports the cursor on;
+ * - [columns] and [rows], the two numbers the caller passes.
+ *
+ * One case per field is asserted in `TerminalLayoutTest.every input the layout is a function of is in the
+ * key`, so dropping one of these from the list is a failing test rather than a screen. A new input added
+ * to the layout has to be added here by hand, and that is the thing to check whenever [terminalLayout]
+ * grows.
+ */
+internal data class TerminalLayoutKey(
+    val revision: Long,
+    val firstLine: Int,
+    val lines: Int,
+    val columns: Int,
+    val rows: Int,
+    val alternateScreen: Boolean,
+    val positionalScreen: Boolean,
+    val cursorRow: Int,
+    val cursorColumn: Int,
+    val cursorVisible: Boolean,
+)
+
+/** The [TerminalLayoutKey] of [frame] laid out for a window [columns] wide and [rows] tall. */
+internal fun layoutKey(frame: TerminalFrame, columns: Int, rows: Int): TerminalLayoutKey =
+    TerminalLayoutKey(
+        revision = frame.revision,
+        firstLine = frame.firstLine,
+        lines = frame.lines.size,
+        columns = columns,
+        rows = rows,
+        alternateScreen = frame.alternateScreen,
+        positionalScreen = frame.positionalScreen,
+        cursorRow = frame.cursorRow,
+        cursorColumn = frame.cursorColumn,
+        cursorVisible = frame.cursorVisible,
+    )
+
+/**
  * How many rows [line]'s columns `[0, extent)` occupy in a window [width] columns wide.
  *
  * Walks [wrapBreak] exactly as [terminalLayout] does, and that is the whole point of it existing as a
