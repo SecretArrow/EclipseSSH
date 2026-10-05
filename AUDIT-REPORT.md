@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 53 / versionName 1.19.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 54 / versionName 1.20.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §93, *Releasing 1.19.0*, which is the version this file's header names; §92, *Releasing 1.18.0*, is the release before it, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §94, *Releasing 1.20.0*, which is the version this file's header names; §93, *Releasing 1.19.0*, is the release before it, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10857,3 +10857,65 @@ The gate that certifies the artifact — signature, version, per-ABI splits, eac
 `extractNativeLibs` — establishes that the APK is correct, not that either behaviour is fixed. The leg that
 runs the instrumented suite against the **published** APK is what covers the app coming up at all, and a red
 leg there pulls the release back to draft rather than leaving it published.
+
+## 94. Releasing 1.20.0
+
+1.19.0 was the terminal — two reports from one screen about a scroll that would not hold. 1.20.0 is the
+other thing a user sees, before the app is open: the launcher icon.
+
+The mark had been periwinkle blue since it was drawn — a `#7C9CFF` crescent around an occluding disc, with a
+`#B9CBFF` glint dot floating in the hollow. It is gold now. `#FDD573` on both paths first, and then, because
+that flattened the mark (the dot had been a lighter tint than the crescent and so lost the role it was
+playing), the glint took a cream of its own, `#FFE9B8`. One file, one attribute per change; the `pathData`
+is untouched, so the shape is byte-for-byte what it was. The background stays `#0B0D14`, which raises the
+mark's contrast against it rather than lowering it — 7.4:1 to 13.8:1 for the crescent, 12.1:1 to 16.3:1 for
+the dot.
+
+Everything that draws the mark points at that one drawable, so all of it followed without a second edit: the
+adaptive icon's `<foreground>`, its `<monochrome>` layer (themed icons, which the system tints from the
+alpha channel alone and so ignores the colour entirely), `ic_launcher_round`, and the splash screen's
+animated icon on a cold start. `minSdk` is 28, so no device that can install this app lacks
+`<adaptive-icon>`, and no raster fallback is owed.
+
+`git log v1.19.0..v1.20.0` is three merges, two of which a user sees.
+
+| | pull request | what it changed |
+|---|---|---|
+| 1 | #220 | branch coverage for the scroll-pin rules 1.19.0 shipped — tests only, no artifact change |
+| 2 | #221 | the crescent and the glint both become `#FDD573` |
+| 3 | #222 | the glint takes `#FFE9B8`, restoring the two-tone hierarchy in gold |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88, §90, §92 and §93 set: **a patch number is honest when
+the artifact a user installs behaves as its predecessor's does.** This one fails that test on the first
+screen a user sees.
+
+The launcher icon is not a detail anyone has to look for. It is the app's identity on the home screen in
+whatever shape the launcher masks to, in the app drawer, in the recents card, and on the splash screen at
+every cold start — and it has changed colour. An installed 1.20.0 sits beside an installed 1.19.0 and does
+not look like the same app. That is what needs a minor number.
+
+The test-only merge is the counter-example, and is why the rule is about the artifact rather than the diff:
+#220 changes nothing a user can observe, so on its own it would have been a patch.
+
+### What this release does not claim
+
+**Nobody has seen the new icon on a device.** The mark is a vector drawable, so no test in this repository
+can assert its colour. What was checked is the compiled artifact rather than the source: the APK's
+`res/Qr.xml` is Android binary XML, and its two `<path>` elements carry `0xFFFDD573` and `0xFFFFE9B8`
+respectively — read by a parser that finds the mark by its `pathData` instead of its obfuscated resource
+name, and that was validated against the previous release before being trusted with this one. That
+establishes the colour is in the shipped bytes and on the right path. It does not establish that it looks
+right, and cannot: the contrast arithmetic above says the mark is legible, not that two golds read the way
+the asker meant on a launcher. The check that closes it is a phone.
+
+The in-app accent is deliberately still periwinkle — the Compose palette in `ui/EclipseTheme.kt`, the nine
+terminal themes, the ANSI palette and the per-host swatches were all left alone. A gold icon over a
+blue-accented app is a visible mismatch, and it is a separate change with its own contrast work rather than
+an oversight.
+
+The gate that certifies the artifact — signature, version, per-ABI splits, each library's architecture and
+`extractNativeLibs` — establishes that the APK is correct, not that the icon is. The leg that runs the
+instrumented suite against the **published** APK is what covers the app coming up at all, and a red leg
+there pulls the release back to draft rather than leaving it published.
