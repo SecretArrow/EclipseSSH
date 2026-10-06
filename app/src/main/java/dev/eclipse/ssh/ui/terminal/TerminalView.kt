@@ -2,7 +2,7 @@ package dev.eclipse.ssh.ui.terminal
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.rememberSplineBasedDecay
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -544,9 +544,14 @@ fun TerminalView(
         // with its own scrolling, so a decaying burst of them after the finger lifts would overshoot
         // whatever the program was going to do; and on the alternate screen there is nothing behind the
         // screen to fling through, which is why the room is zero there anyway.
-        val decay = rememberSplineBasedDecay<Float>()
-        val fling = remember(decay) {
-            TerminalFlingBehavior(decay) { velocity ->
+        //
+        // `exponentialDecay` and not `rememberSplineBasedDecay`: Compose 1.12 no longer publishes the
+        // spline spec, or its density-aware ancestor, at all - the platform's own fling keeps it private
+        // to foundation. What matters here is the unit, not the curve - the decay runs in the same
+        // pixels the drag does, so a flick carries on at the rate the finger left it whatever the line
+        // heights are - and `exponentialDecay` is the one public spec that answers in those units.
+        val fling = remember {
+            TerminalFlingBehavior(exponentialDecay<Float>()) { velocity ->
                 val flings = dragTarget(
                     currentFrame.mouseMode,
                     currentFrame.mouseSgr,
