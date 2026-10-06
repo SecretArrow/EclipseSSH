@@ -54,6 +54,20 @@ class TerminalLayout(
     val cursorRow: Int,
     /** The cursor's column *within* its row, which is not its column within the line once wrapped. */
     val cursorColumn: Int,
+    /**
+     * The rows just above the window, and just below it, laid out by the same wrapping rule.
+     *
+     * They are the rows a sub-row drag reveals: the buffer hands over exactly the lines the next step in
+     * each direction would add, so a screen that translates by less than a step has real text to slide
+     * into the strip it opens rather than background. Their `line` indexes [TerminalFrame.marginAbove]
+     * and [TerminalFrame.marginBelow] respectively, not [TerminalFrame.lines].
+     *
+     * Kept out of [rows] on purpose. [rows] is the window, and the window is what the whole rest of the
+     * view - the cursor, the pan extent, selection, and every test that asserts on the image - reads it
+     * as. At rest these rows sit outside the screen: above the top edge and past the bottom one.
+     */
+    val marginAbove: List<TerminalVisualRow> = emptyList(),
+    val marginBelow: List<TerminalVisualRow> = emptyList(),
 ) {
     companion object {
         val EMPTY = TerminalLayout(rows = emptyList(), contentColumns = 0, cursorRow = -1, cursorColumn = 0)
@@ -86,20 +100,7 @@ class TerminalLayout(
 fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayout {
     if (frame.lines.isEmpty() || maxRows <= 0) return TerminalLayout.EMPTY
     val wrap = wrapsForDisplay(frame.alternateScreen, frame.positionalScreen, width)
-    val rows = ArrayList<TerminalVisualRow>(frame.lines.size)
-    frame.lines.forEachIndexed { index, line ->
-        val extent = paintedExtent(frame, index, line)
-        if (!wrap || extent <= width) {
-            rows += TerminalVisualRow(index, 0, extent)
-        } else {
-            var start = 0
-            while (start < extent) {
-                val end = wrapBreak(line, start, extent, width)
-                rows += TerminalVisualRow(index, start, end)
-                start = end
-            }
-        }
-    }
+    val rows = visualRowsOf(frame.lines, wrap, width) { index, line -> paintedExtent(frame, index, line) }
     val shown = fittedRows(rows, frame, maxRows)
     var cursorRow = -1
     var cursorColumn = 0
@@ -123,7 +124,43 @@ fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayo
         contentColumns = content,
         cursorRow = cursorRow,
         cursorColumn = cursorColumn,
+        // Not fitted: they are off the screen at rest by construction, so there is no budget to cut them
+        // to - and cutting them would take away the rows the next step is about to reveal.
+        marginAbove = visualRowsOf(frame.marginAbove, wrap, width) { _, line -> terminalPaintedWidth(line) },
+        marginBelow = visualRowsOf(frame.marginBelow, wrap, width) { _, line -> terminalPaintedWidth(line) },
     )
+}
+
+/**
+ * [lines] as drawable rows, wrapping each to [width] with [wrapBreak] when [wrap] is on.
+ *
+ * The one implementation of the wrapping rule, shared by the window and the margins so the two cannot
+ * disagree about where a line breaks. [extentOf] is the only difference between them: the window's
+ * extent includes the cursor's own cell - a cell being typed into is blank until the character lands -
+ * and a margin has no cursor in it.
+ */
+private inline fun visualRowsOf(
+    lines: List<List<TerminalCell>>,
+    wrap: Boolean,
+    width: Int,
+    extentOf: (Int, List<TerminalCell>) -> Int,
+): List<TerminalVisualRow> {
+    if (lines.isEmpty()) return emptyList()
+    val rows = ArrayList<TerminalVisualRow>(lines.size)
+    lines.forEachIndexed { index, line ->
+        val extent = extentOf(index, line)
+        if (!wrap || extent <= width) {
+            rows += TerminalVisualRow(index, 0, extent)
+        } else {
+            var start = 0
+            while (start < extent) {
+                val end = wrapBreak(line, start, extent, width)
+                rows += TerminalVisualRow(index, start, end)
+                start = end
+            }
+        }
+    }
+    return rows
 }
 
 /**

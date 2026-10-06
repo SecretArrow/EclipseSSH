@@ -3,6 +3,7 @@ package dev.eclipse.ssh.ui.terminal
 import dev.eclipse.ssh.terminal.MouseMode
 import dev.eclipse.ssh.terminal.TerminalVisualRow
 import kotlin.math.abs
+import kotlin.math.floor
 
 /**
  * Turns finger travel into whole-line scroll steps.
@@ -29,27 +30,127 @@ class ScrollAccumulator {
     val pendingPx: Float get() = pending
 
     /**
+     * Drops the travel held for a step. For when the offset moves for a reason that is not this
+     * accumulator's own - a page key, a badge jump, a re-clamp on resize: the pixels were measured
+     * against a picture that is no longer on screen.
+     */
+    fun reset() {
+        pending = 0f
+    }
+
+    /**
      * Adds [deltaPx] of travel and returns the whole steps to take, positive meaning further back
      * into the history. Zero when the travel does not yet add up to a step.
      *
-     * [stepPx] is the rendered height of the line the next step would move past. A value that cannot
-     * price a step (zero, negative, or not a number) yields 0 and leaves the remainder alone rather
-     * than dividing by it.
+     * Two prices, not one, because the window's top edge does not move the same distance in both
+     * directions: at the live end a step back hands the prompt's row to the background while the top
+     * stays pinned, and a step forward from there moves it again. Pricing both with one number is what
+     * makes the screen translate and then snap back on the first drag of a session.
+     *
+     * A price that cannot price a step (zero, negative, or not a number) yields 0 for that direction and
+     * **keeps the travel**: the step is free, so the finger's pixels belong to the step after it rather
+     * than being discarded. The remainder survives the direction flip for the same reason.
      */
-    fun dragBy(deltaPx: Float, stepPx: Float): Int {
+    fun dragBy(deltaPx: Float, backStepPx: Float, forwardStepPx: Float): Int {
         if (!deltaPx.isFinite()) return 0
-        if (!stepPx.isFinite() || stepPx <= 0f) return 0
         pending += deltaPx
         if (!pending.isFinite()) {
             pending = 0f
             return 0
         }
+        val stepPx = if (pending >= 0f) backStepPx else forwardStepPx
+        if (!stepPx.isFinite() || stepPx <= 0f) return 0
         // Truncation toward zero is the whole-step count in the direction of travel; the leftover is
         // exact because it is the same subtraction the division undid.
         val steps = (pending / stepPx).toInt()
         pending -= steps * stepPx
         return steps
     }
+}
+
+/**
+ * The step a drag takes when the step in that direction costs nothing, or 0 when there is none.
+ *
+ * The fit's walk stalls wherever the line heights do not divide the budget evenly - a line taller than
+ * the whole window, or a budget left half spent. There the window one offset further along begins on the
+ * same buffer line as this one: the top of the screen does not move, so there is no distance to charge
+ * and no strip to slide text into. But it is a different window all the same, and a drag that took no
+ * step there would never take one at all, because the price in that direction stays zero for as long as
+ * the offset does. So the step is free, and the travel stays for the step that does move something.
+ *
+ * [offset] is where the view *believes* the buffer is rather than what the frame on screen says, because
+ * frames arrive one publication behind the gesture; [ceiling] is the end of the history. Either end is a
+ * hard stop.
+ */
+fun freeStep(pendingPx: Float, backStepPx: Float, forwardStepPx: Float, offset: Int, ceiling: Int): Int {
+    if (!pendingPx.isFinite() || pendingPx == 0f) return 0
+    val limit = ceiling.coerceAtLeast(0)
+    val at = offset.coerceIn(0, limit)
+    val backFree = backStepPx.isFinite() && backStepPx <= 0f
+    val forwardFree = forwardStepPx.isFinite() && forwardStepPx <= 0f
+    return when {
+        pendingPx > 0f && backFree && at < limit -> 1
+        pendingPx < 0f && forwardFree && at > 0 -> -1
+        else -> 0
+    }
+}
+
+/**
+ * How far a fling can still travel, in pixels: the steps left in that direction, priced at what one
+ * costs there.
+ *
+ * A step that costs nothing - the same stalled walk [freeStep] covers - is priced at one cell rather
+ * than at zero. Zero would be the fling's "nowhere to go" and the flick would die on the spot, while the
+ * step it stands on is free and the ones after it are not. One cell is the cheapest a priced step can
+ * be, so a stall prices the fling short rather than long: the decay ends a little early instead of
+ * running on over a screen that has stopped moving.
+ */
+fun flingRoomPx(stepsLeft: Int, stepPx: Float, cellPx: Float): Float {
+    if (stepsLeft <= 0) return 0f
+    val price = if (stepPx.isFinite() && stepPx > 0f) stepPx else cellPx
+    if (!price.isFinite() || price <= 0f) return 0f
+    return stepsLeft * price
+}
+
+/**
+ * How far the window is drawn from where it rests, in pixels, positive meaning the content has moved
+ * down and the reader has gone back into the history.
+ *
+ * The travel the accumulator has not spent yet, clamped to what the frame's margins can actually
+ * reveal: past that there is nothing to draw in the strip the shift opens, and a shift wider than the
+ * margin would show the background at the top or bottom edge for the whole of a step.
+ */
+fun scrollShiftPx(pendingPx: Float, backStepPx: Float, forwardStepPx: Float): Float {
+    if (!pendingPx.isFinite()) return 0f
+    val back = if (backStepPx.isFinite() && backStepPx > 0f) backStepPx else 0f
+    val forward = if (forwardStepPx.isFinite() && forwardStepPx > 0f) forwardStepPx else 0f
+    return pendingPx.coerceIn(-forward, back)
+}
+
+/**
+ * The row of [TerminalLayout.rows] a touch at [y] landed on, or -1 when there is nothing to land on.
+ *
+ * [shiftPx] is subtracted because the row under the finger is the row as *drawn*: while a drag is in
+ * flight the whole strip is displaced, and a mapping that ignored it would select the row above the one
+ * the finger is on for the whole of the gesture. [marginAbove] is then taken off, because the rows above
+ * the window are not rows of it.
+ *
+ * Clamped to the window rather than answered with the margin row's own coordinates: a touch that lands
+ * on a margin row - which it can only do mid-drag, when one is partly on screen - belongs to the text
+ * nearest the finger, and the alternative is a selection on a buffer line the layout was never given.
+ */
+fun touchedRow(
+    y: Float,
+    originY: Float,
+    cellHeight: Float,
+    shiftPx: Float,
+    marginAbove: Int,
+    rows: Int,
+): Int {
+    if (rows <= 0) return -1
+    if (!cellHeight.isFinite() || cellHeight <= 0f) return 0
+    val drawn = floor(((y - originY - shiftPx) / cellHeight).toDouble()).toInt()
+    return (drawn - marginAbove).coerceIn(0, rows - 1)
 }
 
 /**
