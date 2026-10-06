@@ -188,6 +188,27 @@ data class TerminalFrame(
     val applicationKeypad: Boolean = false,
     /** `ESC [ ? 2004 h`. A paste is bracketed when the remote asked for it, and never otherwise. */
     val bracketedPaste: Boolean = false,
+    /**
+     * How far this window is scrolled back into the history, and how far it can go, both in buffer
+     * lines.
+     *
+     * The view needs both to know when a fling has run out of scrollback: the ceiling is the buffer's
+     * answer, not the view's, because it depends on how many rows the window fits at the current width
+     * - see [windowCeiling]. Carried on the frame so a gesture reads it from the same value it draws,
+     * rather than asking the view model mid-gesture and racing the frames already in flight.
+     */
+    val scrollOffset: Int = 0,
+    val scrollCeiling: Int = 0,
+    /**
+     * The mouse tracking the remote program has turned on, and whether it wants SGR reports.
+     *
+     * The gesture branches on these in the middle of a drag: with tracking on, a vertical drag is the
+     * wheel the program is waiting for rather than a scroll of the local history. Deliberately not
+     * part of the layout key - they change nothing about where the rows go, and listing them there
+     * would rebuild every layout each time a program toggled its mouse mode.
+     */
+    val mouseMode: MouseMode = MouseMode.OFF,
+    val mouseSgr: Boolean = false,
 ) {
     companion object {
         val EMPTY = TerminalFrame(
@@ -301,6 +322,13 @@ class AnsiTerminalBuffer(
     private var applicationCursorKeys = false
     private var applicationKeypad = false
     private var bracketedPaste = false
+
+    /**
+     * The DECSET mouse modes currently on, as the mode numbers themselves rather than as a decoded
+     * enum: a program turns tracking on and SGR separately, and often in either order, so what has to
+     * be remembered is the set it asked for. [MouseModes] is what decodes it.
+     */
+    private var mouseModes: Set<Int> = emptySet()
     private var title: String? = null
 
     /** DEC special graphics selected into G0/G1, and which of the two SI/SO has shifted in. */
@@ -485,7 +513,7 @@ class AnsiTerminalBuffer(
             // pulling the window up past the first line the terminal ever wrote.
             (cursorRow + 1).coerceIn(budget, lines.size)
         }
-        val offset = scrollOffset.coerceIn(0, windowCeiling(anchor, budget, fitWidth))
+        val offset = scrollOffset.coerceIn(0, scrollCeiling(anchor, budget, fitWidth))
         var end = anchor - offset
         var first = if (fitWidth > 0) fittedStart(end, budget, fitWidth) else end - budget
         if (first <= 0) {
@@ -524,6 +552,10 @@ class AnsiTerminalBuffer(
             applicationCursorKeys = applicationCursorKeys,
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
+            scrollOffset = offset,
+            scrollCeiling = scrollCeiling(anchor, budget, fitWidth),
+            mouseMode = MouseModes.modeOf(mouseModes),
+            mouseSgr = MouseModes.sgrOf(mouseModes),
         )
     }
 
@@ -574,6 +606,42 @@ class AnsiTerminalBuffer(
      */
     private fun windowCeiling(anchor: Int, budget: Int, width: Int): Int =
         if (width > 0) (anchor - fittedEnd(0, budget, width)).coerceAtLeast(0) else anchor - budget
+
+    /**
+     * Whether these lines belong to a program rather than to the shell's scrollback.
+     *
+     * True on the alternate screen and on the primary screen under cursor addressing - `vim`, `less`,
+     * `htop` and `top`. A program that has taken the screen has already decided what is on every row,
+     * so Page Up belongs to it rather than to the history, and a drag belongs to whatever mouse
+     * reporting it turned on.
+     */
+    val programOwnsScreen: Boolean
+        @Synchronized get() = primary != null || positionalScreen
+
+    /**
+     * How far this window can be scrolled back: [windowCeiling], or nothing at all on the alternate
+     * screen.
+     *
+     * The alternate screen has no history at all. It is a fresh list the program paints over for as
+     * long as it is up, so scrolling it shows stale frames of the program's own drawing, misaligned
+     * with the cursor it keeps positioning, and there is no way back to the live bottom except by
+     * scrolling the same distance down again. It is not a view the reader asked for and not one they
+     * can navigate, so the ceiling is zero and a drag there does nothing - which is also what leaves
+     * the gesture free for the wheel reports and arrow keys such a program does understand.
+     *
+     * A program addressing the *primary* screen - `top`, and the full-screen CLI tools that only
+     * repaint their own bottom rows - keeps its ceiling, because the lines it leaves behind are the
+     * session's real output and the reader reaches them the same way they reach anything else. What
+     * makes that bearable is [programOwnsScreen] being asked separately: the keys and the gesture are
+     * routed by *that*, so a scrollback that still exists does not hand Page Up back to the terminal.
+     *
+     * Both the frame and [maxScrollOffset] come through here, which is the point - the two used to
+     * share [windowCeiling] alone, and a frame that had stopped scrolling while the view model still
+     * believed there were thirty rows of scrollback would be a gesture that moved an offset nothing
+     * drew.
+     */
+    private fun scrollCeiling(anchor: Int, budget: Int, width: Int): Int =
+        if (primary != null) 0 else windowCeiling(anchor, budget, width)
 
     /**
      * How many columns of the line at [index] the view has to place: its painted width, plus the cell
@@ -657,7 +725,7 @@ class AnsiTerminalBuffer(
         } else {
             (cursorRow + 1).coerceIn(budget, lines.size)
         }
-        return windowCeiling(anchor, budget, fitWidth)
+        return scrollCeiling(anchor, budget, fitWidth)
     }
 
     @Synchronized
@@ -692,6 +760,19 @@ class AnsiTerminalBuffer(
      */
     @Synchronized
     fun applicationCursorKeysEnabled(): Boolean = applicationCursorKeys
+
+    /**
+     * The mouse tracking the remote program has asked for, and whether it wants SGR reports.
+     *
+     * Read off [frame] by the gesture, because the gesture branches on it in the middle of a drag and
+     * the frame it is drawing is the one it has to agree with; these direct reads are for the callers
+     * that need the answer without a frame, as [applicationCursorKeysEnabled] is for a keystroke.
+     */
+    @Synchronized
+    fun mouseMode(): MouseMode = MouseModes.modeOf(mouseModes)
+
+    @Synchronized
+    fun mouseSgrEnabled(): Boolean = MouseModes.sgrOf(mouseModes)
 
     /**
      * The text of the cell range ([fromLine], [fromColumn]) up to but excluding ([toLine],
@@ -986,6 +1067,10 @@ class AnsiTerminalBuffer(
      * line wrap, 25 is whether there is a cursor to draw, 2004 is whether a paste may contain a
      * newline without executing it, and 1 decides which bytes an arrow key has to send. Ignoring them
      * is most of what made the terminal a command form rather than a terminal.
+     *
+     * Every mouse mode is listed rather than matched by range, and [MouseModes.handled] is what makes
+     * that total: a mode this terminal does not implement leaves [mouseModes] untouched, so an app
+     * asking for something newer than this does not silently turn the ones it also asked for off.
      */
     private fun setMode(params: List<Int>, private: Boolean, enable: Boolean) {
         params.ifEmpty { listOf(0) }.forEach { mode ->
@@ -993,6 +1078,10 @@ class AnsiTerminalBuffer(
                 // IRM. The only ANSI mode with a visible effect here; LNM is a line-discipline
                 // concern that belongs to the pty, not to the display.
                 if (mode == 4) insertMode = enable
+                return@forEach
+            }
+            if (mode in MouseModes.handled) {
+                mouseModes = MouseModes.withMode(mouseModes, mode, enable)
                 return@forEach
             }
             when (mode) {
@@ -1052,6 +1141,10 @@ class AnsiTerminalBuffer(
         cursorColumn = saved.cursorColumn.coerceIn(0, columns - 1)
         wrapPending = false
         positionalScreen = false
+        // The program that had the screen is gone, and whatever it turned on went with it. A program
+        // that exits without disabling its own mouse reporting would otherwise leave the terminal
+        // reporting every drag to the shell.
+        mouseModes = emptySet()
         if (withCursor) restoreCursor()
     }
 
@@ -1701,6 +1794,7 @@ class AnsiTerminalBuffer(
         applicationCursorKeys = false
         applicationKeypad = false
         bracketedPaste = false
+        mouseModes = emptySet()
         g0Graphics = false
         g1Graphics = false
         shiftedOut = false

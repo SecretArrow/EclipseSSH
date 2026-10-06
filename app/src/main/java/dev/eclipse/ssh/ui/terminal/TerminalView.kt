@@ -1,5 +1,9 @@
 package dev.eclipse.ssh.ui.terminal
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -54,8 +58,8 @@ import dev.eclipse.ssh.terminal.TerminalColor
 import dev.eclipse.ssh.terminal.TerminalStyle
 import dev.eclipse.ssh.terminal.TerminalViewport
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlin.math.floor
-import kotlin.math.roundToInt
 
 /**
  * The size of one character cell, and the only honest source for how many of them fit.
@@ -327,6 +331,24 @@ fun TerminalView(
      * lets the caller decide what size that lands on and when to persist it.
      */
     onZoom: (scale: Float, ended: Boolean) -> Unit = { _, _ -> },
+    /**
+     * A vertical drag on a screen whose program is reading the mouse, as wheel reports.
+     *
+     * [count] reports rather than one, because a step of the drag crosses a line and a fast drag
+     * crosses several. The cell is where the finger is: `tmux` scrolls the pane under the pointer and
+     * `htop` the panel under it, so the coordinate is not decoration.
+     */
+    onMouseWheel: (up: Boolean, column: Int, row: Int, count: Int) -> Unit = { _, _, _, _ -> },
+    /**
+     * A vertical drag on the alternate screen of a program that is *not* reading the mouse, as arrow
+     * key presses.
+     *
+     * This is xterm's alternate-scroll behaviour, and it is the only thing that can move a program
+     * which has taken the screen and left no history behind it. It is deliberately not sent off the
+     * alternate screen, where there is a scrollback to move instead and where an arrow key arriving
+     * from a drag would be typed at the shell.
+     */
+    onArrowKeys: (up: Boolean, count: Int) -> Unit = { _, _ -> },
 ) {
     val measurer = rememberTextMeasurer()
     // How wide each distinct cluster draws, kept across frames. Keyed on the style and the metrics
@@ -356,6 +378,8 @@ fun TerminalView(
     val tap by rememberUpdatedState(onTap)
     val viewportChange by rememberUpdatedState(onViewportChange)
     val zoom by rememberUpdatedState(onZoom)
+    val mouseWheel by rememberUpdatedState(onMouseWheel)
+    val arrowKeys by rememberUpdatedState(onArrowKeys)
 
     BoxWithConstraints(modifier.background(background)) {
         val widthPx = with(density) { maxWidth.toPx() }
@@ -422,7 +446,7 @@ fun TerminalView(
         // so this settles once per cursor move and a manual pan is left alone until the cursor moves
         // again - and re-clamped here too, because a narrower frame can strand an old pan past its end.
         LaunchedEffect(layout.cursorColumn, layout.cursorRow, maxPan, visible.columns, metrics.width) {
-            pan.floatValue = panForCursor(
+            val target = panForCursor(
                 current = pan.floatValue,
                 // The cursor's column *within its row*. On a wrapped line the two differ, and following
                 // the line's column would pan a window whose text is already on screen.
@@ -432,6 +456,16 @@ fun TerminalView(
                 visibleWidthPx = visibleWidthPx,
                 maxPan = maxPan,
             )
+            if (target == pan.floatValue) return@LaunchedEffect
+            // Animated rather than assigned. The assignment moved the whole screen sideways in a single
+            // frame every time the cursor crossed the right edge, which is the other half of what a
+            // terminal that "jumps while typing" is. Linear and short on purpose: the effect restarts on
+            // every cursor move, and an eased tween would spend its slow beginning again each keystroke.
+            animate(
+                initialValue = pan.floatValue,
+                targetValue = target,
+                animationSpec = tween(durationMillis = PAN_FOLLOW_MS, easing = LinearEasing),
+            ) { value, _ -> pan.floatValue = value }
         }
 
         // Keyed on the cursor's position as well as on whether it exists, so every move restarts the
@@ -454,15 +488,84 @@ fun TerminalView(
             }
         }
 
-        // Fractional lines are accumulated because a drag of a few pixels is less than one row and
-        // would otherwise be discarded, making a slow scroll feel dead.
-        val scrollRemainder = remember { FloatArray(1) }
+        // A step is priced at the rendered height of the line leaving the top of the screen, not at one
+        // cell. Most lines wrap on a phone - 80 pty columns onto about 44 - so a step priced at a cell
+        // moves the screen twice as far as the finger on those and half as far on the short ones: the
+        // screen and the finger disagree, which is what a scroll that catches and jumps feels like.
+        // Measured from the layout rather than assumed, because the price is 1 or 2 depending on the
+        // line. Read from a gesture that outlives the layout, hence the state wrapper.
+        val stepRows = remember(layout) {
+            val top = layout.rows.firstOrNull()?.line
+            if (top == null) 1 else layout.rows.count { it.line == top }.coerceAtLeast(1)
+        }
+        val currentStepPx by rememberUpdatedState(stepRows * metrics.height)
+
+        // Where the finger is, in view pixels, for the wheel reports below. Filled by the gesture
+        // handler rather than by a pointer observer of its own, and a bare FloatArray rather than
+        // snapshot state: it is read from a drag callback, never from a composition, so writing it per
+        // move must not invalidate anything.
+        val pointerAt = remember { FloatArray(2) }
+
+        // Fractional travel is accumulated rather than discarded, so a slow drag is not dead, and a
+        // fast one is reported as one delta the caller publishes once instead of once per crossing.
+        //
+        // Where the drag goes is asked of every step rather than decided when the gesture starts: a
+        // program can turn its mouse reporting on mid-drag, and the answer is read from the frame being
+        // drawn so the two can never disagree about who owns the screen.
+        val scrollAccumulator = remember { ScrollAccumulator() }
         val scrollState = rememberScrollableState { delta ->
-            val lines = (scrollRemainder[0] - delta / metrics.height)
-            val whole = lines.roundToInt()
-            scrollRemainder[0] = lines - whole
-            if (whole != 0) scrollCallback(whole)
+            // The drag's delta is positive toward the live end; the accumulator's is positive into the
+            // history, which is the sign `onScroll` documents - and the sign this handler used before
+            // the accumulator existed, when the remainder arithmetic cancelled out to the same thing.
+            val steps = scrollAccumulator.dragBy(-delta, currentStepPx)
+            if (steps != 0) {
+                val up = steps > 0
+                when (dragTarget(currentFrame.mouseMode, currentFrame.mouseSgr, currentFrame.alternateScreen)) {
+                    DragTarget.Scrollback -> scrollCallback(steps)
+                    // Reported where the finger is, from the last event the gesture handler saw - a
+                    // wheel belongs to the pane or panel under the pointer, not to the one the cursor
+                    // happens to be on.
+                    DragTarget.Wheel -> {
+                        val (column, row) = Offset(pointerAt[0], pointerAt[1])
+                            .toScreenCell(metrics, origin, pan.floatValue, visible.columns, visible.rows)
+                        mouseWheel(up, column, row, abs(steps))
+                    }
+                    DragTarget.Arrows -> arrowKeys(up, abs(steps))
+                }
+            }
             delta
+        }
+
+        // Fling over pixels through that same accumulator. The room left is the buffer's own answer -
+        // how far it has been scrolled and how far it can go - turned into pixels by the price of the
+        // line the fling is about to cross, so the decay ends where the scrollback does.
+        //
+        // Only the scrollback flings. A wheel report is one discrete event that the program answers
+        // with its own scrolling, so a decaying burst of them after the finger lifts would overshoot
+        // whatever the program was going to do; and on the alternate screen there is nothing behind the
+        // screen to fling through, which is why the room is zero there anyway.
+        //
+        // `exponentialDecay` and not `rememberSplineBasedDecay`: Compose 1.12 no longer publishes the
+        // spline spec, or its density-aware ancestor, at all - the platform's own fling keeps it private
+        // to foundation. What matters here is the unit, not the curve - the decay runs in the same
+        // pixels the drag does, so a flick carries on at the rate the finger left it whatever the line
+        // heights are - and `exponentialDecay` is the one public spec that answers in those units.
+        val fling = remember {
+            TerminalFlingBehavior(exponentialDecay<Float>()) { velocity ->
+                val flings = dragTarget(
+                    currentFrame.mouseMode,
+                    currentFrame.mouseSgr,
+                    currentFrame.alternateScreen,
+                ) == DragTarget.Scrollback
+                when {
+                    !flings -> 0f
+                    // The velocity arrives in the drag's convention, not the accumulator's: negative is
+                    // towards the history, where the room left is what the ceiling still has above the
+                    // offset.
+                    velocity < 0f -> (currentFrame.scrollCeiling - currentFrame.scrollOffset) * currentStepPx
+                    else -> currentFrame.scrollOffset * currentStepPx
+                }
+            }
         }
 
         // Pixels, not columns, and clamped rather than accumulated: a pan has no rounding to carry
@@ -479,7 +582,7 @@ fun TerminalView(
             Modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .scrollable(scrollState, Orientation.Vertical, reverseDirection = true)
+                .scrollable(scrollState, Orientation.Vertical, reverseDirection = true, flingBehavior = fling)
                 .scrollable(panState, Orientation.Horizontal)
                 // First in the chain and therefore outermost, but it only ever consumes once a second
                 // finger is down, so the single-finger handlers below - tap, long press, scroll, pan -
@@ -493,6 +596,14 @@ fun TerminalView(
                         var pinching = false
                         do {
                             val event = awaitPointerEvent()
+                            // Recorded on the way past, whatever the gesture turns out to be: a wheel
+                            // report needs the cell the finger is over, and this loop is the only place
+                            // a pointer position is read for the whole of a drag. Consumption does not
+                            // remove the position, so the pinch below can still have the event.
+                            event.changes.lastOrNull()?.let {
+                                pointerAt[0] = it.position.x
+                                pointerAt[1] = it.position.y
+                            }
                             val down = event.changes.count { it.pressed }
                             if (down >= 2) {
                                 pinching = true
@@ -613,6 +724,32 @@ private fun Offset.toCell(
     val visual = layout.rows.getOrNull(row.coerceIn(0, layout.rows.lastIndex.coerceAtLeast(0)))
         ?: return frame.firstLine to column.coerceAtLeast(0)
     return (frame.firstLine + visual.line) to (visual.from + column).coerceAtLeast(0)
+}
+
+/**
+ * Where a pointer is, as the 1-based cell of the screen a program drew - which is what a mouse report
+ * carries.
+ *
+ * The screen cell and not the buffer coordinate [toCell] answers with. A program reading the mouse has
+ * never seen the scrollback: it is being told which of *its own* cells the wheel is over, and a row
+ * counted from the first line the session ever wrote would name a cell it does not have. Every screen
+ * that reports the mouse is positional - [dev.eclipse.ssh.terminal.terminalLayout] does not wrap one -
+ * so the visual row the finger is on and the row the program drew are the same row.
+ *
+ * Clamped to the grid, so a finger just past the last row names the last row rather than a cell that
+ * does not exist.
+ */
+private fun Offset.toScreenCell(
+    metrics: TerminalCellMetrics,
+    origin: Offset,
+    pan: Float,
+    columns: Int,
+    rows: Int,
+): Pair<Int, Int> {
+    val row = if (metrics.height <= 0f) 0 else floor((y - origin.y) / metrics.height).toInt()
+    val column = if (metrics.width <= 0f) 0 else floor((x + pan - origin.x) / metrics.width).toInt()
+    return (column.coerceIn(0, (columns - 1).coerceAtLeast(0)) + 1) to
+        (row.coerceIn(0, (rows - 1).coerceAtLeast(0)) + 1)
 }
 
 /**
@@ -792,6 +929,9 @@ private const val CURSOR_STROKE = 2f
  * terminal cursor rather than as something flashing for attention.
  */
 private const val CURSOR_BLINK_MS = 500L
+
+/** How long the view takes to slide sideways when the cursor runs past the edge of the window. */
+private const val PAN_FOLLOW_MS = 90
 
 private fun decorationFor(cell: TerminalCell): TextDecoration? = when {
     cell.style.underline && cell.style.strikethrough ->
