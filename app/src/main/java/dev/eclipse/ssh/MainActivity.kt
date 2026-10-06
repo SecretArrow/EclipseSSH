@@ -1422,6 +1422,8 @@ private fun EclipseWorkspace(
                     onResizeTerminal = viewModel::resizeTerminal,
                     onScrollTerminal = viewModel::scrollTerminalBy,
                     onScrollTerminalTo = viewModel::scrollTerminal,
+                    onMouseWheel = viewModel::sendMouseWheel,
+                    onArrowKeys = viewModel::sendArrowKeys,
                     onCopySelection = { hostId, sel ->
                         val range = sel.toTextRange()
                         val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
@@ -1617,6 +1619,8 @@ private fun EclipseWorkspace(
                     onResizeTerminal = viewModel::resizeTerminal,
                     onScrollTerminal = viewModel::scrollTerminalBy,
                     onScrollTerminalTo = viewModel::scrollTerminal,
+                    onMouseWheel = viewModel::sendMouseWheel,
+                    onArrowKeys = viewModel::sendArrowKeys,
                     onCopySelection = { hostId, sel ->
                         val range = sel.toTextRange()
                         val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
@@ -2373,6 +2377,8 @@ private fun WorkspaceScaffold(
     onResizeTerminal: (String, TerminalViewport) -> Unit = { _, _ -> },
     onScrollTerminal: (String, Int) -> Unit = { _, _ -> },
     onScrollTerminalTo: (String, Int) -> Unit = { _, _ -> },
+    onMouseWheel: (String, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
+    onArrowKeys: (String, Boolean, Int) -> Unit = { _, _, _ -> },
     onCopySelection: (String, TerminalSelection) -> Unit = { _, _ -> },
     onCopyTerminalText: (String) -> Unit = {},
     onPasteTerminal: (String) -> Unit = {},
@@ -2488,6 +2494,8 @@ private fun WorkspaceScaffold(
             onResize = onResizeTerminal,
             onScroll = onScrollTerminal,
             onScrollTo = onScrollTerminalTo,
+            onMouseWheel = onMouseWheel,
+            onArrowKeys = onArrowKeys,
             onCopySelection = onCopySelection,
             onCopyText = onCopyTerminalText,
             onPaste = onPasteTerminal,
@@ -2929,6 +2937,10 @@ private fun TerminalScreen(
     onResize: (String, TerminalViewport) -> Unit,
     onScroll: (String, Int) -> Unit,
     onScrollTo: (String, Int) -> Unit,
+    /** A turn of the wheel, for a program that asked the terminal to report the mouse. */
+    onMouseWheel: (String, Boolean, Int, Int) -> Unit,
+    /** Arrow key presses, for a drag on a screen with no history behind it. */
+    onArrowKeys: (String, Boolean, Int) -> Unit,
     onCopySelection: (String, TerminalSelection) -> Unit,
     onCopyText: (String) -> Unit,
     onPaste: (String) -> Unit,
@@ -3239,6 +3251,10 @@ private fun TerminalScreen(
                         }
                     },
                     onScroll = { delta -> onScroll(activeTab.id, delta) },
+                    onMouseWheel = { up, column, row, count ->
+                        repeat(count) { onMouseWheel(activeTab.id, up, column, row) }
+                    },
+                    onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
                     onTap = {
                         if (selection != null) selection = null else showKeyboard()
                     },

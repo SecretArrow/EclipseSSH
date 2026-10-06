@@ -59,6 +59,7 @@ import dev.eclipse.ssh.data.model.TransferItem
 import dev.eclipse.ssh.data.model.TransferStatus
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.data.settings.SnippetRepository
+import dev.eclipse.ssh.feature.mouse.MouseEncoding
 import dev.eclipse.ssh.feature.vault.VaultUnlockGate
 import dev.eclipse.ssh.feature.wakeonlan.WakeOnLan
 import dev.eclipse.ssh.feature.wakeonlan.parseMac
@@ -111,7 +112,10 @@ import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalKeys
 import dev.eclipse.ssh.terminal.TerminalModifiers
 import dev.eclipse.ssh.terminal.TerminalViewport
+import dev.eclipse.ssh.terminal.terminalLayout
 import dev.eclipse.ssh.terminal.Utf8StreamDecoder
+import dev.eclipse.ssh.ui.terminal.pageSteps
+import dev.eclipse.ssh.ui.terminal.tallestRowsPerLine
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -230,6 +234,15 @@ class MainViewModel @Inject constructor(
      * different text while the user was reading it. See [pinScrollback].
      */
     private val scrollOffsets = ConcurrentHashMap<String, Int>()
+
+    /**
+     * The page-scroll animation running on each host, if any.
+     *
+     * A page covers more than one line, and applying it in one write moves the screen a whole screenful
+     * in a single frame - which is the jump this is here to avoid. Held so a second press, or any scroll
+     * the user starts by hand, can take the screen back from the animation mid-flight.
+     */
+    private val pageScrolls = ConcurrentHashMap<String, Job>()
 
     /** When each host's searchable plain text was last rebuilt - see [publishTerminalText]. */
     private val textPublishedAt = ConcurrentHashMap<String, Long>()
@@ -2752,6 +2765,10 @@ class MainViewModel @Inject constructor(
      * key is `ESC O A`, and outside it `ESC [ A`. Sending the wrong one puts a stray `A` in the file
      * instead of moving the cursor, which is why this reads [TerminalFrame.applicationCursorKeys] from
      * the buffer rather than assuming.
+     *
+     * Page Up and Page Down may belong to the local scrollback instead; [terminalKeyTarget] decides,
+     * and everything it does not claim goes to the remote as before. A key that is *not* claimed is
+     * never made local, so a press the scrollback cannot use is never a silent no-op.
      */
     fun sendKey(
         sessionKey: String,
@@ -2763,12 +2780,55 @@ class MainViewModel @Inject constructor(
         val buffer = terminalBuffers[sessionKey]
         val applicationCursorKeys = buffer?.applicationCursorKeysEnabled() ?: false
         val modifiers = TerminalModifiers(ctrl = ctrl, alt = alt, shift = shift)
+        // Asked only for the two keys the scrollback could want, so an ordinary keypress does not pay
+        // for a layout it has no use for. [terminalKeyTarget] stays the one place that decides where
+        // these two go; anything it does not claim falls through to the remote as before.
+        if (buffer != null && (key == TerminalKey.PAGE_UP || key == TerminalKey.PAGE_DOWN)) {
+            val target = terminalKeyTarget(
+                key = key,
+                modifiers = modifiers,
+                programScreen = buffer.programOwnsScreen,
+                scrollOffset = scrollOffsets[sessionKey] ?: 0,
+                scrollCeiling = buffer.maxScrollOffset(
+                    visibleRowsOf(sessionKey, buffer),
+                    visibleColumnsOf(sessionKey),
+                ),
+            )
+            if (target == KeyTarget.LocalScroll) {
+                pageTerminalScroll(sessionKey, back = key == TerminalKey.PAGE_UP)
+                return
+            }
+        }
         when (key) {
             TerminalKey.ENTER -> recordCommand(sessionKey, typedLines.remove(sessionKey)?.toString().orEmpty())
             TerminalKey.BACKSPACE -> typedLines[sessionKey]?.let { line -> if (line.isNotEmpty()) line.setLength(line.length - 1) }
             else -> Unit
         }
         writeToTerminal(sessionKey, TerminalKeys.encode(key, modifiers, applicationCursorKeys))
+    }
+
+    /**
+     * Reports a turn of the wheel to a program that asked for the mouse, at the cell the finger is over.
+     *
+     * Raw bytes rather than [sendKey] or [sendInput]: this is not a keystroke and not typed text. The
+     * newline normalization and command bookkeeping those two do would be wrong here - a mouse report
+     * is a fixed escape sequence the program parses, not input to a line editor.
+     */
+    fun sendMouseWheel(sessionKey: String, up: Boolean, column: Int, row: Int) {
+        val button = if (up) MouseEncoding.Button.SCROLL_UP else MouseEncoding.Button.SCROLL_DOWN
+        writeToTerminal(sessionKey, MouseEncoding.encode(button = button, column = column, row = row))
+    }
+
+    /**
+     * Sends [count] arrow key presses, for a drag on a screen that has no history to scroll.
+     *
+     * Through [sendKey], so the encoding follows DECCKM exactly as the arrow keys on the key bar do -
+     * a program that took the screen is the likeliest of all to have asked for the SS3 form.
+     */
+    fun sendArrowKeys(sessionKey: String, up: Boolean, count: Int) {
+        if (count <= 0) return
+        val key = if (up) TerminalKey.ARROW_UP else TerminalKey.ARROW_DOWN
+        repeat(count) { sendKey(sessionKey, key) }
     }
 
     /** Sends a single character with its modifiers - the Ctrl row, and the IME's own key events. */
@@ -2839,18 +2899,75 @@ class MainViewModel @Inject constructor(
         return text
     }
 
-    /** Scrolls [sessionKey]'s terminal to [offset] lines above the live bottom; 0 follows the output again. */
+    /**
+     * Scrolls [sessionKey]'s terminal to [offset] lines above the live bottom; 0 follows the output again.
+     *
+     * Any page-scroll animation is dropped first: a scroll the user made by hand is taken from wherever
+     * the screen is *now*, and an animation still running behind it would keep writing the offset the
+     * drag is fighting for.
+     */
     fun scrollTerminal(sessionKey: String, offset: Int) {
-        val buffer = terminalBuffers[sessionKey] ?: return
-        val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
-        val clamped = offset.coerceIn(0, ceiling)
-        if (clamped == 0) scrollOffsets.remove(sessionKey) else scrollOffsets[sessionKey] = clamped
-        publishTerminalFrame(sessionKey, buffer)
+        pageScrolls.remove(sessionKey)?.cancel()
+        applyScroll(sessionKey, offset)
     }
 
     /** Scrolls by [delta] lines - positive is back into the history. */
     fun scrollTerminalBy(sessionKey: String, delta: Int) {
         scrollTerminal(sessionKey, (scrollOffsets[sessionKey] ?: 0) + delta)
+    }
+
+    /**
+     * Pages [sessionKey]'s scrollback by one screenful, forward or back, a line at a time.
+     *
+     * Where the key goes is decided before this by [terminalKeyTarget]; this is only the local half of
+     * it. The distance is measured in rows rather than lines - see [pageSteps] - so the page lands on a
+     * screenful of text however the lines wrapped.
+     */
+    private fun pageTerminalScroll(sessionKey: String, back: Boolean) {
+        pageScrolls.remove(sessionKey)?.cancel()
+        val buffer = terminalBuffers[sessionKey] ?: return
+        val rows = visibleRowsOf(sessionKey, buffer)
+        val columns = visibleColumnsOf(sessionKey)
+        val offset = scrollOffsets[sessionKey] ?: 0
+        val ceiling = buffer.maxScrollOffset(rows, columns)
+        val frame = terminalFrames.value[sessionKey] ?: buffer.frame(offset, rows, columns)
+        val layout = terminalLayout(frame, columns, rows)
+        // A layout describes the window the frame holds, in frame-relative lines; the walk runs over
+        // absolute buffer lines, which is what firstLine is for. Lines outside the window - the ones a
+        // page reaches before they have been drawn once - are charged at the tallest on screen.
+        val typical = tallestRowsPerLine(layout.rows)
+        val heights = HashMap<Int, Int>(layout.rows.size)
+        for (row in layout.rows) {
+            val line = row.line + frame.firstLine
+            heights[line] = (heights[line] ?: 0) + 1
+        }
+        val steps = pageSteps(
+            anchor = buffer.cursorLine,
+            fromOffset = offset,
+            pageRows = if (back) rows else -rows,
+            ceiling = ceiling,
+            rowsOfLine = { line -> heights[line] ?: typical },
+        )
+        if (steps == 0) return
+        val direction = if (steps > 0) 1 else -1
+        val lines = steps * direction
+        pageScrolls[sessionKey] = viewModelScope.launch {
+            // Spread over the same time whatever the length, so a short page and a long one feel alike.
+            val perLine = (PAGE_SCROLL_MS / lines).coerceAtLeast(1L)
+            repeat(lines) {
+                applyScroll(sessionKey, (scrollOffsets[sessionKey] ?: 0) + direction)
+                delay(perLine)
+            }
+        }
+    }
+
+    /** Writes the scroll position and republishes, with no animation to interrupt. */
+    private fun applyScroll(sessionKey: String, offset: Int) {
+        val buffer = terminalBuffers[sessionKey] ?: return
+        val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
+        val clamped = offset.coerceIn(0, ceiling)
+        if (clamped == 0) scrollOffsets.remove(sessionKey) else scrollOffsets[sessionKey] = clamped
+        publishTerminalFrame(sessionKey, buffer)
     }
 
     /** The text of a selection, in absolute buffer coordinates, for copy. */
@@ -5148,6 +5265,15 @@ class MainViewModel @Inject constructor(
          * [launchTerminalCollector].
          */
         const val TERMINAL_FRAME_MS = 33L
+
+        /**
+         * How long one Page Up or Page Down takes to travel, in milliseconds.
+         *
+         * Long enough to read as movement rather than as a cut, short enough that a held key still
+         * outruns the reader's eye. The lines of the page are spread across it rather than drawn in
+         * one write, which is the whole point - see [pageTerminalScroll].
+         */
+        const val PAGE_SCROLL_MS = 200L
         const val MAX_CONNECT_ATTEMPTS = 3
         const val RECONNECT_DELAY_MS = 1_500L
 

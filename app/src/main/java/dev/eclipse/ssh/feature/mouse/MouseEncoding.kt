@@ -58,8 +58,8 @@ object MouseEncoding {
      * Encodes a mouse event for SGR mode.
      *
      * @param button the button that moved
-     * @param column 1-based cell column (clamped to 1..223, the SGR
-     *   range; values > 223 wrap per xterm convention)
+     * @param column 1-based cell column. SGR carries the coordinates in decimal, so unlike the legacy
+     *   encodings there is no 223-cell limit and nothing to clamp against here
      * @param row 1-based cell row
      * @param modifiers bitwise OR of [Modifiers] values
      * @param pressed true for press, false for release
