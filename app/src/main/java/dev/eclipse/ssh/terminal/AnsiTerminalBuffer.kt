@@ -209,6 +209,25 @@ data class TerminalFrame(
      */
     val mouseMode: MouseMode = MouseMode.OFF,
     val mouseSgr: Boolean = false,
+    /**
+     * The lines just above and just below the window, and how many rendered rows one scroll step moves
+     * the window's top edge by in each direction.
+     *
+     * The top edge does not move by the same distance both ways, and at the live end it does not move at
+     * all: a step back from there hands the prompt's row to the background while the top stays pinned
+     * (see `TerminalScrollViewportTest.the first page up gives up the blank line under the prompt`).
+     * A view that priced every step with one number - the height of the line at the top of the window -
+     * would translate the screen by a step that never happened and then snap it back, which is the jump
+     * a sub-row scroll exists to remove.
+     *
+     * [marginAbove] and [marginBelow] are exactly the lines those steps would add, in order, so a drag
+     * that has not yet finished a step has real text to slide into the strip it opens. A step off either
+     * end is priced at zero, which is the hard stop.
+     */
+    val marginAbove: List<List<TerminalCell>> = emptyList(),
+    val marginBelow: List<List<TerminalCell>> = emptyList(),
+    val stepRowsBack: Int = 0,
+    val stepRowsForward: Int = 0,
 ) {
     companion object {
         val EMPTY = TerminalFrame(
@@ -513,17 +532,11 @@ class AnsiTerminalBuffer(
             // pulling the window up past the first line the terminal ever wrote.
             (cursorRow + 1).coerceIn(budget, lines.size)
         }
-        val offset = scrollOffset.coerceIn(0, scrollCeiling(anchor, budget, fitWidth))
-        var end = anchor - offset
-        var first = if (fitWidth > 0) fittedStart(end, budget, fitWidth) else end - budget
-        if (first <= 0) {
-            // The window ran into the first line the terminal ever wrote. Fill it downward instead, so
-            // the screen holds as much as it can rather than the cursor's line and nothing after it -
-            // the state a freshly connected session is in, where the prompt is on row 2 and every row
-            // below it is blank until the view has something to scroll.
-            if (fitWidth > 0) end = fittedEnd(0, budget, fitWidth)
-            first = 0
-        }
+        val ceiling = scrollCeiling(anchor, budget, fitWidth)
+        val offset = scrollOffset.coerceIn(0, ceiling)
+        val here = windowAt(anchor, offset, budget, fitWidth)
+        val first = windowFirst(here)
+        val end = windowEnd(here)
         val take = end - first
         val window = ArrayList<List<TerminalCell>>(take)
         var content = 0
@@ -535,6 +548,14 @@ class AnsiTerminalBuffer(
         }
         val relativeCursor = cursorRow - first
         if (cursorVisible && relativeCursor in 0 until take) content = maxOf(content, cursorColumn + 1)
+        // What the next step each way would do, asked of the same function that built this window so the
+        // two cannot disagree. Both neighbours are clamped to the ceiling and to zero the same way the
+        // offset itself was, so a step off either end moves the top by nothing - which is the whole of
+        // the hard stop, and needs no case of its own.
+        val backFirst = if (offset < ceiling) windowFirst(windowAt(anchor, offset + 1, budget, fitWidth)) else first
+        val forward = if (offset > 0) windowAt(anchor, offset - 1, budget, fitWidth) else here
+        val stepRowsBack = rowsBetween(backFirst, first, fitWidth)
+        val stepRowsForward = rowsBetween(first, windowFirst(forward), fitWidth)
         return TerminalFrame(
             lines = window,
             firstLine = first,
@@ -553,10 +574,75 @@ class AnsiTerminalBuffer(
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
             scrollOffset = offset,
-            scrollCeiling = scrollCeiling(anchor, budget, fitWidth),
+            scrollCeiling = ceiling,
             mouseMode = MouseModes.modeOf(mouseModes),
             mouseSgr = MouseModes.sgrOf(mouseModes),
+            // Exactly the lines each step would add, so a drag that has not finished a step has real
+            // text to slide into the strip it opens. The one above is the whole walk the back step would
+            // make - not one line, because a short line can be replaced by several - and the one below is
+            // taken until it covers the forward step.
+            marginAbove = if (backFirst < first) {
+                lines.subList(backFirst, first).map { it.toList() }
+            } else {
+                emptyList()
+            },
+            marginBelow = marginBelow(end, stepRowsForward, fitWidth),
+            stepRowsBack = stepRowsBack,
+            stepRowsForward = stepRowsForward,
         )
+    }
+
+    /** The window's `first` line and its `end`, as `[first, end)`, for an offset already clamped. */
+    private fun windowAt(anchor: Int, offset: Int, budget: Int, fitWidth: Int): Long {
+        var end = anchor - offset
+        var first = if (fitWidth > 0) fittedStart(end, budget, fitWidth) else end - budget
+        if (first <= 0) {
+            // The window ran into the first line the terminal ever wrote. Fill it downward instead, so
+            // the screen holds as much as it can rather than the cursor's line and nothing after it -
+            // the state a freshly connected session is in, where the prompt is on row 2 and every row
+            // below it is blank until the view has something to scroll.
+            if (fitWidth > 0) end = fittedEnd(0, budget, fitWidth)
+            first = 0
+        }
+        return (first.toLong() shl 32) or (end.toLong() and 0xFFFFFFFFL)
+    }
+
+    private fun windowFirst(window: Long): Int = (window ushr 32).toInt()
+
+    private fun windowEnd(window: Long): Int = window.toInt()
+
+    /** How many wrapped rows the lines `[from, to)` occupy at [width]. */
+    private fun rowsBetween(from: Int, to: Int, width: Int): Int {
+        var rows = 0
+        var index = from.coerceAtLeast(0)
+        val last = to.coerceAtMost(lines.size)
+        while (index < last) {
+            rows += displayRowCount(lines[index], windowExtent(index), width)
+            index++
+        }
+        return rows
+    }
+
+    /**
+     * The lines below the window, down to [enoughRows] wrapped rows of them, or to the last line.
+     *
+     * The overscan for a drag towards the live end. There is usually less of it than the step costs -
+     * the newest line is where the cursor is, and nothing follows it - and that is not a shortfall to
+     * paper over: past the end of the output there is genuinely nothing to reveal, and the screen shows
+     * its own background there, exactly as it does at rest one row below a window that did not fill.
+     */
+    private fun marginBelow(end: Int, enoughRows: Int, width: Int): List<List<TerminalCell>> {
+        if (enoughRows <= 0) return emptyList()
+        val margin = ArrayList<List<TerminalCell>>(enoughRows)
+        var rows = 0
+        var index = end
+        while (index < lines.size && rows < enoughRows) {
+            val line = lines[index]
+            margin += line.toList()
+            rows += displayRowCount(line, windowExtent(index), width)
+            index++
+        }
+        return margin
     }
 
     /**

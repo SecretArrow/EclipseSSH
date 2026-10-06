@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -57,6 +58,7 @@ import dev.eclipse.ssh.terminal.terminalLayout
 import dev.eclipse.ssh.terminal.TerminalColor
 import dev.eclipse.ssh.terminal.TerminalStyle
 import dev.eclipse.ssh.terminal.TerminalViewport
+import dev.eclipse.ssh.terminal.TerminalVisualRow
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.floor
@@ -488,17 +490,15 @@ fun TerminalView(
             }
         }
 
-        // A step is priced at the rendered height of the line leaving the top of the screen, not at one
-        // cell. Most lines wrap on a phone - 80 pty columns onto about 44 - so a step priced at a cell
-        // moves the screen twice as far as the finger on those and half as far on the short ones: the
-        // screen and the finger disagree, which is what a scroll that catches and jumps feels like.
-        // Measured from the layout rather than assumed, because the price is 1 or 2 depending on the
-        // line. Read from a gesture that outlives the layout, hence the state wrapper.
-        val stepRows = remember(layout) {
-            val top = layout.rows.firstOrNull()?.line
-            if (top == null) 1 else layout.rows.count { it.line == top }.coerceAtLeast(1)
-        }
-        val currentStepPx by rememberUpdatedState(stepRows * metrics.height)
+        // What one step costs, in pixels, one price per direction. The window's top edge does not move
+        // the same distance both ways - at the live end a step back hands the prompt's row to the
+        // background while the top stays pinned - so a single price would translate the screen and then
+        // snap it back on the first drag of a session. Measured from the buffer rather than assumed from
+        // the top line's height, because that height is not the distance the top moves at all.
+        //
+        // Read from a gesture that outlives the frame it was installed with, hence the state wrappers.
+        val currentBackPx by rememberUpdatedState(currentFrame.stepRowsBack * metrics.height)
+        val currentForwardPx by rememberUpdatedState(currentFrame.stepRowsForward * metrics.height)
 
         // Where the finger is, in view pixels, for the wheel reports below. Filled by the gesture
         // handler rather than by a pointer observer of its own, and a bare FloatArray rather than
@@ -508,19 +508,52 @@ fun TerminalView(
 
         // Fractional travel is accumulated rather than discarded, so a slow drag is not dead, and a
         // fast one is reported as one delta the caller publishes once instead of once per crossing.
-        //
-        // Where the drag goes is asked of every step rather than decided when the gesture starts: a
-        // program can turn its mouse reporting on mid-drag, and the answer is read from the frame being
-        // drawn so the two can never disagree about who owns the screen.
         val scrollAccumulator = remember { ScrollAccumulator() }
+
+        // How far the window is drawn from where it rests, in pixels, positive meaning the content has
+        // moved down. A float read inside the draw phase, like the pan, so a drag of less than a step
+        // costs a redraw rather than a recomposition or a published frame.
+        val scrollShift = remember { mutableFloatStateOf(0f) }
+        // The steps this view has sent and not yet seen come back in a frame, and the offset the last
+        // frame it looked at carried. Bare IntArrays, not snapshot state: written from the gesture and
+        // read from the frame effect, never from a composition, so a drag must not invalidate anything
+        // by moving them.
+        val owedSteps = remember { IntArray(1) }
+        val drawnOffset = remember { IntArray(1) }
+
         val scrollState = rememberScrollableState { delta ->
             // The drag's delta is positive toward the live end; the accumulator's is positive into the
             // history, which is the sign `onScroll` documents - and the sign this handler used before
             // the accumulator existed, when the remainder arithmetic cancelled out to the same thing.
-            val steps = scrollAccumulator.dragBy(-delta, currentStepPx)
+            val backPx = currentBackPx
+            val forwardPx = currentForwardPx
+            // Where the drag goes is asked before the step is charged rather than when the gesture
+            // starts: a program can turn its mouse reporting on mid-drag, and the answer is read from
+            // the frame being drawn so the two can never disagree about who owns the screen.
+            val target = dragTarget(currentFrame.mouseMode, currentFrame.mouseSgr, currentFrame.alternateScreen)
+            var steps = scrollAccumulator.dragBy(-delta, backPx, forwardPx)
+            if (steps == 0 && target == DragTarget.Scrollback) {
+                // Guarded by the offset this view believes it is at, not by the one the frame carries:
+                // frames arrive through a StateFlow, so the frame can still be one publication behind
+                // and an ungated commit would take the same end twice.
+                steps = freeStep(
+                    scrollAccumulator.pendingPx,
+                    backPx,
+                    forwardPx,
+                    currentFrame.scrollOffset + owedSteps[0],
+                    currentFrame.scrollCeiling,
+                )
+            }
+            // Only the scrollback draws a shift: a wheel report and an arrow key are answered by the
+            // program scrolling its own screen, and translating this one would slide the picture out
+            // from under the answer it is about to receive.
+            scrollShift.floatValue =
+                if (target == DragTarget.Scrollback) scrollShiftPx(scrollAccumulator.pendingPx, backPx, forwardPx)
+                else 0f
             if (steps != 0) {
+                owedSteps[0] += steps
                 val up = steps > 0
-                when (dragTarget(currentFrame.mouseMode, currentFrame.mouseSgr, currentFrame.alternateScreen)) {
+                when (target) {
                     DragTarget.Scrollback -> scrollCallback(steps)
                     // Reported where the finger is, from the last event the gesture handler saw - a
                     // wheel belongs to the pane or panel under the pointer, not to the one the cursor
@@ -534,6 +567,42 @@ fun TerminalView(
                 }
             }
             delta
+        }
+
+        // A zoom re-prices every pixel the accumulator is holding - the travel was measured against rows
+        // of a different height - so it goes, along with the shift it was drawing.
+        LaunchedEffect(metrics.height) {
+            owedSteps[0] = 0
+            scrollAccumulator.reset()
+            scrollShift.floatValue = 0f
+        }
+
+        // A frame that is not the one this view's own steps add up to came from somewhere else: a page
+        // key, the scrollback badge, a re-clamp on resize. The travel kept for a step of the old picture
+        // is not the new picture's to spend, so it goes, along with the shift it was drawing.
+        //
+        // A frame that moved the window the same way this view's own steps still owed it is those steps
+        // coming back, however many of them a single publication carried - and a frame where a session
+        // printing output has pinned the offset alongside them is one of those too, which is why the
+        // test is on the direction rather than on the distance. A frame that did not move the window at
+        // all says nothing about who moved it, so it is left alone rather than taken as an answer.
+        LaunchedEffect(frame.scrollOffset) {
+            val moved = frame.scrollOffset - drawnOffset[0]
+            if (moved == 0) return@LaunchedEffect
+            drawnOffset[0] = frame.scrollOffset
+            val owed = owedSteps[0]
+            if (owed != 0 && (moved > 0) == (owed > 0)) {
+                owedSteps[0] = if (abs(moved) >= abs(owed)) 0 else owed - moved
+                // Re-priced against the frame that just landed: a free step taken against the live end
+                // changes what the next one costs, and the finger may be still - so the picture has to
+                // move to meet it now rather than at the next pointer event.
+                scrollShift.floatValue =
+                    scrollShiftPx(scrollAccumulator.pendingPx, currentBackPx, currentForwardPx)
+            } else {
+                owedSteps[0] = 0
+                scrollAccumulator.reset()
+                scrollShift.floatValue = 0f
+            }
         }
 
         // Fling over pixels through that same accumulator. The room left is the buffer's own answer -
@@ -561,9 +630,14 @@ fun TerminalView(
                     !flings -> 0f
                     // The velocity arrives in the drag's convention, not the accumulator's: negative is
                     // towards the history, where the room left is what the ceiling still has above the
-                    // offset.
-                    velocity < 0f -> (currentFrame.scrollCeiling - currentFrame.scrollOffset) * currentStepPx
-                    else -> currentFrame.scrollOffset * currentStepPx
+                    // offset - priced at the step the fling is about to cross, which is the one that
+                    // direction is charged for, and at a cell where that step is free.
+                    velocity < 0f -> flingRoomPx(
+                        currentFrame.scrollCeiling - currentFrame.scrollOffset,
+                        currentBackPx,
+                        metrics.height,
+                    )
+                    else -> flingRoomPx(currentFrame.scrollOffset, currentForwardPx, metrics.height)
                 }
             }
         }
@@ -625,7 +699,7 @@ fun TerminalView(
                         onTap = { tap() },
                         onLongPress = { position ->
                             val (line, column) =
-                                position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue)
+                                position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue, scrollShift.floatValue)
                             longPress(line, column)
                         },
                     )
@@ -640,13 +714,13 @@ fun TerminalView(
                             // selection before the user has moved would undo it in front of them.
                             moved = false
                             val (line, column) =
-                                position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue)
+                                position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue, scrollShift.floatValue)
                             anchor = TerminalSelection.at(line, column)
                         },
                         onDrag = { change, _ ->
                             moved = true
                             val (line, column) =
-                                change.position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue)
+                                change.position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue, scrollShift.floatValue)
                             anchor = anchor?.movedTo(line, column)?.also(selectionCallback)
                         },
                         onDragEnd = { if (moved) anchor?.let(selectionFinished) },
@@ -673,24 +747,44 @@ fun TerminalView(
                     // The pan is part of the same translate, which is why panning costs a redraw and
                     // not a recomposition.
                     translate(visible.originX - pan.floatValue, visible.originY) {
-                        drawFrame(
-                            frame = currentFrame,
-                            layout = currentLayout,
-                            measurer = measurer,
-                            style = style,
-                            foreground = foreground,
-                            background = background,
-                            metrics = metrics,
-                            clusters = clusters,
-                            // The rows there is room for, not the rows the pty was told about: a tall
-                            // grid is a taller pty, and a row below the bottom edge is a row of cells
-                            // painted where nobody can see them.
-                            maxRows = visible.rows,
-                            selection = selection,
-                            selectionColour = selectionColour,
-                            cursorColour = cursorColour,
-                            cursorOn = cursorOn.value,
-                        )
+                        // Clipped to the rows the grid was measured for, top and bottom. The grid is
+                        // centred in the view, so there is up to half a cell of background above and
+                        // below it, and a sub-row drag slides rows across those edges: without the clip
+                        // the row leaving the top would paint into the band above the grid and the row
+                        // entering at the bottom would paint past the last row the pty knows about.
+                        //
+                        // Horizontal bounds are the scope's own, restated in the coordinates the
+                        // translate has moved to, so nothing that was on screen before is cut off - the
+                        // clip is about the vertical band and only about that.
+                        val gridX = visible.originX - pan.floatValue
+                        clipRect(
+                            left = -gridX,
+                            top = 0f,
+                            right = size.width - gridX,
+                            bottom = visible.rows * metrics.height,
+                        ) {
+                            drawFrame(
+                                frame = currentFrame,
+                                layout = currentLayout,
+                                measurer = measurer,
+                                style = style,
+                                foreground = foreground,
+                                background = background,
+                                metrics = metrics,
+                                clusters = clusters,
+                                // The rows there is room for, not the rows the pty was told about: a tall
+                                // grid is a taller pty, and a row below the bottom edge is a row of cells
+                                // painted where nobody can see them.
+                                maxRows = visible.rows,
+                                selection = selection,
+                                selectionColour = selectionColour,
+                                cursorColour = cursorColour,
+                                cursorOn = cursorOn.value,
+                                // Read here, in the draw phase, so a drag's fraction of a row costs a
+                                // redraw and nothing else.
+                                shiftPx = scrollShift.floatValue,
+                            )
+                        }
                     }
                 },
         )
@@ -708,6 +802,11 @@ fun TerminalView(
  * character under the finger is not the one the untranslated coordinate names. It is passed as a value
  * read at the moment of the touch rather than keyed into the gesture handler, because keying a
  * long-lived pointer handler on something that changes at frame rate restarts it mid-gesture.
+ *
+ * [shift] is taken off for the same reason again, vertically: while a drag is in flight the whole strip
+ * is drawn displaced, and a mapping that ignored it would select the row above the one under the finger
+ * for the whole of the gesture. See [touchedRow], which also takes off the rows above the window - those
+ * belong to the margins and not to the window, so they are not rows a selection can name.
  */
 private fun Offset.toCell(
     frame: TerminalFrame,
@@ -715,13 +814,14 @@ private fun Offset.toCell(
     metrics: TerminalCellMetrics,
     origin: Offset,
     pan: Float = 0f,
+    shift: Float = 0f,
 ): Pair<Int, Int> {
-    val row = if (metrics.height <= 0f) 0 else floor((y - origin.y) / metrics.height).toInt()
+    val row = touchedRow(y, origin.y, metrics.height, shift, layout.marginAbove.size, layout.rows.size)
     val column = if (metrics.width <= 0f) 0 else floor((x + pan - origin.x) / metrics.width).toInt()
     // Through the layout, because the row under the finger is a *visual* row: on a wrapped line the
     // third row of the screen can be the second half of the second line of output, and a selection
     // addressed by screen row would copy text from somewhere else entirely.
-    val visual = layout.rows.getOrNull(row.coerceIn(0, layout.rows.lastIndex.coerceAtLeast(0)))
+    val visual = layout.rows.getOrNull(row)
         ?: return frame.firstLine to column.coerceAtLeast(0)
     return (frame.firstLine + visual.line) to (visual.from + column).coerceAtLeast(0)
 }
@@ -806,6 +906,12 @@ private const val MAX_CACHED_CLUSTERS = 512
  *
  * One row of [layout] per row of the screen, so which columns of which line are drawn where is decided
  * in one pure, tested function instead of here; this loop only paints what it is handed.
+ *
+ * [shiftPx] is how far the whole picture is drawn below where it rests, which is how a drag that has not
+ * yet travelled a whole step moves the text under the finger. [TerminalFrame.marginAbove] and
+ * [TerminalFrame.marginBelow] are the rows that shift uncovers at the two edges, and they are drawn at
+ * their own off-screen row indices so that at a shift of zero they sit outside the grid and this paints
+ * exactly the picture it painted before the margins existed.
  */
 private fun DrawScope.drawFrame(
     frame: TerminalFrame,
@@ -821,19 +927,22 @@ private fun DrawScope.drawFrame(
     selectionColour: Color,
     cursorColour: Color,
     cursorOn: Boolean = true,
+    shiftPx: Float = 0f,
 ) {
     val cellWidth = metrics.width
     val cellHeight = metrics.height
     if (cellWidth <= 0f || cellHeight <= 0f) return
+    // Where the window sits among the layout's rows, in rows, and how many buffer lines are above it -
+    // two different numbers as soon as a margin line wraps. The first places the margin, the second
+    // names the buffer line a margin row came from; the window's own rows need neither because the
+    // layout's `firstLine` already anchors them.
+    val windowTop = layout.marginAbove.size
+    val marginAboveLines = frame.marginAbove.size
+    val shift = if (shiftPx.isFinite()) shiftPx else 0f
 
-    layout.rows.forEachIndexed { row, visual ->
-        // Bounded by the grid rather than by `size.height`: a draw modifier does not clip, and the
-        // translate that centres the grid moves the bottom row past the height this scope reports, so
-        // a height test would let a partial row paint into the margin below it.
-        if (row >= maxRows) return@forEachIndexed
-        val line = frame.lines.getOrNull(visual.line) ?: return@forEachIndexed
-        val top = row * cellHeight
-        val absoluteLine = frame.firstLine + visual.line
+    // The rows a drag uncovers above and below the window are drawn by the window's own body, so the
+    // wrap, the run-breaking and the combining marks are handled in one place instead of three.
+    fun paintRow(line: List<TerminalCell>, visual: TerminalVisualRow, top: Float, absoluteLine: Int) {
         // The row's own columns, and only those: the layout has already dropped the trailing blanks and
         // decided where a line too wide for the window breaks. Bounded by the line again because the
         // layout and the frame are read at slightly different moments while output is arriving.
@@ -908,11 +1017,41 @@ private fun DrawScope.drawFrame(
         }
     }
 
+    // At a negative row index, so the strip it covers is exactly the one a shift towards the history
+    // opens at the top edge; at rest it is off the top of the screen by its own height.
+    layout.marginAbove.forEachIndexed { index, visual ->
+        val line = frame.marginAbove.getOrNull(visual.line) ?: return@forEachIndexed
+        paintRow(line, visual, (index - windowTop) * cellHeight + shift, frame.firstLine - marginAboveLines + visual.line)
+    }
+    layout.rows.forEachIndexed { row, visual ->
+        // Bounded by the grid rather than by `size.height`: a draw modifier does not clip, and the
+        // translate that centres the grid moves the bottom row past the height this scope reports, so
+        // a height test would let a partial row paint into the margin below it.
+        if (row >= maxRows) return@forEachIndexed
+        val line = frame.lines.getOrNull(visual.line) ?: return@forEachIndexed
+        paintRow(line, visual, row * cellHeight + shift, frame.firstLine + visual.line)
+    }
+    // From the bottom edge of the screen and not from the last row the fit left, because the rows a step
+    // towards the live end uncovers come up through that edge. What the fit left over below the window -
+    // `maxRows - windowRows` rows of background, which the resting picture already shows - stays where it
+    // is rather than being carried by the margin. See the residual in the plan: the two agree whenever
+    // the budget divides evenly into row heights, which is the case this was built for.
+    val belowTop = maxRows * cellHeight
+    layout.marginBelow.forEachIndexed { index, visual ->
+        val line = frame.marginBelow.getOrNull(visual.line) ?: return@forEachIndexed
+        paintRow(
+            line,
+            visual,
+            belowTop + index * cellHeight + shift,
+            frame.firstLine + frame.lines.size + visual.line,
+        )
+    }
+
     if (cursorOn && frame.cursorVisible && layout.cursorRow in 0 until maxRows) {
         // A hollow block, so the character underneath stays legible - a filled one hides whatever the
         // cursor is on, which on a phone is exactly the character the user is trying to check.
         val left = layout.cursorColumn * cellWidth
-        val top = layout.cursorRow * cellHeight
+        val top = layout.cursorRow * cellHeight + shift
         drawRect(
             cursorColour,
             topLeft = Offset(left, top),
