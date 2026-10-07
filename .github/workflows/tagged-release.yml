@@ -193,6 +193,14 @@ jobs:
             app/build/outputs/apk/release/app-arm64-v8a-release.apk \
             "$EXPECTED_NAME" "$EXPECTED_CODE" \
             out/split-validation/arm64-v8a-release.json arm64-v8a
+          # The same run of the same script as ci.yml: a failed strip is silent
+          # (AGP warns, packages the libraries with their debug symbols anyway)
+          # and the v1.21.0 draft was cut that way at 2.3x the size of v1.20.0.
+          # Every artifact published below is covered - the five splits by glob,
+          # and the bundle, which is packaged by a different task.
+          AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
+          test -n "$AAB" || { echo "no AAB found in app/build/outputs/bundle/release"; exit 1; }
+          testing/verify-native-stripped.sh app/build/outputs/apk/release/*-release.apk "$AAB"
 
       - name: Verify the AAB signature
         # AABs use the JAR signature scheme (META-INF/{ALIAS}.SF/.RSA) rather

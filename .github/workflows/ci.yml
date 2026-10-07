@@ -739,6 +739,15 @@ jobs:
             app/build/outputs/apk/release/app-arm64-v8a-release.apk \
             "$EXPECTED_NAME" "$EXPECTED_CODE" \
             out/split-validation/arm64-v8a-release.json arm64-v8a
+          # A failed strip is silent - AGP warns and packages the libraries
+          # with their debug symbols - so a green build can ship APKs 2.3x
+          # larger than the same source an hour earlier. Every artifact the
+          # release publishes is covered: the five splits by glob (so an ABI
+          # added later needs no edit here) and the bundle, which is packaged
+          # by a different task.
+          AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
+          test -n "$AAB" || { echo "no AAB found in app/build/outputs/bundle/release"; exit 1; }
+          testing/verify-native-stripped.sh app/build/outputs/apk/release/*-release.apk "$AAB"
 
       - name: Verify the AAB signature
         # The apksigner tool's APK format check refuses AABs because they

@@ -18,6 +18,12 @@ android {
     namespace = "dev.eclipse.ssh"
     compileSdk = 37
 
+    // Same NDK the workflows install and :freerdp / :linux pin. Left unset, the
+    // module resolves its stripper from AGP's default NDK, and when the runner
+    // has no such NDK AGP only warns and packages the libraries with their debug
+    // symbols - the v1.21.0 draft shipped that way.
+    ndkVersion = "29.0.13113456"
+
     defaultConfig {
         applicationId = "dev.eclipse.ssh"
         minSdk = 28
