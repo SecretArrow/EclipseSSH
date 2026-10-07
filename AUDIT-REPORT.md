@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 54 / versionName 1.20.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 55 / versionName 1.21.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §94, *Releasing 1.20.0*, which is the version this file's header names; §93, *Releasing 1.19.0*, is the release before it, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §95, *Releasing 1.21.0*, which is the version this file's header names; §94, *Releasing 1.20.0*, is the release before it, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -10918,4 +10918,107 @@ an oversight.
 The gate that certifies the artifact — signature, version, per-ABI splits, each library's architecture and
 `extractNativeLibs` — establishes that the APK is correct, not that the icon is. The leg that runs the
 instrumented suite against the **published** APK is what covers the app coming up at all, and a red leg
+there pulls the release back to draft rather than leaving it published.
+
+## 95. Releasing 1.21.0
+
+1.20.0 was the launcher icon. 1.21.0 goes back to the terminal, and finishes the complaint 1.19.0 opened:
+a scroll that would not hold, under a finger the picture did not follow.
+
+Four causes, each traced in the code rather than guessed, and each one a thing a user could feel.
+
+**There was no fling at all.** The app's only two `Modifier.scrollable` calls are in `TerminalView`, and
+neither had a `flingBehavior`, so lifting a finger stopped the scroll dead.
+
+**A step was priced at one cell but moved a whole line.** The offset counts buffer lines and the window
+fits rows, and an 80-column pty shown at ~44 columns wraps most lines to two rows — so one step moved the
+screen twice as far as the finger on a wrapped line and half as far on a short one. That is the stutter, and
+it is also most of *"it jumps while I type"*, since following the cursor moves the window by a line.
+`ScrollAccumulator` now prices a step at the **rendered** height of the line being crossed and carries the
+sub-step remainder across gestures on purpose. `TerminalFlingBehavior` decays in pixels through that same
+accumulator and stops where the buffer says the history ends — not `ScrollableDefaults`, which decays in the
+scrollable's own units (lines, here) and cannot see the ceiling.
+
+**Page Up/Down always went to the remote**, and **the alternate screen had no scrollback to drag**, so
+nothing paged where a pager would have. `terminalKeyTarget` now sends a page to the history only when a page
+would actually move it: at a ceiling of zero, or at either end, a local page is a silent no-op that eats a
+keypress the shell could use. A drag goes to the program that took the screen — the wheel under SGR mouse
+reporting, arrow keys otherwise, which is xterm's alternate-scroll behaviour and the only thing that can move
+a program that is not reading the mouse. `DECSET` 9/1000/1002/1003/1006 are parsed in the buffer and cleared
+in `reset()` and `leaveAlternateScreen()`, so a crashed program cannot leave the mouse reported into `bash`.
+
+**Then the drag itself.** A drag moved in whole lines and drew in whole lines, so a slow drag stood still
+until a step's worth of travel had built up and then jumped — two rows at a time on that same wrapped
+output. The travel the accumulator was already holding is now what moves the picture, and the two prices a
+step has are measured from the buffer rather than guessed from the height of the line at the top of the
+window, which is not the distance the top edge moves: at the live end that line is handed to the background
+and the top does not move at all.
+
+The frame now carries the rows the next step in each direction would add, and the price of those steps.
+Where the fit's walk stalls — a budget the line heights do not divide evenly, or a line taller than the
+window — the window one offset further along begins on the same buffer line, so the step has no price and
+still has to be takeable, or the drag would be stuck at that offset forever. That free step is a function of
+its own, asserted over every offset of a dozen fixtures rather than argued from a diagram. The fling's room
+falls back to one cell where the step is free, because a room of zero is its *"nowhere to go"* and a flick
+from a stalled offset would have died where a drag works.
+
+The window keeps its rows to itself. The margins are laid out beside them and drawn outside the grid at
+rest, so every image the suites already pinned is unchanged.
+
+The cursor pan is animated over 90 ms instead of assigned, and a page is 200 ms — constants with their
+reasoning beside them, not measurements.
+
+`git log v1.20.0..v1.21.0` is two merges, both of which a user sees.
+
+| | pull request | what it changed |
+|---|---|---|
+| 1 | #224 | the scroll follows the finger and a drag follows the program: the fling, the step price, the page routing, the mouse modes |
+| 2 | #225 | the scroll is drawn a fraction of a row at a time, so a slow drag moves the picture instead of standing still and then jumping |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88, §90, §92 and §93 set: **a patch number is honest
+when the artifact a user installs behaves as its predecessor's does.** This one fails that test with the
+first flick of a finger. Lifting a finger now carries the scroll on. A drag moves the picture while the
+finger moves, rather than standing still and jumping. A drag inside `less` or `claude` reaches the program
+instead of doing nothing. 1.20.0 did none of those, and none of them is a fix a user has to look for.
+
+The suite is 2,302 JVM/Robolectric test methods in 188 files — 68 of them in five new files from #224, and
+28 more from #225 — and `scripts/check-doc-figures.sh` re-derives that figure from the sources on every
+push, so a stale count fails CI rather than standing until someone reads it again.
+
+### What this release does not claim
+
+**Nobody has felt it on a device.** No test in this repository can say whether a drag reads as smooth, how
+the decay and the 200 ms page feel, or whether a drag inside `claude` or `opencode` lands as a wheel on the
+cell the finger was over. What is covered is that the arithmetic deciding every step is exact: the step
+prices, the drawn shift, the row under a finger, the page walk and the drag target are pure functions with a
+test per branch, and a sweep walks every offset of a dozen buffers — wrapped, odd budgets, unbreakable
+tokens, a line taller than the window, the alternate screen — asserting that each offset can be left by both
+a drag and a flick in both directions.
+
+**The fling's decay is the one the library still publishes, and it is not density-tuned.** CI's first
+compile stopped on `Unresolved reference 'rememberSplineBasedDecay'`: Compose 1.12, the version the BOM
+pins, no longer publishes that spec or the class behind it. `exponentialDecay<Float>()` replaces it, chosen
+for its **unit** rather than its curve — it answers in the same pixels the drag does, so a flick carries on
+at the rate the finger left it whatever the line heights underneath are. The distance it covers scales with
+the velocity handed to it, which already scales with density, so what is lost is the shape of the curve and
+not its reach. Every other Compose symbol the change added was then re-checked against the published 1.12.1
+classes rather than against memory, which is what let the first one through.
+
+**One row of difference is known and left in place.** The window is fitted in whole lines, so a
+scrolled-back screen usually leaves `budget - windowRows` rows of background under it — part of the resting
+image, and pinned by tests that predate this release. A commit is therefore not always a pure translation:
+during a drag the bottom edge can differ from the strip drawn below it by up to that leftover. It is zero
+whenever the budget divides evenly into row heights. Anchoring the bottom margin to the window instead
+would make the drag exactly right and change what Page Up shows on its first press, which the scope for this
+release excludes — so it is a mapped alternative, not an oversight.
+
+**The arrow-key fallback is a choice, not a full implementation.** A program that asks for the legacy mouse
+encoding gets the arrow keys it would get from a terminal with no mouse at all, rather than an
+implementation of that encoding; this terminal sends SGR coordinates or none.
+
+The gate that certifies the artifact — signature, version, per-ABI splits, each library's architecture and
+`extractNativeLibs` — establishes that the APK is correct, not that the scroll is smooth. The leg that runs
+the instrumented suite against the **published** APK is what covers the app coming up at all, and a red leg
 there pulls the release back to draft rather than leaving it published.
