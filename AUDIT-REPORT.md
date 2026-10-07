@@ -383,7 +383,8 @@ Hosts, Files, Transfers and Settings are unchanged.
   straddled a network read; `AnsiTerminalBuffer` parses them into cells. Nothing serialises, and nothing
   asks "is there output yet".
 - **VT100/ANSI**: SGR colours and attributes, cursor addressing and save/restore, scroll regions,
-  insert/delete line and character, erase in line/display, tab stops, alternate screen (so `vim` and
+  insert/delete line and character, erase in line/display — which fills with the current background,
+  the `bce` the reported `xterm-256color` promises — tab stops, alternate screen (so `vim` and
   `less` work), DECCKM and DECKPAM, bracketed paste, OSC window title, and cursor-position and
   device-attribute replies — a program that asks where the cursor is gets an answer instead of hanging.
 - **Keyboard**: a soft-keyboard bridge that reports every keystroke without an editable text field to

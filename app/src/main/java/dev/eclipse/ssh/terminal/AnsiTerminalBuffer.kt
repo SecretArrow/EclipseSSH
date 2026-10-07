@@ -85,7 +85,18 @@ data class TerminalStyle(
     val strikethrough: Boolean = false,
     /** SGR 8. Drawn as blanks: the whole point of conceal is that the text is not readable. */
     val hidden: Boolean = false,
-)
+) {
+    /**
+     * This style as a blank cell can still show it.
+     *
+     * A blank has no glyph, so bold, dim, italic, underline, strikethrough and conceal draw nothing
+     * on one, and every terminal's own erase drops them - keeping them would only let a cleared cell
+     * join the run beside it and carry that run's decoration across what the program cleared. What is
+     * left is the two colours and the swap between them, and both are visible: the background is
+     * painted, and under [inverse] it is the foreground that is painted in its place.
+     */
+    val blanked: TerminalStyle get() = TerminalStyle(foreground, background, inverse = inverse)
+}
 
 /**
  * One cell of the grid: the character it shows, the style it shows it in, and whatever zero-width
@@ -1509,6 +1520,16 @@ class AnsiTerminalBuffer(
     }
 
     /**
+     * The blank an erase leaves behind: a space wearing what the current style can still show on one.
+     *
+     * The app tells the far side it is `xterm-256color`, whose `bce` promises that an erase fills with
+     * the current background, so a program that paints one and then clears has every right to see it.
+     * Dropping it is invisible in a shell, which rewrites the line, and permanent in a program that
+     * repaints nothing - and in tmux, which sends only the cells it believes have changed.
+     */
+    private fun eraseBlank() = TerminalCell(' ', style.blanked)
+
+    /**
      * Destroys the whole character at [column]: the cell, and the other half of a wide character.
      *
      * The one rule that keeps the two cells of a wide character from coming apart, and every erase and
@@ -1522,16 +1543,16 @@ class AnsiTerminalBuffer(
     private fun clearUnit(line: MutableList<TerminalCell>, column: Int) {
         if (column !in line.indices) return
         if (line[column].wide) {
-            if (column + 1 < line.size) line[column + 1] = TerminalCell()
-            line[column] = TerminalCell()
+            if (column + 1 < line.size) line[column + 1] = eraseBlank()
+            line[column] = eraseBlank()
             return
         }
         if (column > 0 && line[column - 1].wide) {
-            line[column - 1] = TerminalCell()
-            line[column] = TerminalCell()
+            line[column - 1] = eraseBlank()
+            line[column] = eraseBlank()
             return
         }
-        line[column] = TerminalCell()
+        line[column] = eraseBlank()
     }
 
     /**
@@ -1774,12 +1795,13 @@ class AnsiTerminalBuffer(
 
     private fun eraseDisplay(mode: Int) {
         val top = screenTop()
+        val blank = eraseBlank()
         when (mode) {
             // Only the screen, never the scrollback: `clear` at a shell prompt must not throw away
             // the history the user scrolled back to read.
-            2 -> for (row in top until lines.size) lines[row].fill(TerminalCell())
-            0 -> { eraseLine(0); for (row in cursorRow + 1 until lines.size) lines[row].fill(TerminalCell()) }
-            1 -> { eraseLine(1); for (row in top until cursorRow) lines[row].fill(TerminalCell()) }
+            2 -> for (row in top until lines.size) lines[row].fill(blank)
+            0 -> { eraseLine(0); for (row in cursorRow + 1 until lines.size) lines[row].fill(blank) }
+            1 -> { eraseLine(1); for (row in top until cursorRow) lines[row].fill(blank) }
             // `ESC [ 3 J` is the explicit "and drop the scrollback too" that `clear` sends on a modern
             // system, and the only sequence allowed to discard history. It also releases
             // [positionalScreen]: throwing the history away is a statement that nothing on the way out
@@ -1798,7 +1820,7 @@ class AnsiTerminalBuffer(
         when (mode) {
             // A whole line goes in one move, so there is no half-character to leave behind: nothing on
             // it survives to be overprinted by the other half of a wide glyph.
-            2 -> line.fill(TerminalCell())
+            2 -> line.fill(eraseBlank())
             1 -> for (i in 0..cursorColumn.coerceAtMost(columns - 1)) clearUnit(line, i)
             else -> for (i in cursorColumn.coerceIn(0, columns - 1) until columns) clearUnit(line, i)
         }
