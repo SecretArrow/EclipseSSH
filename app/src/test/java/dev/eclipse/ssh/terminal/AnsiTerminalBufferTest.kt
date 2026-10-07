@@ -16,6 +16,10 @@ private const val E = "\u001B"
 private fun List<TerminalCell>.text(): String =
     joinToString("") { it.value.toString() + it.combining }.trimEnd()
 
+/** The background of every cell of one row, so a test can say "all of them, and it is this one". */
+private fun AnsiTerminalBuffer.backgrounds(row: Int): List<TerminalColor> =
+    snapshot().lines[row].map { it.style.background }
+
 class AnsiTerminalBufferTest {
     @Test
     fun `ansi control sequences do not leak into plain terminal text`() {
@@ -145,6 +149,197 @@ class AnsiTerminalBufferTest {
         buffer.feed("$E[10D$E[K")
 
         assertThat(buffer.plainText().lineSequence().first()).isEqualTo("keep")
+    }
+
+    // --- bce: an erase fills with the colour the program set, not with the default ---
+    //
+    // `xterm-256color`, the terminal type this app reports, carries `bce`: an erase is promised to fill
+    // the erased cells with the *current* background. A program that paints a background and then
+    // clears is entitled to send that colour once and rely on it - and tmux does exactly that, setting
+    // the colour and erasing with a bare `ESC [ K`. A shell hides a terminal that drops it by
+    // rewriting the line; tmux does not, because it sends only the cells it believes have changed.
+
+    @Test
+    fun `erase to end of line fills the erased cells with the current background`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+        buffer.feed("$E[1;2H$E[K")
+
+        assertThat(painted.isDefault).isFalse()
+        assertThat(buffer.backgrounds(0).drop(1).toSet()).containsExactly(painted)
+    }
+
+    @Test
+    fun `erase to start of line fills the erased cells with the current background`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+        buffer.feed("$E[1;5H$E[1K")
+
+        assertThat(buffer.backgrounds(0).take(5).toSet()).containsExactly(painted)
+        assertThat(buffer.backgrounds(0).drop(5).toSet()).containsExactly(TerminalColor())
+    }
+
+    @Test
+    fun `erasing the whole line fills it with the current background`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        buffer.feed("$E[2K")
+
+        assertThat(buffer.backgrounds(0).toSet()).containsExactly(painted)
+        assertThat(buffer.plainText()).isEmpty()
+    }
+
+    @Test
+    fun `erasing the display fills every row with the current background`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
+        buffer.feed("$E[41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        buffer.feed("$E[2J")
+
+        assertThat((0..2).flatMap { buffer.backgrounds(it) }.toSet()).containsExactly(painted)
+    }
+
+    @Test
+    fun `erasing to the end of the display fills the rows below the cursor`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
+        buffer.feed("plain\r\n$E[41mX")
+        val painted = buffer.snapshot().lines[1][0].style.background
+
+        buffer.feed("$E[0J")
+
+        assertThat(buffer.backgrounds(0).toSet()).containsExactly(TerminalColor())
+        assertThat(buffer.backgrounds(1).drop(1).toSet()).containsExactly(painted)
+        assertThat(buffer.backgrounds(2).toSet()).containsExactly(painted)
+    }
+
+    @Test
+    fun `erasing to the start of the display fills the rows above the cursor`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
+        buffer.feed("$E[41mX$E[3;1H")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        buffer.feed("$E[1J")
+
+        assertThat((0..1).flatMap { buffer.backgrounds(it) }.toSet()).containsExactly(painted)
+        assertThat(buffer.backgrounds(2).take(1).toSet()).containsExactly(painted)
+        assertThat(buffer.backgrounds(2).drop(1).toSet()).containsExactly(TerminalColor())
+    }
+
+    @Test
+    fun `erase characters fills only the cells it erases`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41mX$E[1;2H")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        buffer.feed("$E[3X")
+
+        assertThat(buffer.backgrounds(0).drop(1).take(3).toSet()).containsExactly(painted)
+        assertThat(buffer.backgrounds(0).drop(4).toSet()).containsExactly(TerminalColor())
+    }
+
+    @Test
+    fun `an erase after the background is reset goes back to the default`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41m$E[2J")
+        assertThat(buffer.backgrounds(0).toSet()).hasSize(1)
+
+        buffer.feed("$E[49m$E[2J")
+
+        assertThat((0..1).flatMap { buffer.backgrounds(it) }.toSet()).containsExactly(TerminalColor())
+    }
+
+    @Test
+    fun `an erase with no colour set leaves the default blank`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41mX$E[0m")
+
+        buffer.feed("$E[2J")
+
+        assertThat((0..1).flatMap { buffer.backgrounds(it) }.toSet()).containsExactly(TerminalColor())
+        assertThat(buffer.snapshot().lines[0][0]).isEqualTo(TerminalCell())
+    }
+
+    @Test
+    fun `an erase under reverse video keeps the swap, which is what gets painted`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[7;31mX")
+        val painted = buffer.snapshot().lines[0][0].style
+
+        buffer.feed("$E[2J")
+
+        // Reversed, the cell paints its foreground - so an erased cell that lost `inverse` would come
+        // out in the default background instead of the colour the program is filling the screen with.
+        val erased = buffer.snapshot().lines[1][0].style
+        assertThat(erased.inverse).isTrue()
+        assertThat(erased.foreground).isEqualTo(painted.foreground)
+    }
+
+    @Test
+    fun `an erased cell keeps no attribute a blank cannot show`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[1;4;9;41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        buffer.feed("$E[1;2H$E[K")
+
+        val erased = buffer.snapshot().lines[0][1].style
+        assertThat(erased.background).isEqualTo(painted)
+        assertThat(erased.bold).isFalse()
+        assertThat(erased.underline).isFalse()
+        assertThat(erased.strikethrough).isFalse()
+    }
+
+    @Test
+    fun `erasing one half of a wide character gives the other half the current background`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("你$E[1;1H$E[41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        assertThat(painted.isDefault).isFalse()
+        assertThat(buffer.snapshot().lines[0][1].style.background).isEqualTo(painted)
+    }
+
+    @Test
+    fun `erasing the scrollback leaves the cells on the screen alone`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("one\ntwo\n")
+
+        buffer.feed("$E[41m$E[3J")
+
+        // The history goes; the screen it was cleared behind keeps its text. `ESC [ 3 J` is not an erase
+        // of anything on screen, so it must not repaint it in the current colour either.
+        assertThat(buffer.snapshot().lines).hasSize(2)
+        assertThat(buffer.snapshot().lines[0].map { it.value }.joinToString("").trimEnd()).isEqualTo("two")
+        assertThat(buffer.backgrounds(0).toSet()).containsExactly(TerminalColor())
+    }
+
+    @Test
+    fun `a screen erased under a background is painted all the way across`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
+
+        buffer.feed("$E[41m$E[2J")
+
+        // What makes the fill visible at all: a blank counts as painted only when it carries a colour
+        // or a swap, so an erase that kept neither would be trimmed off with the trailing blanks and
+        // the screen would look untouched however the cells were stored.
+        val layout = terminalLayout(buffer.frame(), width = 10, maxRows = 3)
+        assertThat(layout.rows.map { it.to }.toSet()).containsExactly(10)
+    }
+
+    @Test
+    fun `a line scrolled in at the bottom keeps the default background`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
+        buffer.feed("$E[41ma\nb\n")
+
+        // The deliberate edge of the erase fix: it is the *erase* sequences that fill with the current
+        // background, not the row the screen scrolls into view. A cell that was never cleared is not
+        // something a program asked to paint, and colouring it would tint the scrollback behind it.
+        assertThat(buffer.snapshot().lines.last().toSet()).containsExactly(TerminalCell())
     }
 
     @Test
