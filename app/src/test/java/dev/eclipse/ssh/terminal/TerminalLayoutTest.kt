@@ -184,6 +184,38 @@ class TerminalLayoutTest {
     }
 
     @Test
+    fun `a cursor parked past its row's text reports only the paint`() {
+        // Claude Code's input box, as captured from the real program through a real pty: the terminal's
+        // cursor is parked on the corner of the box, fifty columns to the right of the line being typed,
+        // with nothing drawn between them. The row still has to lay out the cell the cursor is on - the
+        // image is unchanged - but the number the pan reads is the nine columns of text.
+        val frame = frameOf(
+            listOf("alpha one", "mu line12"),
+            cursorRow = 1,
+            cursorColumn = 60,
+            alternateScreen = true,
+            positionalScreen = true,
+        )
+        val layout = terminalLayout(frame, width = 44, maxRows = 22)
+
+        assertThat(layout.cursorColumn).isEqualTo(60)
+        assertThat(layout.cursorRowInk).isEqualTo(9)
+        assertThat(layout.rows[1].width).isEqualTo(61)
+    }
+
+    @Test
+    fun `a wrapped line reports the paint of the row the cursor is on`() {
+        // The cursor's column is within its row, so the row's paint has to be within its row too: the
+        // second row of this line carries five columns, not the eleven of the line.
+        val frame = frameOf(listOf("hello world"), cursorRow = 0, cursorColumn = 8)
+        val layout = terminalLayout(frame, width = 6, maxRows = 24)
+
+        assertThat(layout.cursorRow).isEqualTo(1)
+        assertThat(layout.cursorColumn).isEqualTo(2)
+        assertThat(layout.cursorRowInk).isEqualTo(5)
+    }
+
+    @Test
     fun `a blank line still occupies a row`() {
         val layout = layoutOf(listOf("first", "", "third"), width = 20)
 
