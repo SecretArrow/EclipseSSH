@@ -25,6 +25,20 @@ private const val MAX_CONTROL_LENGTH = 256
 /** Where the default tab stops sit, on this terminal and on every other one since the VT100. */
 private const val TAB_WIDTH = 8
 
+/**
+ * What XTVERSION (`CSI > Ps q`) answers with: `DCS > | name(version) ST`.
+ *
+ * The version is the app's, because the emulator ships inside the app and nothing else versions it -
+ * `scripts/check-doc-figures.sh` holds this constant against `versionName` in app/build.gradle.kts,
+ * so a release bump cannot leave it behind.
+ */
+const val TERMINAL_IDENTITY = "EclipseSSH(1.21.0)"
+
+// DECRQM's three answers: the mode is on, it is off, or this terminal has never heard of it.
+private const val MODE_SET = 1
+private const val MODE_RESET = 2
+private const val MODE_UNRECOGNIZED = 0
+
 // The C0 control bytes this terminal acts on.
 private const val C0_NUL = 0x00
 private const val C0_BEL = 0x07
@@ -1154,11 +1168,25 @@ class AnsiTerminalBuffer(
             'n' -> if (!private) deviceStatus(params.firstOrNull() ?: 0)
             's' -> if (prefix == null) saveCursor()
             'u' -> if (prefix == null) restoreCursor()
+            // XTVERSION. Answered with this emulator's own name rather than an xterm's: the name
+            // travels on the wire and a program may branch on it, and claiming to be an xterm is a
+            // claim this terminal cannot back with features. DECLL (`CSI Ps q`) and every other `q`
+            // form stay unanswered, which is what a terminal that does not implement them says.
+            'q' -> if (prefix == '>' && (params.firstOrNull() ?: 0) == 0) {
+                queueReply(dcs(">|$TERMINAL_IDENTITY"))
+            }
             'h' -> setMode(params, private, true)
             'l' -> setMode(params, private, false)
-            // DECSTR, the soft reset. `reset` is stronger than the standard asks for, and that is the
-            // safer direction: the sequence is sent by programs recovering from a confused terminal.
-            'p' -> if (prefix == '!') reset()
+            // `CSI ! p` is DECSTR, the soft reset - stronger than the standard asks for, and that is
+            // the safer direction, since it is sent by programs recovering from a confused terminal.
+            // A `$` in front of the `p` makes it DECRQM instead, and that `$` is an intermediate byte
+            // rather than one of the prefixes this parser reads, so it is looked for in the body.
+            'p' -> when {
+                prefix == '!' -> reset()
+                body.endsWith('$') && (prefix == null || private) ->
+                    body.dropLast(1).split(';').forEach { reportMode(it.toIntOrNull() ?: 0, private) }
+                else -> Unit
+            }
         }
     }
 
@@ -1278,6 +1306,39 @@ class AnsiTerminalBuffer(
         }
     }
 
+    /**
+     * DECRQM: `CSI ? Ps $ p` asks about a DEC private mode, `CSI Ps $ p` about an ANSI one, and the
+     * answer is `CSI [?] Ps ; Pm $ y`.
+     *
+     * It is asked in order to decide what to send next, so the answer has to be true rather than
+     * flattering: a mode reported as set is one a program will go on to use. Only modes this terminal
+     * keeps a state for are reported as set or reset; everything else answers [MODE_UNRECOGNIZED],
+     * including 1048, which saves a cursor rather than switching anything. Measured on Claude Code's
+     * startup, reporting 2026 as set and reporting it unrecognized produce byte-identical output, so
+     * the reason for the honest answer is the protocol and not a reaction observed here.
+     */
+    private fun reportMode(mode: Int, private: Boolean) {
+        val state = when {
+            !private -> if (mode == 4) onOff(insertMode) else MODE_UNRECOGNIZED
+            mode in MouseModes.handled -> onOff(mode in mouseModes)
+            else -> when (mode) {
+                1 -> onOff(applicationCursorKeys)
+                6 -> onOff(originMode)
+                7 -> onOff(autoWrap)
+                25 -> onOff(cursorVisible)
+                2004 -> onOff(bracketedPaste)
+                // 47, 1047 and 1049 are one state here: enterAlternateScreen is what all three call,
+                // and reporting them apart would claim a distinction this terminal does not draw.
+                47, 1047, 1049 -> onOff(primary != null)
+                else -> MODE_UNRECOGNIZED
+            }
+        }
+        val prefix = if (private) "?" else ""
+        queueReply(csi("$prefix$mode;$state\$y"))
+    }
+
+    private fun onOff(on: Boolean) = if (on) MODE_SET else MODE_RESET
+
     private fun queueReply(reply: String) {
         // Bounded for the same reason the control buffer is: a remote that asks for status faster
         // than the channel drains must not be able to grow this without limit.
@@ -1351,6 +1412,9 @@ class AnsiTerminalBuffer(
 
     /** Builds a CSI reply. Exists so no string in this file has to embed a control byte. */
     private fun csi(body: String): String = "$ESC[$body"
+
+    /** Builds a DCS reply, which is what XTVERSION answers with, terminated by ST. */
+    private fun dcs(body: String): String = "${ESC}P$body${ESC}\\"
 
     /**
      * The two ways a cursor position is assigned, clamped on both ends.
