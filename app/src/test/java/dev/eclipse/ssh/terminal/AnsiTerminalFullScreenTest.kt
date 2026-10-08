@@ -286,6 +286,173 @@ class AnsiTerminalFullScreenTest {
         assertThat(readerFinished.count).isEqualTo(0L)
     }
 
+    // --- The two probes a program uses to find out what it may send ---
+
+    @Test
+    fun `xtversion is answered with this emulator's own name`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // Both spellings a program uses: Claude Code writes `CSI > 0 q`, xterm's own docs say
+        // `CSI > Ps q` with the parameter optional.
+        buffer.feed("${ESCAPE}[>0q${ESCAPE}[>q")
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}P>|$TERMINAL_IDENTITY${ESCAPE}\\",
+            "${ESCAPE}P>|$TERMINAL_IDENTITY${ESCAPE}\\",
+        )
+    }
+
+    @Test
+    fun `the q forms that are not xtversion are left unanswered`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // DECLL and a secondary request with a parameter are not XTVERSION, and answering either with
+        // a version string would put a DCS into a stream the program reads as something else.
+        buffer.feed("${ESCAPE}[5q${ESCAPE}[>5q${ESCAPE}[q")
+
+        assertThat(replies).isEmpty()
+    }
+
+    @Test
+    fun `decrqm reports a mode that is on and one that is off`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?25${'$'}p")
+        buffer.feed("${ESCAPE}[?25l${ESCAPE}[?25${'$'}p")
+
+        assertThat(replies).containsExactly("${ESCAPE}[?25;1${'$'}y", "${ESCAPE}[?25;2${'$'}y").inOrder()
+    }
+
+    @Test
+    fun `decrqm reports a mode this terminal does not implement as unrecognized`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // 2026 is synchronised output, which is what Claude Code actually asks about; 1048 saves a
+        // cursor and is not a switch; 7727 is a mode nothing here has heard of. All three answer 0, so
+        // a program falls back rather than being told a feature it asked for is there.
+        buffer.feed("${ESCAPE}[?2026${'$'}p${ESCAPE}[?1048${'$'}p${ESCAPE}[?7727${'$'}p")
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}[?2026;0${'$'}y",
+            "${ESCAPE}[?1048;0${'$'}y",
+            "${ESCAPE}[?7727;0${'$'}y",
+        ).inOrder()
+    }
+
+    @Test
+    fun `decrqm follows the mode a program sets`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?1000h${ESCAPE}[?1000${'$'}p${ESCAPE}[?1000l${ESCAPE}[?1000${'$'}p")
+
+        assertThat(replies).containsExactly("${ESCAPE}[?1000;1${'$'}y", "${ESCAPE}[?1000;2${'$'}y").inOrder()
+    }
+
+    @Test
+    fun `decrqm answers an ansi mode without the private marker`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // 4 is IRM, the one ANSI mode implemented here; 20 is LNM, which the display has no say in.
+        buffer.feed("${ESCAPE}[4h${ESCAPE}[4${'$'}p${ESCAPE}[20${'$'}p")
+
+        assertThat(replies).containsExactly("${ESCAPE}[4;1${'$'}y", "${ESCAPE}[20;0${'$'}y").inOrder()
+    }
+
+    @Test
+    fun `decrqm reports the three alternate screen modes as the one state they share`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?47${'$'}p${ESCAPE}[?1049h${ESCAPE}[?47${'$'}p${ESCAPE}[?1047${'$'}p${ESCAPE}[?1049${'$'}p")
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}[?47;2${'$'}y",
+            "${ESCAPE}[?47;1${'$'}y",
+            "${ESCAPE}[?1047;1${'$'}y",
+            "${ESCAPE}[?1049;1${'$'}y",
+        ).inOrder()
+    }
+
+    @Test
+    fun `decrqm answers every mode it is asked about in one sequence`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?25;1006;2026${'$'}p")
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}[?25;1${'$'}y",
+            "${ESCAPE}[?1006;2${'$'}y",
+            "${ESCAPE}[?2026;0${'$'}y",
+        ).inOrder()
+    }
+
+    @Test
+    fun `decrqm asked with no mode number answers for mode zero`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?${'$'}p")
+
+        assertThat(replies).containsExactly("${ESCAPE}[?0;0${'$'}y")
+    }
+
+    @Test
+    fun `a dollar with nothing after it is not decrqm either`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // `$` leads the soft-reset and request-mode families, so this parses as one of those with no
+        // body at all rather than as a DECRQM. Nothing is answered, and nothing is drawn.
+        buffer.feed("${ESCAPE}[${'$'}p")
+
+        assertThat(replies).isEmpty()
+    }
+
+    @Test
+    fun `a soft reset is still a reset and not a mode report`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        buffer.feed("${ESCAPE}[?25l")
+
+        buffer.feed("${ESCAPE}[!p")
+
+        assertThat(replies).isEmpty()
+        assertThat(buffer.frame().cursorVisible).isTrue()
+    }
+
+    @Test
+    fun `neither probe moves anything on the screen`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        buffer.responder = { }
+        buffer.feed("abc${ESCAPE}[2;2H")
+        val before = buffer.frame()
+
+        buffer.feed("${ESCAPE}[>0q${ESCAPE}[?2026${'$'}p${ESCAPE}[?25${'$'}p")
+
+        val after = buffer.frame()
+        assertThat(after.cursorRow).isEqualTo(before.cursorRow)
+        assertThat(after.cursorColumn).isEqualTo(before.cursorColumn)
+        assertThat(buffer.plainText()).isEqualTo("abc")
+    }
+
     // --- Character sets, colours and the smaller editing sequences ---
 
     @Test

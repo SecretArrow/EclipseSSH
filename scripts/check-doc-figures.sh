@@ -134,6 +134,20 @@ for pair in "versionCode=$v_version_code" "versionName=$v_version_name" "minSdk=
   [ -n "${pair#*=}" ] || fail "could not read ${pair%%=*} from the build files — this script is out of date"
 done
 
+# XTVERSION answers with this emulator's name and the app's version, and the version is the one number
+# in this file a reader may never see: it goes out over the wire as `DCS > | EclipseSSH(1.21.0) ST`
+# rather than into a document. So it is checked the same way the documents are, because a release bump
+# that updated app/build.gradle.kts and left the constant behind would have the terminal reporting a
+# version the app has not been for months, and nothing else here would notice.
+checked=$((checked + 1))
+identity="$(sed -nE 's/^const val TERMINAL_IDENTITY = ".*\(([^)]*)\)".*/\1/p' \
+  app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt | head -1)"
+if [ -z "$identity" ]; then
+  fail "AnsiTerminalBuffer.kt no longer declares TERMINAL_IDENTITY in the shape this script reads — this script is out of date"
+elif [ "$identity" != "$v_version_name" ]; then
+  fail "TERMINAL_IDENTITY reports version $identity; app/build.gradle.kts is at $v_version_name"
+fi
+
 # ---------------------------------------------------------------------------------------------
 # AUDIT-REPORT.md, header block only (lines 1-8). Line 7 is the paragraph that promises this check.
 # ---------------------------------------------------------------------------------------------
