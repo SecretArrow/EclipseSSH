@@ -373,6 +373,99 @@ class AnsiTerminalBufferTest {
         assertThat(buffer.snapshot().lines[0][3].value).isEqualTo('Q')
     }
 
+    // --- The same final byte, a different question, when a prefix is present ---
+
+    @Test
+    fun `a keyboard protocol probe leaves the cursor where the program put it`() {
+        // `CSI ? u` asks the terminal whether it speaks the kitty keyboard protocol; `CSI < u` pops
+        // and `CSI > 5 u` pushes. Read as the bare `CSI u` they answered by moving the cursor to the
+        // last saved position, so every program that asks about the keyboard got a screen jump.
+        for (probe in listOf("$E[?u", "$E[<u", "$E[>5u")) {
+            val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+            buffer.feed("abc$E[s$E[3;1H$E[2K")
+
+            buffer.feed(probe)
+
+            assertWithMessage("after %s", probe).that(buffer.frame().cursorRow).isEqualTo(2)
+            assertWithMessage("after %s", probe).that(buffer.frame().cursorColumn).isEqualTo(0)
+        }
+    }
+
+    @Test
+    fun `a keyboard protocol probe does not disturb a restore either`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // The bare form still restores, which is what the three prefixed ones must not do.
+        buffer.feed("abc$E[s$E[3;1H$E[?u$E[uQ")
+
+        assertThat(buffer.snapshot().lines[0][3].value).isEqualTo('Q')
+    }
+
+    @Test
+    fun `modifyOtherKeys is not read as a dim underlined SGR`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // `ESC [ > 4 ; 2 m` is xterm's modifyOtherKeys. Read as SGR it set dim plus underline, and
+        // every cell the program drew afterwards carried both - on a real capture of Claude Code that
+        // was 543 decorated cells against 80 without the sequence.
+        buffer.feed("$E[>4;2mA")
+        val afterProbe = buffer.snapshot().lines[0][0].style
+
+        assertThat(afterProbe.dim).isFalse()
+        assertThat(afterProbe.underline).isFalse()
+    }
+
+    @Test
+    fun `a real SGR still sets dim and underline`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("$E[4;2mA")
+        val style = buffer.snapshot().lines[0][0].style
+
+        assertThat(style.underline).isTrue()
+        assertThat(style.dim).isTrue()
+    }
+
+    @Test
+    fun `a private mode save does not overwrite the saved cursor`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // `ESC [ ? Pm s` saves private modes. Read as the bare `CSI s` it saved the cursor, and the
+        // restore that followed went to the mode-save's position instead of the program's.
+        buffer.feed("abc$E[s$E[3;1H$E[?1000s$E[uQ")
+
+        assertThat(buffer.snapshot().lines[0][3].value).isEqualTo('Q')
+        assertThat(buffer.snapshot().lines[2][0].value).isNotEqualTo('Q')
+    }
+
+    @Test
+    fun `a private mode restore does not set the scroll region`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 4)
+        buffer.feed("A\r\nB\r\nC\r\nD")
+
+        // `ESC [ ? Pm r` restores private modes. Read as the bare `CSI r` it set the scroll region
+        // from a mode number, which is the whole screen for any mode above the row count - and a line
+        // feed at the screen's foot then scrolls row 0 away instead of stopping at the margin.
+        buffer.feed("$E[2;3r$E[?1000r$E[4;1H")
+        buffer.feed("\n")
+
+        assertThat(buffer.snapshot().lines[0].text()).isEqualTo("A")
+    }
+
+    @Test
+    fun `the prologue Claude Code writes before it draws moves nothing`() {
+        val buffer = AnsiTerminalBuffer(columns = 80, rows = 22)
+        buffer.feed("$  a prompt line typed by the user\n")
+        val before = buffer.frame()
+
+        buffer.feed(
+            "$E[<u$E[>5u$E[>4;2m$E[?1000h$E[?1002h$E[?1003h$E[?1006h$E[?25l$E[>0q$E[?u$E[c",
+        )
+
+        assertThat(buffer.frame().cursorRow).isEqualTo(before.cursorRow)
+        assertThat(buffer.frame().cursorColumn).isEqualTo(before.cursorColumn)
+    }
+
     @Test
     fun `full reset clears the screen and the pending style`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
