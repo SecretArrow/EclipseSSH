@@ -1086,10 +1086,11 @@ class AnsiTerminalBuffer(
         if (command.isEmpty()) return
         val final = command.last()
         val raw = command.dropLast(1)
-        // '?' marks a DEC private mode, '>' a secondary request, '!' and '$' the soft-reset and
-        // request-mode families. Kept as the leading byte rather than stripped blindly, because the
-        // answer to CSI c depends on which of them introduced it.
-        val prefix = raw.firstOrNull()?.takeIf { it == '?' || it == '>' || it == '!' || it == '$' }
+        // '?' marks a DEC private mode, '>' a secondary request, '<' the private-parameter form the
+        // kitty keyboard protocol uses, '!' and '$' the soft-reset and request-mode families. Kept as
+        // the leading byte rather than stripped blindly, because the answer to CSI c depends on which
+        // of them introduced it - and so does whether `u` is a cursor restore or a keyboard query.
+        val prefix = raw.firstOrNull()?.takeIf { it == '?' || it == '>' || it == '<' || it == '!' || it == '$' }
         val body = if (prefix == null) raw else raw.substring(1)
         // Clamped at zero, and that is a crash fix rather than tidiness. ECMA-48 parameter bytes are
         // 0x30..0x3F, so "-" is not part of a number at all - but it still reaches here inside the
@@ -1135,8 +1136,13 @@ class AnsiTerminalBuffer(
             'S' -> repeat(first.coerceAtMost(rows)) { scrollRegionUp() }
             'T' -> repeat(first.coerceAtMost(rows)) { scrollRegionDown() }
             'b' -> repeatLastCharacter(first.coerceAtMost(columns))
-            'm' -> applySgr(params.ifEmpty { listOf(0) })
-            'r' -> setScrollRegion(params)
+            // A prefix asks a different question with the same final byte: `ESC [ > 4 ; 2 m` is
+            // modifyOtherKeys, not SGR dim+underline; `ESC [ ? u` / `ESC [ < u` / `ESC [ > 5 u` are
+            // the kitty keyboard protocol's query, pop and push; `ESC [ ? Pm s` / `r` save and
+            // restore *private modes*. Only the bare forms are implemented, and an unimplemented
+            // prefixed form is ignored - which is what makes the program fall back to plain output.
+            'm' -> if (prefix == null) applySgr(params.ifEmpty { listOf(0) })
+            'r' -> if (prefix == null) setScrollRegion(params)
             'g' -> clearTabStop(params.firstOrNull() ?: 0)
             'c' -> when (prefix) {
                 // Secondary DA: "a VT220, firmware 95". Primary DA: "a VT100 with AVO", which is what
@@ -1146,8 +1152,8 @@ class AnsiTerminalBuffer(
                 else -> Unit
             }
             'n' -> if (!private) deviceStatus(params.firstOrNull() ?: 0)
-            's' -> saveCursor()
-            'u' -> restoreCursor()
+            's' -> if (prefix == null) saveCursor()
+            'u' -> if (prefix == null) restoreCursor()
             'h' -> setMode(params, private, true)
             'l' -> setMode(params, private, false)
             // DECSTR, the soft reset. `reset` is stronger than the standard asks for, and that is the
