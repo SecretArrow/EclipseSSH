@@ -249,12 +249,20 @@ internal fun maxPanPx(contentColumns: Int, visibleColumns: Int, cellWidth: Float
  * deliberate pan sideways stick while output is arriving - it is given up only when the cursor moves
  * somewhere it cannot be seen.
  *
+ * What is followed is [cursorColumn] only for as long as the cursor is inside the text of its own row.
+ * A full-screen program may park the terminal's cursor away from the text it draws the user's caret in
+ * - Claude Code leaves it on the corner of its input box, fifty columns past the line being typed - and
+ * following a parked cursor drags the window onto the empty half of the row, taking the user's message
+ * off the left edge. Past the row's paint the cursor is therefore read as [cursorRowInk], which is where
+ * a program drawing its own caret puts that caret: at the end of what the user typed.
+ *
  * [current] is re-clamped on every call, because the extent shrinks under it: a narrower frame, or
  * scrolling back to a region of short lines, can leave a stored offset past the end of what exists.
  */
 internal fun panForCursor(
     current: Float,
     cursorColumn: Int,
+    cursorRowInk: Int,
     cursorOnScreen: Boolean,
     cellWidth: Float,
     visibleWidthPx: Float,
@@ -263,13 +271,14 @@ internal fun panForCursor(
     val ceiling = maxPan.coerceAtLeast(0f)
     val clamped = current.coerceIn(0f, ceiling)
     if (!cursorOnScreen || cellWidth <= 0f || visibleWidthPx <= 0f) return clamped
-    val left = cursorColumn * cellWidth
+    val followed = cursorColumn.coerceAtMost(cursorRowInk)
+    val left = followed * cellWidth
     val right = left + cellWidth
-    return when {
-        right > clamped + visibleWidthPx -> (right - visibleWidthPx).coerceIn(0f, ceiling)
-        left < clamped -> left.coerceIn(0f, ceiling)
-        else -> clamped
-    }
+    // The least pan that puts the followed cell inside the window, which is the only place it moves to:
+    // a cursor leaving to the right is caught at the right edge, and one that comes back left of the
+    // window is met where it is rather than pushed to the left edge of a window that scrolled further.
+    val wanted = (right - visibleWidthPx).coerceIn(0f, ceiling)
+    return if (right > clamped + visibleWidthPx || left < clamped) wanted else clamped
 }
 
 /**
@@ -447,12 +456,16 @@ fun TerminalView(
         // user would be editing a line they cannot see. Keyed on the cursor rather than on the frame,
         // so this settles once per cursor move and a manual pan is left alone until the cursor moves
         // again - and re-clamped here too, because a narrower frame can strand an old pan past its end.
-        LaunchedEffect(layout.cursorColumn, layout.cursorRow, maxPan, visible.columns, metrics.width) {
+        LaunchedEffect(layout.cursorColumn, layout.cursorRowInk, layout.cursorRow, maxPan, visible.columns, metrics.width) {
             val target = panForCursor(
                 current = pan.floatValue,
                 // The cursor's column *within its row*. On a wrapped line the two differ, and following
                 // the line's column would pan a window whose text is already on screen.
                 cursorColumn = layout.cursorColumn,
+                // And this is what the cursor is read as once a program has parked it past the row's
+                // text - see [panForCursor]. Keyed above, because deleting text moves the row's end
+                // without moving the cursor.
+                cursorRowInk = layout.cursorRowInk,
                 cursorOnScreen = layout.cursorRow >= 0,
                 cellWidth = metrics.width,
                 visibleWidthPx = visibleWidthPx,

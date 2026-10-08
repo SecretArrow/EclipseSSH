@@ -55,6 +55,15 @@ class TerminalLayout(
     /** The cursor's column *within* its row, which is not its column within the line once wrapped. */
     val cursorColumn: Int,
     /**
+     * How many columns of the cursor's row are painted, counted from that row's own start.
+     *
+     * The view follows `min(cursorColumn, cursorRowInk)`. A full-screen program may park the terminal's
+     * cursor away from the text it draws the user's caret in - Claude Code parks it on the corner of its
+     * input box - and a window that follows a parked cursor lands on empty cells with the text off the
+     * left edge.
+     */
+    val cursorRowInk: Int = 0,
+    /**
      * The rows just above the window, and just below it, laid out by the same wrapping rule.
      *
      * They are the rows a sub-row drag reveals: the buffer hands over exactly the lines the next step in
@@ -104,6 +113,7 @@ fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayo
     val shown = fittedRows(rows, frame, maxRows)
     var cursorRow = -1
     var cursorColumn = 0
+    var cursorRowInk = 0
     if (frame.cursorVisible && frame.cursorRow >= 0) {
         // The last row that starts at or before the cursor's column, so a cursor sitting one past the
         // end of the text - where it is during every keystroke of a command - lands on the row holding
@@ -111,7 +121,13 @@ fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayo
         val index = shown.indexOfLast { it.line == frame.cursorRow && frame.cursorColumn >= it.from }
         if (index >= 0) {
             cursorRow = index
-            cursorColumn = frame.cursorColumn - shown[index].from
+            val visual = shown[index]
+            cursorColumn = frame.cursorColumn - visual.from
+            // The row's paint alone, unlike [paintedExtent], which adds the cell a cursor sitting one
+            // past the text is about to be typed into. A cursor parked on the far side of the row is
+            // nowhere near that cell, and this is the number that tells the two apart.
+            val painted = minOf(terminalPaintedWidth(frame.lines[visual.line]), visual.to)
+            cursorRowInk = (painted - visual.from).coerceAtLeast(0)
         }
     }
     var content = 0
@@ -124,6 +140,7 @@ fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayo
         contentColumns = content,
         cursorRow = cursorRow,
         cursorColumn = cursorColumn,
+        cursorRowInk = cursorRowInk,
         // Not fitted: they are off the screen at rest by construction, so there is no budget to cut them
         // to - and cutting them would take away the rows the next step is about to reveal.
         marginAbove = visualRowsOf(frame.marginAbove, wrap, width) { _, line -> terminalPaintedWidth(line) },
