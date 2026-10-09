@@ -1175,4 +1175,202 @@ class AnsiTerminalFullScreenTest {
         assertThat(buffer.textIn(-5, -5, 9_999, 9_999)).isEqualTo("only")
         assertThat(buffer.textIn(3, 0, 1, 0)).isEmpty()
     }
+
+    // --- Escape intermediates, the cursor blink mode, and the modes that stay refused ---
+
+    @Test
+    fun `an escape intermediate opens a sequence instead of printing its final byte`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
+
+        // One shape, eight sequences, and every one used to print its own final byte: `ESC % G` a `G`,
+        // `ESC * 0` a `0`, `ESC  F` an `F`. The defect `ESC O` had, one byte further along.
+        buffer.feed(
+            "${ESCAPE}%G${ESCAPE}%@${ESCAPE}*0${ESCAPE}+0${ESCAPE} F${ESCAPE}-A${ESCAPE}.A${ESCAPE}/A",
+        )
+
+        assertThat(buffer.plainText()).isEmpty()
+        assertThat(buffer.frame().cursorColumn).isEqualTo(0)
+    }
+
+    @Test
+    fun `a double width line attribute is consumed and changes nothing`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
+        buffer.feed("abc")
+
+        // #3 and #4 are double-height, #5 and #6 double-width, and this display has one size of cell.
+        // A double-width line still takes one cell per column, so obeying them here would draw a lie.
+        buffer.feed("${ESCAPE}#3${ESCAPE}#4${ESCAPE}#5${ESCAPE}#6")
+
+        assertThat(buffer.plainText()).isEqualTo("abc")
+        assertThat(buffer.frame().cursorColumn).isEqualTo(3)
+    }
+
+    @Test
+    fun `the screen alignment test fills every cell with an E and homes the cursor`() {
+        val buffer = AnsiTerminalBuffer(columns = 6, rows = 3, scrollbackLimit = 20)
+        buffer.feed("old one\nold two\nold three\nold four\n")
+        buffer.feed("${ESCAPE}[2;5H")
+
+        buffer.feed("${ESCAPE}#8")
+
+        assertThat(buffer.snapshot().lines.takeLast(3).map { line -> line.map { it.value }.joinToString("") })
+            .containsExactly("EEEEEE", "EEEEEE", "EEEEEE")
+        // The screen, not the history: the pattern is a test card, and the lines that have already
+        // scrolled off it are still the user's output.
+        assertThat(buffer.plainText()).startsWith("old on\ne\nold tw")
+        assertThat(buffer.plainText()).endsWith("EEEEEE")
+        // And the cursor is home, which is what the pattern is read from: the next character lands on
+        // the top-left cell of the screen rather than wherever the program left it.
+        buffer.feed("Z")
+        assertThat(buffer.snapshot().lines.takeLast(3).first()[0].value).isEqualTo('Z')
+    }
+
+    @Test
+    fun `the screen alignment test fills in the rendition the program set`() {
+        val buffer = AnsiTerminalBuffer(columns = 6, rows = 3)
+        buffer.feed("${ESCAPE}[41mX")
+        val painted = buffer.snapshot().lines[0][0].style.background
+
+        buffer.feed("${ESCAPE}#8")
+
+        assertThat(buffer.snapshot().lines[0].map { it.style.background }.toSet()).containsExactly(painted)
+        assertThat(buffer.snapshot().lines[2][5].style.background).isEqualTo(painted)
+    }
+
+    @Test
+    fun `the g1 designation reaches the glyph table the same way g0 does`() {
+        val buffer = AnsiTerminalBuffer(columns = 8, rows = 3)
+
+        // `ESC ) 0` is the G1 half of the same table, reached through SO and left through SI.
+        buffer.feed("${ESCAPE})0${chars(0x0E)}q${chars(0x0F)}q")
+
+        assertThat(buffer.plainText()).isEqualTo(chars(0x2500) + "q")
+    }
+
+    @Test
+    fun `an unknown sequence with an intermediate byte takes its final byte with it`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
+
+        // `ESC SP b` implements nothing here, and an unimplemented sequence is ignored whole: the `b`
+        // is its final byte, not text. Letting it print puts a stray letter in the user's output.
+        buffer.feed("a${ESCAPE} b")
+
+        assertThat(buffer.plainText()).isEqualTo("a")
+    }
+
+    @Test
+    fun `a control byte abandons an escape sequence and designates nothing`() {
+        val buffer = AnsiTerminalBuffer(columns = 8, rows = 3)
+
+        // A program killed mid-designation. The newline it was about to be followed by still breaks the
+        // line, and the `q` after it is an ordinary letter because no set was ever selected - the
+        // alternative is a screen full of line-drawing characters.
+        buffer.feed("${ESCAPE}(${chars(0x0A)}q")
+
+        assertThat(buffer.plainText()).isEqualTo("\nq")
+        assertThat(buffer.snapshot().lines[1].map { it.value }.joinToString("").trimEnd()).isEqualTo("q")
+    }
+
+    @Test
+    fun `a second escape inside an escape sequence takes over`() {
+        val buffer = AnsiTerminalBuffer(columns = 8, rows = 3)
+
+        buffer.feed("${ESCAPE}(${ESCAPE}[3mA")
+
+        assertThat(buffer.plainText()).isEqualTo("A")
+        assertThat(buffer.snapshot().lines[0][0].style.italic).isTrue()
+    }
+
+    @Test
+    fun `the cursor blink mode is honoured and reported`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?12${'$'}p")
+        assertThat(buffer.frame().cursorBlink).isTrue()
+
+        buffer.feed("${ESCAPE}[?12l${ESCAPE}[?12${'$'}p")
+        assertThat(buffer.frame().cursorBlink).isFalse()
+
+        buffer.feed("${ESCAPE}[?12h${ESCAPE}[?12${'$'}p")
+        assertThat(buffer.frame().cursorBlink).isTrue()
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}[?12;1${'$'}y",
+            "${ESCAPE}[?12;2${'$'}y",
+            "${ESCAPE}[?12;1${'$'}y",
+        ).inOrder()
+    }
+
+    @Test
+    fun `a soft reset brings the blinking cursor back`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[?12l${ESCAPE}[!p${ESCAPE}[?12${'$'}p")
+
+        assertThat(buffer.frame().cursorBlink).isTrue()
+        assertThat(replies).containsExactly("${ESCAPE}[?12;1${'$'}y")
+    }
+
+    @Test
+    fun `the cursor blink mode outlives the alternate screen, unlike the mouse modes`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("${ESCAPE}[?12l${ESCAPE}[?1000h${ESCAPE}[?1049h${ESCAPE}[?1049l")
+
+        // The mouse modes are dropped when the program hands the screen back, because one that dies
+        // without undoing them would leave the shell reporting every drag. The blink mode is the
+        // cursor's own property, so it stands - which is what xterm does.
+        assertThat(buffer.frame().mouseMode).isEqualTo(MouseMode.OFF)
+        assertThat(buffer.frame().cursorBlink).isFalse()
+    }
+
+    @Test
+    fun `the modes this terminal refuses stay unrecognized and change nothing`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        buffer.feed("abc${ESCAPE}[1;1H")
+
+        buffer.feed(
+            // DECCOLM (3) would clear the screen and resize it to 132 columns, which this app sizes to
+            // the device instead; DECSCNM (5) would invert every cell; DECSLRM (69) would set left and
+            // right margins, which nothing here draws; 2026 is synchronised output.
+            "${ESCAPE}[?3h${ESCAPE}[?5h${ESCAPE}[?69h${ESCAPE}[?2026h" +
+                "${ESCAPE}[?3${'$'}p${ESCAPE}[?5${'$'}p${ESCAPE}[?69${'$'}p${ESCAPE}[?2026${'$'}p",
+        )
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}[?3;0${'$'}y",
+            "${ESCAPE}[?5;0${'$'}y",
+            "${ESCAPE}[?69;0${'$'}y",
+            "${ESCAPE}[?2026;0${'$'}y",
+        ).inOrder()
+        assertThat(buffer.plainText()).isEqualTo("abc")
+        assertThat(buffer.snapshot().lines[0][0].style).isEqualTo(TerminalStyle())
+    }
+
+    @Test
+    fun `none of the refused window operations or attributes draws anything`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        buffer.feed("abc${ESCAPE}[2;2H")
+        val before = buffer.frame()
+
+        buffer.feed(
+            // XTWINOPS 11, 13, 14, 16 and 20 ask for window state, screen pixels and an icon label,
+            // and 24 wants a different number of rows: none of them exists here, and none is answered.
+            "${ESCAPE}[11t${ESCAPE}[13t${ESCAPE}[14t${ESCAPE}[16t${ESCAPE}[20t${ESCAPE}[24t" +
+                "${ESCAPE}#3${ESCAPE}%G${ESCAPE}*0${ESCAPE}+0${ESCAPE}-A",
+        )
+
+        assertThat(replies).isEmpty()
+        assertThat(buffer.plainText()).isEqualTo("abc")
+        assertThat(buffer.frame().cursorRow).isEqualTo(before.cursorRow)
+        assertThat(buffer.frame().cursorColumn).isEqualTo(before.cursorColumn)
+    }
 }

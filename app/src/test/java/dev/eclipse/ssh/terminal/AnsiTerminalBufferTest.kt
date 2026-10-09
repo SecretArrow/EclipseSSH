@@ -80,7 +80,10 @@ class AnsiTerminalBufferTest {
     fun `a garbage escape byte is dropped without corrupting the line`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
-        buffer.feed("a$E b")
+        // `ESC SP b` used to be the sample and printed its `b`; an intermediate byte now opens a
+        // sequence, so the final byte belongs to it (see the full-screen `an unknown sequence with an
+        // intermediate byte takes its final byte with it`).
+        buffer.feed("a$E;b")
 
         assertThat(buffer.plainText()).isEqualTo("ab")
     }
@@ -1223,6 +1226,19 @@ class AnsiTerminalBufferTest {
         buffer.feed("recovered")
 
         assertThat(buffer.plainText()).contains("recovered")
+    }
+
+    /**
+     * Bounded by the same cap as CSI and OSC, and the tail of the run is printed as the text it turns
+     * out to be.
+     */
+    @Test(timeout = 10_000)
+    fun `an unterminated escape intermediate is abandoned so printing resumes`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("$E" + " ".repeat(500) + "X")
+
+        assertThat(buffer.plainText()).endsWith("X")
     }
 
     /** A tab at the right margin stops there, rather than wrapping the next character. */
