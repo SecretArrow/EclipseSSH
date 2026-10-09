@@ -54,6 +54,7 @@ import dev.eclipse.ssh.data.model.isLive
 import dev.eclipse.ssh.data.model.SessionTab
 import dev.eclipse.ssh.data.model.SftpSessionState
 import dev.eclipse.ssh.data.model.Snippet
+import dev.eclipse.ssh.data.model.TerminalTheme
 import dev.eclipse.ssh.data.model.TransferDirection
 import dev.eclipse.ssh.data.model.TransferItem
 import dev.eclipse.ssh.data.model.TransferStatus
@@ -107,6 +108,7 @@ import dev.eclipse.ssh.security.normalizePastedSecret
 import dev.eclipse.ssh.feature.terminallog.SessionLog
 import dev.eclipse.ssh.feature.terminallog.SilenceDetector
 import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
+import dev.eclipse.ssh.terminal.TerminalColors
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalKeys
@@ -438,6 +440,29 @@ class MainViewModel @Inject constructor(
     private val channels: ConcurrentHashMap<String, TerminalChannel> get() = sessionStore.channels
     private val terminalBuffers: ConcurrentHashMap<String, AnsiTerminalBuffer> get() = sessionStore.buffers
     private val sessions: ConcurrentHashMap<String, ClientSession> get() = sessionStore.sessions
+
+    /**
+     * This view model's theme, read when a program asks rather than copied into a buffer.
+     *
+     * One instance per view model, so [onCleared] can tell its own from a successor's.
+     */
+    private val currentThemeColors: () -> TerminalColors = {
+        val theme = TerminalTheme.named(uiState.value.settings.terminalTheme)
+        TerminalColors(theme.foreground.toInt(), theme.background.toInt())
+    }
+
+    /**
+     * The buffer for [key], with this view model's theme wired into it.
+     *
+     * Set on every hand-out and not only when the buffer is built: a buffer outlives the view model
+     * that built it - [adoptExistingSessions] picks up a session the foreground service kept alive -
+     * and a theme read through a dead view model's state would answer with the colours the screen has
+     * stopped painting.
+     */
+    private fun themedBuffer(key: String): AnsiTerminalBuffer =
+        terminalBuffers.getOrPut(key) { AnsiTerminalBuffer() }
+            .also { it.themeColors = currentThemeColors }
+
     /** Output collectors, one per live channel, cancelled when the tab or host goes away. */
     private val terminalJobs = ConcurrentHashMap<String, Job>()
     /** In-flight connect attempts, so double-tapping a host cannot open two sessions. */
@@ -831,7 +856,7 @@ class MainViewModel @Inject constructor(
                 // orphan all of it.
                 val sessionKey = sessionStore.primarySessionFor(hostId) ?: return@forEach
                 val terminal = channels[sessionKey] ?: return@forEach
-                val buffer = terminalBuffers.getOrPut(sessionKey) { AnsiTerminalBuffer() }
+                val buffer = themedBuffer(sessionKey)
                 updateTab(sessionKey) { existing ->
                     (existing ?: SessionTab(id = sessionKey, hostId = hostId, title = host.name)).copy(
                         state = SessionConnectionState.CONNECTED,
@@ -1314,7 +1339,7 @@ class MainViewModel @Inject constructor(
                         runCatching { previous.close() }
                     }
                 }
-                val buffer = terminalBuffers.getOrPut(key) { AnsiTerminalBuffer() }
+                val buffer = themedBuffer(key)
                 viewportSizes[key]?.let { buffer.resize(it.columns, it.bufferRows) }
                 terminalJobs[key] = launchTerminalCollector(key, host.id, terminal, buffer)
                 publishTerminalFrame(key, buffer)
@@ -1384,7 +1409,7 @@ class MainViewModel @Inject constructor(
                 runCatching { previous.close() }
             }
         }
-        val buffer = terminalBuffers.getOrPut(sessionKey) { AnsiTerminalBuffer() }
+        val buffer = themedBuffer(sessionKey)
         /*
          * The local half of the size the pty was just opened at.
          *
@@ -5020,6 +5045,13 @@ class MainViewModel @Inject constructor(
         textPublishedAt.clear()
         typedLines.clear()
         homePaths.clear()
+        // The theme this view model answered the colour queries with goes too. The buffers live on
+        // with their sessions, but this state stops moving the moment this view model is cleared, so
+        // a buffer left holding it would answer with colours nothing paints any more - and hold this
+        // view model alive to do it. A successor sets its own on the next hand-out.
+        terminalBuffers.values.forEach {
+            if (it.themeColors === currentThemeColors) it.themeColors = null
+        }
         super.onCleared()
     }
 
