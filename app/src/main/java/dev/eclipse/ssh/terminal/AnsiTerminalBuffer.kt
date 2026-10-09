@@ -88,6 +88,17 @@ data class TerminalColor(val value: Int = COLOR_DEFAULT) {
     }
 }
 
+/**
+ * What this terminal paints as its default foreground and background, as ARGB.
+ *
+ * [TerminalColor] answers "has a colour been set for this cell", not "what is the default", so a
+ * program asking OSC 10 or 11 can only be answered if the app hands the buffer the theme it is
+ * actually drawing in. With none to hand it, those queries go unanswered - which is what a terminal
+ * that does not implement them says, and an invented colour is worse than none, since the asking
+ * program uses the reply to pick colours that have to contrast with what this display paints.
+ */
+data class TerminalColors(val foreground: Int, val background: Int)
+
 data class TerminalStyle(
     val foreground: TerminalColor = TerminalColor(),
     val background: TerminalColor = TerminalColor(),
@@ -375,6 +386,13 @@ class AnsiTerminalBuffer(
     private var mouseModes: Set<Int> = emptySet()
     private var title: String? = null
 
+    /**
+     * Window titles saved by XTWINOPS 22 and restored by 23, one stack per thing xterm keeps a stack
+     * for. Both stay in step because both are pushed and popped together by the `0` parameter.
+     */
+    private val iconTitles = ArrayList<String?>()
+    private val windowTitles = ArrayList<String?>()
+
     /** DEC special graphics selected into G0/G1, and which of the two SI/SO has shifted in. */
     private var g0Graphics = false
     private var g1Graphics = false
@@ -406,6 +424,15 @@ class AnsiTerminalBuffer(
      */
     @Volatile
     var responder: ((String) -> Unit)? = null
+
+    /**
+     * Where the answer to the colour queries (OSC 10 and 11) comes from: the theme's default
+     * foreground and background, or null for a terminal with none to give. Asked through a function
+     * rather than copied in, because the user can change the theme while a session is live and the
+     * answer has to be what the screen is painting at that moment.
+     */
+    @Volatile
+    var themeColors: (() -> TerminalColors?)? = null
 
     init {
         repeat(rows) { lines += blankLine() }
@@ -1187,6 +1214,9 @@ class AnsiTerminalBuffer(
                     body.dropLast(1).split(';').forEach { reportMode(it.toIntOrNull() ?: 0, private) }
                 else -> Unit
             }
+            // XTWINOPS. The size and title questions are answered, the requests to move, resize or
+            // raise the user's window are refused, and a prefix makes it a different sequence.
+            't' -> if (prefix == null) windowOperation(params)
         }
     }
 
@@ -1339,6 +1369,61 @@ class AnsiTerminalBuffer(
 
     private fun onOff(on: Boolean) = if (on) MODE_SET else MODE_RESET
 
+    /**
+     * XTWINOPS, `CSI Ps ; Ps ; Ps t`.
+     *
+     * The rule is the protocol's rather than a taste: a question whose answer this terminal knows is
+     * answered, and a request to do something to a window it does not own is refused by being ignored.
+     * So `18 t` and `19 t` report sizes, `21 t` reports the title, and 22 and 23 save and restore it.
+     * The rest ask for what does not exist here or ask the remote to act on the user's display: 11, 13,
+     * 14, 16 and 20 want window state, screen pixels or an icon label (this terminal has one name, not
+     * two), and 1, 2, 3, 4, 5, 6, 7, 8, 9 and 24 want it de-iconified, iconified, moved, resized,
+     * raised, lowered, refreshed, maximized or given a different number of lines by whoever is on the
+     * other end of the connection.
+     */
+    private fun windowOperation(params: List<Int>) {
+        when (params.firstOrNull() ?: 0) {
+            // Rows before columns, in both: `CSI 8 ; rows ; cols t` for the text area and
+            // `CSI 9 ; rows ; cols t` for the screen, which is the order xterm answers in.
+            18 -> queueReply(csi("8;$rows;$columns" + "t"))
+            19 -> queueReply(csi("9;$rows;$columns" + "t"))
+            // `OSC l <title> ST`. A terminal whose title has never been set reports an empty one
+            // rather than staying silent: it was asked a question it can answer.
+            21 -> queueReply(osc("l${title ?: ""}"))
+            22 -> saveTitle(params.getOrNull(1) ?: 0)
+            23 -> restoreTitle(params.getOrNull(1) ?: 0)
+            else -> Unit
+        }
+    }
+
+    /**
+     * `CSI 22 t` saves the title, `CSI 23 t` puts it back. The parameter picks xterm's two stacks: 0
+     * saves or restores both, 1 the icon one, 2 the window one. Both are kept, all six combinations
+     * are handled, and any other parameter is nothing.
+     *
+     * The title saved can be "no title at all", and restoring that puts the tab back to its own label
+     * - that is the state the save recorded, which is the point of saving it. A restore from an empty
+     * stack changes nothing, so a program that restores more often than it saves cannot reach a title
+     * this terminal never held, and the stacks are bounded so it cannot grow one either.
+     */
+    private fun saveTitle(kind: Int) {
+        if (kind == 0 || kind == 1) pushTitle(iconTitles)
+        if (kind == 0 || kind == 2) pushTitle(windowTitles)
+    }
+
+    private fun restoreTitle(kind: Int) {
+        if (kind == 0 || kind == 1) popTitle(iconTitles)
+        if (kind == 0 || kind == 2) popTitle(windowTitles)
+    }
+
+    private fun pushTitle(stack: ArrayList<String?>) {
+        if (stack.size < MAX_TITLE_STACK) stack += title
+    }
+
+    private fun popTitle(stack: ArrayList<String?>) {
+        if (stack.isNotEmpty()) title = stack.removeAt(stack.lastIndex)
+    }
+
     private fun queueReply(reply: String) {
         // Bounded for the same reason the control buffer is: a remote that asks for status faster
         // than the channel drains must not be able to grow this without limit.
@@ -1346,18 +1431,50 @@ class AnsiTerminalBuffer(
     }
 
     private fun finishOsc() {
-        // OSC 0 and 2 set the window title, which the session tab shows. Everything else - colour
-        // queries, hyperlinks, and OSC 52 in particular - is discarded rather than acted on: 52 lets
-        // a remote host write the *local* clipboard, which is not a capability this app is willing to
-        // hand to a server it has just connected to.
+        // OSC 0 and 2 set the window title, which the session tab shows; 10 and 11 ask what this
+        // terminal's default colours are. Everything else - hyperlinks, the palette and cursor-colour
+        // queries, and OSC 52 in particular - is discarded rather than acted on: 52 lets a remote host
+        // write the *local* clipboard, which is not a capability this app is willing to hand to a
+        // server it has just connected to.
         val payload = controlBuffer.toString()
         controlBuffer.clear()
         val separator = payload.indexOf(';')
         if (separator <= 0) return
         val code = payload.substring(0, separator).toIntOrNull() ?: return
-        if (code != 0 && code != 2) return
-        title = payload.substring(separator + 1).take(MAX_TITLE_LENGTH).takeIf { it.isNotBlank() }
-        revision++
+        val rest = payload.substring(separator + 1)
+        when (code) {
+            0, 2 -> {
+                title = rest.take(MAX_TITLE_LENGTH).takeIf { it.isNotBlank() }
+                revision++
+            }
+            // Only `?` is a query. A payload that is a colour is a *set*, and this terminal does not
+            // take one: the theme is the user's, chosen in settings, and a remote repainting the screen
+            // it was given for the length of a session is a remote changing the user's display.
+            10, 11 -> if (rest == "?") answerColorQuery(code)
+            else -> Unit
+        }
+    }
+
+    /**
+     * OSC 10 and 11 ask for the default foreground and background, and the reply is `OSC Ps ;
+     * rgb:RRRR/GGGG/BBBB ST` - the shape OSC 4 uses for the palette, each 8-bit component widened to
+     * sixteen bits by repeating it, so 0xAB is 0xABAB.
+     */
+    private fun answerColorQuery(code: Int) {
+        val colors = themeColors?.invoke() ?: return
+        val argb = if (code == COLOR_QUERY_FOREGROUND) colors.foreground else colors.background
+        queueReply(osc("$code;rgb:" + rgb16(argb, 16) + "/" + rgb16(argb, 8) + "/" + rgb16(argb, 0)))
+    }
+
+    /**
+     * One 8-bit component of an ARGB colour as four hex digits.
+     *
+     * The mask matters: a theme colour arrives as a signed Int, and shifting a negative one right
+     * would smear its sign bits over the low byte without it.
+     */
+    private fun rgb16(argb: Int, shift: Int): String {
+        val pair = ((argb shr shift) and 0xFF).toString(16).uppercase().padStart(2, '0')
+        return pair + pair
     }
 
     private fun applySgr(params: List<Int>) {
@@ -1415,6 +1532,9 @@ class AnsiTerminalBuffer(
 
     /** Builds a DCS reply, which is what XTVERSION answers with, terminated by ST. */
     private fun dcs(body: String): String = "${ESC}P$body${ESC}\\"
+
+    /** Builds an OSC reply, ended by ST so a reply can never be run into the text after it. */
+    private fun osc(body: String): String = "$ESC]$body${ESC}\\"
 
     /**
      * The two ways a cursor position is assigned, clamped on both ends.
@@ -2029,6 +2149,13 @@ class AnsiTerminalBuffer(
 
         const val MAX_PENDING_REPLIES = 32
         const val MAX_TITLE_LENGTH = 200
+
+        /** How many titles XTWINOPS may hold per stack. xterm's own limit, and it is enough. */
+        const val MAX_TITLE_STACK = 10
+
+        /** The two colour queries that are answered: OSC 10 for the foreground, OSC 11 the background. */
+        const val COLOR_QUERY_FOREGROUND = 10
+        const val COLOR_QUERY_BACKGROUND = 11
 
         /**
          * DEC special graphics, as code points indexed from '_' (0x5F) to '~' (0x7E).

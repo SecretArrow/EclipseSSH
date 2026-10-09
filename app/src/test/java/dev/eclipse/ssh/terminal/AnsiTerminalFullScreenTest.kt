@@ -453,6 +453,269 @@ class AnsiTerminalFullScreenTest {
         assertThat(buffer.plainText()).isEqualTo("abc")
     }
 
+    // --- The size, title and colour questions, and the requests that go with them ---
+
+    /** The dark theme's colours, which are the ones these tests hand the buffer. */
+    private fun darkTheme() = TerminalColors(0xFFB3C1D9.toInt(), 0xFF090D16.toInt())
+
+    @Test
+    fun `xtwinops reports the text area size`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[18t")
+
+        assertThat(replies).containsExactly("${ESCAPE}[8;4;20t")
+    }
+
+    @Test
+    fun `xtwinops reports the screen size separately from the text area`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}[19t")
+
+        assertThat(replies).containsExactly("${ESCAPE}[9;4;20t")
+    }
+
+    @Test
+    fun `a size report is of the size the terminal has now`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.resize(30, 6)
+        buffer.feed("${ESCAPE}[18t")
+
+        assertThat(replies).containsExactly("${ESCAPE}[8;6;30t")
+    }
+
+    @Test
+    fun `a resize request is refused and the terminal keeps its size`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // Every operation that asks this terminal to act on the user's window, plus the reports whose
+        // answers would have to be invented. The screen is the user's, and the pty was sized to match
+        // it, so a program asking for 80 columns here must not get them.
+        buffer.feed(
+            "${ESCAPE}[1t${ESCAPE}[2t${ESCAPE}[3;0;0t${ESCAPE}[4;400;800t${ESCAPE}[5t${ESCAPE}[6t" +
+                "${ESCAPE}[7t${ESCAPE}[8;24;80t${ESCAPE}[9t${ESCAPE}[11t${ESCAPE}[13t${ESCAPE}[14t" +
+                "${ESCAPE}[16t${ESCAPE}[20t${ESCAPE}[24t",
+        )
+        buffer.feed("${ESCAPE}[18t")
+
+        assertThat(replies).containsExactly("${ESCAPE}[8;4;20t")
+    }
+
+    @Test
+    fun `a prefixed t is not xtwinops`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // `CSI ? Pm t` and `CSI > Pm t` are other sequences that happen to end in the same byte.
+        buffer.feed("${ESCAPE}[?18t${ESCAPE}[>18t")
+
+        assertThat(replies).isEmpty()
+    }
+
+    @Test
+    fun `xtwinops saves and restores the window title`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("${ESCAPE}]0;first${chars(0x07)}")
+        buffer.feed("${ESCAPE}[22;0t")
+        buffer.feed("${ESCAPE}]0;second${chars(0x07)}")
+        buffer.feed("${ESCAPE}[23;0t")
+
+        assertThat(buffer.frame().title).isEqualTo("first")
+    }
+
+    @Test
+    fun `xtwinops reports the title it holds`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}]0;user@host${chars(0x07)}${ESCAPE}[21t")
+
+        assertThat(replies).containsExactly("${ESCAPE}]luser@host${ESCAPE}\\")
+    }
+
+    @Test
+    fun `a restore with nothing saved leaves the title alone`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        buffer.feed("${ESCAPE}]0;keep me${chars(0x07)}")
+
+        buffer.feed("${ESCAPE}[23;0t")
+
+        assertThat(buffer.frame().title).isEqualTo("keep me")
+    }
+
+    @Test
+    fun `the icon and window title stacks are kept apart`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("${ESCAPE}]0;icon copy${chars(0x07)}")
+        buffer.feed("${ESCAPE}[22;1t")
+        buffer.feed("${ESCAPE}]0;replaced${chars(0x07)}")
+
+        // Saved on the icon stack and restored from the window one: that stack is empty, so nothing
+        // happens - a program cannot reach a title it never saved by picking the wrong stack.
+        buffer.feed("${ESCAPE}[23;2t")
+        assertThat(buffer.frame().title).isEqualTo("replaced")
+
+        buffer.feed("${ESCAPE}[23;1t")
+        assertThat(buffer.frame().title).isEqualTo("icon copy")
+    }
+
+    @Test
+    fun `a title saved on the window stack is not restored from the icon one`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("${ESCAPE}]0;window copy${chars(0x07)}")
+        buffer.feed("${ESCAPE}[22;2t")
+        buffer.feed("${ESCAPE}]0;replaced${chars(0x07)}")
+
+        buffer.feed("${ESCAPE}[23;1t")
+        assertThat(buffer.frame().title).isEqualTo("replaced")
+
+        buffer.feed("${ESCAPE}[23;2t")
+        assertThat(buffer.frame().title).isEqualTo("window copy")
+    }
+
+    @Test
+    fun `a title saved before any was set restores to no title`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("${ESCAPE}[22;0t")
+        buffer.feed("${ESCAPE}]0;borrowed${chars(0x07)}")
+        buffer.feed("${ESCAPE}[23;0t")
+
+        assertThat(buffer.frame().title).isNull()
+    }
+
+    @Test
+    fun `the title stack is bounded and refuses what will not fit`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // Twelve saves of ten distinct titles. xterm's stack holds ten and ignores the rest, so the
+        // first ten are kept and the last two were never made - which is the direction to fail in,
+        // since a dropped save costs a title and an overwritten one loses the caller's.
+        repeat(12) { index ->
+            buffer.feed("${ESCAPE}]0;s$index${chars(0x07)}${ESCAPE}[22;0t")
+        }
+
+        val restored = mutableListOf<String?>()
+        repeat(11) {
+            buffer.feed("${ESCAPE}[23;0t")
+            restored += buffer.frame().title
+        }
+
+        assertThat(restored).isEqualTo(
+            listOf("s9", "s8", "s7", "s6", "s5", "s4", "s3", "s2", "s1", "s0", "s0"),
+        )
+    }
+
+    @Test
+    fun `an osc colour query is answered with the theme colour`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        buffer.themeColors = { darkTheme() }
+
+        buffer.feed("${ESCAPE}]10;?${ESCAPE}\\${ESCAPE}]11;?${ESCAPE}\\")
+
+        // Each 8-bit component doubled rather than zero-padded into place, and the low components are
+        // the interesting ones: 0x09 and 0x0D are one digit in hex and have to print as two.
+        assertThat(replies).containsExactly(
+            "${ESCAPE}]10;rgb:B3B3/C1C1/D9D9${ESCAPE}\\",
+            "${ESCAPE}]11;rgb:0909/0D0D/1616${ESCAPE}\\",
+        )
+    }
+
+    @Test
+    fun `a colour query with no theme to report is not answered`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        buffer.feed("${ESCAPE}]10;?${ESCAPE}\\${ESCAPE}]11;?${ESCAPE}\\")
+
+        assertThat(replies).isEmpty()
+    }
+
+    @Test
+    fun `a colour query is answered with what the screen is painting now`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        var background = 0xFF090D16.toInt()
+        buffer.themeColors = { TerminalColors(0xFFFFFFFF.toInt(), background) }
+
+        buffer.feed("${ESCAPE}]11;?${ESCAPE}\\")
+        background = 0xFFFDF6E3.toInt()
+        buffer.feed("${ESCAPE}]11;?${ESCAPE}\\")
+
+        // The theme is read per question, not copied in, so a user switching themes mid-session is
+        // answered with the colour the screen has actually changed to.
+        assertThat(replies).containsExactly(
+            "${ESCAPE}]11;rgb:0909/0D0D/1616${ESCAPE}\\",
+            "${ESCAPE}]11;rgb:FDFD/F6F6/E3E3${ESCAPE}\\",
+        )
+    }
+
+    @Test
+    fun `an osc colour is a set and not a query, and this terminal does not take one`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        buffer.themeColors = { darkTheme() }
+
+        buffer.feed("${ESCAPE}]10;#FF0000${ESCAPE}\\${ESCAPE}]11;rgb:00/00/00${ESCAPE}\\")
+
+        // Answering a set would be a reply to something that was not a question, and honouring it
+        // would be a remote repainting the display it was given for the length of a session.
+        assertThat(replies).isEmpty()
+    }
+
+    @Test
+    fun `the palette and cursor colour queries are not answered`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+        buffer.themeColors = { darkTheme() }
+
+        // Same family, no true answer: this terminal has no per-session palette of its own and no
+        // cursor colour to report.
+        buffer.feed("${ESCAPE}]4;1;?${ESCAPE}\\${ESCAPE}]12;?${ESCAPE}\\")
+
+        assertThat(replies).isEmpty()
+    }
+
+    @Test
+    fun `none of the new questions draws anything`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        buffer.responder = { }
+        buffer.themeColors = { darkTheme() }
+        buffer.feed("abc${ESCAPE}[2;2H")
+        val before = buffer.frame()
+
+        buffer.feed(
+            "${ESCAPE}[18t${ESCAPE}[19t${ESCAPE}[21t${ESCAPE}[22;0t${ESCAPE}[23;0t" +
+                "${ESCAPE}]10;?${ESCAPE}\\${ESCAPE}]11;?${ESCAPE}\\${ESCAPE}]0;title${chars(0x07)}",
+        )
+
+        val after = buffer.frame()
+        assertThat(after.cursorRow).isEqualTo(before.cursorRow)
+        assertThat(after.cursorColumn).isEqualTo(before.cursorColumn)
+        assertThat(buffer.plainText()).isEqualTo("abc")
+    }
+
     // --- Character sets, colours and the smaller editing sequences ---
 
     @Test
