@@ -488,10 +488,11 @@ fun TerminalView(
         // the user pressed a key would otherwise be invisible at the moment they looked for it. While
         // output is streaming the restart happens per frame and the cursor simply stays solid, which is
         // what every other terminal does too.
-        LaunchedEffect(frame.cursorVisible, focused, layout.cursorRow, layout.cursorColumn) {
-            if (!frame.cursorVisible || !focused) {
+        LaunchedEffect(frame.cursorVisible, frame.cursorBlink, focused, layout.cursorRow, layout.cursorColumn) {
+            if (!cursorBlinks(frame.cursorVisible, frame.cursorBlink, focused)) {
                 // Solid, not dark. A cursor frozen mid-blink reads as a rendering bug, and a terminal
-                // whose window is not focused should still show where the caret is.
+                // whose window is not focused should still show where the caret is. `ESC [ ? 12 l` asks
+                // for the same thing deliberately.
                 cursorOn.value = true
                 return@LaunchedEffect
             }

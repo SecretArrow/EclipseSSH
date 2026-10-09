@@ -225,6 +225,11 @@ data class TerminalFrame(
     /** `ESC [ ? 2004 h`. A paste is bracketed when the remote asked for it, and never otherwise. */
     val bracketedPaste: Boolean = false,
     /**
+     * `ESC [ ? 12 h` / `l`: whether the cursor blinks, which is what terminfo's `cvvis` and `cnorm`
+     * turn on and off. Not part of the layout key, like the mouse modes: the rows do not move with it.
+     */
+    val cursorBlink: Boolean = true,
+    /**
      * How far this window is scrolled back into the history, and how far it can go, both in buffer
      * lines.
      *
@@ -363,6 +368,9 @@ class AnsiTerminalBuffer(
     private var escapeState = EscapeState.NORMAL
     private val controlBuffer = StringBuilder()
 
+    /** The intermediate bytes of the escape sequence in progress; see [executeEscIntermediate]. */
+    private val escapeIntermediates = StringBuilder()
+
     /** The character [repeatLastCharacter] repeats, which is what CSI b means by "last". */
     private var lastPrinted: Char? = null
 
@@ -374,6 +382,7 @@ class AnsiTerminalBuffer(
     private var originMode = false
     private var insertMode = false
     private var cursorVisible = true
+    private var cursorBlink = true
     private var applicationCursorKeys = false
     private var applicationKeypad = false
     private var bracketedPaste = false
@@ -625,6 +634,7 @@ class AnsiTerminalBuffer(
             applicationCursorKeys = applicationCursorKeys,
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
+            cursorBlink = cursorBlink,
             scrollOffset = offset,
             scrollCeiling = ceiling,
             mouseMode = MouseModes.modeOf(mouseModes),
@@ -1037,8 +1047,13 @@ class AnsiTerminalBuffer(
                 // DCS / SOS / PM / APC: payloads this terminal has no use for, skipped as a unit so
                 // that what follows them is still printed instead of being taken for text.
                 'P', 'X', '^', '_' -> { controlBuffer.clear(); escapeState = EscapeState.STRING }
-                '(' -> escapeState = EscapeState.CHARSET_G0
-                ')' -> escapeState = EscapeState.CHARSET_G1
+                // Any intermediate byte (0x20..0x2F) opens a longer sequence: `ESC ( B`, `ESC # 8`,
+                // `ESC % G`. Recognising only `(` and `)` printed the byte that followed the others.
+                in ' '..'/' -> {
+                    escapeIntermediates.setLength(0)
+                    escapeIntermediates.append(char)
+                    escapeState = EscapeState.ESC_INTERMEDIATE
+                }
                 // SS3, the three-byte single-shift sequences. `ESC O` had no case at all, so its final
                 // byte fell through to the printer: a program that sends `ESC O D` for cursor-left put
                 // a literal `D` on screen instead of moving anything. See [consumeSs3].
@@ -1054,15 +1069,25 @@ class AnsiTerminalBuffer(
                 '>' -> { applicationKeypad = false; escapeState = EscapeState.NORMAL }
                 else -> escapeState = EscapeState.NORMAL
             }
-            EscapeState.CHARSET_G0 -> {
-                g0Graphics = char == '0'
-                escapeState = EscapeState.NORMAL
-                revision++
-            }
-            EscapeState.CHARSET_G1 -> {
-                g1Graphics = char == '0'
-                escapeState = EscapeState.NORMAL
-                revision++
+            EscapeState.ESC_INTERMEDIATE -> when {
+                // A second intermediate extends the run rather than ending it: `ESC SP F`, `ESC ( 0`.
+                char in ' '..'/' -> {
+                    escapeIntermediates.append(char)
+                    // The same bound as CSI and OSC: a run this long is corruption, not a sequence.
+                    if (escapeIntermediates.length > MAX_CONTROL_LENGTH) abandonControlSequence()
+                }
+                char in '0'..'~' -> {
+                    executeEscIntermediate(escapeIntermediates.toString(), char)
+                    escapeIntermediates.setLength(0)
+                    escapeState = EscapeState.NORMAL
+                }
+                // Any other control byte ends the sequence and is then handled as the control it is,
+                // so the ESC that starts a new sequence over a truncated one still works.
+                else -> {
+                    escapeIntermediates.setLength(0)
+                    escapeState = EscapeState.NORMAL
+                    consume(char)
+                }
             }
             EscapeState.SS3 -> {
                 consumeSs3(char)
@@ -1121,6 +1146,45 @@ class AnsiTerminalBuffer(
             'F' -> setCursorColumn(columns - 1)
             else -> Unit
         }
+    }
+
+    /**
+     * The escape sequences that carry an intermediate byte: `ESC # 8` (DECALN), `ESC % G` (UTF-8) and
+     * the graphics designations `ESC ( 0`, `ESC ) 0`, `ESC * 0`, `ESC + 0`, plus the selector and
+     * 96-character-set forms. Only the designations have something to obey; the rest are consumed
+     * rather than printed, which is what a terminal that does not implement a sequence owes the stream.
+     */
+    private fun executeEscIntermediate(intermediate: String, final: Char) {
+        when (intermediate) {
+            // `ESC ( 0` is what ncurses draws every box and menu border with, and `ESC ( B` puts the
+            // letters back.
+            "(" -> { g0Graphics = final == '0'; revision++ }
+            ")" -> { g1Graphics = final == '0'; revision++ }
+            // The one sequence in this family with something to draw. #3, #4, #5 and #6 are the
+            // double-width and double-height line attributes, which this display has no room for and
+            // does not claim to have.
+            "#" -> if (final == '8') decaln()
+            else -> Unit
+        }
+    }
+
+    /**
+     * DECALN: fill every cell of the screen with an `E` in the current rendition, and home the cursor.
+     * It writes the screen and not the history, and leaves the scroll region alone - the fill is the
+     * whole of what the sequence certainly means, and moving the margins would be a guess.
+     */
+    private fun decaln() {
+        val start = screenTop()
+        for (index in start until (start + rows).coerceAtMost(lines.size)) {
+            val line = lines[index]
+            for (column in 0 until columns.coerceAtMost(line.size)) {
+                line[column] = TerminalCell('E', style)
+            }
+        }
+        setScreenRow(0)
+        setCursorColumn(0)
+        wrapPending = false
+        revision++
     }
 
     private fun executeCsi(command: String) {
@@ -1254,6 +1318,10 @@ class AnsiTerminalBuffer(
                     setCursorColumn(0)
                 }
                 7 -> autoWrap = enable
+                // The blink bit of DECSCUSR, which is what `cvvis` and `cnorm` are made of. Kept for
+                // the session rather than cleared on leaving the alternate screen, unlike the mouse
+                // modes: it belongs to the cursor, and the shell handed the screen back keeps it.
+                12 -> cursorBlink = enable
                 25 -> cursorVisible = enable
                 2004 -> bracketedPaste = enable
                 // 1047 and 1048 are the two halves that 1049 does together; all three are accepted so
@@ -1355,6 +1423,7 @@ class AnsiTerminalBuffer(
                 1 -> onOff(applicationCursorKeys)
                 6 -> onOff(originMode)
                 7 -> onOff(autoWrap)
+                12 -> onOff(cursorBlink)
                 25 -> onOff(cursorVisible)
                 2004 -> onOff(bracketedPaste)
                 // 47, 1047 and 1049 are one state here: enterAlternateScreen is what all three call,
@@ -1615,6 +1684,7 @@ class AnsiTerminalBuffer(
     /** Drops an escape sequence that has run too long to be real, and resumes printing. */
     private fun abandonControlSequence() {
         controlBuffer.clear()
+        escapeIntermediates.setLength(0)
         escapeState = EscapeState.NORMAL
     }
 
@@ -2089,6 +2159,7 @@ class AnsiTerminalBuffer(
         originMode = false
         insertMode = false
         cursorVisible = true
+        cursorBlink = true
         applicationCursorKeys = false
         applicationKeypad = false
         bracketedPaste = false
@@ -2141,7 +2212,7 @@ class AnsiTerminalBuffer(
         val bottomMargin: Int,
     )
 
-    private enum class EscapeState { NORMAL, ESC, CSI, SS3, OSC, STRING, CHARSET_G0, CHARSET_G1 }
+    private enum class EscapeState { NORMAL, ESC, ESC_INTERMEDIATE, CSI, SS3, OSC, STRING }
 
     private companion object {
         /** What an untouched cell holds, for telling a row with nothing on it from one with a space. */

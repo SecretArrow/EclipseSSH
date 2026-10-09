@@ -396,6 +396,18 @@ class TerminalLayoutTest {
     }
 
     @Test
+    fun `the cursor blink mode is deliberately not in the key`() {
+        // The blink is the view's own loop and the mode only starts and stops it, so a program toggling
+        // `ESC [ ? 12 h` must not rebuild the layout - the same reason the mouse modes are absent.
+        val frame = frameOf(listOf("ready", "$ "), cursorRow = 1, cursorColumn = 2)
+
+        assertThat(layoutKey(frame.copy(cursorBlink = false), columns = 20, rows = 24))
+            .isEqualTo(layoutKey(frame, columns = 20, rows = 24))
+        assertThat(textOf(terminalLayout(frame.copy(cursorBlink = false), 20, 24), "ready"))
+            .isEqualTo(textOf(terminalLayout(frame, 20, 24), "ready"))
+    }
+
+    @Test
     fun `the two screen flags are in the key because they change the layout`() {
         // Not every field is a change worth memoizing on, and these two are the ones that are: the same
         // frame and the same width, wrapped on the flowing screen and left over-wide on the painted one.
