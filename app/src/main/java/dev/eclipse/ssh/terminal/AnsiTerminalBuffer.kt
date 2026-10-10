@@ -225,6 +225,14 @@ data class TerminalFrame(
     /** `ESC [ ? 2004 h`. A paste is bracketed when the remote asked for it, and never otherwise. */
     val bracketedPaste: Boolean = false,
     /**
+     * What the kitty and modifyOtherKeys protocols currently ask a key press to send.
+     *
+     * Carried on the frame for the same reason [applicationCursorKeys] is: a keystroke has to read the
+     * answer from the value the display is drawing, not ask the view model mid-press and race the frames
+     * already in flight. Not part of the layout key - it moves no rows.
+     */
+    val keyboardModes: KeyboardModes = KeyboardModes.NONE,
+    /**
      * `ESC [ ? 12 h` / `l`: whether the cursor blinks, which is what terminfo's `cvvis` and `cnorm`
      * turn on and off. Not part of the layout key, like the mouse modes: the rows do not move with it.
      */
@@ -386,6 +394,22 @@ class AnsiTerminalBuffer(
     private var applicationCursorKeys = false
     private var applicationKeypad = false
     private var bracketedPaste = false
+
+    /**
+     * Kitty's keyboard flags in effect, and the pushes behind them.
+     *
+     * One stack per screen, as the protocol requires: a full-screen program may push flags knowing
+     * nothing about what the shell had set, and the shell has to get its own back when the program
+     * exits - so [primaryKeyboardFlags] holds the main screen's value for as long as the alternate
+     * screen is up, and the two stacks never mix.
+     */
+    private var keyboardFlags = 0
+    private var primaryKeyboardFlags = 0
+    private val keyboardStack = ArrayList<Int>()
+    private val alternateKeyboardStack = ArrayList<Int>()
+
+    /** xterm's modifyOtherKeys level. See `ModifyOtherKeys`. */
+    private var modifyOtherKeys = 0
 
     /**
      * The DECSET mouse modes currently on, as the mode numbers themselves rather than as a decoded
@@ -634,6 +658,7 @@ class AnsiTerminalBuffer(
             applicationCursorKeys = applicationCursorKeys,
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
+            keyboardModes = keyboardModes(),
             cursorBlink = cursorBlink,
             scrollOffset = offset,
             scrollCeiling = ceiling,
@@ -923,6 +948,17 @@ class AnsiTerminalBuffer(
     fun mouseSgrEnabled(): Boolean = MouseModes.sgrOf(mouseModes)
 
     /**
+     * The keyboard protocols in effect, for deciding what a key press sends. See
+     * [TerminalFrame.keyboardModes], which carries the same value.
+     *
+     * Read directly rather than off [frame] because the caller is a keystroke and the frame may be a
+     * publication behind: a program that pushes its flags at startup types into a terminal that has not
+     * repainted yet, and the press has to be encoded under the flags it just set.
+     */
+    @Synchronized
+    fun keyboardModes(): KeyboardModes = KeyboardModes(keyboardFlags, modifyOtherKeys)
+
+    /**
      * The text of the cell range ([fromLine], [fromColumn]) up to but excluding ([toLine],
      * [toColumn]) - what "copy" puts on the clipboard.
      *
@@ -1192,10 +1228,13 @@ class AnsiTerminalBuffer(
         val final = command.last()
         val raw = command.dropLast(1)
         // '?' marks a DEC private mode, '>' a secondary request, '<' the private-parameter form the
-        // kitty keyboard protocol uses, '!' and '$' the soft-reset and request-mode families. Kept as
-        // the leading byte rather than stripped blindly, because the answer to CSI c depends on which
-        // of them introduced it - and so does whether `u` is a cursor restore or a keyboard query.
-        val prefix = raw.firstOrNull()?.takeIf { it == '?' || it == '>' || it == '<' || it == '!' || it == '$' }
+        // kitty keyboard protocol pops with, '=' the one it sets flags with, '!' and '$' the soft-reset
+        // and request-mode families. Kept as the leading byte rather than stripped blindly, because the
+        // answer to CSI c depends on which of them introduced it - and so does whether `u` is a cursor
+        // restore or a keyboard query.
+        val prefix = raw.firstOrNull()?.takeIf {
+            it == '?' || it == '>' || it == '<' || it == '=' || it == '!' || it == '$'
+        }
         val body = if (prefix == null) raw else raw.substring(1)
         // Clamped at zero, and that is a crash fix rather than tidiness. ECMA-48 parameter bytes are
         // 0x30..0x3F, so "-" is not part of a number at all - but it still reaches here inside the
@@ -1242,11 +1281,20 @@ class AnsiTerminalBuffer(
             'T' -> repeat(first.coerceAtMost(rows)) { scrollRegionDown() }
             'b' -> repeatLastCharacter(first.coerceAtMost(columns))
             // A prefix asks a different question with the same final byte: `ESC [ > 4 ; 2 m` is
-            // modifyOtherKeys, not SGR dim+underline; `ESC [ ? u` / `ESC [ < u` / `ESC [ > 5 u` are
-            // the kitty keyboard protocol's query, pop and push; `ESC [ ? Pm s` / `r` save and
-            // restore *private modes*. Only the bare forms are implemented, and an unimplemented
-            // prefixed form is ignored - which is what makes the program fall back to plain output.
-            'm' -> if (prefix == null) applySgr(params.ifEmpty { listOf(0) })
+            // modifyOtherKeys, not SGR dim+underline; `ESC [ ? u` / `ESC [ < u` / `ESC [ > 5 u` /
+            // `ESC [ = 1 u` are the kitty keyboard protocol's query, pop, push and set. Only the bare
+            // and the two keyboard forms are implemented; an unimplemented prefixed form is ignored -
+            // which is what makes the program fall back to plain output.
+            'm' -> when (prefix) {
+                null -> applySgr(params.ifEmpty { listOf(0) })
+                '>' -> if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
+                    setModifyOtherKeys(params.getOrNull(1) ?: ModifyOtherKeys.OFF)
+                }
+                '?' -> if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
+                    queueReply(csi(">4;${modifyOtherKeys}m"))
+                }
+                else -> Unit
+            }
             'r' -> if (prefix == null) setScrollRegion(params)
             'g' -> clearTabStop(params.firstOrNull() ?: 0)
             'c' -> when (prefix) {
@@ -1256,9 +1304,27 @@ class AnsiTerminalBuffer(
                 null -> queueReply(csi("?1;2c"))
                 else -> Unit
             }
-            'n' -> if (!private) deviceStatus(params.firstOrNull() ?: 0)
+            // `CSI > 4 n` is xterm's other spelling of "modifyOtherKeys off", and the one a program
+            // uses when it wants the resource unset rather than set to zero. Ignoring it would leave a
+            // program's own request in force after it asked for it to be dropped.
+            'n' -> when {
+                prefix == '>' -> if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
+                    setModifyOtherKeys(ModifyOtherKeys.OFF)
+                }
+                !private -> deviceStatus(params.firstOrNull() ?: 0)
+                else -> Unit
+            }
             's' -> if (prefix == null) saveCursor()
-            'u' -> if (prefix == null) restoreCursor()
+            'u' -> when (prefix) {
+                null -> restoreCursor()
+                // The flags default to zero here rather than to `first`'s one: `ESC [ > u` is a legal
+                // push of the empty set, and reading it as 1 would turn on a flag nobody asked for.
+                '>' -> pushKeyboardFlags(params.firstOrNull() ?: 0)
+                '<' -> popKeyboardFlags(params.firstOrNull() ?: 1)
+                '=' -> setKeyboardFlags(params.getOrNull(0) ?: 0, params.getOrNull(1) ?: 1)
+                '?' -> queueReply(csi("?${keyboardFlags}u"))
+                else -> Unit
+            }
             // XTVERSION. Answered with this emulator's own name rather than an xterm's: the name
             // travels on the wire and a program may branch on it, and claiming to be an xterm is a
             // claim this terminal cannot back with features. DECLL (`CSI Ps q`) and every other `q`
@@ -1335,6 +1401,76 @@ class AnsiTerminalBuffer(
         }
     }
 
+    /**
+     * The push stack of the screen currently up.
+     *
+     * The protocol requires one stack per screen, so a full-screen program that pushes its flags and
+     * crashes before popping cannot leave the shell's keyboard in the wrong mode - the shell's own
+     * flags live in the other stack and are put back when it gets the screen back.
+     */
+    private fun screenKeyboardStack(): ArrayList<Int> =
+        if (primary == null) keyboardStack else alternateKeyboardStack
+
+    /**
+     * `ESC [ > flags u`: save the flags in effect and adopt [flags].
+     *
+     * Only the bits in [KittyKeyboard.SUPPORTED] are stored. The rest ask for something this terminal
+     * cannot send - see that constant - and a flag kept but not honoured is worse than one refused,
+     * because the program stops using its fallback.
+     */
+    private fun pushKeyboardFlags(flags: Int) {
+        val stack = screenKeyboardStack()
+        if (stack.size >= KittyKeyboard.MAX_DEPTH) stack.removeAt(0)
+        stack.add(keyboardFlags)
+        keyboardFlags = flags and KittyKeyboard.SUPPORTED
+    }
+
+    /**
+     * `ESC [ count u`: put back the flags saved by that many pushes.
+     *
+     * An empty stack means the default - no flags - and that is the whole of the reset rule: the value
+     * the bottom-most push saved is some program's, not the default, so it is not what an emptied stack
+     * falls back to. The loop cannot spin on a huge count, because it is bounded by the stack, which is
+     * bounded by [KittyKeyboard.MAX_DEPTH].
+     */
+    private fun popKeyboardFlags(count: Int) {
+        val stack = screenKeyboardStack()
+        var remaining = count
+        while (remaining > 0 && stack.isNotEmpty()) {
+            keyboardFlags = stack.removeAt(stack.size - 1)
+            remaining--
+        }
+        if (stack.isEmpty()) keyboardFlags = 0
+    }
+
+    /**
+     * `ESC [ = flags ; mode u`, the form that sets flags without touching the stack.
+     *
+     * Mode 1 assigns, 2 sets the named bits and leaves the others alone, 3 clears them; an unknown mode
+     * is treated as 1 rather than ignored, since 1 is the default for an omitted parameter and a
+     * program asking for a mode this terminal has never heard of still wants the flags it named.
+     */
+    private fun setKeyboardFlags(flags: Int, mode: Int) {
+        val named = flags and KittyKeyboard.SUPPORTED
+        keyboardFlags = when (mode) {
+            2 -> keyboardFlags or named
+            3 -> keyboardFlags and named.inv()
+            else -> named
+        }
+    }
+
+    /**
+     * `ESC [ > 4 ; level m`, xterm's modifyOtherKeys.
+     *
+     * Clamped rather than stored as sent: the levels above [ModifyOtherKeys.ALL] mean nothing, and a
+     * value kept outside the defined range would reach the encoder. No per-screen copy is kept, unlike
+     * the kitty flags - xterm's is a terminal-wide resource, and no program expects it to change when
+     * the alternate screen comes and goes.
+     */
+    private fun setModifyOtherKeys(level: Int) {
+        modifyOtherKeys = level.coerceIn(ModifyOtherKeys.OFF, ModifyOtherKeys.ALL)
+    }
+
     private fun enterAlternateScreen(withCursor: Boolean) {
         if (primary != null) return
         if (withCursor) saveCursor()
@@ -1353,6 +1489,14 @@ class AnsiTerminalBuffer(
         positionalScreen = false
         topMargin = 0
         bottomMargin = rows - 1
+        // The alternate screen has a keyboard mode of its own, which starts empty and is put aside
+        // with the rest of the primary screen. A full-screen program therefore never inherits the flags
+        // of the shell it was started from, and the shell gets its own back on the way out. Its stack is
+        // emptied for the same reason: whatever the last program pushed and never popped is state no
+        // later pop can reach, and leaving it would restore a mode of that program's making.
+        primaryKeyboardFlags = keyboardFlags
+        keyboardFlags = 0
+        alternateKeyboardStack.clear()
     }
 
     private fun leaveAlternateScreen(withCursor: Boolean) {
@@ -1372,8 +1516,10 @@ class AnsiTerminalBuffer(
         positionalScreen = false
         // The program that had the screen is gone, and whatever it turned on went with it. A program
         // that exits without disabling its own mouse reporting would otherwise leave the terminal
-        // reporting every drag to the shell.
+        // reporting every drag to the shell. The same goes for the keyboard flags it pushed, and the
+        // primary screen's own are what the shell gets back.
         mouseModes = emptySet()
+        keyboardFlags = primaryKeyboardFlags
         if (withCursor) restoreCursor()
     }
 
@@ -2164,6 +2310,12 @@ class AnsiTerminalBuffer(
         applicationKeypad = false
         bracketedPaste = false
         mouseModes = emptySet()
+        // A soft reset is a program saying "forget everything", so the keyboard flags go with the rest.
+        // Only the screen that is up needs clearing: the reset ends any alternate screen rather than
+        // returning to it, and entering one empties its stack.
+        keyboardFlags = 0
+        keyboardStack.clear()
+        modifyOtherKeys = ModifyOtherKeys.OFF
         g0Graphics = false
         g1Graphics = false
         shiftedOut = false

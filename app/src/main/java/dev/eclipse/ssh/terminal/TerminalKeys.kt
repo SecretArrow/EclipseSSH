@@ -10,7 +10,7 @@ package dev.eclipse.ssh.terminal
  * the receiving side, so the two halves of the protocol read the same way.
  *
  * Pure and stateless on purpose. What a key sends depends only on the key, the modifiers held with it,
- * and the modes the remote side has negotiated - all three are arguments. That keeps the mapping
+ * and the modes the remote side has negotiated - every one of them an argument. That keeps the mapping
  * testable without a view, a session or a socket, which matters because it is exactly the kind of
  * table where one transposed byte means a key silently does nothing on one remote program and
  * something wrong on another.
@@ -106,11 +106,39 @@ object TerminalKeys {
      * `less`, and most curses programs enable it, and sending the wrong form means the arrow keys do
      * nothing at all in those programs while working perfectly at the shell prompt. Being unable to
      * scroll inside `less` is the single most visible symptom of getting this wrong.
+     *
+     * [modes] is what the program negotiated with the kitty and modifyOtherKeys protocols. It is asked
+     * first and the legacy bytes below are what it falls back to, so with no program asking for either
+     * the two are byte for byte what they always were.
      */
     fun encode(
         key: TerminalKey,
         modifiers: TerminalModifiers = TerminalModifiers.NONE,
         applicationCursorKeys: Boolean = false,
+        modes: KeyboardModes = KeyboardModes.NONE,
+    ): ByteArray {
+        val legacy = legacyKey(key, modifiers, applicationCursorKeys)
+        val code = keyCodeOf(key) ?: return legacy
+        // Escape is what the disambiguate flag exists for, and the only key here the flag escapes: the
+        // spec keeps Enter, Tab and Backspace in their legacy bytes so that a user can still type
+        // `reset` at a shell that is not listening for the protocol.
+        //
+        // modifyOtherKeys level 1 skips all four of them for the same reason - they are the keys with a
+        // traditional encoding - so `modifierIsLost` is false rather than a comparison. Level 2 reaches
+        // them all the same, and Shift-Tab at level 2 is `CSI 27;2;9~`.
+        return escapeCoded(
+            code = code,
+            modifiers = modifiers,
+            modes = modes,
+            kittyEscapes = key == TerminalKey.ESCAPE,
+            modifierIsLost = false,
+        ) ?: legacy
+    }
+
+    private fun legacyKey(
+        key: TerminalKey,
+        modifiers: TerminalModifiers,
+        applicationCursorKeys: Boolean,
     ): ByteArray = when (key) {
         // The three keys that send a plain byte. Alt still prefixes them - Alt-Enter and
         // Alt-Backspace ("delete previous word") are both bindings people rely on.
@@ -156,8 +184,31 @@ object TerminalKeys {
      * Ctrl folds the character into the C0 range, which is the whole reason a terminal can send
      * Ctrl-C at all: there is no "Ctrl" byte, only the 32 characters that Ctrl produces. Alt prefixes
      * with ESC, which is how a terminal has always expressed a Meta key it does not have.
+     *
+     * Under [modes] both of those are replaced by the escape code one of the protocols asks for, and
+     * the character's own code point travels with it - `Ctrl-C` becomes `CSI 99;5u`, not `CSI 3;5u`,
+     * because the number reported is the key and not the byte the key used to collapse into.
      */
-    fun encode(char: Char, modifiers: TerminalModifiers = TerminalModifiers.NONE): ByteArray {
+    fun encode(
+        char: Char,
+        modifiers: TerminalModifiers = TerminalModifiers.NONE,
+        modes: KeyboardModes = KeyboardModes.NONE,
+    ): ByteArray {
+        val legacy = legacyChar(char, modifiers)
+        return escapeCoded(
+            code = char.code,
+            modifiers = modifiers,
+            modes = modes,
+            // Ctrl and Alt are the two modifiers the disambiguate flag escapes, and the two this app
+            // can see on a character at all: Shift is folded into the character before it arrives.
+            kittyEscapes = modifiers.ctrl || modifiers.alt,
+            // A character whose legacy bytes are its own is one Ctrl did not fold - Ctrl-; sends `;` -
+            // which is the whole population xterm's level 1 exists for.
+            modifierIsLost = legacy.contentEquals(legacyChar(char, TerminalModifiers.NONE)),
+        ) ?: legacy
+    }
+
+    private fun legacyChar(char: Char, modifiers: TerminalModifiers): ByteArray {
         val base = if (modifiers.ctrl) controlByte(char) ?: utf8(char) else utf8(char)
         return withAlt(modifiers, base)
     }
@@ -238,13 +289,6 @@ object TerminalKeys {
     }
 
     /**
-     * The xterm modifier parameter: a bit field offset by one, because 0 is not a legal CSI parameter
-     * and would be read as "omitted".
-     */
-    private fun modifierParameter(modifiers: TerminalModifiers): Int =
-        1 + (if (modifiers.shift) 1 else 0) + (if (modifiers.alt) 2 else 0) + (if (modifiers.ctrl) 4 else 0)
-
-    /**
      * [char] folded into the C0 control range, or null if Ctrl means nothing with it.
      *
      * Returning null rather than a guess is what lets [encode] fall back to the plain character:
@@ -276,15 +320,10 @@ object TerminalKeys {
     private fun bytesOf(vararg codes: Int): ByteArray =
         ByteArray(codes.size) { codes[it].toByte() }
 
-    /** `ESC [` followed by [tail], which is always plain ASCII. */
-    private fun csi(tail: String): ByteArray =
-        bytesOf(ESC, LEFT_BRACKET) + tail.toByteArray(Charsets.US_ASCII)
-
     /** `ESC O` followed by [final] - the "single shift 3" form the application keypad uses. */
     private fun ss3(final: String): ByteArray =
         bytesOf(ESC, UPPER_O) + final.toByteArray(Charsets.US_ASCII)
 
-    private const val LEFT_BRACKET = 0x5B
     private const val UPPER_O = 0x4F
 
     private val PASTE_START_MARKER: String = Char(ESC) + "[200~"

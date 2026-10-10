@@ -108,6 +108,7 @@ import dev.eclipse.ssh.security.normalizePastedSecret
 import dev.eclipse.ssh.feature.terminallog.SessionLog
 import dev.eclipse.ssh.feature.terminallog.SilenceDetector
 import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
+import dev.eclipse.ssh.terminal.KeyboardModes
 import dev.eclipse.ssh.terminal.TerminalColors
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
@@ -2804,6 +2805,7 @@ class MainViewModel @Inject constructor(
     ) {
         val buffer = terminalBuffers[sessionKey]
         val applicationCursorKeys = buffer?.applicationCursorKeysEnabled() ?: false
+        val modes = buffer?.keyboardModes() ?: KeyboardModes.NONE
         val modifiers = TerminalModifiers(ctrl = ctrl, alt = alt, shift = shift)
         // Asked only for the two keys the scrollback could want, so an ordinary keypress does not pay
         // for a layout it has no use for. [terminalKeyTarget] stays the one place that decides where
@@ -2829,7 +2831,7 @@ class MainViewModel @Inject constructor(
             TerminalKey.BACKSPACE -> typedLines[sessionKey]?.let { line -> if (line.isNotEmpty()) line.setLength(line.length - 1) }
             else -> Unit
         }
-        writeToTerminal(sessionKey, TerminalKeys.encode(key, modifiers, applicationCursorKeys))
+        writeToTerminal(sessionKey, TerminalKeys.encode(key, modifiers, applicationCursorKeys, modes))
     }
 
     /**
@@ -2865,7 +2867,11 @@ class MainViewModel @Inject constructor(
             // command after them would file text the user explicitly discarded.
             typedLines.remove(sessionKey)
         }
-        writeToTerminal(sessionKey, TerminalKeys.encode(char, TerminalModifiers(ctrl = ctrl, alt = alt)))
+        val modes = terminalBuffers[sessionKey]?.keyboardModes() ?: KeyboardModes.NONE
+        writeToTerminal(
+            sessionKey,
+            TerminalKeys.encode(char, TerminalModifiers(ctrl = ctrl, alt = alt), modes),
+        )
     }
 
     /**
