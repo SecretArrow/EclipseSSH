@@ -40,12 +40,25 @@ tmux -L eclipse-oracle kill-server 2>/dev/null
 tmux -L eclipse-oracle -f "$cfg" new-session -d -s ora -x "$cols" -y "$rows" \
   "sh -c 'stty -echo; cat \"$bin\"; sleep 600'"
 
-# Replay is asynchronous: capture-pane can run before tmux has parsed the last read. Settle first.
+# Replay is asynchronous: capture-pane can run before tmux has parsed the last read. `pane_current_command`
+# is no help - it stays `sh` for this pane's whole life (measured: waiting for it to become `sleep` costs
+# the full 10s timeout), so the end of the write cannot be seen from outside. Instead the capture must stop
+# changing for three polls in a row: one repeat can land inside a pause in the parse, three cannot.
+stable=0
 prev=""
-for _ in $(seq 1 40); do
+for _ in $(seq 1 60); do
   cur=$(tmux -L eclipse-oracle capture-pane -p -t ora 2>/dev/null)
-  [ "$cur" = "$prev" ] && break
+  if [ "$cur" = "$prev" ]; then stable=$((stable + 1)); else stable=0; fi
   prev=$cur
+  [ "$stable" -ge 3 ] && break
   sleep 0.1
 done
+# The cursor is reported as well, in the app dump's own vocabulary: the app's `cursor row,column` is
+# tmux's `cursor_y,cursor_x`, and tmux's `cursor_flag` 1 is the app's `visible true`. A grid that agrees
+# while the cursor does not is the reported "the cursor is somewhere else than the text" failure, and a
+# comparison that only looks at rows cannot see it.
+cursor=$(tmux -L eclipse-oracle display -p -t ora '#{cursor_y},#{cursor_x}')
+flag=$(tmux -L eclipse-oracle display -p -t ora '#{cursor_flag}')
+if [ "$flag" = "1" ]; then visible=true; else visible=false; fi
+printf '# cursor %s visible %s\n' "$cursor" "$visible"
 printf '%s\n' "$prev"
