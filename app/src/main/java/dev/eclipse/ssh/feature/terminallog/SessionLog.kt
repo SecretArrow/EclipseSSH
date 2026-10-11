@@ -32,6 +32,10 @@ class SessionLog(private val capacityChars: Int = DEFAULT_CAPACITY_CHARS) {
     private val lock = Any()
     private val text = StringBuilder()
 
+    /** Characters ever appended, and characters eviction has since dropped from the front. */
+    private var writtenChars = 0L
+    private var droppedChars = 0L
+
     /**
      * Appends [chunk] of decoded output and evicts from the front if the buffer is over capacity.
      *
@@ -43,6 +47,7 @@ class SessionLog(private val capacityChars: Int = DEFAULT_CAPACITY_CHARS) {
         if (chunk.isEmpty()) return
         synchronized(lock) {
             text.append(chunk)
+            writtenChars += chunk.length
             trimLocked()
         }
     }
@@ -52,6 +57,18 @@ class SessionLog(private val capacityChars: Int = DEFAULT_CAPACITY_CHARS) {
 
     /** Whether anything has been recorded. */
     fun isEmpty(): Boolean = synchronized(lock) { text.isEmpty() }
+
+    /**
+     * How much output this session has ever produced, counting what eviction has since dropped.
+     *
+     * This is the count the render audit positions its notes in, because both are fed from the same
+     * tee: a note at position N names the N-th character of the session's output, and [dropped] is
+     * what turns that into a character of the text the user actually saved.
+     */
+    fun written(): Long = synchronized(lock) { writtenChars }
+
+    /** How many characters eviction has dropped from the front of the saved text. */
+    fun dropped(): Long = synchronized(lock) { droppedChars }
 
     /**
      * Brings the buffer back under [capacityChars], dropping the oldest characters.
@@ -74,6 +91,7 @@ class SessionLog(private val capacityChars: Int = DEFAULT_CAPACITY_CHARS) {
             cut++
         }
         text.delete(0, cut)
+        droppedChars += cut
     }
 
     companion object {

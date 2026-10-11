@@ -16,6 +16,17 @@ class RenderAuditTest {
     private var now = 1_000L
     private val audit = RenderAudit(clock = { now })
 
+    /**
+     * The session log's cumulative count, handed over the way the collector hands it: one position per
+     * chunk, always ahead of the last one.
+     */
+    private var stream = 0L
+
+    private fun output(chars: Int) {
+        stream += chars
+        audit.onOutput(position = stream)
+    }
+
     private fun frame(
         revision: Long,
         ink: Int,
@@ -119,7 +130,7 @@ class RenderAuditTest {
     fun `output that never moves the screen is recorded once per stretch`() {
         audit.onFrame(frame(revision = 7, ink = 100))
         repeat(RenderAudit.STALL_FRAMES + 4) {
-            audit.onOutput(decodedChars = 120)
+            output(120)
             audit.onFrame(frame(revision = 7, ink = 100))
         }
         val report = audit.report()
@@ -132,10 +143,10 @@ class RenderAuditTest {
     fun `a stretch that is cut short by a repaint is not recorded`() {
         audit.onFrame(frame(revision = 7, ink = 100))
         repeat(RenderAudit.STALL_FRAMES - 1) {
-            audit.onOutput(decodedChars = 120)
+            output(120)
             audit.onFrame(frame(revision = 7, ink = 100))
         }
-        audit.onOutput(decodedChars = 120)
+        output(120)
         audit.onFrame(frame(revision = 8, ink = 101))
         assertThat(audit.report()).contains("notes 0")
     }
@@ -144,13 +155,13 @@ class RenderAuditTest {
     fun `a stretch is recorded again after a repaint ends the first one`() {
         audit.onFrame(frame(revision = 7, ink = 100))
         repeat(RenderAudit.STALL_FRAMES) {
-            audit.onOutput(decodedChars = 120)
+            output(120)
             audit.onFrame(frame(revision = 7, ink = 100))
         }
-        audit.onOutput(decodedChars = 120)
+        output(120)
         audit.onFrame(frame(revision = 8, ink = 101))
         repeat(RenderAudit.STALL_FRAMES) {
-            audit.onOutput(decodedChars = 120)
+            output(120)
             audit.onFrame(frame(revision = 8, ink = 101))
         }
         val report = audit.report()
@@ -167,7 +178,7 @@ class RenderAuditTest {
 
     @Test
     fun `an empty report says nothing was seen rather than failing`() {
-        audit.onOutput(decodedChars = 0)
+        audit.onOutput(position = 0)
         assertThat(audit.report()).contains("frames 0")
         assertThat(audit.report()).contains("nothing observed")
     }
@@ -203,6 +214,114 @@ class RenderAuditTest {
         now = 1_234_567L
         audit.onFrame(frame(revision = 2, ink = 0))
         assertThat(audit.report()).contains("t=1234567")
+    }
+
+    /**
+     * The one line a note was written to. Every note carries `t=` and the header does not, so an
+     * assertion made on this line cannot be satisfied by the header - which names a position too, and
+     * would otherwise let a note that had forgotten its own position still pass.
+     */
+    private fun noteLine(text: String): String =
+        text.lineSequence().single { it.trimStart().startsWith("t=") }
+
+    /** The summary line: the newest frame, and how far the stream had got by the time it was published. */
+    private fun frameLine(text: String): String =
+        text.lineSequence().single { it.startsWith("last frame") }
+
+    @Test
+    fun `a note says how far into the stream it happened, in the log's own count`() {
+        // Without this a note is a wall clock and nothing else: the session log carries no timestamps,
+        // so "blanked at t=..." cannot be turned back into a point in the bytes that caused it.
+        audit.onFrame(frame(revision = 1, ink = 812))
+        output(1_200)
+        audit.onFrame(frame(revision = 2, ink = 0))
+        assertThat(noteLine(audit.report())).contains("output #1200")
+    }
+
+    @Test
+    fun `the summary names how far the stream had got by the newest frame`() {
+        // The other half of the correlation: the notes say where trouble was, this says where the
+        // session had got to by the end of the export.
+        output(7_700)
+        audit.onFrame(frame(revision = 1, ink = 40))
+        assertThat(frameLine(audit.report())).contains("output #7700")
+    }
+
+    @Test
+    fun `the point is given as a character a replay can seek to in the exported log`() {
+        audit.onFrame(frame(revision = 1, ink = 812))
+        output(1_200)
+        audit.onFrame(frame(revision = 2, ink = 0))
+        // The log kept the last 300 characters, so its own character 0 is stream position 900.
+        assertThat(noteLine(audit.report(droppedChars = 900))).contains("log char 300")
+    }
+
+    @Test
+    fun `a note from text the log has already evicted says so instead of naming a negative character`() {
+        audit.onFrame(frame(revision = 1, ink = 812))
+        output(500)
+        audit.onFrame(frame(revision = 2, ink = 0))
+        val note = noteLine(audit.report(droppedChars = 900))
+        assertThat(note).contains("evicted")
+        assertThat(note).doesNotContain("log char -")
+    }
+
+    @Test
+    fun `with no log beside it a note keeps the stream's own numbering`() {
+        audit.onFrame(frame(revision = 1, ink = 812))
+        output(500)
+        audit.onFrame(frame(revision = 2, ink = 0))
+        val note = noteLine(audit.report())
+        assertThat(note).contains("output #500")
+        assertThat(note).doesNotContain("log char")
+        assertThat(note).doesNotContain("evicted")
+    }
+
+    @Test
+    fun `the position a note names is the newest one the audit was handed`() {
+        audit.onOutput(position = 5_000)
+        // The log was replaced under the audit, so the stream this now counts in starts over.
+        audit.onOutput(position = 10)
+        audit.onFrame(frame(revision = 1, ink = 1))
+        audit.onFrame(frame(revision = 2, ink = 0))
+        val note = noteLine(audit.report())
+        assertThat(note).contains("output #10")
+        assertThat(note).doesNotContain("#5000")
+    }
+
+    @Test
+    fun `a stream that restarts under the audit does not carry the old stretch across the seam`() {
+        var position = 0L
+        audit.onFrame(frame(revision = 7, ink = 100))
+        repeat(RenderAudit.STALL_FRAMES - 1) {
+            position += 120
+            audit.onOutput(position = position)
+            audit.onFrame(frame(revision = 7, ink = 100))
+        }
+        // A replacement log, counted from its own zero: eleven frames of quiet were the *old* stream's.
+        position = 10
+        audit.onOutput(position = position)
+        repeat(2) {
+            position += 120
+            audit.onOutput(position = position)
+            audit.onFrame(frame(revision = 7, ink = 100))
+        }
+        assertThat(audit.report()).contains("notes 0")
+    }
+
+    @Test
+    fun `a stretch that begins right after a seam is counted from the seam`() {
+        // What resetting the mark at the seam is for: the first frame of the new stream has output
+        // behind it, and a mark left at the old stream's total would make that output look like a move
+        // backwards - one frame of the stretch silently lost, and a negative count in the note.
+        audit.onOutput(position = 4_000)
+        audit.onFrame(frame(revision = 7, ink = 100))
+        audit.onOutput(position = 0)
+        repeat(RenderAudit.STALL_FRAMES) {
+            output(120)
+            audit.onFrame(frame(revision = 7, ink = 100))
+        }
+        assertThat(noteLine(audit.report())).contains("no repaint")
     }
 
     @Test

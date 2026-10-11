@@ -69,8 +69,41 @@ class SessionLogTest {
     }
 
     @Test
-    fun `concurrent append and snapshot never throws`() {
-        val log = SessionLog(capacityChars = 512)
+    fun `an untouched log has written nothing and dropped nothing`() {
+        val log = SessionLog()
+        assertThat(log.written()).isEqualTo(0L)
+        assertThat(log.dropped()).isEqualTo(0L)
+    }
+
+    @Test
+    fun `the count of what was written survives the eviction that dropped it`() {
+        // What the count is for: the render audit counts from the same tee, so a note's position has to
+        // be turned into a character of the text the user actually saved.
+        val log = SessionLog(capacityChars = 32)
+        repeat(20) { index -> log.append("line $index\n") }
+        assertThat(log.written()).isEqualTo((0 until 20).sumOf { "line $it\n".length }.toLong())
+        assertThat(log.dropped()).isGreaterThan(0L)
+    }
+
+    @Test
+    fun `a log that fitted has dropped nothing`() {
+        val log = SessionLog(capacityChars = 64)
+        log.append("short\n")
+        assertThat(log.dropped()).isEqualTo(0L)
+        assertThat(log.written()).isEqualTo("short\n".length.toLong())
+    }
+
+    @Test
+    fun `what was written is always what was dropped plus what is retained`() {
+        // The invariant the export leans on, however the cut lands - including a cut that had to move
+        // off a surrogate pair.
+        val log = SessionLog(capacityChars = 8)
+        repeat(50) { log.append("X🤖🐎") }
+        assertThat(log.written()).isEqualTo(log.dropped() + log.snapshot().length)
+    }
+
+    @Test
+    fun `concurrent append and snapshot never throws`() {        val log = SessionLog(capacityChars = 512)
         val failure = AtomicReference<Throwable?>(null)
         val start = CountDownLatch(1)
         val writers = (1..2).map { thread ->

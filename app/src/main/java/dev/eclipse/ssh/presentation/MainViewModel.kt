@@ -2277,8 +2277,11 @@ class MainViewModel @Inject constructor(
                     // so it reaches this tee when the shell echoes it.
                     sessionLog.append(decoded)
                     // Beside the log, from the same tee and for the same reason: what counts as output
-                    // is exactly what the terminal was handed. See [renderAudits].
-                    renderAudit(sessionKey).onOutput(decoded.length)
+                    // is exactly what the terminal was handed. The position handed over is the log's
+                    // own cumulative count, not this chunk's length, so a note names a character that
+                    // can be found in the export rather than one only this coroutine could count. See
+                    // [renderAudits].
+                    renderAudit(sessionKey).onOutput(sessionLog.written())
                     sessionDetectors[sessionKey]?.onOutput()
                     chunk = incoming.tryReceive().getOrNull()
                 } while (chunk != null)
@@ -2322,7 +2325,7 @@ class MainViewModel @Inject constructor(
             if (tail.isNotEmpty()) {
                 buffer.feed(tail)
                 sessionLog.append(tail)
-                renderAudit(sessionKey).onOutput(tail.length)
+                renderAudit(sessionKey).onOutput(sessionLog.written())
                 sessionDetectors[sessionKey]?.onOutput()
             }
             // Unconditionally, and past the throttle. Cancelling `transcript` above cancels whatever
@@ -3073,8 +3076,13 @@ class MainViewModel @Inject constructor(
      * describe the same seconds from the two ends that matter, the bytes the session received and the
      * screens the app built out of them. Null when the session has no audit at all, which is a session
      * that was closed before it ever spoke; see [renderAudits].
+     *
+     * The log's own eviction count goes in with it, because it is the log being exported beside this
+     * one: it turns a note's position in the session's output into a character of the text that was
+     * actually saved, and says so when that character is one eviction has already dropped.
      */
-    fun renderAuditText(sessionKey: String): String? = renderAudits[sessionKey]?.report()
+    fun renderAuditText(sessionKey: String): String? =
+        renderAudits[sessionKey]?.report(sessionLogs[sessionKey]?.dropped())
 
     /**
      * Arms "Notify when done" for one session: a notification when the session's output - which

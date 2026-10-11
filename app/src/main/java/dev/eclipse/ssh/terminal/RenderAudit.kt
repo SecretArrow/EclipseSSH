@@ -63,7 +63,13 @@ internal enum class RenderNoteKind {
     OUTPUT_WITHOUT_FRAME,
 }
 
-internal data class RenderNote(val kind: RenderNoteKind, val atMillis: Long, val detail: String)
+internal data class RenderNote(
+    val kind: RenderNoteKind,
+    val atMillis: Long,
+    /** How far into the session's output this happened, in the session log's own count. */
+    val outputPosition: Long,
+    val detail: String,
+)
 
 /**
  * A record of what the app's own frames did, for the bugs that only happen on a device.
@@ -103,8 +109,9 @@ internal class RenderAudit(
     private var noteCount = 0L
     private var droppedNotes = 0L
 
-    /** Decoded characters that have arrived since the last frame was published. */
-    private var decodedSinceFrame = 0L
+    /** The session log's count as of the last chunk handed over, and as of the last published frame. */
+    private var lastOutput = 0L
+    private var outputAtFrame = 0L
 
     /** How many frames in a row have arrived with output behind them and no revision change. */
     private var unchangedWithOutput = 0
@@ -113,14 +120,24 @@ internal class RenderAudit(
     private var stretchReported = false
 
     /**
-     * Records that [decodedChars] of output were decoded.
+     * Records that the session's output has reached [position] - the count the session log keeps.
      *
-     * Called from the same tee the session log is written from, so what counts as output here is
-     * exactly what the terminal saw.
+     * The position is handed over rather than counted here, because it is the session log's number and
+     * both are fed from the same tee. A note naming its own private count would say "somewhere in this
+     * session" and leave the person replaying it to search; naming the log's says which character.
      */
-    fun onOutput(decodedChars: Int) {
-        if (decodedChars <= 0) return
-        synchronized(lock) { decodedSinceFrame += decodedChars }
+    fun onOutput(position: Long) {
+        synchronized(lock) {
+            if (position < lastOutput) {
+                // Not the log the last chunk came from: it was replaced under the audit. Nothing is
+                // measured across the seam - the stretch so far was the old stream's, and the frames
+                // that follow are counted from the new one's position.
+                outputAtFrame = position
+                unchangedWithOutput = 0
+                stretchReported = false
+            }
+            lastOutput = position
+        }
     }
 
     /**
@@ -134,6 +151,7 @@ internal class RenderAudit(
         synchronized(lock) {
             val previous = last
             frames++
+            val sinceFrame = lastOutput - outputAtFrame
             when {
                 previous == null -> Unit
                 sample.revision < previous.revision -> note(
@@ -141,13 +159,13 @@ internal class RenderAudit(
                     "${previous.revision} -> ${sample.revision}",
                 )
                 sample.revision == previous.revision -> {
-                    if (decodedSinceFrame > 0) unchangedWithOutput++
+                    if (sinceFrame > 0) unchangedWithOutput++
                     if (unchangedWithOutput >= STALL_FRAMES && !stretchReported) {
                         stretchReported = true
                         note(
                             RenderNoteKind.OUTPUT_WITHOUT_FRAME,
                             "no repaint across $unchangedWithOutput frames " +
-                                "($decodedSinceFrame chars at revision ${sample.revision})",
+                                "($sinceFrame chars at revision ${sample.revision})",
                         )
                     }
                 }
@@ -161,7 +179,7 @@ internal class RenderAudit(
                     }
                 }
             }
-            decodedSinceFrame = 0
+            outputAtFrame = lastOutput
             last = sample
         }
     }
@@ -171,8 +189,13 @@ internal class RenderAudit(
      *
      * Shaped so that a note can be found in it by eye and by grep - `blanked`, `rewind`, `no repaint` -
      * because the person reading it is deciding what to do next, not reading a log for its own sake.
+     *
+     * [droppedChars] is what the session log evicted - its own count, handed over by whoever reads the
+     * two exports together - and it is what turns a note's position into a character of the text the
+     * user saved. Omit it and the positions stay in the session's own numbering, which is still exact
+     * but names a character the export no longer has.
      */
-    fun report(): String = synchronized(lock) {
+    fun report(droppedChars: Long? = null): String = synchronized(lock) {
         val newest = last
         buildString {
             append("render audit · frames ").append(frames).append(" · notes ").append(noteCount)
@@ -185,9 +208,13 @@ internal class RenderAudit(
             append("last frame · revision ").append(newest.revision)
             append(" · ink ").append(newest.inkCells)
             append(" · cursor ").append(newest.cursorRow).append(',').append(newest.cursorColumn)
+            append(" · ").append(where(lastOutput, droppedChars))
             append(" · ").append(word(newest.screen))
             append('\n')
-            notes.forEach { append("  t=").append(it.atMillis).append("  ").append(it.kind.label()).append(' ').append(it.detail).append('\n') }
+            notes.forEach {
+                append("  t=").append(it.atMillis).append("  ").append(it.kind.label()).append(' ')
+                    .append(it.detail).append(" · ").append(where(it.outputPosition, droppedChars)).append('\n')
+            }
         }
     }
 
@@ -197,7 +224,20 @@ internal class RenderAudit(
             notes.removeFirst()
             droppedNotes++
         }
-        notes.addLast(RenderNote(kind, clock(), detail))
+        notes.addLast(RenderNote(kind, clock(), lastOutput, detail))
+    }
+
+    /**
+     * Where a position in the session's output lands in the file the user actually saved.
+     *
+     * Three cases, and the third is why this is not one subtraction: the log evicts from the front, so a
+     * point early in a long session is simply not in the export, and saying "log char -412" would send
+     * whoever replays it to a real character that is the wrong one.
+     */
+    private fun where(position: Long, droppedChars: Long?): String = when {
+        droppedChars == null -> "output #$position"
+        position < droppedChars -> "output #$position -> evicted"
+        else -> "output #$position -> log char ${position - droppedChars}"
     }
 
     private fun word(screen: ScreenKind): String = when (screen) {
