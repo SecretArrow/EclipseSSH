@@ -1155,10 +1155,26 @@ class AnsiTerminalBuffer(
                 else -> controlBuffer.append(char)
             }
             EscapeState.STRING -> when {
-                char.code == C0_ESC -> { controlBuffer.clear(); escapeState = EscapeState.ESC }
+                // The one byte that can end a control string, and only as half of a pair: ST is `ESC \`,
+                // so an ESC here is a *maybe* and the decision moves to [EscapeState.STRING_ESC]. tmux
+                // frames a passthrough as `ESC P tmux; <payload>` with every ESC in the payload doubled
+                // for exactly this reason. A parser that ends the string at the ESC instead prints the
+                // rest of the payload - `[?25l`, `[>4;2m`, a colour reply - into the grid and advances
+                // its cursor past where the far end believes it is, and a far end that disagrees about
+                // the cursor never sends those cells again: the damage is permanent for the session.
+                char.code == C0_ESC -> escapeState = EscapeState.STRING_ESC
                 char.code == C0_BEL -> { controlBuffer.clear(); escapeState = EscapeState.NORMAL }
                 controlBuffer.length > MAX_CONTROL_LENGTH -> abandonControlSequence()
                 else -> controlBuffer.append(char)
+            }
+            // The byte after an ESC inside a control string, which is a decision this state holds for
+            // exactly one character - across reads, like every other partial sequence. A backslash
+            // completes ST and ends the string; anything else, a second ESC included, is taken with the
+            // ESC as an unknown two-byte sequence and the string goes on. The payload is discarded
+            // either way, so what the pair *meant* never has to be decided.
+            EscapeState.STRING_ESC -> when (char) {
+                '\\' -> { controlBuffer.clear(); escapeState = EscapeState.NORMAL }
+                else -> escapeState = EscapeState.STRING
             }
         }
     }
@@ -2364,7 +2380,7 @@ class AnsiTerminalBuffer(
         val bottomMargin: Int,
     )
 
-    private enum class EscapeState { NORMAL, ESC, ESC_INTERMEDIATE, CSI, SS3, OSC, STRING }
+    private enum class EscapeState { NORMAL, ESC, ESC_INTERMEDIATE, CSI, SS3, OSC, STRING, STRING_ESC }
 
     private companion object {
         /** What an untouched cell holds, for telling a row with nothing on it from one with a space. */
