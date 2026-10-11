@@ -311,6 +311,7 @@ import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalSelection
 import dev.eclipse.ssh.terminal.TerminalViewport
+import dev.eclipse.ssh.terminal.linesBelow
 import dev.eclipse.ssh.terminal.terminalCellText
 import dev.eclipse.ssh.ui.terminal.KeyBarPrefsCodec
 import dev.eclipse.ssh.ui.terminal.TerminalInputBridge
@@ -3290,11 +3291,14 @@ private fun TerminalScreen(
                 // state this screen already has, the way the key row's own visibility is read
                 // below: a preference that changes what the terminal draws needs no plumbing to
                 // reach the thing that draws it.
-                if (state.settings.terminalScrollbackCountVisible &&
-                    frame.totalLines > 0 && frame.firstLine + frame.lines.size < frame.totalLines
-                ) {
+                val linesBelow = frame.linesBelow()
+                if (state.settings.terminalScrollbackCountVisible && linesBelow > 0) {
                     ScrollbackBadge(
-                        lines = frame.totalLines - (frame.firstLine + frame.lines.size),
+                        lines = linesBelow,
+                        // What the row is keyed on, and the only thing that brings it back: the
+                        // viewport moving. New output arriving behind a viewport that is standing
+                        // still leaves it hidden, which is the point of hiding it at all.
+                        scrollPosition = frame.firstLine,
                         onJump = { onScrollTo(activeTab.id, 0) },
                         modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
                     )
@@ -3331,6 +3335,9 @@ private fun TerminalScreen(
                 },
                 onText = { text -> onSendText(activeTab.id, text) },
                 onChar = { char, ctrl, alt -> onSendChar(activeTab.id, char, ctrl, alt) },
+                // The fades at the row's edges have to blend into what is behind it, and what is
+                // behind it is the terminal's own background.
+                background = termBg,
                 modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
             )
         }
@@ -3411,6 +3418,12 @@ private fun TerminalScreen(
  * non-blank line and is bounded work per row however long the session has been open.
  */
 private const val SESSION_PREVIEW_SCAN_CHARS = 1_000
+
+/** How long the scrolled-back chip stays up after the view last moved, in milliseconds. */
+private const val SCROLLBACK_BADGE_IDLE_MS = 4_000L
+
+/** The scrolled-back chip's opacity: opaque enough to read, thin enough to see the grid through. */
+private const val SCROLLBACK_BADGE_ALPHA = 0.82f
 
 /**
  * How many frames the terminal spends trying to put focus on its IME host before giving up.
@@ -3890,17 +3903,32 @@ private fun MainUiState.terminalLine(sessionKey: String, line: Int): String {
  * nothing here at all. The way back is never lost by the setting — it is the menu's own "Jump to
  * live output", which the full-screen terminal has always had, and this chip keeps its tap target
  * and its description for as long as it is drawn.
+ *
+ * It covers grid the user is reading, which is the second complaint it drew, so it is drawn while
+ * the view is *moving* and then out of the way: [scrollPosition] changing restarts the timer, and a
+ * scrollback nobody is scrolling is a scrollback nobody is counting. Nothing is lost by the pause —
+ * scroll and the count is back — and the gesture that summoned it is the same gesture that brings it
+ * back. The alpha is the rest of the answer, for the whole of the timer: what is under the chip stays
+ * legible rather than being blotted out by it.
  */
 @Composable
 private fun ScrollbackBadge(
     lines: Int,
+    scrollPosition: Int,
     onJump: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(scrollPosition) {
+        settled = false
+        delay(SCROLLBACK_BADGE_IDLE_MS)
+        settled = true
+    }
+    if (settled) return
     Surface(
         modifier = modifier.clickable(onClick = onJump).semantics { contentDescription = "Jump to live output" },
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = SCROLLBACK_BADGE_ALPHA),
     ) {
         Text(
             "$lines lines below",

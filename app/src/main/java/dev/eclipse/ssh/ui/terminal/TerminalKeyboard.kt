@@ -3,15 +3,17 @@ package dev.eclipse.ssh.ui.terminal
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,9 +26,13 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -40,13 +46,11 @@ import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalModifiers
+import dev.eclipse.ssh.terminal.rowOverflow
 
 /**
  * The Ctrl / Alt / Shift latches on the on-screen key row.
@@ -232,13 +236,9 @@ fun TerminalInputBridge(
                 handled
             },
         // A terminal is not prose: autocorrect would rewrite commands, capitalisation would rewrite
-        // paths, and an IME action would insert a newline the shell did not ask for.
-        keyboardOptions = KeyboardOptions(
-            capitalization = KeyboardCapitalization.None,
-            autoCorrectEnabled = false,
-            keyboardType = KeyboardType.Ascii,
-            imeAction = ImeAction.None,
-        ),
+        // paths, and an IME action would insert a newline the shell did not ask for. The type is what
+        // carries that, and why - see [TERMINAL_KEYBOARD_OPTIONS].
+        keyboardOptions = TERMINAL_KEYBOARD_OPTIONS,
         singleLine = true,
         cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.Transparent),
     )
@@ -464,14 +464,13 @@ fun TerminalKeyRow(
     onText: (String) -> Unit,
     /** A single custom character held with Ctrl or Alt, the same path a typed character takes. */
     onChar: (Char, Boolean, Boolean) -> Unit,
+    /** The colour behind the row, which its edge fades blend into: the terminal's own. */
+    background: Color,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         prefs.rowsForLayout().forEach { row ->
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            KeyRowScroller(background) {
                 row.forEach { cap ->
                     when (cap.kind) {
                         KeyBarCapKind.LATCH -> LatchKey(cap.id, latches.armed(cap.id), { latches.toggle(cap.id) }, prefs.size)
@@ -499,6 +498,64 @@ fun TerminalKeyRow(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * One row of caps, with the edges it is scrolled past faded instead of cut.
+ *
+ * The row scrolls rather than wrapping, so the cap at the edge is clipped mid-glyph: "ENTER" arrives
+ * as "EN", which was reported as a control drawn wrong rather than as a row with more in it. The fade
+ * is drawn only where there is something scrolled out of sight, so it never suggests a hidden key
+ * that does not exist, and it changes nothing about the row itself - every cap is where it was, and
+ * in the same place when the row is scrolled back.
+ */
+@Composable
+private fun KeyRowScroller(
+    background: Color,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Box(Modifier.fillMaxWidth()) {
+        val scroll = rememberScrollState()
+        Row(
+            Modifier.horizontalScroll(scroll),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            content = content,
+        )
+        val overflow = rowOverflow(scroll.value, scroll.maxValue)
+        if (overflow.atStart || overflow.atEnd) {
+            Box(
+                Modifier.matchParentSize().drawWithContent {
+                    drawContent()
+                    val width = size.width
+                    val height = size.height
+                    // At most half the row: on a narrow screen a wider fade would leave no cap at
+                    // full strength.
+                    val fade = KEY_ROW_FADE_WIDTH.toPx().coerceAtMost(width / 2f)
+                    if (overflow.atStart) {
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                listOf(background, Color.Transparent),
+                                startX = 0f,
+                                endX = fade,
+                            ),
+                            size = Size(fade, height),
+                        )
+                    }
+                    if (overflow.atEnd) {
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                listOf(Color.Transparent, background),
+                                startX = width - fade,
+                                endX = width,
+                            ),
+                            topLeft = Offset(width - fade, 0f),
+                            size = Size(fade, height),
+                        )
+                    }
+                },
+            )
         }
     }
 }
@@ -574,3 +631,6 @@ private fun TerminalKeyCap(
 
 private val KEY_BACKGROUND = Color(0xFF1D2638)
 private val KEY_FOREGROUND = Color(0xFFB3C1D9)
+
+/** How far a scrolled row's edge fade reaches in from the side of the screen. */
+private val KEY_ROW_FADE_WIDTH = 24.dp
