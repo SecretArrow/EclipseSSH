@@ -1,5 +1,6 @@
 package dev.eclipse.ssh.ssh
 
+import android.os.SystemClock
 import android.util.Log
 import dev.eclipse.ssh.background.NetworkMonitor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -225,7 +226,7 @@ class SessionLivenessProbe @Inject constructor(
         try {
             // [NetworkMonitor.online] is a StateFlow, so this reads the current answer before it waits:
             // a network that came back in the moment between the callback and this line is not missed.
-            val returned = withTimeoutOrNull(NETWORK_GRACE_MS) { networkMonitor.online.first { it } } != null
+            val returned = awaitNetworkReturn()
             val network = networkMonitor.describe()
             if (!returned) {
                 dropAll(
@@ -271,6 +272,58 @@ class SessionLivenessProbe @Inject constructor(
             // In a finally because a cancelled hold - the process is going down, the scope was cancelled -
             // must not leave the UI claiming to be waiting for a network forever.
             _networkHeld.value = false
+        }
+    }
+
+    /**
+     * Waits for the network to come back, for [NETWORK_GRACE_MS] of *awake* time.
+     *
+     * `false` means it stayed gone for the whole grace while the device was awake. A wait that ended
+     * because the device was suspended is not that - nobody was awake to watch the deadline pass, and
+     * the network may have been there throughout - so the grace is re-armed instead of being read as an
+     * outage. On a device that never suspends the loop runs exactly once, which is what this did before.
+     */
+    private suspend fun awaitNetworkReturn(): Boolean {
+        var remainingMs = NETWORK_GRACE_MS
+        var deadSlices = 0
+        while (true) {
+            val before = clockReading()
+            if (withTimeoutOrNull(remainingMs) { networkMonitor.online.first { it } } != null) return true
+            val slice = waitSlice(before, clockReading())
+            when (holdDecision(remainingMs, slice)) {
+                HoldDecision.DEVICE_SLEPT -> {
+                    recordHold("device suspended ${slice.sleptMs / 1000}s into the hold · re-arming")
+                    remainingMs = NETWORK_GRACE_MS
+                    deadSlices = 0
+                }
+
+                HoldDecision.OUTAGE_EXPIRED -> return false
+
+                HoldDecision.KEEP_WAITING ->
+                    if (slice.awakeMs > 0) {
+                        remainingMs -= slice.awakeMs
+                        deadSlices = 0
+                    } else if (++deadSlices >= MAX_DEAD_SLICES) {
+                        // The clocks did not move across three waits, so the grace cannot be measured at
+                        // all. Holding for ever would be a hang rather than a wait; a session that may
+                        // already be gone is dropped, which is what "cannot tell" has to mean here.
+                        recordHold("clocks did not advance · ending the hold")
+                        return false
+                    }
+            }
+        }
+    }
+
+    private fun clockReading() = ClockReading(
+        elapsedRealtimeMs = SystemClock.elapsedRealtime(),
+        uptimeMs = SystemClock.uptimeMillis(),
+    )
+
+    /** Records the same string against every live host, so the Why screen names the same reason everywhere. */
+    private fun recordHold(detail: String) {
+        val network = networkMonitor.describe()
+        sessionStore.liveKeysByHost().forEach { (_, hostId) ->
+            diagnostics.record(hostId, SessionEvent.NETWORK_CHANGED, detail = detail, network = network)
         }
     }
 
@@ -371,6 +424,9 @@ class SessionLivenessProbe @Inject constructor(
         const val TAG = "SessionLivenessProbe"
 
         const val PROBE_ATTEMPTS = 2
+
+        /** Three waits in a row that measured no time at all: stop trusting the clocks, not the session. */
+        const val MAX_DEAD_SLICES = 3
 
         /** Long enough that a recurring failure idles instead of spinning; short enough not to miss the next event. */
         const val WATCH_RESTART_DELAY_MS = 5_000L

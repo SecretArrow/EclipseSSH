@@ -9,10 +9,14 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.ProcessLifecycleOwner
 import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.MainActivity
 import dev.eclipse.ssh.R
@@ -40,6 +44,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.isActive
@@ -132,6 +137,60 @@ class EclipseSessionService : LifecycleService() {
     private lateinit var connectivityManager: ConnectivityManager
 
     /**
+     * The CPU lock this service has never held before. Declared since 1.0.0 and never acquired, which
+     * is why a session that is healthy in the user's hand could be suspended the moment the screen
+     * went off: no process runs, so no keepalive is sent and a liveness probe answers nothing.
+     */
+    private var sessionWakeLock: PowerManager.WakeLock? = null
+
+    private var appVisible = false
+
+    private val visibilityObserver = LifecycleEventObserver { _, event ->
+        when (event) {
+            Lifecycle.Event.ON_START -> {
+                appVisible = true
+                refreshWakeLock()
+            }
+            Lifecycle.Event.ON_STOP -> {
+                appVisible = false
+                refreshWakeLock()
+            }
+            else -> Unit
+        }
+    }
+
+    /**
+     * Holds or releases the CPU according to [wakeNeed], which is a pure function so the combinations
+     * are a test rather than a battery the user pays for.
+     *
+     * Re-acquired on a timeout rather than held indefinitely: a lock taken without one is a lock that
+     * survives a bug in this file, and the platform releases a timed one when the process dies.
+     */
+    private fun refreshWakeLock() {
+        val wanted = wakeNeed(
+            appVisible = appVisible,
+            liveSessions = sessionStore.liveHostIds().size,
+            stopping = stopState.isStopping,
+        ) == WakeNeed.PARTIAL
+        if (wanted) {
+            val lock = sessionWakeLock ?: runCatching {
+                (getSystemService(Context.POWER_SERVICE) as PowerManager)
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
+                    .apply { setReferenceCounted(false) }
+            }.getOrNull()?.also { sessionWakeLock = it } ?: return
+            runCatching { if (!lock.isHeld) lock.acquire(WAKE_LOCK_TIMEOUT_MS) }
+        } else {
+            releaseWakeLock()
+        }
+    }
+
+    private fun releaseWakeLock() {
+        val lock = sessionWakeLock ?: return
+        runCatching { if (lock.isHeld) lock.release() }
+        sessionWakeLock = null
+    }
+
+    /**
      * Whether this instance ever completed a `startForeground` call. Once it has not, the
      * service exists only to drain its pending start command and leave: it holds no foreground
      * notification, and a sticky restart of it would attempt the promotion again, fail against
@@ -201,23 +260,33 @@ class EclipseSessionService : LifecycleService() {
         }
     }
 
+    /**
+     * One promotion attempt with one declared type. False means the platform refused it - an
+     * exhausted budget, a background start, or a type the manifest does not declare.
+     */
+    private fun promoteForeground(type: Int): Boolean = runCatching {
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildNotification("Restoring active sessions…"),
+            // The parameter exists from API 34; below it the call takes no type and the manifest's
+            // declaration is the whole of it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) type else 0,
+        )
+    }.isSuccess
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
         // API 31+ rejects background foreground-service starts and API 34+ requires the
         // declared type; either failure must not take the whole process down.
-        val promoted = runCatching {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                buildNotification("Restoring active sessions…"),
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                } else {
-                    0
-                },
-            )
-        }.isSuccess
+        //
+        // Two types, in order. `dataSync` first because that is what the work usually is, and
+        // `specialUse` second because an exhausted `dataSync` budget is a fact about the type and not
+        // about the sessions: promoting nothing was what turned the budget's own limit into every
+        // session the user had open.
+        val promoted = promoteForeground(ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) ||
+            promoteForeground(ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         if (!promoted) {
             // Said out loud rather than swallowed: the usual cause is the six-hour `dataSync`
             // budget being exhausted, and the silence used to cost the user every session they
@@ -234,6 +303,15 @@ class EclipseSessionService : LifecycleService() {
             return
         }
         promotedToForeground = true
+        // Registered here and removed in onDestroy; the service is the only thing alive while the app
+        // is in the background, so it is the only thing that can tell whether the user is looking.
+        runCatching { ProcessLifecycleOwner.get().lifecycle.addObserver(visibilityObserver) }
+        serviceScope.launch {
+            while (isActive) {
+                refreshWakeLock()
+                delay(WAKE_RECHECK_MS)
+            }
+        }
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         // Read before registering, so the replay that arrives during registration can be recognised.
         initialDefaultNetwork = runCatching { connectivityManager.activeNetwork }.getOrNull()
@@ -535,6 +613,10 @@ class EclipseSessionService : LifecycleService() {
         // here means the system recycled the service with live sessions still in the store -
         // the orphan state that used to end in silence.
         val recycledWithSessionsOpen = stopState.destroyed()
+        // Before the scope, and before anything else this method owes: a lock released after the
+        // process has already been killed is not released at all.
+        runCatching { ProcessLifecycleOwner.get().lifecycle.removeObserver(visibilityObserver) }
+        releaseWakeLock()
         // Cancel the scope first: its cancellation is what ends a sleeping backoff and the
         // transfer collector, so the binder call below unregisters callbacks that have nothing
         // left to notify. The unregister used to come first, delaying that cancellation behind
@@ -639,6 +721,21 @@ class EclipseSessionService : LifecycleService() {
      * implementation there is a no-op anyway.
      */
     override fun onTimeout(startId: Int, fgsType: Int) {
+        // First answer: change type, do not stop. The budget that just ran out belongs to `dataSync`,
+        // and nothing the user asked for has finished - a terminal session held by no service at all
+        // is the failure this is here to remove. `specialUse` has no budget, so re-promoting resets
+        // the clock the platform was counting down.
+        val wanted = foregroundNeed(
+            budgetExhausted = true,
+            liveSessions = sessionStore.liveHostIds().size,
+            transferInFlight = transferCount > 0,
+        )
+        if (wanted == ForegroundNeed.SPECIAL_USE &&
+            promoteForeground(ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        ) {
+            Log.i(TAG, "dataSync budget exhausted; re-promoted as specialUse")
+            return
+        }
         // The state first: a restore pass mid-dial at this instant must not install a session
         // behind the stop.
         stopState.platformStop()
@@ -664,6 +761,19 @@ class EclipseSessionService : LifecycleService() {
 
     companion object {
         private const val TAG = "EclipseSessionService"
+
+        /** Names the lock in a battery historian's output; nothing else reads it. */
+        private const val WAKE_LOCK_TAG = "EclipseSSH:sessions"
+
+        /**
+         * Long enough to cover the gap between re-acquisitions, short enough that a lock whose owner
+         * has stopped re-acquiring it - a wedged main thread, a bug in [refreshWakeLock] - expires
+         * instead of holding the CPU until the battery is flat.
+         */
+        private const val WAKE_LOCK_TIMEOUT_MS = 10L * 60 * 1000
+
+        /** How often to re-ask whether the lock is still wanted; sessions come and go quietly. */
+        private const val WAKE_RECHECK_MS = 30_000L
 
         /**
          * How long ACTION_STOP waits for the registry clear before stopping anyway. The write is
