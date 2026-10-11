@@ -1452,6 +1452,19 @@ private fun EclipseWorkspace(
                             textExportPicker.launch("$hostName-session.log")
                         }
                     },
+                    // The other half of the same incident. The log above is what the session sent;
+                    // this is what the app drew from it, and a rendering bug is only ever the two
+                    // read together.
+                    onSaveRenderAudit = { sessionKey, hostName ->
+                        val text = viewModel.renderAuditText(sessionKey)
+                        if (text.isNullOrEmpty()) {
+                            viewModel.reportUiMessage("This session has not drawn anything yet")
+                        } else {
+                            pendingTextExport = text.toByteArray()
+                            pickerActive = true
+                            textExportPicker.launch("$hostName-render-audit.txt")
+                        }
+                    },
                     onNotifyWhenDone = viewModel::notifyWhenDone,
                     onSaveText = { hostId, text ->
                         pendingTextExport = text.toByteArray()
@@ -1647,6 +1660,19 @@ private fun EclipseWorkspace(
                             pendingTextExport = text.toByteArray()
                             pickerActive = true
                             textExportPicker.launch("$hostName-session.log")
+                        }
+                    },
+                    // The other half of the same incident. The log above is what the session sent;
+                    // this is what the app drew from it, and a rendering bug is only ever the two
+                    // read together.
+                    onSaveRenderAudit = { sessionKey, hostName ->
+                        val text = viewModel.renderAuditText(sessionKey)
+                        if (text.isNullOrEmpty()) {
+                            viewModel.reportUiMessage("This session has not drawn anything yet")
+                        } else {
+                            pendingTextExport = text.toByteArray()
+                            pickerActive = true
+                            textExportPicker.launch("$hostName-render-audit.txt")
                         }
                     },
                     onNotifyWhenDone = viewModel::notifyWhenDone,
@@ -2387,6 +2413,8 @@ private fun WorkspaceScaffold(
     onSaveLogs: (String, String) -> Unit = { _, _ -> },
     /** Saves a session's raw output log - session key and the host name to name the file after. */
     onSaveSessionLog: (String, String) -> Unit = { _, _ -> },
+    /** Saves what the app drew for a session - see MainViewModel.renderAuditText. */
+    onSaveRenderAudit: (String, String) -> Unit = { _, _ -> },
     /** Arms the finished-command notification for a session key. */
     onNotifyWhenDone: (String) -> Unit = {},
     onSaveText: (String, String) -> Unit = { _, _ -> },
@@ -2503,6 +2531,7 @@ private fun WorkspaceScaffold(
             onSaveSnippet = onSaveSnippet,
             onSaveLogs = onSaveLogs,
             onSaveSessionLog = onSaveSessionLog,
+            onSaveRenderAudit = onSaveRenderAudit,
             onNotifyWhenDone = onNotifyWhenDone,
             onSaveText = onSaveText,
             onSaveScreen = onSaveScreen,
@@ -2949,6 +2978,8 @@ private fun TerminalScreen(
     onSaveLogs: (String, String) -> Unit,
     /** Saves the raw session log - see MainViewModel.sessionLogText. */
     onSaveSessionLog: (String, String) -> Unit,
+    /** Saves what the app drew for this session - see MainViewModel.renderAuditText. */
+    onSaveRenderAudit: (String, String) -> Unit,
     /** Arms the finished-command notification - see MainViewModel.notifyWhenDone. */
     onNotifyWhenDone: (String) -> Unit,
     onSaveText: (String, String) -> Unit,
@@ -3178,6 +3209,7 @@ private fun TerminalScreen(
             // The session's own key, not the host: a host with two shells has two logs, and the
             // tab's title is the host name the file should be called after.
             onSaveSessionLog = { onSaveSessionLog(activeTab.id, activeTab.title) },
+            onSaveRenderAudit = { onSaveRenderAudit(activeTab.id, activeTab.title) },
             onNotifyWhenDone = { onNotifyWhenDone(activeTab.id) },
             onSaveText = { onSaveText(activeTab.hostId, terminalText) },
             onSaveScreen = { onSaveScreen(activeTab.hostId, terminalText) },
@@ -4010,6 +4042,8 @@ private fun TerminalTabStrip(
     onSaveLogs: () -> Unit,
     /** Saves the raw session log; the item is hidden until the session has output to save. */
     onSaveSessionLog: () -> Unit,
+    /** Saves what the app drew for the session on screen - see MainViewModel.renderAuditText. */
+    onSaveRenderAudit: () -> Unit,
     /** Arms the finished-command notification for the session on screen. */
     onNotifyWhenDone: () -> Unit,
     onSaveText: () -> Unit,
@@ -4153,6 +4187,10 @@ private fun TerminalTabStrip(
                 if (terminalText.isNotBlank()) {
                     DropdownMenuItem(text = { Text("Save session log") }, onClick = { menuOpen = false; onSaveSessionLog() })
                 }
+                // Not gated on output, unlike the log above: the audit is the file that says whether
+                // anything was drawn, so hiding it while the screen is blank would hide it exactly
+                // when it is wanted. An audit with nothing in it says so in its own words.
+                DropdownMenuItem(text = { Text("Save render audit") }, onClick = { menuOpen = false; onSaveRenderAudit() })
                 DropdownMenuItem(text = { Text("Save text") }, onClick = { menuOpen = false; onSaveText() })
                 DropdownMenuItem(text = { Text("Save screen") }, onClick = { menuOpen = false; onSaveScreen() })
                 DropdownMenuItem(text = { Text("Disconnect all") }, onClick = { menuOpen = false; confirmDisconnectAll = true })

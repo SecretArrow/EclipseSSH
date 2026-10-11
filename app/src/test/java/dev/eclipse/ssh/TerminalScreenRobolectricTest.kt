@@ -234,6 +234,7 @@ class TerminalScreenRobolectricTest {
             "Copy all output",
             "Jump to live output",
             "Save logs",
+            "Save render audit",
             "Save text",
             "Save screen",
             "Disconnect all",

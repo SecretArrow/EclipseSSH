@@ -2482,10 +2482,22 @@ internal fun terminalPaintedWidth(line: List<TerminalCell>): Int {
     var index = line.size
     while (index > 0) {
         val cell = line[index - 1]
-        if (cell.value != ' ' || !cell.style.background.isDefault || cell.style.inverse) {
+        if (cell.isPainted()) {
             return if (cell.wide && index < line.size) index + 1 else index
         }
         index--
     }
     return 0
 }
+
+/**
+ * Whether [this] is a cell the renderer puts ink on: a character, or a blank carrying a background or
+ * an inverse.
+ *
+ * The rule lives here rather than at each caller because the two callers have to agree. [terminalPaintedWidth]
+ * stops on it to decide where a row's ink ends, and the render audit counts it to decide whether a screen
+ * is empty; a foreground colour on a space is drawn by neither, so a screen that was painted only in
+ * foreground on blanks has to read as blank to both.
+ */
+internal fun TerminalCell.isPainted(): Boolean =
+    value != ' ' || !style.background.isDefault || style.inverse
