@@ -9,7 +9,12 @@ client, so the client-bound bytes are the ones to replay.
 Frames are 4-byte big-endian length prefix + payload, so the parser sees the same boundaries the socket
 did.
 
-  record.py OUT.frames SECONDS [--cols N] [--rows N] [--term T] [--config PATH] -- COMMAND
+  record.py OUT.frames SECONDS [--cols N] [--rows N] [--term T] [--config PATH] [--send S:TEXT]... -- COMMAND
+
+`--send` types into the client's terminal at a given second, as many times as given, so a program that
+will not draw anything worth recording until it has been answered - a first-run trust dialog, a prompt -
+can be recorded too. Without it the recording stops at whatever the program shows before it asks
+something.
 
 Known limit, and a deliberate one: tmux asks its terminal questions (DA1, XTVERSION, DECRQM) and this
 harness answers none of them, so tmux falls back to its own defaults for the capabilities a real client
@@ -37,6 +42,21 @@ def win_size(cols: int, rows: int) -> bytes:
     return struct.pack("HHHH", rows, cols, 0, 0)
 
 
+def decode(text: str) -> bytes:
+    """`\\r` and `\\x1b[B` as the bytes they name, so a keypress fits on a command line."""
+    try:
+        return text.encode("ascii").decode("unicode_escape").encode("latin-1")
+    except UnicodeEncodeError:
+        raise SystemExit(f"record.py: --send TEXT must be ASCII, got {text!r}")
+
+
+def parse_send(item: str) -> tuple[float, bytes]:
+    at, separator, text = item.partition(":")
+    if not separator:
+        raise SystemExit(f"record.py: --send wants SECONDS:TEXT, got {item!r}")
+    return float(at), decode(text)
+
+
 def main() -> int:
     # The command comes after a bare `--`, split by hand: argparse's REMAINDER starts swallowing at the
     # first positional, so options written before the command would silently become part of it.
@@ -57,6 +77,13 @@ def main() -> int:
     parser.add_argument("--rows", type=int, default=60)
     parser.add_argument("--term", default="xterm-256color")
     parser.add_argument("--config", default=os.path.expanduser("~/.tmux.conf"))
+    parser.add_argument(
+        "--send",
+        action="append",
+        default=[],
+        metavar="SECONDS:TEXT",
+        help="write TEXT to the client's terminal after SECONDS (\\r, \\x1b[B and friends decoded)",
+    )
     args = parser.parse_args(argv[:split])
 
     master, slave = pty.openpty()
@@ -79,12 +106,27 @@ def main() -> int:
 
     frames = 0
     total = 0
-    deadline = time.monotonic() + args.seconds
+    started = time.monotonic()
+    deadline = started + args.seconds
+    schedule = sorted(parse_send(item) for item in args.send)
     with open(args.out, "wb") as out:
         while time.monotonic() < deadline:
-            ready, _, _ = select.select([master], [], [], max(0.0, deadline - time.monotonic()))
+            elapsed = time.monotonic() - started
+            while schedule and schedule[0][0] <= elapsed:
+                os.write(master, schedule.pop(0)[1])
+            # A short wait while a keypress is still due, so the schedule is not rounded to whatever the
+            # session happened to print; the deadline once nothing is left to send. Never zero: a wait of
+            # zero returns "nothing to read" immediately, and reading that as the end of the recording
+            # would stop it on the very keypress it was scheduled to send. The loop's own condition is
+            # what ends it, so a timeout here just goes round again.
+            wait = deadline - time.monotonic()
+            if schedule:
+                wait = min(wait, schedule[0][0] - elapsed)
+            if wait <= 0:
+                continue
+            ready, _, _ = select.select([master], [], [], wait)
             if not ready:
-                break
+                continue
             try:
                 chunk = os.read(master, 65536)
             except OSError:
