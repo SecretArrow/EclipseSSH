@@ -108,7 +108,11 @@ import dev.eclipse.ssh.security.normalizePastedSecret
 import dev.eclipse.ssh.feature.terminallog.SessionLog
 import dev.eclipse.ssh.feature.terminallog.SilenceDetector
 import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
+import dev.eclipse.ssh.terminal.FrameSample
 import dev.eclipse.ssh.terminal.KeyboardModes
+import dev.eclipse.ssh.terminal.paintedCells
+import dev.eclipse.ssh.terminal.RenderAudit
+import dev.eclipse.ssh.terminal.screenKind
 import dev.eclipse.ssh.terminal.TerminalColors
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
@@ -261,6 +265,16 @@ class MainViewModel @Inject constructor(
      * drops [terminalOutput] - [closeTab] and [deleteHost].
      */
     private val sessionLogs = ConcurrentHashMap<String, SessionLog>()
+
+    /**
+     * What each session's own frames did, keyed by session key and holding nothing but counters.
+     *
+     * The companion to [sessionLogs] for the failures that only happen on a device: the log carries the
+     * bytes a session received, this carries the revisions and blankings the app built out of them, at
+     * the same clock, so the two can be read together. Bounded (a few hundred bytes per session) and
+     * created lazily by the collector, so a session that is never exported costs one empty map entry.
+     */
+    private val renderAudits = ConcurrentHashMap<String, RenderAudit>()
 
     /**
      * The armed "Notify when done" detector of each session that asked for one, keyed by session
@@ -2262,6 +2276,9 @@ class MainViewModel @Inject constructor(
                     // the channel and comes back through `terminal.output` like any other output,
                     // so it reaches this tee when the shell echoes it.
                     sessionLog.append(decoded)
+                    // Beside the log, from the same tee and for the same reason: what counts as output
+                    // is exactly what the terminal was handed. See [renderAudits].
+                    renderAudit(sessionKey).onOutput(decoded.length)
                     sessionDetectors[sessionKey]?.onOutput()
                     chunk = incoming.tryReceive().getOrNull()
                 } while (chunk != null)
@@ -2305,6 +2322,7 @@ class MainViewModel @Inject constructor(
             if (tail.isNotEmpty()) {
                 buffer.feed(tail)
                 sessionLog.append(tail)
+                renderAudit(sessionKey).onOutput(tail.length)
                 sessionDetectors[sessionKey]?.onOutput()
             }
             // Unconditionally, and past the throttle. Cancelling `transcript` above cancels whatever
@@ -2600,7 +2618,35 @@ class MainViewModel @Inject constructor(
                 if (publishable == null) current else current + (sessionKey to publishable)
             }
         }
+        // After the write, not inside it: `update` may run its lambda more than once, and a note
+        // written twice would read as a screen that blanked twice. Only the live view is recorded -
+        // a scrolled-back window is a function of where the finger went, and a window panned past the
+        // end of the text is empty for reasons that have nothing to do with a session. See [renderAudits].
+        if (offset == 0 && isDisplaying(sessionKey, buffer)) {
+            terminalFrames.value[sessionKey]?.let { renderAudit(sessionKey).onFrame(sampleOf(it)) }
+        }
     }
+
+    /** The audit of [sessionKey], created on first use by whichever of the two tees reaches it first. */
+    private fun renderAudit(sessionKey: String): RenderAudit =
+        renderAudits.getOrPut(sessionKey) { RenderAudit() }
+
+    /**
+     * One published frame as the numbers the audit keeps.
+     *
+     * [paintedCells] rather than the frame's own width counters: the question the audit answers is
+     * whether the screen was empty, and a row that reaches column 52 with two characters on it is as
+     * empty as one that reaches column 2. The cursor is carried because it is the other half of every
+     * rendering report - a screen whose text is right and whose cursor is elsewhere is a different bug
+     * from one that is blank.
+     */
+    private fun sampleOf(frame: TerminalFrame): FrameSample = FrameSample(
+        revision = frame.revision,
+        inkCells = paintedCells(frame.lines),
+        cursorRow = frame.cursorRow,
+        cursorColumn = frame.cursorColumn,
+        screen = screenKind(frame.alternateScreen, frame.positionalScreen),
+    )
 
 
     /**
@@ -3018,6 +3064,17 @@ class MainViewModel @Inject constructor(
      * caller treats both as "nothing to save".
      */
     fun sessionLogText(sessionKey: String): String? = sessionLogs[sessionKey]?.snapshot()
+
+    /**
+     * What one session's own frames did, for "Save render audit".
+     *
+     * The companion to [sessionLogText] and read the same way - on demand, at the moment the user taps
+     * export - because it exists for the bugs that cannot be reproduced off the device: the two files
+     * describe the same seconds from the two ends that matter, the bytes the session received and the
+     * screens the app built out of them. Null when the session has no audit at all, which is a session
+     * that was closed before it ever spoke; see [renderAudits].
+     */
+    fun renderAuditText(sessionKey: String): String? = renderAudits[sessionKey]?.report()
 
     /**
      * Arms "Notify when done" for one session: a notification when the session's output - which
@@ -4429,6 +4486,7 @@ class MainViewModel @Inject constructor(
         terminalOutput.update { it - tab.id }
         terminalFrames.update { it - tab.id }
         sessionLogs.remove(tab.id)
+        renderAudits.remove(tab.id)
         // Silently: a tab the user closed is not a command that finished, and the notification
         // would arrive for a session that no longer exists.
         sessionDetectors.remove(tab.id)
@@ -4681,6 +4739,7 @@ class MainViewModel @Inject constructor(
             terminalOutput.update { current -> current - keys.toSet() }
             terminalFrames.update { current -> current - keys.toSet() }
             keys.forEach { key -> sessionLogs.remove(key) }
+            keys.forEach { key -> renderAudits.remove(key) }
             keys.forEach { key -> sessionDetectors.remove(key) }
             commandHistory.value = commandHistory.value - host.id
             serverStats.update { it - host.id }
