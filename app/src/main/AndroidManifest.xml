@@ -9,6 +9,12 @@
     <!-- Keeping SSH sessions / SFTP transfers alive while minimised or locked -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!--
+      The second type for the session service. dataSync is budgeted at six hours a day on Android 15,
+      and a terminal session the user keeps open all day has to outlive that budget; specialUse has
+      no budget, and the subtype property on the service below is what says what it is for.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -445,8 +451,16 @@
             android:name=".background.EclipseSessionService"
             android:description="@string/service_description"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
+            android:foregroundServiceType="dataSync|specialUse"
+            android:stopWithTask="false">
+            <!--
+              Required by the platform for a specialUse service, and reviewed by Google if this app is
+              ever published there. One sentence, because that is the format.
+            -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps an interactive SSH terminal session reachable while the app is in the background" />
+        </service>
 
         <!--
           Process-liveness hold for the local Ubuntu userspace: every
