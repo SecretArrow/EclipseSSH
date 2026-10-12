@@ -32,7 +32,7 @@ private const val TAB_WIDTH = 8
  * `scripts/check-doc-figures.sh` holds this constant against `versionName` in app/build.gradle.kts,
  * so a release bump cannot leave it behind.
  */
-const val TERMINAL_IDENTITY = "EclipseSSH(1.21.0)"
+const val TERMINAL_IDENTITY = "EclipseSSH(1.22.0)"
 
 // DECRQM's three answers: the mode is on, it is off, or this terminal has never heard of it.
 private const val MODE_SET = 1

@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 55 / versionName 1.21.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 56 / versionName 1.22.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §95, *Releasing 1.21.0*, which is the version this file's header names; §94, *Releasing 1.20.0*, is the release before it, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §96, *Releasing 1.22.0*, which is the version this file's header names; §95, *Releasing 1.21.0*, is the release before it, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11023,3 +11023,126 @@ The gate that certifies the artifact — signature, version, per-ABI splits, eac
 `extractNativeLibs` — establishes that the APK is correct, not that the scroll is smooth. The leg that runs
 the instrumented suite against the **published** APK is what covers the app coming up at all, and a red leg
 there pulls the release back to draft rather than leaving it published.
+
+---
+
+## 96. Releasing 1.22.0
+
+1.21.0 was a scroll. 1.22.0 is what this terminal *answers*. The thread through all fifteen pull requests is
+that a full-screen program interrogates its terminal at launch and then adapts to what it hears: which key
+protocol it may use, what the terminal calls itself, what its colours are, what a given mode is set to. Every
+question this emulator answered wrongly, and every one it ignored, changed something the user then saw or
+felt. The reports that started this pass — fragments of old text, half-rewritten rows, a cursor in the wrong
+column — are what one of those wrong answers cost.
+
+**One prefix changes what the final byte means.** The same final byte asks a different question once a
+private-parameter prefix introduces it, and the parser read only the byte. `CSI ? u`, `CSI < u` and
+`CSI > 5 u` are the kitty keyboard protocol's query, pop and push, not the bare `CSI u` cursor restore;
+`CSI > 4 ; 2 m` is xterm's modifyOtherKeys, not an SGR of dim plus underline; `CSI ? Pm s` and `CSI ? Pm r`
+save and restore *private modes* and not the saved cursor and the scroll region. Fixing the reading was the
+precondition for everything below it.
+
+**The keyboard is where a user feels it.** Claude Code pushes `CSI > 5 u`, sets `CSI > 4 ; 2 m` and queries
+`CSI ? u` at every launch, and all three were ignored: a user's Ctrl-C, Shift-Tab and Alt-key presses went out
+as the legacy bytes the program had just asked to be freed of, and the query came back as `CSI ? 1 u` from the
+parser's `u` arm — a cursor restore, not a reply. The push, pop, query and flag-set are now implemented, and
+the two protocols are answered rather than misread.
+
+**Three probes, and the name on the wire.** `CSI > 0 q` (XTVERSION) answers
+`DCS > | EclipseSSH(1.22.0) ST` with this emulator's own name, because a name travels on the wire and a program
+may branch on it, and claiming to be an xterm is a claim this terminal cannot back with features.
+`check-doc-figures.sh` holds that constant to `versionName`, since a number that goes out over the wire is
+otherwise the one figure no check would ever see. DECRQM (`CSI ? Ps $ p` for a private mode, `CSI Ps $ p` for
+an ANSI one) reports set, reset or not-recognised instead of silence. `CSI 18 t` and `19 t` report the text
+area and the screen size, `21 t` reports the title as `OSC l <title> ST`, `22 t` and `23 t` push and pop it on
+xterm's two stacks, and OSC 10 and 11 answer with the theme's default colours, each 8-bit component doubled to
+sixteen bits.
+
+**The drawing, once the mode is right.** An erase now fills the erased cells with the *current background*, as
+`bce` promises and as the reported terminfo entry says: the buffer used to erase to the default style, so a
+program that painted a background and then cleared lost the paint. The pan follows the row's text rather than
+a cursor the program parked elsewhere — Claude Code leaves the terminal's cursor on the corner of its input
+box, about fifty columns past the line being typed, and the view used to settle there, which is the hollow
+block floating in the blank half of the box and the message off the left edge. And the escape intermediates
+(`ESC # 8`, `ESC % G`, `ESC * 0`, `ESC SP F`) no longer print their final byte: any byte in `0x20..0x2F` now
+opens a sequence and the byte after the run is its final byte, which is the defect `ESC O` had one byte
+further along. The cursor blink mode is honoured in the same pass.
+
+**A control string ends at ST and nowhere else.** An ESC inside DCS, SOS, PM or APC is data unless a backslash
+follows it. tmux frames a passthrough as `ESC P tmux; <payload>` with every ESC in the payload doubled, so a
+parser that ended the string at the ESC printed the rest of the payload into the grid and advanced its cursor
+past where tmux believed it was. tmux sends only the cells it thinks changed, so those cells were never sent
+again: one-character fragments and half-rewritten rows for the rest of the session, which is the shape of the
+original complaint. The same commit adds the replay harness that proves it, by feeding recorded tmux byte
+streams through the real parser and diffing the grid against tmux's own capture.
+
+**The reports that only a device produces, and a way to catch them.** Four of the reports cannot be reproduced
+without a real session on real hardware: a key row cut off at its edge, a scrollback badge drawn over the grid
+with no way to dismiss it, an IME suggesting words into a terminal, and a screen that empties and comes back.
+The first three are fixed — the key row fades at both edges and says it can be dragged, the badge fades itself
+out at the bottom, the IME is asked for no suggestions — and for the fourth, which is not yet closed, the app
+now exports what it drew: a bounded record of the frames it published (revision, ink, cursor, screen) beside
+the raw session log it already exported, and each note now names the character of that exported log it
+happened at, or says the cap has already evicted it. Both exports are fed from the same tee, so the position
+is one number rather than two counters that have to agree.
+
+**A session now survives the screen going off.** Every live session is a socket this process must keep
+servicing, and nothing kept the process running: `WAKE_LOCK` had been declared since 1.0.0 and never once
+acquired, so a suspended device sent no keepalive and answered no liveness probe, and a terminal that was
+healthy in the user's hand could be gone by the time the screen came back on with no action taken in between.
+The service now holds a partial wake lock while a session is live and the app is not visible, treats a suspend
+as a suspend rather than as elapsed wall-clock time, and promotes itself to `specialUse` when the six-hour
+`dataSync` allowance runs out rather than letting the session go.
+
+**Two repairs to the instrument rather than the app.** #229 and #230 changed no user-visible behaviour and
+belong to this range only because they were merged in it: an instrumented tap that injected its touch at stale
+semantics bounds and so flaked on an emulator drawing ~3 fps, and a keep-list checker whose `printf | grep -q`
+reported a class as missing because `pipefail` read the writer's SIGPIPE as the pipeline's status — which is
+why the same tree passed the same step on a pull request and failed it on `main` minutes later.
+
+| | pull request | what it changed |
+|---|---|---|
+| 1 | #229 | an instrumented Cancel is activated through its semantics action, not a tap at bounds that lag a slow emulator by a frame |
+| 2 | #230 | the keep-list checker asks its membership question without a pipe, so `pipefail` cannot report a SIGPIPE as a missing class |
+| 3 | #231 | an erased cell is filled with the current background, as `bce` promises |
+| 4 | #232 | the pan follows the row's text, not a cursor the program parked |
+| 5 | #233 | a CSI prefix changes what the final byte means |
+| 6 | #234 | XTVERSION answers with this emulator's own name, and DECRQM reports the mode it is asked about |
+| 7 | #235 | XTWINOPS reports the text area, the screen and the title; OSC 10/11 answer with the theme's colours |
+| 8 | #236 | the escape intermediates are swallowed, and the cursor blink mode is honoured |
+| 9 | #237 | the kitty keyboard protocol and modifyOtherKeys are implemented |
+| 10 | #238 | a control string ends only at ST, and tmux recordings replay through the parser |
+| 11 | #239 | the key row, the scrollback badge and the IME are kept out of the way |
+| 12 | #240 | a session is kept alive while the app is in the background |
+| 13 | #241 | the app exports what it drew, beside the session log |
+| 14 | #242 | the replay harness types into the client and compares the cursor |
+| 15 | #243 | a note in the render audit names a character of the exported log |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88, §90, §92, §93 and §95 set: **a patch number is honest
+when the artifact a user installs behaves as its predecessor's does.** This one fails that test on the first
+keystroke. Ctrl-C, Shift-Tab and Alt now reach a program that asked for the kitty protocol; a program that
+asks what this terminal is gets a true answer instead of nothing; a coloured background survives an erase; a
+full-screen program's input box is no longer scrolled off the left edge. And the session that used to be gone
+when the screen came back on now is not.
+
+### The suite
+
+The suite is 2,510 JVM/Robolectric test methods in 198 files — 208 more than 1.21.0's 2,302 in 188, ten of them
+new files — and `scripts/check-doc-figures.sh` re-derives that figure from the sources on every push, so a
+stale count fails CI rather than standing until someone reads it again.
+
+### What this release does not claim
+
+**Nobody has felt it on a device.** What is covered is that each protocol answer is exact and each branch has
+its own test, and that five real Claude Code byte streams at 52x60 replay through the parser to the same grid
+tmux builds, at every read prefix, cursor included. What is *not* covered is the fourth report: a screen that
+empties and comes back has never been reproduced here, and no test in this repository can say it is gone. What
+changed for it is that it can now be caught — one pair of exports taken at the same moment names the character
+of the session's output at which it happened — and the ten-minute device session that would close it belongs
+to the user, not to this file.
+
+**The `specialUse` foreground service type has a publishing consequence.** It is declared so a terminal session
+can outlive the six-hour `dataSync` allowance, and Google Play reviews that declaration; the reasoning is
+written beside the manifest entry. Releases built by CI per ABI are unaffected.
