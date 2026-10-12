@@ -11347,3 +11347,72 @@ and a session log from one device session in which a fragment was on screen, whi
 frame the view drew, and the pattern in the byte stream that preceded it. Until one of those exists,
 B1, B2 and B13 are open with a narrower set of candidate causes than they had, and this section is the
 record of which candidates the measurements have removed.
+
+## 99. A relative move could leave the screen, and the window could leave the cursor's own cell outside it
+
+The report's B6 has three complaints in one sentence: the cursor block "melompat/mendelay/lupa
+dipindahkan saat teks berubah", and the demand that CUP/HVP, CUU/CUD/CUF/CUB and DECSC/DECRC all be
+processed correctly. It is two defects, in two layers, and both were measured before either was
+touched.
+
+**The parser: a relative vertical move was clamped against the whole buffer, not against the screen.**
+`setCursorRow` ended in `row.coerceIn(0, lines.lastIndex)`, and `lines` holds the scrollback as well as
+the screen. A program that homes its cursor and then steps *up* - which is what a full-screen program
+does on its first frame, and what every line editor does when it redraws a wrapped command line - was
+therefore allowed to leave the screen. The cursor landed in the scrollback, the next character printed
+was written *there*, and the row it belonged to was left as it was: the character was invisible, one row
+of history was corrupted, and the screen was unchanged, which is exactly "lupa dipindahkan".
+
+Measured, at 52x60 with 100 lines behind it: `ESC[60A` from the bottom row lands on line 41, the
+screen's first line, in both the old code and the new. `ESC[200A` lands on line 0 in the old code -
+thirty-two rows above the top of the screen - and on line 41 in the new. The mark written after each
+move says the same thing in the grid: before, `X` on absolute line 90 (off the visible screen, one row
+above its top) and `Y` on absolute line 0, where it overwrote the `U` of an unrelated line and left
+`UY`; after, both marks on the screen's first line, and tmux - replayed the same recording at the same
+size - agrees, showing `XYne 042` on screen row 0 with its cursor at 0,2.
+
+The bound is now the screen, and inside a scrolling region it is the region's margin. Both are read
+from where the cursor *is* rather than from where the move ends, because that is what the reference
+does: `ESC[22;28r` with the cursor at row 25, `ESC[9A` stops at row 22 (the region's top) while the same
+`ESC[9A` from row 20 - above the region - is bounded by the screen and lands on row 17; and a cursor
+*below* the region moving up stops at row 22 as well, which is the part a reading of the spec alone
+would not have given. All five cases are a table in `AnsiTerminalFullScreenTest`, each verified against
+tmux before it was written down.
+
+**The view: the pan followed the row's ink and not the cursor's own cell.** `panForCursor` followed
+`min(cursorColumn, cursorRowInk)`, and `cursorRowInk` counts the columns the cursor's row paints. The
+ordinary place for a cursor while a command is being typed is the cell *just after* that ink - so the
+cell the block is drawn in was excluded from the follow, the window settled with it exactly at or past
+its right edge, and the frame was drawn with no cursor block in it at all. Measured over the three real
+[CC] recordings: one read in 378 produced such a frame (the window `[4.0, 48.0)` with the cursor's cell
+`[48.0, 49.0)`). The follow is now `cursorRowInk + 1`, one cell of grace, and the same sweep reports
+zero. The invariant is asserted as a sweep rather than as a case: for every column along a row, with the
+pan carried from call to call the way the view carries it, the cursor's own cell is inside the window.
+
+**The tween is narrowed rather than removed.** The plan asked to remove or narrow the `PAN_FOLLOW_MS`
+animation, and the measurement says which. A follow that arrives inside the tween's own duration cannot
+be one the tween finishes, and with the target moving one cell per frame the shortfall settles at 90/T
+cells - 2.7 of them at 30 fps, which is most of a phone's screen margin and every character the user
+just wrote. So a follow is now *assigned* rather than animated whenever more than one cell of travel is
+asked for, however long the quiet was; only the single-cell crossing a keystroke makes is still slid,
+which is the case the tween was added for.
+
+**What this does not claim.** It does not claim the reported jump is gone on a device - that is the
+device pass's job, and it is still owed. It does not claim the cursor's position comes from anywhere
+other than the layout: it already did, and the two changes above are about which cell the layout names
+and whether the window contains it. And it does not claim the cursor is *always* drawn where the user
+expects in a full-screen program: [CC] parks its cursor on the corner of its input box, some fifty
+columns past the text being typed, and `cursorRowInk` deliberately declines to follow it there. The
+block is drawn at the parked cell when that cell is on screen, which is the same thing a terminal on a
+desktop shows.
+
+**One divergence this fixture exposed and this section does not fix.** `reproductions/cursor-moves.py`
+replays clean at every read through band 3 and through band 6's own moves, but `griddiff.py --bisect`
+stops at read 6, and the report is a *window* offset rather than a cursor one: when a program clears
+the screen (`ESC[2J`) on a session with history and homes its cursor, `frame`'s window ends at the
+bottommost inked line rather than at the end of the buffer, so the whole screen is drawn N rows lower
+than tmux draws it - one row for a blank tail line, and much more for a cleared screen. It is
+pre-existing (the same numbers come out of the code before this change and before §97's), it is in the
+frame's window rather than in the parser, and it is recorded here as the next thing to fix rather than
+as something this section closed. It is the shape of B1/B2/B13 - content on the wrong row - and it is
+the first candidate those three have had that is reproducible on this host.

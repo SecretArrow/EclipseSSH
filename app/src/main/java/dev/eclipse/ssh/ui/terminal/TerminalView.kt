@@ -411,14 +411,15 @@ fun TerminalView(
         // so this settles once per cursor move and a manual pan is left alone until the cursor moves
         // again - and re-clamped here too, because a narrower frame can strand an old pan past its end.
         //
-        // The clock read is only here to answer one question, and the answer decides whether this
-        // follow can be tweened: see [followShouldAnimate]. A tween cannot be asked for on every cursor
-        // move, because a program printing a long line moves the cursor every frame, and a tween that
-        // is restarted before it finishes never arrives - it leaves the pan short of the cursor, which
-        // is the newest characters and the cursor itself drawn off the right edge for as long as the
-        // output lasts. A follow with a quiet gap before it is one keystroke crossing the edge, which
-        // is what the tween was added for. The one slot is a plain array rather than snapshot state
-        // because no composition and no draw reads it.
+        // The clock read and the distance are here to answer one question between them, and the answer
+        // decides whether this follow can be tweened: see [followShouldAnimate]. A tween cannot be asked
+        // for on every cursor move, because a program printing a long line moves the cursor every frame,
+        // and a tween that is restarted before it finishes never arrives - it leaves the pan short of the
+        // cursor, which is the newest characters and the cursor itself drawn off the right edge for as
+        // long as the output lasts. Nor for a move of more than one cell, which is a jump rather than the
+        // keystroke crossing the edge the tween was added for, and a jump spread over the tween's
+        // duration is the cursor off the window for exactly that long. The one slot is a plain array
+        // rather than snapshot state because no composition and no draw reads it.
         val lastFollowNanos = remember { longArrayOf(0L) }
         LaunchedEffect(layout.cursorColumn, layout.cursorRowInk, layout.cursorRow, maxPan, visible.columns, metrics.width) {
             val target = panForCursor(
@@ -439,7 +440,13 @@ fun TerminalView(
             val sinceLastFollow = now - lastFollowNanos[0]
             lastFollowNanos[0] = now
             if (target == pan.floatValue) return@LaunchedEffect
-            if (!followShouldAnimate(sinceLastFollow)) {
+            // How far the window has to travel, in cells, because that is what decides whether this is
+            // the one-cell courtesy the tween is for or a jump it must not spread out: see
+            // [followShouldAnimate]. The distance is asked for rather than worked out here, so its two
+            // edges - an unmeasured cell and the float arithmetic of a one-cell move - are the pure
+            // function's business and are tested with it.
+            val cellsMoved = cellsBetween(pan.floatValue, target, metrics.width)
+            if (!followShouldAnimate(sinceLastFollow, cellsMoved)) {
                 pan.floatValue = target
                 return@LaunchedEffect
             }

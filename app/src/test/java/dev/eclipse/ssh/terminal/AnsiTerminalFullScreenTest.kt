@@ -138,8 +138,37 @@ class AnsiTerminalFullScreenTest {
         assertThat(buffer.plainText()).contains("row 7")
     }
 
-    // --- Wrapping ---
+    @Test
+    fun `a vertical move stops at the region's margin`() {
+        // The region bounds a relative vertical move, and both ends of it. A move that would cross a
+        // margin stops there even when the cursor started outside the region, which is the reference's
+        // rule - tmux's, and tmux is what composes the sequences this emulator is fed - rather than a
+        // reading of it. That is why the bound is read from where the cursor *is* and not from where the
+        // move ends, and it is the case a clamp against the screen alone gets wrong.
+        //
+        // The last two are the inclusive end of that rule: a cursor *on* a margin moving further out
+        // stays where it is. Both were measured against tmux before they were written, and both were
+        // measured the hard way - the marker for each is overwritten by the case that follows it, so a
+        // fixture that ran them in sequence showed nothing until each was given a band of its own.
+        val cases = listOf(
+            "${ESCAPE}[25;5H${ESCAPE}[9A" to 21,   // from inside, up: the region's top row
+            "${ESCAPE}[25;5H${ESCAPE}[9B" to 27,   // from inside, down: the region's bottom row
+            "${ESCAPE}[20;3H${ESCAPE}[3A" to 16,   // above the region: the screen is the bound
+            "${ESCAPE}[30;3H${ESCAPE}[20A" to 21,  // below the region: the margin still stops it
+            "${ESCAPE}[30;3H${ESCAPE}[3B" to 32,   // below it, moving down: nothing in the way
+            "${ESCAPE}[22;1H${ESCAPE}[1A" to 21,   // on the top row, up: still the top row
+            "${ESCAPE}[28;1H${ESCAPE}[1B" to 27,   // on the bottom row, down: still the bottom row
+        )
+        val landed = cases.map { (sequence, _) ->
+            val buffer = AnsiTerminalBuffer(columns = 10, rows = 40, scrollbackLimit = 20)
+            buffer.feed("${ESCAPE}[2J${ESCAPE}[22;28r$sequence")
+            buffer.frame().cursorRow
+        }
 
+        assertThat(landed).containsExactly(21, 27, 16, 21, 32, 21, 27).inOrder()
+    }
+
+    // --- Wrapping ---
     @Test
     fun `autowrap off keeps overwriting the last column`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)

@@ -60,6 +60,44 @@ class TerminalPanFollowTest {
     }
 
     @Test
+    fun `a cursor in the cell after its row's text is followed into the window`() {
+        // The measured case, from a real [CC] stream: the input row paints 47 columns and the cursor sits
+        // in the 48th, on a phone whose window is 44 columns. Following the row's paint alone settled the
+        // pan at 4 - which parks the cursor's own cell, [480,490), entirely outside the window [40,480),
+        // and a cell drawn outside the window is a frame with no cursor block in it at all.
+        val pan = panForCursor(
+            current = 0f,
+            cursorColumn = 48,
+            cursorRowInk = 47,
+            cursorOnScreen = true,
+            cellWidth = 10f,
+            visibleWidthPx = 440f,
+            maxPan = 100f,
+        )
+        assertThat(pan).isEqualTo(50f)
+        // And the cell the cursor is drawn in is inside: [480,490) against the window [50,490).
+        assertThat(48 * 10f).isAtLeast(pan)
+        assertThat(49 * 10f).isAtMost(pan + 440f)
+    }
+
+    @Test
+    fun `the cursor's own cell stays in the window wherever it goes along its row`() {
+        // The invariant, carried across a whole sweep rather than asserted one call at a time: each call
+        // is handed the pan the last one returned, which is what the view does. The row's paint stops at
+        // 69 and the cursor runs to 70, so both halves of the rule are walked - at the text, and in the
+        // one cell after it.
+        val cellWidth = 10f
+        val window = 44 * cellWidth
+        val ink = 69
+        var pan = 0f
+        for (column in (0..ink + 1) + (ink + 1 downTo 0)) {
+            pan = panForCursor(pan, column, ink, true, cellWidth, window, maxPan = 1000f)
+            assertThat(column * cellWidth).isAtLeast(pan)
+            assertThat((column + 1) * cellWidth).isAtMost(pan + window)
+        }
+    }
+
+    @Test
     fun `a cursor parked past its row's text does not drag the view with it`() {
         val cellWidth = 10f
         val window = 460f
@@ -135,23 +173,54 @@ class TerminalPanFollowTest {
         // covering T/90 of the gap per restart, the shortfall settles at 90/T cells - 2.7 of them at
         // 30 fps, which is most of a phone's screen margin and every character the user just wrote.
         val tween = PAN_FOLLOW_MS.toLong() * 1_000_000L
-        assertThat(followShouldAnimate(33_000_000L)).isFalse()   // 30 fps of streaming output
-        assertThat(followShouldAnimate(16_000_000L)).isFalse()   // 60 fps, the same case harder
-        assertThat(followShouldAnimate(0L)).isFalse()            // two frames in one tick
+        assertThat(followShouldAnimate(33_000_000L, cellsMoved = 1)).isFalse()   // 30 fps of streaming
+        assertThat(followShouldAnimate(16_000_000L, cellsMoved = 1)).isFalse()   // 60 fps, harder
+        assertThat(followShouldAnimate(0L, cellsMoved = 1)).isFalse()            // two frames in one tick
 
         // A keystroke, which is the case the tween exists for: the interval is longer than the tween, so
         // the slide finishes and there is nothing to fall behind. One cell of movement, animated.
-        assertThat(followShouldAnimate(100_000_000L)).isTrue()
-        assertThat(followShouldAnimate(tween)).isTrue()
+        assertThat(followShouldAnimate(100_000_000L, cellsMoved = 1)).isTrue()
+        assertThat(followShouldAnimate(tween, cellsMoved = 1)).isTrue()
 
         // The boundary is the tween's own duration, inclusive: a follow that arrives exactly one tween
         // after the last one has, by construction, nothing left to finish.
-        assertThat(followShouldAnimate(tween - 1L)).isFalse()
-        assertThat(followShouldAnimate(tween + 1L)).isTrue()
+        assertThat(followShouldAnimate(tween - 1L, cellsMoved = 1)).isFalse()
+        assertThat(followShouldAnimate(tween + 1L, cellsMoved = 1)).isTrue()
 
         // The first follow of a session, which is what an unset clock produces: the elapsed time is
         // everything since the device booted, so the first crossing is animated like any other.
-        assertThat(followShouldAnimate(Long.MAX_VALUE)).isTrue()
+        assertThat(followShouldAnimate(Long.MAX_VALUE, cellsMoved = 1)).isTrue()
+    }
+
+    @Test
+    fun `a follow of more than one cell is assigned however long the quiet was`() {
+        // The gap is not the only thing that decides. A program that prints after a pause, or a scroll
+        // back to the live screen, moves the cursor many cells at once, and the tween only reaches its
+        // target PAN_FOLLOW_MS later - so a jump spread over the slide leaves the cursor outside the
+        // window for the whole of it, which is the one thing the follow is not allowed to do.
+        val quiet = Long.MAX_VALUE
+        assertThat(followShouldAnimate(quiet, cellsMoved = 2)).isFalse()
+        assertThat(followShouldAnimate(quiet, cellsMoved = 30)).isFalse()
+        // One cell is the courtesy the tween was added for, and the first follow of a session is one.
+        assertThat(followShouldAnimate(quiet, cellsMoved = 1)).isTrue()
+    }
+
+    @Test
+    fun `the distance a follow covers is counted in cells, and rounded rather than truncated`() {
+        val cellWidth = 10f
+        // The ordinary keystroke: one cell, and the float arithmetic of a pan is not exact, so a
+        // truncating count would read 0 and a rounding one reads 1 - which is what keeps its tween.
+        assertThat(cellsBetween(100f, 110f, cellWidth)).isEqualTo(1)
+        assertThat(cellsBetween(0f, 10.000001f, cellWidth)).isEqualTo(1)
+        assertThat(cellsBetween(0f, 9.999999f, cellWidth)).isEqualTo(1)
+        // A jump, in either direction.
+        assertThat(cellsBetween(0f, 340f, cellWidth)).isEqualTo(34)
+        assertThat(cellsBetween(340f, 0f, cellWidth)).isEqualTo(34)
+        // Unmeasured metrics: there are no cells to count, so the answer is the largest distance there
+        // is and the follow is assigned rather than slid - the same divide-by-zero the pan itself
+        // survives, answered once instead of at each of its callers.
+        assertThat(cellsBetween(0f, 100f, 0f)).isEqualTo(Int.MAX_VALUE)
+        assertThat(cellsBetween(0f, 100f, -1f)).isEqualTo(Int.MAX_VALUE)
     }
 
     private companion object {

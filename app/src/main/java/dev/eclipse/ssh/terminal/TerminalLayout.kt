@@ -57,10 +57,11 @@ class TerminalLayout(
     /**
      * How many columns of the cursor's row are painted, counted from that row's own start.
      *
-     * The view follows `min(cursorColumn, cursorRowInk)`. A full-screen program may park the terminal's
-     * cursor away from the text it draws the user's caret in - Claude Code parks it on the corner of its
-     * input box - and a window that follows a parked cursor lands on empty cells with the text off the
-     * left edge.
+     * The view follows `min(cursorColumn, cursorRowInk + 1)`: the cursor's own cell, up to and including
+     * the blank cell just after the row's text, which is where a command being typed leaves it. A
+     * full-screen program may park the terminal's cursor away from the text it draws the user's caret
+     * in - Claude Code parks it on the corner of its input box - and a window that follows a parked
+     * cursor lands on empty cells with the text off the left edge.
      */
     val cursorRowInk: Int = 0,
     /**

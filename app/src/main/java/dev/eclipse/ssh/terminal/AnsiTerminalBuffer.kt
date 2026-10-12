@@ -1384,8 +1384,8 @@ class AnsiTerminalBuffer(
         val private = prefix == '?'
         revision++
         when (final) {
-            'A' -> { setCursorRow(cursorRow - first); wrapPending = false }
-            'B', 'e' -> { setCursorRow(cursorRow + first); wrapPending = false }
+            'A' -> setCursorRow(cursorRow - first)
+            'B', 'e' -> setCursorRow(cursorRow + first)
             'C', 'a' -> setCursorColumn(cursorColumn + first)
             'D' -> setCursorColumn(cursorColumn - first)
             'E' -> { setCursorRow(cursorRow + first); setCursorColumn(0) }
@@ -1900,15 +1900,42 @@ class AnsiTerminalBuffer(
     private fun osc(body: String): String = "$ESC]$body${ESC}\\"
 
     /**
-     * The two ways a cursor position is assigned, clamped on both ends.
+     * A *relative* vertical move - CUU, CUD, CNL, CPL, and the two-byte `ESC A`/`ESC B` - clamped by the
+     * screen and by the scrolling region.
      *
      * Every call site used to clamp for itself, in the one direction its own sequence moved in, and a
-     * parameter that reversed that direction slipped past the missing end. `cursorRow` is an array
-     * index into [lines] and the cost of getting it wrong is an exception, not a mis-drawn cell, so
-     * the bound belongs here rather than in eleven separate expressions.
+     * parameter that reversed that direction slipped past the missing end. `cursorRow` is an array index
+     * into [lines] and the cost of getting it wrong is an exception, not a mis-drawn cell, so the bound
+     * belongs here rather than in eleven separate expressions.
+     *
+     * The screen is the outer bound, and it is the one that was wrong: clamping against the whole buffer
+     * let an up-move leave the screen for the scrollback, where the next character printed was written.
+     * One row of history was corrupted, the character was invisible, and the row it belonged to was left
+     * as it was - and a full-screen program that homes to the top row and then steps up reaches this on
+     * its first frame. [setScreenRow] answers the other question - which row a program *names* - and is
+     * bounded by the margin only under DECOM; a relative move is bounded by the margin always, which is
+     * what tmux does and therefore what this emulator has to do with the sequences tmux composed.
+     *
+     * Both bounds are read from where the cursor *is*, not from where the move ends. A cursor below the
+     * region moving up stops at the region's top rather than at the screen's, and one above the region
+     * is bounded by the screen; the comparison is inclusive at the margin, so a cursor already *on* the
+     * region's top row moving up stays there and one on its bottom row moving down stays there too.
+     * Measured against tmux rather than read off the spec, because the cursor exactly at the margin is
+     * the case a reading is most likely to get wrong - and the markers that show it are each overwritten
+     * by the case that follows, so it took a fixture of its own to see them at all.
      */
     private fun setCursorRow(row: Int) {
-        cursorRow = row.coerceIn(0, lines.lastIndex)
+        val top = screenTop()
+        cursorRow = if (row < cursorRow) {
+            val floor = top + topMargin
+            if (cursorRow >= floor) row.coerceAtLeast(floor) else row.coerceAtLeast(top)
+        } else {
+            val ceiling = top + bottomMargin
+            if (cursorRow <= ceiling) row.coerceAtMost(ceiling) else row.coerceAtMost(lines.lastIndex)
+        }
+        // A move of any kind cancels the pending wrap, the same way [setCursorColumn] does for a
+        // horizontal one: the cell the cursor was left in is no longer where the next character goes.
+        wrapPending = false
         revision++
     }
 
@@ -1928,9 +1955,9 @@ class AnsiTerminalBuffer(
      * to the top-left on a screen it has nothing above is beginning a repaint, and `top`'s first frame
      * can be exactly that.
      *
-     * DECOM, DECSTBM and DECRC call [setScreenRow]/[setCursorRow] directly, because those move the
-     * cursor as a side effect of something else and a shell drawing a two-line prompt with
-     * `ESC 7`/`ESC 8` is not a program painting a screen.
+     * DECOM, DECSTBM and DECRC call [setScreenRow] directly, because those move the cursor as a side
+     * effect of something else and a shell drawing a two-line prompt with `ESC 7`/`ESC 8` is not a
+     * program painting a screen.
      */
     private fun addressScreenRow(row: Int) {
         val from = cursorRow

@@ -20,6 +20,15 @@ private fun List<TerminalCell>.text(): String =
 private fun AnsiTerminalBuffer.backgrounds(row: Int): List<TerminalColor> =
     snapshot().lines[row].map { it.style.background }
 
+/**
+ * What an otherwise blank screen reads as when one cell of it carries a mark.
+ *
+ * The cursor-movement table clears the screen, moves the cursor, and prints one character, so the whole
+ * grid is that character's row: blank lines above it, spaces before it, and nothing after.
+ */
+private fun markedRow(row: Int, column: Int): String =
+    "\n".repeat(row) + " ".repeat(column) + "X"
+
 class AnsiTerminalBufferTest {
     @Test
     fun `ansi control sequences do not leak into plain terminal text`() {
@@ -374,6 +383,65 @@ class AnsiTerminalBufferTest {
 
         // Q lands where the cursor was saved: row 0, column 3.
         assertThat(buffer.snapshot().lines[0][3].value).isEqualTo('Q')
+    }
+
+    @Test
+    fun `every cursor movement sequence lands on the cell it names`() {
+        // The family the bug report asks for by name - CUP/HVP, CUU/CUD/CUF/CUB, save and restore - plus
+        // the forms that share the dispatch, as one table rather than a test each: a sequence left out is
+        // then a missing row instead of a missing test. Each case homes the cursor to row 5 column 3
+        // (0-based 4,2), moves it, and prints a mark; the mark's cell is the answer.
+        val cases = listOf(
+            "$E[3A" to (1 to 2),          // up 3
+            "$E[A" to (3 to 2),           // up 1
+            "$E[0A" to (3 to 2),          // a parameter of zero means one
+            "$E[3B" to (7 to 2),          // down 3
+            "$E[B" to (5 to 2),           // down 1
+            "$E[4C" to (4 to 6),          // forward 4
+            "$E[C" to (4 to 3),           // forward 1
+            "$E[4D" to (4 to 0),          // back 4, stopping at the left margin
+            "$E[D" to (4 to 1),           // back 1
+            "$E[2E" to (6 to 0),          // next line, column 1
+            "$E[2F" to (2 to 0),          // previous line, column 1
+            "$E[7G" to (4 to 6),          // absolute column
+            "$E[7`" to (4 to 6),          // the same, spelled HPA
+            "$E[8d" to (7 to 2),          // absolute row
+            "$E[3;9H" to (2 to 8),        // CUP
+            "$E[3;9f" to (2 to 8),        // HVP, the other name for it
+        )
+        for ((sequence, cell) in cases) {
+            val buffer = AnsiTerminalBuffer(columns = 20, rows = 10)
+            buffer.feed("$E[2J$E[5;3H$sequence" + "X")
+            assertWithMessage("%s from 5,3", sequence.replace(E, "ESC"))
+                .that(buffer.plainText()).isEqualTo(markedRow(cell.first, cell.second))
+        }
+    }
+
+    @Test
+    fun `an up-move from the screen's top row cannot reach the scrollback`() {
+        // A relative move clamped against the whole buffer instead of the screen put the cursor above
+        // the screen - into the history - and the next character printed was written there. A row of
+        // history was corrupted, the character was invisible, and the row it belonged to was left as it
+        // was. A full-screen program that homes to the top row and then steps up reaches this at once.
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 4, scrollbackLimit = 50)
+        repeat(8) { buffer.feed("row $it\r\n") }
+        val screenTop = buffer.lineCount() - 4
+
+        buffer.feed("$E[1;1H$E[3AY")
+
+        assertThat(buffer.lineCount()).isEqualTo(screenTop + 4)
+        assertThat(buffer.snapshot().cursorRow).isAtLeast(screenTop)
+        assertThat(buffer.snapshot().lines[screenTop].text()).isEqualTo("Yow 5")
+    }
+
+    @Test
+    fun `a down-move from the last row stays on the last row`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 4)
+
+        buffer.feed("$E[4;1H$E[9B" + "X")
+
+        assertThat(buffer.frame().cursorRow).isEqualTo(3)
+        assertThat(buffer.snapshot().lines[3].text()).isEqualTo("X")
     }
 
     // --- The same final byte, a different question, when a prefix is present ---
