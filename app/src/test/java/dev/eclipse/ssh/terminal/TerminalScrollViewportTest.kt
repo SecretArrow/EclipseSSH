@@ -529,6 +529,94 @@ class TerminalScrollViewportTest {
         }
     }
 
+    @Test
+    fun `the newest output is on screen at every width the window may be fitted to`() {
+        // The guarantee the tall terminal is allowed to have instead of a shrinking pty: whatever the
+        // window's width, the bottommost inked row of the pane is one of the rows drawn. Measured over
+        // widths rather than at one of them because the width is what decides how many rows the window
+        // takes: a window that fits at 52 columns is more rows than the screen at 20, and the row that
+        // falls off the top is the one this rule protects.
+        for (width in intArrayOf(1, 8, 20, 33, 44, 52, 80, 200)) {
+            val buffer = session()
+            feedLines(buffer, lines = 40)
+
+            val frame = buffer.frame(0, WINDOW_ROWS, width)
+            val layout = terminalLayout(frame, width, WINDOW_ROWS)
+            val full = buffer.frame(0, buffer.lineCount(), 0)
+            val inked = full.firstLine + full.lines.indexOfLast { line -> line.any { it != TerminalCell() } }
+
+            assertWithMessage("width $width")
+                .that(layout.rows.map { frame.firstLine + it.line })
+                .contains(inked)
+        }
+    }
+
+    @Test
+    fun `a cut that moves to a line boundary never takes the cursor off the screen`() {
+        // [fittedRows] has no case for the cursor because it needs none - moving the cut down to a line
+        // boundary stops at or above the first row of the cursor's own line - and this is that claim
+        // asserted rather than argued, over every screen height. The comparison is against where the
+        // plain row-wise cut would have put the cursor: wherever that kept it, this must too.
+        val buffer = session()
+        feedLines(buffer)
+        val frame = buffer.frame(0, WINDOW_ROWS, windowColumns = 0)
+        val whole = terminalLayout(frame, WINDOW_COLUMNS, Int.MAX_VALUE)
+        assertThat(whole.cursorRow).isAtLeast(0)
+
+        for (screen in 1..WINDOW_ROWS) {
+            val layout = terminalLayout(frame, WINDOW_COLUMNS, screen)
+            val plain = whole.rows.size - screen
+
+            assertWithMessage("a screen of $screen rows")
+                .that(layout.cursorRow >= 0 || whole.cursorRow < plain)
+                .isTrue()
+            if (layout.cursorRow >= 0) {
+                assertThat(layout.rows[layout.cursorRow].line).isEqualTo(frame.cursorRow)
+            }
+        }
+    }
+
+    @Test
+    fun `a window the view has to cut never starts the screen in the middle of a line`() {
+        // The state a session is in before its view has reported a size: `visibleColumnsOf` is zero until
+        // the first measurement, so the window is built in *lines* while the view lays it out at the
+        // width it actually has - and at 44 columns a line of the pty's 80 is two rows, so the frame is
+        // more rows than the screen and [fittedRows] has to drop some. Dropping them one *row* at a time
+        // from the top left the screen's first row the middle of a line, which reads at the left edge as
+        // text starting in the middle of a word: the reported one-character fragment.
+        //
+        // Every screen height, rather than the one the phone happens to have: whether the cut lands on a
+        // line boundary is a matter of parity, so a single case passes or fails by luck.
+        val buffer = session()
+        feedLines(buffer)
+        val frame = buffer.frame(0, WINDOW_ROWS, windowColumns = 0)
+        val whole = terminalLayout(frame, WINDOW_COLUMNS, Int.MAX_VALUE).rows
+
+        // The frame really is over the screen's budget, which is what makes the cut happen at all:
+        // without this the test would pass against a layout that never had to drop anything.
+        assertThat(frame.lines.size).isEqualTo(WINDOW_ROWS)
+        assertThat(whole.size).isGreaterThan(WINDOW_ROWS)
+
+        for (screen in 1..WINDOW_ROWS) {
+            val layout = terminalLayout(frame, WINDOW_COLUMNS, screen)
+            val top = layout.rows.first()
+            // One exception, and it is the case [fittedRows] documents: a single line taller than the
+            // whole screen has no line boundary to start at, and showing its end is the only way to show
+            // the cursor. Anything else starts the screen at the beginning of a line.
+            val tallerThanTheScreen = whole.count { it.line == top.line } > screen
+            assertWithMessage("a screen of $screen rows")
+                .that(top.from == 0 || tallerThanTheScreen)
+                .isTrue()
+            // And the rows below it either continue the row above or begin a line, so the screen reads
+            // as whole lines from its first row down.
+            layout.rows.zipWithNext().forEach { (above, below) ->
+                assertWithMessage("screen $screen: row starting line ${below.line} at column ${below.from}")
+                    .that(below.from == 0 || (above.line == below.line && above.to == below.from))
+                    .isTrue()
+            }
+        }
+    }
+
     // ---- the pipeline, exactly as the view calls it ----------------------------------------------
 
     /**

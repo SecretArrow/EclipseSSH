@@ -275,14 +275,28 @@ internal fun displayRowCount(line: List<TerminalCell>, extent: Int, width: Int):
 /**
  * [rows], cut to [maxRows] with as little lost as the count allows.
  *
- * Two rules, in order. Rows that paint nothing go first, and only from the bottom: a blank row costs a
+ * Three rules, in order. Rows that paint nothing go first, and only from the bottom: a blank row costs a
  * screen row and shows nothing, and dropping it moves no text, because every row above it keeps its
  * index. That rule is what stops the case that made a typed line disappear - the cursor's line one row
  * over the budget while fifteen blank rows sat underneath it - from eating the line instead.
  *
- * Only then are rows dropped from the top, which is the documented bottom-anchoring: the newest output
- * and the cursor are at the bottom, so the oldest rows are the ones a reader is least likely to be
- * looking at, and they are one flick of the scrollback away.
+ * Then rows are dropped from the top, which is the documented bottom-anchoring: the newest output and
+ * the cursor are at the bottom, so the oldest rows are the ones a reader is least likely to be looking
+ * at, and they are one flick of the scrollback away.
+ *
+ * The top cut lands on a *line boundary*, and that is the third rule rather than a nicety. A row whose
+ * `from` is not zero is a continuation: the view draws it from the left edge, so the screen reads as text
+ * starting in the middle of a word - the one-character fragment this whole file exists to prevent, and
+ * one that survives every repaint because the row it cut into never moves. So the cut moves down to the
+ * next row that begins a line, showing a row or two less than the budget rather than a fragment.
+ *
+ * Moving the cut down can never take the cursor off the screen, which is why there is no case for it
+ * here: the first row that begins a line at or below the cut is at or above the first row of the cursor's
+ * own line, so either the cut stops on the cursor's line or the cursor was already above the cut before
+ * this rule applied.
+ *
+ * The one exception is a line taller than the whole screen, which has no boundary inside the window: the
+ * cut stays where it is and the screen shows that line's end, because that is where the cursor is.
  *
  * A row is blank when its columns are blank, which is not the same as a *line* being blank: a wrapped
  * line whose second row is empty still has that row drawn, and it is dropped here like any other.
@@ -292,7 +306,12 @@ private fun fittedRows(rows: List<TerminalVisualRow>, frame: TerminalFrame, maxR
     val cursorLine = if (frame.cursorVisible) frame.cursorRow else -1
     var end = rows.size
     while (end > maxRows && rows[end - 1].line != cursorLine && rowIsBlank(frame, rows[end - 1])) end--
-    return if (end > maxRows) rows.subList(end - maxRows, end) else rows.subList(0, end)
+    if (end <= maxRows) return rows.subList(0, end)
+    var start = end - maxRows
+    var boundary = start
+    while (boundary < end && rows[boundary].from != 0) boundary++
+    if (boundary < end) start = boundary
+    return rows.subList(start, end)
 }
 
 /** Whether the row paints nothing at all: every column of it outside the line, or blank within it. */

@@ -11251,3 +11251,99 @@ the shape can be re-recorded without the CLI. The two counts this section states
 behaviour — 55 of 55 frames unwrapped, 52 of 55 wider than the window — come from a probe over the real
 buffer, and the property they describe is the one §80's `terminalLayout` tests already pin from the other
 side.
+
+---
+
+## 98. The screen's first row was the middle of a line whenever the window had to be cut
+
+The reported B1, B2 and B13 are one shape in three places: a fragment at the left edge of the screen
+that reads as text beginning in the middle of a word. `ThThought for 4s`, `●aSaya cek langsung di
+kode…`, `macihmerah`, `salahxsatu`, `twhitch matches…`, a box-drawing border on the row above the one
+it belongs to. Two of them are two characters and a whole word; one is a line whose head is missing. A
+terminal that wraps cannot produce any of them, so the question this section answers is not whether the
+shape exists but which of the two layers that *can* produce it does, and the answer for the one layer
+that could be made to produce it is that it no longer can.
+
+**What the parser was already cleared of, and by what.** The tmux replay harness replays a recording of
+what tmux sent its client through the app's own parser and diffs the grid against tmux's, cell by cell,
+at every read prefix - `griddiff.py --bisect --step 1` stops at the first read whose prefix already
+diverges, and compares the cursor as well as the rows. Five real [CC] sessions at 52x60 are IDENTICAL
+under it, over 291, 86, 9, 635, 211 and 378 reads, and three more recordings made for this cycle are
+IDENTICAL too. A grid that agrees with tmux at every prefix is a grid in which `ThThought` cannot be
+sitting in one line of cells, because tmux's own grid does not hold it. So the fragment is not in the
+bytes and not in the parser, and the search moves to the layer the harness does not reach.
+
+**The layer the harness does not reach.** `GridDump.kt` prints the grid; it never calls
+`terminalLayout`. The harness is a statement about `AnsiTerminalBuffer`, and the reported fragments are
+what a *reader* sees, which is the layout's output. `terminalLayout` takes the window the buffer hands
+it and turns each line into the rows it occupies at the window's width, and when the rows it produces
+exceed the screen it drops some - `fittedRows`. Dropping them one *row* at a time from the top is what
+this section is about, because the top row of a wrapped line is a continuation: the view draws a row at
+`(column - row.from) * cellWidth`, so a row whose `from` is 42 is drawn from the *left edge* of the
+screen. That is `now plus a tail` where the line began `output line 39 …` - the reported fragment,
+exactly, and the reason its first characters look like a word's tail.
+
+**It was reachable in one state, and that state is real.** The frame's window is fitted to the rows the
+screen has, so the fit and the layout agree and nothing is dropped - *when the two are given the same
+width*. They are not given the same width before the view has reported one: `MainViewModel` builds the
+frame with `visibleColumnsOf(sessionKey)`, which is zero until the first `viewportChange` lands, and
+zero means "not wrapped for a window" - a window of the pty's *lines*. The view then lays that frame out
+at the width it actually has, and at 44 columns a line of the pty's 80 is two rows, so a window of
+seventeen lines is more than seventeen rows and `fittedRows` cuts. Measured on the real buffer at
+52x60: that state cuts on **every** read - 378 of 378, 211 of 211, 4 of 4 - dropping thirty rows a
+time, because the pty's sixty rows are laid out for a thirty-row screen. The cut itself is right; it is
+the bottom-anchoring, and the oldest thirty lines are the ones to lose. What was wrong was where the
+cut landed.
+
+**The measurement, before and after.** One line of the pty's output is 57 columns, which at 44 is two
+rows: `[0,42)` and `[42,57)`. With a screen of two rows the old cut kept the last two rows and the top
+of the screen read `now plus a tail` - line 39 from column 42 - above the prompt's own row. That is a
+screen whose first row is a word fragment and whose second row is the newest output, and no repaint
+could have removed it: the row is a function of the frame and the width, and both are stable until the
+output moves. After the change the same screen holds the prompt's row alone: one row fewer than the
+budget, because a whole line is worth more than a fragment. The count of screens whose top row is a
+continuation, over every screen height from one row to seventeen, on the same buffer, went from **8 to
+0** - the eight even heights, 2, 4, 6, 8, 10, 12, 14 and 16 rows, because with two rows per line the cut
+lands on a boundary exactly when the height is odd. The fix is asserted that way rather than at the one
+height the phone happens to have: the old code passed at seventeen rows and failed at two, which is
+exactly how a bug like this survives a test suite that tries the phone's own size.
+
+**The fix.** `fittedRows` keeps its two documented rules and gains a third: the top cut moves down to
+the next row that begins a line. One exception, stated in the function's KDoc and covered by a test: a
+line taller than the whole screen has no boundary inside the window, so the screen shows that line's end
+- which is where the cursor is - rather than nothing. There is deliberately no case for the cursor, and
+the reason is asserted rather than argued: the first row that begins a line at or below the cut is at or
+above the first row of the cursor's own line, so the cut can only stop on the cursor's line, never past
+it. A test holds that over every screen height, against where the plain row-wise cut would have put the
+cursor - wherever that kept it, this keeps it too. The whole `terminal` package runs locally: **494
+tests, all green**, three of them new - the structural one above, the cursor one just described, and one
+that pins the guarantee the tall terminal is allowed to have in place of a shrinking pty, that the
+pane's bottommost inked row is inside the window at every width the window may be fitted to (1, 8, 20,
+33, 44, 52, 80 and 200 columns).
+
+**A note on the plan's W2(a), which this does not implement as written.** The plan asked for the
+`windowColumns = 0` fallback path to be closed at the frame, so that the frame is never cut in lines
+when the view will draw it wrapped. The measurement above is why it is not: the cut is not what makes
+the screen wrong - the *landing* was - and moving the guarantee into the layout covers strictly more
+than closing the fallback would have. A frame fitted at one width and laid out at another is not only
+the pre-viewport state; it is also a rotation between the frame's build and the layout, and the layout's
+rule holds there too, where a frame-level flag would not. The frame-level change would also have meant a
+new field on `TerminalFrame` with the meaning "this window was fitted for a window", and every
+hand-built frame in the test suite - which legitimately has no width - would have had to declare
+otherwise, so `terminalLayout` would stop wrapping exactly the frames its own tests wrap today. The
+guarantee is in the layer that draws.
+
+**What this does not claim.** It does not claim B1, B2 and B13 are explained. It claims one mechanism
+that produces their shape, in one reachable state, is closed and is asserted over every screen height.
+The reported fragments themselves are **not reproduced** by any instrument available here: not by the
+replay harness (five real [CC] streams, grid and cursor, every prefix, IDENTICAL), not by the layout
+probe over three more recordings at a phone's window (0 of 378, 0 of 211, 0 of 4 layouts over budget,
+and 0 top-row continuations), and not by the transitional-frame probe, which cuts on every read but
+lands on a line boundary in every one. [CC] runs on the alternate screen and addresses rows absolutely,
+so `wrapsForDisplay` is false for the whole session and its rows are never re-wrapped at all - which
+also means the mechanism this section closes cannot be what the user saw *in [CC]*. The two instruments
+that could settle it are the ones the plan's Fase 0 named and this host cannot supply: a render audit
+and a session log from one device session in which a fragment was on screen, which is what names the
+frame the view drew, and the pattern in the byte stream that preceded it. Until one of those exists,
+B1, B2 and B13 are open with a narrower set of candidate causes than they had, and this section is the
+record of which candidates the measurements have removed.
