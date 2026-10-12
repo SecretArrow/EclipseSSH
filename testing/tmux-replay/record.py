@@ -59,7 +59,7 @@ DECRQM_ON = frozenset([7, 12, 25])
 FIXED_REPLIES = (
     (b"\x1b[c", b"\x1b[?1;2c"),
     (b"\x1b[>c", b"\x1b[>0;95;0c"),
-    (b"\x1b[>0q", b"\x1bP>|EclipseSSH(1.22.0)\x1b\\"),
+    (b"\x1b[>0q", b"\x1bP>|EclipseSSH(1.23.0)\x1b\\"),
 )
 DECRQM = re.compile(rb"\x1b\[(\?)?(\d+)\$p")
 

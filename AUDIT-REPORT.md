@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 56 / versionName 1.22.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 57 / versionName 1.23.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §96, *Releasing 1.22.0*, which is the version this file's header names; §95, *Releasing 1.21.0*, is the release before it, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §106, *Releasing 1.23.0*, which is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11656,3 +11656,122 @@ caps between rows - would have handed the first cap's press state to the second.
 read `ScrollState.value` and `maxValue` in composition, which rebuilt the entire row - every `Surface`,
 `Text` and `clickable` in it - once per scrolled pixel; it is read through `derivedStateOf` now, so a
 drag recomposes the fade when an edge actually appears or disappears and nothing else.
+
+## 106. Releasing 1.23.0
+
+1.22.0 was what this terminal *answers*. 1.23.0 is what it *draws*, and the report that opened it
+(`prompt-perbaikan-terminal-ssh.md`, thirteen numbered complaints from a device already running 1.22.0)
+is the first one written against a terminal whose protocol answers were correct. So nothing here is a
+wrong reply: every one is the screen itself - a fragment of old text at a line's start, a doubled
+spinner glyph, a cursor block in the wrong cell, a pill over the text, a symbol the font does not have.
+
+**The shape of the reported fragments, and the one instance of it that reproduces here.** B1, B2 and
+B13 are the same complaint at three sizes: a character or two of *some other line* drawn at a row's
+start, a character inside a word that belongs to the previous render, box-drawing glyphs on the wrong
+row. The plan's Phase 0 asked for a mechanism before a patch, and two were found and closed. The
+screen's top cut landed one *row* at a time through a wrapped line, so a row whose `from` was 42 was
+drawn from the left edge of the screen and the fragment at column 0 was that line's middle - §98. And
+the window's lower edge was measured in *ink*, which is right while the screen has not scrolled and
+wrong once it has: a program that clears its screen on a session with history ends its ink above the
+end of the buffer, the window came out one line above the screen and one line short of it, and the
+whole grid was drawn a row low - §100. §100 is the first instance of the reported shape that reproduces
+on this host, and it reproduces exactly: nine grid incidents at read 3 of fifteen, and zero after.
+
+**A repaint sent in several writes is no longer published half-finished.** B3 and B12 are one defect
+seen twice. `ESC [ ? 2026 h` and `l` are a program asking the terminal not to show the intermediate
+states of a repaint it sends in pieces; nothing here knew the mode existed, DECRQM answered `0`, and a
+program that asked was told to fall back. The mode is honoured now - the latch rides on the frame and
+the publisher holds a live frame back until the batch closes, which is what the doubled spinner and the
+duplication during fast output were. The plan's W1 asked for the revision to be frozen across a batch
+and that is *not* what shipped: `TerminalLayoutKey` is built from the revision on the promise that two
+windows of one revision hold the same cells, so a frozen revision draws the new cells through the old
+row geometry. §101 has the reasoning and the test that pins the opposite.
+
+**The symbols the bundled face does not carry are drawn from a second one.** B9's `⏵⏵` was a tofu box,
+and the block it sits in is where a terminal's media controls and tool-result corner live. Compose
+cannot be handed a fallback chain, so a code point the resolved face lacks goes to the platform at the
+platform face's own advance - which is both a missing glyph and a misaligned one. A 212 KB subset of
+JuliaMono is bundled for exactly the code points neither JetBrains Mono face carries, chosen because
+its advance is the 0.6 em the cell was measured from. §102.
+
+**The keyboard's half-typed word no longer reaches the shell.** B5's hollow box at the wrong position
+was a predicting keyboard's *composing* word being read as committed text and diffed: every letter of a
+guess went out the moment it appeared, and the correction that followed arrived as deletions into text
+the far end already had. Only the committed projection is the shell's business now, and the provisional
+word is drawn at the cursor, where the grid cannot carry it because the shell has not been told. §103.
+
+**Two defects the report could only describe, fixed from their measurements.** B10's pills were not in
+the wrong place - they were drawn *at all*, at the wrong count, on a screen with nothing below it: the
+badge measured to the buffer's height rather than to the end of the live output, and read 49 lines
+below on a session with five lines of output. B11's stuck artifact was a Material ripple whose press
+had exactly one way to end, and the shortcut row scrolls - so a press the drag carried off had no
+release coming. Both are §104 and §105.
+
+**The cursor, and the two halves of B6.** The parser clamped a relative vertical move against the whole
+buffer rather than the screen, so a program that homed its cursor and stepped up landed in the
+scrollback and wrote there - invisible, and one row of history corrupted. The view followed the row's
+ink and not the cursor's own cell, which is the ordinary place for it while a command is being typed,
+so the window settled with that cell at or past its right edge and the frame was drawn with no cursor
+block in it: one read in 378 on a real stream. Both are §99, and the follow's tween is narrowed rather
+than removed - a jump of more than one cell is assigned, because the tween cannot finish inside the
+interval a follow arrives in.
+
+**Two of the thirteen are not fixes, and the report says which.** B4 - the prompt that appeared twice,
+the first copy ellipsized - is a **measurement finding**: the ellipsis is the program's own, and §97
+attributes the cut to the program that made it. B8's literal request, that the pty shrink when the
+keyboard opens, is **refused by decision**: `ptyRows` stays the pty's floor because that is what the
+tall terminal is for, and the guarantee delivered instead is the one the complaint was really about -
+the pane's bottommost inked row is always inside the window, asserted at every width the window may be
+fitted to. §98.
+
+**The harness is what makes the fixes measurable rather than plausible.** `testing/tmux-replay/` feeds
+recorded byte streams through the real parser and diffs the grid *and the cursor* against tmux at every
+read prefix. It gained the ability to answer tmux's queries the way the app does, without which no
+recording can contain a synchronized-output batch at all, and `reproductions/cursor-moves.py` is the
+fixture §99 and §100 were found on. Three real [CC] recordings - 55, 211 and 378 reads - replay clean at
+52x60, and so does the new fixture at every one of its fifteen prefixes.
+
+| | bug | what it was | where |
+|---|---|---|---|
+| 1 | B1, B2, B13 | content on the wrong row: a mid-line cut at the screen's top, and a window anchored to ink after the screen had scrolled | §98, §100 |
+| 2 | B3, B12 | a repaint sent in several writes published half-finished | §101 |
+| 3 | B5 | a keyboard's composing word sent to the shell as committed text | §103 |
+| 4 | B6 | a relative move leaving the screen; the pan excluding the cursor's own cell | §99 |
+| 5 | B7 | the newest output off screen when a program parked its cursor above it | §98 |
+| 6 | B9 | `⏵⏵` drawn as tofu, and displaced when a fallback face drew it | §102 |
+| 7 | B10 | the scrollback badge measuring the buffer's height, not the live output | §104 |
+| 8 | B11 | a key cap's ripple stranded by a horizontal drag | §105 |
+| 9 | B4 | not a defect: the ellipsis is the program's own | §97 |
+| 10 | B8 | refused as asked; delivered as the pane's bottom row always being visible | §98 |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88, §90, §92, §93, §95 and §96 set: **a patch number
+is honest when the artifact a user installs behaves as its predecessor's does.** This one fails that
+test on the first screenful. A program that repaints in pieces no longer flickers through its
+intermediate states; a symbol the font lacks is drawn rather than boxed; a predicting keyboard's guess
+no longer goes out over the wire; and the grid a full-screen program draws is on the rows tmux draws it
+on.
+
+### The suite
+
+The suite is 2,573 JVM/Robolectric test methods in 203 files - 63 more than 1.22.0's 2,510 in 198, five
+of them new files - and `scripts/check-doc-figures.sh` re-derives that figure from the sources on every
+push, so a stale count fails CI rather than standing until someone reads it again. The same script now
+also holds the replay harness's copy of the XTVERSION reply to `versionName`, which the release bump had
+left behind twice.
+
+### What this release does not claim
+
+**Nobody has felt it on a device.** Every figure above is from this host: the standalone `terminal`
+package, the harness, and the pure-logic runners that cut the decision functions out of the Compose
+files. What that covers is that each rule is exact and each branch has its own test. What it does not
+cover is the device the report came from - and the plan puts that pass *before* the release ritual for
+exactly that reason. It is owed, and it is the user's to run.
+
+**The reported fragments themselves were never reproduced here.** B1, B2 and B13 are closed as
+*mechanisms* - two ways the app can put content on the wrong row, both now fixed and both asserted over
+every screen height and every offset - and §100's is the first instance of their shape that this host
+could produce. Whether the ghosts the report saw are those mechanisms, or those plus something else, is
+what the device pass is for. Saying otherwise would be the cosmetic claim the report asked not to be
+given.
