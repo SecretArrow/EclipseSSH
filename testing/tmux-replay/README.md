@@ -58,6 +58,12 @@ python3 record.py /tmp/ink.frames 8 --cols 52 --rows 60 --config reproductions/n
 ./replay.sh /tmp/ink.frames --cols 52 --rows 60
 ./griddiff.py --frames /tmp/ink.frames --cols 52 --rows 60 --bisect     # if it diverges
 
+# the two copies of a sent prompt: one the program truncated with `…` itself, one the program wrapped
+# into its transcript. The app adds neither cut nor duplicate, and this pins that - see AUDIT-REPORT §97
+python3 record.py /tmp/trunc.frames 8 --cols 52 --rows 60 --config reproductions/no-status.conf \
+  -- python3 reproductions/prompt-truncation.py
+./replay.sh /tmp/trunc.frames --cols 52 --rows 60
+
 # or a real program that has to be answered first - a first-run dialog, a prompt - one keypress at a time
 python3 record.py /tmp/claude.frames 150 --cols 52 --rows 60 --config reproductions/no-status.conf \
   --send "12:\x1b[B\r" -- claude "write a paragraph, then a markdown table"
@@ -105,6 +111,7 @@ reused between runs; set `GRIDDUMP_REBUILD=1` after changing app code.
 |---|---|---|
 | `reproductions/dcs-passthrough.raw` | DIVERGES - `[?25l[>4;2mready` where tmux has `ready` | IDENTICAL |
 | `reproductions/ink-mimic.py`, 52x60, 8s recording | - | IDENTICAL |
+| `reproductions/prompt-truncation.py`, 52x60, 8s recording | - | IDENTICAL |
 | `reproductions/edge-cases.py`, 52x60, 705 B raw | - | IDENTICAL |
 
 Real Claude Code in tmux, 52x60, every prefix checked with `--bisect --step 1`, rows and cursor both:
@@ -115,6 +122,14 @@ Real Claude Code in tmux, 52x60, every prefix checked with `--bisect --step 1`, 
 | a prompt streaming prose, a markdown table, a dialog over it | 86 | IDENTICAL |
 | the banner, a wrapped warning, an idle prompt box | 9 | IDENTICAL |
 | the above stream, typed into one character per send | 635 | IDENTICAL |
+| a 190-character prompt passed on the command line | 211 | IDENTICAL |
+| an 84-character prompt typed one character per send, then Enter | 378 | IDENTICAL |
+
+The last two are the B4 case, and they are why §97 of the audit exists: a prompt long enough for [CC] to
+truncate it in one of its own columns with `…` and to wrap it in its transcript. Both copies arrive as
+bytes from [CC], both land in the grid tmux produces, and the app neither cuts nor duplicates either one.
+Across the two recordings every `…` in the stream is inside a string [CC] wrote - 16 in the first, 19 in
+the second - and one of them is the user's own prompt, shortened to `* tolong lanjutkan tugas…`.
 
 The last one is the cursor case: the column advances one per read (`43,44,...,51`, then wraps to column 4
 on the next row and runs on to 23), and at every one of the 635 prefixes the app's cursor equals tmux's.

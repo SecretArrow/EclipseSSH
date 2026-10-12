@@ -11146,3 +11146,108 @@ to the user, not to this file.
 **The `specialUse` foreground service type has a publishing consequence.** It is declared so a terminal session
 can outlive the six-hour `dataSync` allowance, and Google Play reviews that declaration; the reasoning is
 written beside the manifest entry. Releases built by CI per ABI are unaffected.
+
+---
+
+## 97. The prompt the report saw twice, cut once, was cut by the program — and the cut the app does make is the one §80 chose
+
+Reported by the user, in their words: a prompt that had been sent sometimes appears twice in the
+scrollback, the first copy "dipotong dengan gaya ellipsis UI" — `…lanjutkan tugas yang mati karena saldo
+habis seb…` — and the second rendered whole and wrapped per row. The demand is three sentences: a
+terminal must not cut a line with an ellipsis, a long line must soft-wrap at the emulator level, and no
+one echo may be redrawn twice. This is the first bug of the 1.23.0 cycle to be closed by measurement
+rather than by a change, and the two instruments that closed it are named here because the finding is
+the deliverable.
+
+**What the claim was, and what the code says.** The claim is that some render path in the app ellipsizes
+terminal text. There is no such path. Every `TextUtils.ellipsize`, `TextOverflow`, `maxLines`, `softWrap`
+and `TruncateAt` in `app/src/main` was enumerated, and the five sites that touch anything terminal-shaped
+are none of them a grid cell: the host search field's placeholder, the session chip's title, the
+session-ended reason row, a key cap's own label, and — the one that does draw terminal text with an
+ellipsis, so it is named rather than skipped — the sessions list's one-line preview of the last thing a
+shell said. That last one is a summary by construction, drawn in the list rather than over the grid, and
+it can only cut the *end* of a line; the report's first copy is cut at both ends, which no `TextOverflow`
+in this app produces.
+
+The grid's own path — `AnsiTerminalBuffer` into `TerminalFrame` into `terminalLayout` into `TerminalView`
+— has no truncation of any kind, and cannot acquire one by accident, because it places cells rather than
+laying out a line of text: there is no text layout on that path for an overflow to be given. The
+transcript view (`showHistory`) draws the whole scrollback with no line limit, so it wraps rather than
+cutting.
+
+**The measurement, on real [CC] streams rather than on the report's prose.** Three recordings of real
+[CC] inside real tmux at 52x60, replayed through the app's parser and diffed row by row against tmux,
+cursor included: a session whose banner and auth warning are followed by one short prompt and its
+answer (55 reads), a 190-character prompt passed on the command line (211 reads), and an 84-character
+prompt typed one character per send and then submitted (378 reads). All three: **IDENTICAL — every row matches tmux, and so does the cursor.** The app
+adds no cell to these streams, so it adds no cut and no duplicate to them either.
+
+**Where the ellipsis actually comes from.** Every `…` in those streams was written by [CC]: 10 in the
+first recording, 16 in the second, 19 in the third, all inside strings [CC] composed. They are its
+spinner and status text (`Booping… `, `Finagling… `, `Thinking for 6s, running 1 shell command…`), its
+status bar truncated at the pane's edge (`⏵⏵ auto mode on (shift+tab to cycle) · ← for ag…`, `· esc to i…`,
+`tmux detected · scroll with PgUp/PgDn · or add …`), the columns of its task list (`perbaiki daftar
+models…`, `14…`, `AP…`), and — in the third recording, which is the report's own case — **the user's own
+prompt**, at the moment it is being worked on:
+
+```
+\x1b[97m\x1b[100m* tolong lanjutkan tugas…\x1b[39m           \x1b[37mst…\x1b[39m
+```
+
+That is one byte run from one read of the typed recording, and it is [CC] shortening a prompt that the
+app never saw in full: the app was given `* tolong lanjutkan tugas…` and nothing else. The report's first
+copy — a prompt cut with a UI-style ellipsis — is [CC]'s own column, not a Compose `Text`. The second copy
+is [CC]'s transcript echo, which [CC] wraps itself: in the 190-character recording the whole prompt lands
+once, across five rows, with no duplication and no ellipsis anywhere in it.
+
+**The one cut the app does make, measured.** The report's second sentence — long lines must soft-wrap —
+is a different matter, and here the app does fall short of it, by design. `wrapsForDisplay` turns
+wrapping off for a screen that is painted, and the two flags that say "painted" are `alternateScreen` and
+`positionalScreen`. [CC] sets both: it runs on the alternate screen (`ESC [ ? 1049 h`), and its Ink
+renderer names rows absolutely, which is exactly what `positionalScreen` records. So for the whole of a
+[CC] session the app lays a grid line out as one row and the reader pans sideways to see the rest.
+Measured on the first recording: **55 of 55 frames are alternate and positional, the view does not wrap at
+44 columns in any of them, and 52 of the 55 frames hold a line wider than 44 columns** (the grid is 52
+wide). Laid out for a 44-column window, rows come back spanning columns `[0,50)` and `[0,52)` — columns
+that exist, are drawn, and are past the window's right edge. This is §80's symptom, on the alternate
+screen, where §80 deliberately left it.
+
+**Why the literal demand is refused.** Soft-wrapping that screen would break the programs the rule
+exists for. §80 measured `less`, `nano`, `vi` and `watch` taking 1, 4, 51 and 13 absolute homes and zero
+relative row moves, and `top -d 1` taking eight `ESC [ H` over eight repaints: every program that paints
+a screen addresses cells, and a wrapped row shifts every row below it, which for `vi` means its status
+line is pushed off the bottom of the window and for a box-drawing TUI — [CC]'s own banner is one — means
+the borders break. Wrapping the alternate screen to make [CC]'s prose readable would introduce the
+box-drawing misplacement the same report files separately. The two cases are indistinguishable in the
+byte stream at the moment the frame is cut, and the report does not get to have both.
+
+**The change.** Two things, neither of them in the renderer. `testing/tmux-replay/run-griddump.sh` now
+reads `GRIDDUMP_KC` — the variable its own failure message has always told the reader to set and that
+nothing in the script ever read, so on a machine with no Gradle module cache the message was a dead end
+rather than an instruction. And `reproductions/prompt-truncation.py` is added: a stand-in for the Ink TUI
+that paints this report's shape exactly — the prompt wrapped whole into a transcript, the same prompt
+truncated with `…` in a narrow column the program made for it, and a status row the program cuts at the
+pane's edge — so the finding can be re-derived offline, without a real [CC] on the recording host, the way
+`ink-mimic.py` covers the other shapes. Its recording replays IDENTICAL.
+
+**What this does not claim.** It does not claim the user did not see a cut line; they did, and this
+section names it: a [CC] session is laid out unwrapped and clipped at the window's right edge. What it
+claims is narrower and checkable — the cut is not an ellipsis the app drew, and the ellipsis is not the
+app's. It also does not claim the wrap rule is final. The candidate change is to drop `alternateScreen`
+from `wrapsForDisplay` and let `positionalScreen` alone say "painted", since §80 measured all four
+alternate-screen programs setting that mark by absolute addressing anyway. It was not made here, and the
+reason is the mark's clear rule rather than the mark: `index()` releases `positionalScreen` whenever
+output scrolls the screen, which on the primary screen is what makes `top`'s exit release it, and on the
+alternate screen would open a window of one or more frames — between a scroll and the repaint that
+follows it, whenever tmux sends them in separate reads — in which `vi` and `less` would be wrapped. The
+size of that window is measurable on a device and is not measurable here, and a one-frame reflow of a
+full-screen editor is a worse defect than a clipped line. That measurement is the next cycle's, not this
+one's.
+
+**The tests.** No app code changed, so no app test changed. The finding is pinned by instruments that can
+be re-run: the three recordings and their `--bisect --step 1` verdicts, the `…` counts and their
+provenance in the byte streams, and `reproductions/prompt-truncation.py`, which is in the repository so
+the shape can be re-recorded without the CLI. The two counts this section states about the app's own
+behaviour — 55 of 55 frames unwrapped, 52 of 55 wider than the window — come from a probe over the real
+buffer, and the property they describe is the one §80's `terminalLayout` tests already pin from the other
+side.
