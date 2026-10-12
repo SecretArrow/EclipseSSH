@@ -2,6 +2,8 @@ package dev.eclipse.ssh.ui.terminal
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +20,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
@@ -48,8 +53,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import dev.eclipse.ssh.terminal.CapPress
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalModifiers
+import dev.eclipse.ssh.terminal.capPressed
 import dev.eclipse.ssh.terminal.rowOverflow
 
 /**
@@ -619,29 +626,58 @@ fun TerminalKeyRow(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        prefs.rowsForLayout().forEach { row ->
-            KeyRowScroller(background) {
-                row.forEach { cap ->
-                    when (cap.kind) {
-                        KeyBarCapKind.LATCH -> LatchKey(cap.id, latches.armed(cap.id), { latches.toggle(cap.id) }, prefs.size)
-                        KeyBarCapKind.KEY -> {
-                            val key = TerminalKey.entries.firstOrNull { it.name == cap.id } ?: return@forEach
-                            TerminalKeyCap(cap.label ?: KeyBarCatalog.defaultLabel(key), size = prefs.size) {
-                                val (ctrl, alt, shift) = latches.consume()
-                                onKey(key, ctrl, alt, shift)
-                            }
-                        }
-                        KeyBarCapKind.TEXT -> {
-                            val text = cap.text.orEmpty()
-                            TerminalKeyCap(cap.label ?: text, size = prefs.size) {
-                                // The latches apply to a custom cap the way they apply to a typed
-                                // character: Ctrl-/ is a real binding (it sends US), and treating a
-                                // custom cap as "just text" would silently ignore an armed latch.
-                                val (ctrl, alt, _) = latches.consume()
-                                if (ctrl || alt) {
-                                    text.forEach { char -> onChar(char, ctrl, alt) }
-                                } else {
-                                    onText(text)
+        prefs.rowsForLayout().forEachIndexed { index, row ->
+            // The rows and the caps are both keyed, and both for the same reason: a cap is a
+            // clickable with a press state, and a slot reused for a different cap hands the first
+            // cap's press to the second. The bar is data - a settings edit, a preset, or a layout
+            // mode changed to DOUBLE moves caps between rows - so "the same slot" is not "the same
+            // key", and the artifact lands on whichever cap took the slot.
+            key(index) {
+                KeyRowScroller(background) { scrolling ->
+                    row.forEach { cap ->
+                        key(cap.id) {
+                            when (cap.kind) {
+                                KeyBarCapKind.LATCH -> LatchKey(
+                                    cap.id,
+                                    latches.armed(cap.id),
+                                    { latches.toggle(cap.id) },
+                                    prefs.size,
+                                    scrolling,
+                                )
+                                KeyBarCapKind.KEY -> {
+                                    // An id no key answers to draws nothing: the bar's cap list is
+                                    // decoded from an untrusted blob, and a cap that cannot be sent
+                                    // is better absent than present and dead.
+                                    val key = TerminalKey.entries.firstOrNull { it.name == cap.id }
+                                    if (key != null) {
+                                        TerminalKeyCap(
+                                            label = cap.label ?: KeyBarCatalog.defaultLabel(key),
+                                            size = prefs.size,
+                                            rowScrolling = scrolling,
+                                        ) {
+                                            val (ctrl, alt, shift) = latches.consume()
+                                            onKey(key, ctrl, alt, shift)
+                                        }
+                                    }
+                                }
+                                KeyBarCapKind.TEXT -> {
+                                    val text = cap.text.orEmpty()
+                                    TerminalKeyCap(
+                                        label = cap.label ?: text,
+                                        size = prefs.size,
+                                        rowScrolling = scrolling,
+                                    ) {
+                                        // The latches apply to a custom cap the way they apply to a
+                                        // typed character: Ctrl-/ is a real binding (it sends US), and
+                                        // treating a custom cap as "just text" would silently ignore an
+                                        // armed latch.
+                                        val (ctrl, alt, _) = latches.consume()
+                                        if (ctrl || alt) {
+                                            text.forEach { char -> onChar(char, ctrl, alt) }
+                                        } else {
+                                            onText(text)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -660,20 +696,30 @@ fun TerminalKeyRow(
  * is drawn only where there is something scrolled out of sight, so it never suggests a hidden key
  * that does not exist, and it changes nothing about the row itself - every cap is where it was, and
  * in the same place when the row is scrolled back.
+ *
+ * The content is handed whether the row is moving, because a cap's press has to end when the drag
+ * takes the gesture away from it - see [capPressed]. The row is the only thing that knows, which is
+ * why it is passed down rather than watched from the caps.
+ *
+ * The fade is read through [derivedStateOf] so that a scroll does not recompose the caps: `value` and
+ * `maxValue` change on every scrolled pixel, and reading them in composition rebuilt the whole row -
+ * every `Surface`, `Text` and `clickable` in it - once per pixel of the very drag whose gesture
+ * handling this file is trying to keep simple.
  */
 @Composable
 private fun KeyRowScroller(
     background: Color,
-    content: @Composable RowScope.() -> Unit,
+    content: @Composable RowScope.(scrolling: Boolean) -> Unit,
 ) {
     Box(Modifier.fillMaxWidth()) {
         val scroll = rememberScrollState()
         Row(
             Modifier.horizontalScroll(scroll),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            content = content,
-        )
-        val overflow = rowOverflow(scroll.value, scroll.maxValue)
+        ) {
+            content(scroll.isScrollInProgress)
+        }
+        val overflow by remember { derivedStateOf { rowOverflow(scroll.value, scroll.maxValue) } }
         if (overflow.atStart || overflow.atEnd) {
             Box(
                 Modifier.matchParentSize().drawWithContent {
@@ -734,11 +780,18 @@ internal val NAMED_ROW: List<Pair<String, TerminalKey>> = listOf(
 )
 
 @Composable
-private fun LatchKey(label: String, armed: Boolean, onToggle: () -> Unit, size: KeyBarSize) {
+private fun LatchKey(
+    label: String,
+    armed: Boolean,
+    onToggle: () -> Unit,
+    size: KeyBarSize,
+    rowScrolling: Boolean,
+) {
     TerminalKeyCap(
         label = label,
         armed = armed,
         size = size,
+        rowScrolling = rowScrolling,
         // Announced rather than only coloured: an armed latch changes what the next key does, which a
         // screen reader user has no other way to discover.
         description = if (armed) "$label on" else "$label off",
@@ -746,20 +799,56 @@ private fun LatchKey(label: String, armed: Boolean, onToggle: () -> Unit, size: 
     )
 }
 
+/**
+ * One key cap.
+ *
+ * The press feedback is a state this cap owns rather than the theme's ripple, and the two reasons are
+ * the same reason. A ripple is an *animation*, so a press whose release never arrives is caught
+ * part-way through it and left drawn - which is what the small round mark on the `→` cap and then on
+ * `PGDN` was. And a ripple listens only to its own gesture, so it has no way to hear about the one
+ * thing that can take that gesture away: the row's horizontal drag. [capPressed] is the whole of the
+ * replacement, and [rowScrolling] is the second way a press ends.
+ */
 @Composable
 private fun TerminalKeyCap(
     label: String,
     armed: Boolean = false,
     description: String? = null,
     size: KeyBarSize = KeyBarSize.NORMAL,
+    /** Whether the row this cap lives in is being dragged under the user's finger. */
+    rowScrolling: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val source = remember { MutableInteractionSource() }
+    var pressed by remember { mutableStateOf(false) }
+    LaunchedEffect(source) {
+        source.interactions.collect { interaction ->
+            pressed = when (interaction) {
+                is PressInteraction.Press -> capPressed(pressed, CapPress.DOWN)
+                is PressInteraction.Release, is PressInteraction.Cancel ->
+                    capPressed(pressed, CapPress.UP)
+                else -> pressed
+            }
+        }
+    }
+    // Keyed on the flag rather than read inside the collector above, because the drag is not an
+    // interaction: nothing is emitted to the source when the row takes the gesture, which is exactly
+    // why the press used to survive it.
+    LaunchedEffect(rowScrolling) {
+        if (rowScrolling) pressed = capPressed(pressed, CapPress.ROW_MOVED)
+    }
     Surface(
         modifier = Modifier
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
             .semantics { contentDescription = description ?: label },
         shape = RoundedCornerShape(8.dp),
-        color = if (armed) MaterialTheme.colorScheme.primary else KEY_BACKGROUND,
+        // Armed wins over pressed: an armed latch is a mode the next key will read, and the moment
+        // the finger is down is not the moment to stop showing it.
+        color = when {
+            armed -> MaterialTheme.colorScheme.primary
+            pressed -> KEY_PRESSED_BACKGROUND
+            else -> KEY_BACKGROUND
+        },
     ) {
         Text(
             label,
@@ -781,6 +870,9 @@ private fun TerminalKeyCap(
 
 private val KEY_BACKGROUND = Color(0xFF1D2638)
 private val KEY_FOREGROUND = Color(0xFFB3C1D9)
+
+/** A cap with a finger on it: the background lifted towards the label, without an animation. */
+private val KEY_PRESSED_BACKGROUND = Color(0xFF2C3853)
 
 /** How far a scrolled row's edge fade reaches in from the side of the screen. */
 private val KEY_ROW_FADE_WIDTH = 24.dp
