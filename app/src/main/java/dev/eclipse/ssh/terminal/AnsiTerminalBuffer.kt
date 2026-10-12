@@ -965,16 +965,38 @@ class AnsiTerminalBuffer(
     private var inkCacheBottom = 0
 
     /**
-     * The window's lower edge, in lines: the cursor's own line, or the bottommost inked line, whichever
-     * is lower.
+     * The window's lower edge, in lines: the end of the screen once it has scrolled, and otherwise the
+     * cursor's own line or the bottommost inked line, whichever is lower.
      *
      * The one expression of the anchor, because three things read it and they have to agree: [frame]
      * places the window from it, [maxScrollOffset] measures the ceiling from it, and [cursorLine] hands
      * it to `MainViewModel.pinScrollback`, which gives back the distance it moved so a scrolled-back view
      * stays still. Two of them disagreeing is a window and a ceiling that do not match - a stored offset
      * the frame then clamps away - or a view that slides while the user reads it.
+     *
+     * The two regimes are one question: *where does the live output end?* Before the screen has scrolled,
+     * the buffer's blank tail is rows the shell has not written yet - the pty is 60 rows tall and a fresh
+     * session has five lines on it - and the window has to end at the last of them, or the badge counts
+     * the unwritten rows as lines below and the view scrolls back into nothing. Once `lines.size` exceeds
+     * [rows] the tail is the *screen*, blank or not, and the live output reaches the end of the buffer.
+     *
+     * That second case is not a refinement, it is the whole of the divergence this rule was measured on.
+     * A screen that has scrolled and whose last lines are blank - `ESC [ 2 J` on a session with history,
+     * or any program that homes its cursor and repaints from the top - ends its output *above* the end of
+     * the buffer, so an ink floor leaves the window short and the whole screen is drawn one row lower
+     * than the reference draws it: the line that scrolled off is still on the reader's screen and the
+     * newest row of the program's own drawing is off it. Measured against tmux at 52x60 on
+     * `reproductions/cursor-moves.py`: reads 3 to 5 handed the view `[0, 60)` where tmux's screen is
+     * `[1, 61)`, and read 15 handed it `[90, 150)` where the screen is `[91, 151)` - the cursor reported
+     * one row low in every one of them.
+     *
+     * The cursor is not a bound of its own in the scrolled case, and does not need to be: the screen is
+     * the last [rows] lines and the cursor is always inside it, so the window that is the screen has the
+     * cursor in it - which is what the ink floor was added for, and it still does that job for the screen
+     * that has not scrolled yet.
      */
-    private fun windowAnchorEnd(): Int = maxOf(cursorRow + 1, bottomInkedEnd())
+    private fun windowAnchorEnd(): Int =
+        if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())
 
     /**
      * The viewport height the buffer is sized to, without building a frame to find out.

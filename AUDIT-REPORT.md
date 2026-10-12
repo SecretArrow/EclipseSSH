@@ -11415,4 +11415,68 @@ than tmux draws it - one row for a blank tail line, and much more for a cleared 
 pre-existing (the same numbers come out of the code before this change and before §97's), it is in the
 frame's window rather than in the parser, and it is recorded here as the next thing to fix rather than
 as something this section closed. It is the shape of B1/B2/B13 - content on the wrong row - and it is
-the first candidate those three have had that is reproducible on this host.
+the first candidate those three have had that is reproducible on this host. **§100 fixes it.**
+
+## 100. The window ended at the ink, so a screen that had scrolled was drawn one row low
+
+§99 ends by naming a divergence it exposed and did not fix: a program that clears the screen on a
+session with history, and the whole screen then drawn rows low. This section fixes it. It is the shape
+Phase 0 predicted as a candidate for B1/B2/B13 - content on the wrong row - and it is the first instance
+of that shape that reproduces on this host.
+
+**The mechanism.** `frame` builds its window from `windowAnchorEnd()`, the lower edge of the live
+output: `maxOf(cursorRow + 1, bottomInkedEnd())`. Both halves of that answer are *ink* - the cursor's
+row, or the last row that paints anything. Ink is the right answer while the screen has not scrolled,
+and the wrong one once it has. The buffer's blank tail means two different things: before `lines.size`
+passes `rows` those are rows the shell has not written yet, and the window must end at the last of them
+or the badge counts unwritten rows as lines below the live output; after that the tail *is* the screen,
+blank or not, and the live output reaches the end of the buffer. A program that clears its screen
+(`ESC[2J`) or repaints from the top therefore ends its ink above the end of the buffer, and the anchor
+followed it up. `frame` then clamps the anchor into `[budget, lines.size]`, so the window came out one
+line above the screen and one line short of it.
+
+**Measured, before and after, on one recording.** A probe over `reproductions/cursor-moves.py` at 52x60,
+chunked to 100 bytes, printed the numbers `frame` decides its window from, one line per read. Before:
+
+```
+read 3  lines=61  screenTop=1  first=0  take=60 liveEnd=60  cursorAbs=30 cursorIn=30,2
+read 4  lines=61  screenTop=1  first=0  take=60 liveEnd=60  cursorAbs=40 cursorIn=40,9
+read 5  lines=61  screenTop=1  first=0  take=60 liveEnd=60  cursorAbs=57 cursorIn=57,2
+read 15 lines=151 screenTop=91 first=90 take=60 liveEnd=150 cursorAbs=91 cursorIn=1,2
+```
+
+`first` is one below `screenTop` and `liveEnd` one below `lines.size` in all four - the window
+`[0, 60)` where tmux's screen is `[1, 61)`, and `[90, 150)` where it is `[91, 151)`. `griddiff.py
+--bisect --step 1` over the same frames stopped at read 3 of 15 with nine incidents: the app's row 0
+carried `U0` - a marker that belongs one row further down - where tmux's row 0 was blank, four rows came
+out empty where tmux had a marker and the four rows below them carried that marker instead, and the
+cursor read 30,2 where tmux read 29,2. After the change the same probe
+reads `first=1 liveEnd=61 cursorIn=29,2` for read 3 and `first=91 liveEnd=151 cursorIn=0,2` for read 15,
+and the bisect reports "no divergence at any of 15 sampled prefixes, the full replay included". Reads 6
+to 14 - the fixture's scroll and region bands - are identical before and after, which is the point: the
+rule changed only where the screen had scrolled and its tail was blank.
+
+**The fix, and the guard in it.** `windowAnchorEnd()` now answers the question both regimes are answers
+to: `if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())`. The unconditional
+form - the anchor is always `lines.size` - was written first and is wrong; it broke sixteen tests, among
+them §97's two B7 regressions, "a viewport taller than the output keeps the prompt where the shell put
+it", and "a line wider than the screen starts at the top of it and ends on the cursor's row". Those
+tests are the fresh-session and blank-tail cases, and they are right: a 60-row pty holding five lines of
+output must show the prompt at the top of the window, not sixty rows down. The guarded form passes all
+498 tests in the standalone `terminal` package.
+
+**The real recordings do not move.** The three [CC] recordings replayed at 52x60 - 55, 211 and 378 reads
+- are clean at every sampled prefix, so the change alters no frame the harness could already match.
+
+**Regression coverage.** Two tests in `TerminalScrollViewportTest`, one per regime and a sweep across
+the hand-over between them: for every length of output from 0 to 80 lines the window ends at the end of
+the buffer once the screen has scrolled, at most at the end of it before, and contains ink in both. The
+fixture's own docstring said the bisect stopped on this divergence first; it now says the bisect runs
+the whole recording.
+
+**What this does not claim.** It does not claim B1/B2/B13 are closed. It is the same *shape* as those
+three, and it is the first instance of that shape that reproduces here, which is why it was worth
+fixing on its own; whether the ghosts the report saw are this, or this plus something else, is still the
+device pass's to answer, and that pass is owed. It also does not touch the alternate screen or the
+fresh-session path: the guard leaves both exactly as they were, which is why the tests that pin them
+still pass.

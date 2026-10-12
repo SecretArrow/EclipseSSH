@@ -9,11 +9,11 @@ Each case homes the cursor to a row of its own and then writes a marker, so the 
 *is* the row the move went to. Bands are cleared between cases, so the evidence is in the prefixes: run
 this through `griddiff.py --bisect --step 1`, which compares the grid and the cursor after every read.
 
-Two of the bands also clear the screen, and clearing it on a session with history is the state in which
-`frame`'s window anchor puts the whole screen a row or more lower than tmux does. That divergence is in
-the window rather than in the cursor and is not what this fixture is for, so `--bisect` stops on it
-first. The moves themselves are judged by the row the marker lands on, which each case names in its
-comment.
+Two of the bands also clear the screen, and clearing it on a session with history used to be the state
+in which `frame`'s window anchor put the whole screen a row or more lower than tmux does - the first
+thing `--bisect` stopped on, and not what this fixture is for. That is fixed in §100, so the bisect now
+runs the whole recording and every band is judged on its own moves. The moves themselves are judged by
+the row the marker lands on, which each case names in its comment.
 
   python3 cursor-moves.py
 """

@@ -530,6 +530,62 @@ class TerminalScrollViewportTest {
     }
 
     @Test
+    fun `a screen that has scrolled ends its window at the end of the buffer, blank tail and all`() {
+        val buffer = session()
+        feedLines(buffer, lines = 60)
+        // The state the divergence was measured in: the screen has scrolled, so the buffer is taller than
+        // the pty, and the program now clears it and homes its cursor. Every row the ink had reached is
+        // blank, and the window still has to end where the live output does - at the end of the buffer -
+        // rather than at the last line that paints.
+        buffer.feed("\u001b[2J\u001b[H")
+
+        val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+        assertThat(buffer.lineCount()).isGreaterThan(buffer.viewportRows)
+        assertThat(frame.firstLine + frame.lines.size).isEqualTo(buffer.lineCount())
+        assertThat(frame.liveEnd).isEqualTo(buffer.lineCount())
+        // And what the reader sees is the cleared screen. An ink floor puts the session's oldest output
+        // back on the screen here, one row lower than the program drew it, which is the shape of the
+        // reported fragments and the whole of the divergence `reproductions/cursor-moves.py` exposes.
+        assertThat(imageOf(buffer, offset = 0).all { it.isEmpty() }).isTrue()
+    }
+
+    @Test
+    fun `the live window ends where the live output does at every length of output`() {
+        // The anchor's two regimes, walked through the line where they change hands rather than asserted
+        // at one point on either side of it. The buffer is sized to the pty and filled with blank lines
+        // from the start, so until the screen scrolls its tail is rows the shell has not written and the
+        // window ends at the ink; from the first scroll on, the tail *is* the screen and the window ends
+        // at the buffer, whatever those rows happen to hold.
+        var sawScrolled = false
+        var sawUnscrolled = false
+        for (lines in 0..80) {
+            val buffer = session()
+            feedLines(buffer, lines = lines)
+
+            val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+            val end = frame.firstLine + frame.lines.size
+            val note = "$lines lines of output"
+
+            if (buffer.lineCount() > buffer.viewportRows) {
+                sawScrolled = true
+                assertWithMessage(note).that(end).isEqualTo(buffer.lineCount())
+            } else {
+                sawUnscrolled = true
+                assertWithMessage(note).that(end).isAtMost(buffer.lineCount())
+            }
+            // Either way the newest output is one of the rows drawn, which is the guarantee the tall pty
+            // is allowed to have in place of a shrinking one.
+            assertWithMessage(note)
+                .that(frame.lines.any { line -> line.any { it != TerminalCell() } })
+                .isTrue()
+        }
+        // Both regimes really were walked, so neither half of the rule can pass by never being asked.
+        assertThat(sawScrolled).isTrue()
+        assertThat(sawUnscrolled).isTrue()
+    }
+
+    @Test
     fun `the newest output is on screen at every width the window may be fitted to`() {
         // The guarantee the tall terminal is allowed to have instead of a shrinking pty: whatever the
         // window's width, the bottommost inked row of the pane is one of the rows drawn. Measured over
