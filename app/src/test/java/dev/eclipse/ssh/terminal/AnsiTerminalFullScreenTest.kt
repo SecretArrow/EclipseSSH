@@ -335,15 +335,31 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        // 2026 is synchronised output, which is what Claude Code actually asks about; 1048 saves a
-        // cursor and is not a switch; 7727 is a mode nothing here has heard of. All three answer 0, so
+        // 1048 saves a cursor and is not a switch; 7727 is a mode nothing here has heard of. Both
+        // answer 0, so a program falls back rather than being told a feature it asked for is there.
         // a program falls back rather than being told a feature it asked for is there.
-        buffer.feed("${ESCAPE}[?2026${'$'}p${ESCAPE}[?1048${'$'}p${ESCAPE}[?7727${'$'}p")
+        buffer.feed("${ESCAPE}[?1048${'$'}p${ESCAPE}[?7727${'$'}p")
 
         assertThat(replies).containsExactly(
-            "${ESCAPE}[?2026;0${'$'}y",
             "${ESCAPE}[?1048;0${'$'}y",
             "${ESCAPE}[?7727;0${'$'}y",
+        ).inOrder()
+    }
+
+    @Test
+    fun `decrqm reports synchronized output as the state it is actually in`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+        val replies = mutableListOf<String>()
+        buffer.responder = { replies += it }
+
+        // 2026 is what the app under test asks about before wrapping a repaint in a batch. Answered
+        // from the latch rather than claimed: telling it 1 is what makes it go on to use the mode.
+        buffer.feed("${ESCAPE}[?2026${'$'}p${ESCAPE}[?2026h${ESCAPE}[?2026${'$'}p${ESCAPE}[?2026l${ESCAPE}[?2026${'$'}p")
+
+        assertThat(replies).containsExactly(
+            "${ESCAPE}[?2026;2${'$'}y",
+            "${ESCAPE}[?2026;1${'$'}y",
+            "${ESCAPE}[?2026;2${'$'}y",
         ).inOrder()
     }
 
@@ -397,7 +413,7 @@ class AnsiTerminalFullScreenTest {
         assertThat(replies).containsExactly(
             "${ESCAPE}[?25;1${'$'}y",
             "${ESCAPE}[?1006;2${'$'}y",
-            "${ESCAPE}[?2026;0${'$'}y",
+            "${ESCAPE}[?2026;2${'$'}y",
         ).inOrder()
     }
 
@@ -1338,16 +1354,15 @@ class AnsiTerminalFullScreenTest {
         buffer.feed(
             // DECCOLM (3) would clear the screen and resize it to 132 columns, which this app sizes to
             // the device instead; DECSCNM (5) would invert every cell; DECSLRM (69) would set left and
-            // right margins, which nothing here draws; 2026 is synchronised output.
-            "${ESCAPE}[?3h${ESCAPE}[?5h${ESCAPE}[?69h${ESCAPE}[?2026h" +
-                "${ESCAPE}[?3${'$'}p${ESCAPE}[?5${'$'}p${ESCAPE}[?69${'$'}p${ESCAPE}[?2026${'$'}p",
+            // right margins, which nothing here draws.
+            "${ESCAPE}[?3h${ESCAPE}[?5h${ESCAPE}[?69h" +
+                "${ESCAPE}[?3${'$'}p${ESCAPE}[?5${'$'}p${ESCAPE}[?69${'$'}p",
         )
 
         assertThat(replies).containsExactly(
             "${ESCAPE}[?3;0${'$'}y",
             "${ESCAPE}[?5;0${'$'}y",
             "${ESCAPE}[?69;0${'$'}y",
-            "${ESCAPE}[?2026;0${'$'}y",
         ).inOrder()
         assertThat(buffer.plainText()).isEqualTo("abc")
         assertThat(buffer.snapshot().lines[0][0].style).isEqualTo(TerminalStyle())

@@ -218,6 +218,15 @@ data class TerminalFrame(
      * the geometry carries the meaning and that re-wrapping would destroy it.
      */
     val positionalScreen: Boolean = false,
+    /**
+     * Whether this frame was built while a synchronized-output batch (`ESC [ ? 2026 h`) was open.
+     *
+     * A live frame carrying this is a screen the program has not finished painting, so it is not
+     * published: the reader keeps the previous complete screen until the batch closes. A frame built
+     * for a scrolled-back view is published regardless - the batch is about the live screen, and
+     * refusing to move the window under the user's finger would be a different bug.
+     */
+    val synchronizedOutput: Boolean = false,
     /** DECCKM. Decides whether an arrow key sends `ESC [ A` or `ESC O A`; see [TerminalKeys]. */
     val applicationCursorKeys: Boolean = false,
     /** DECKPAM. Some full-screen apps expect the keypad to send SS3 sequences. */
@@ -436,7 +445,25 @@ class AnsiTerminalBuffer(
     /** Set while the alternate screen is up; holds everything the primary screen needs back. */
     private var primary: PrimaryScreen? = null
 
+    /**
+     * The revision a frame carries, and the ordering every consumer of one compares.
+     *
+     * It advances on every mutation, including inside a synchronized-output batch, and that is
+     * deliberate: [TerminalLayoutKey] is built from it on the promise that two windows of one revision
+     * hold the same cells, so a batch that froze it would hand the view's layout memo a key that
+     * describes a screen the frame no longer holds. The batch is honoured where it is observable - the
+     * frame says the screen is unfinished and is not published - rather than by falsifying this number.
+     */
     private var revision = 0L
+
+    /**
+     * Whether a synchronized-output batch (`ESC [ ? 2026 h`) is open.
+     *
+     * The mode is a promise about what the reader sees: a program saying "do not show this until I am
+     * finished" wants the previous complete screen to stay up, and a frame published mid-batch would
+     * replace it with a half-painted one. So it is carried on the frame and honoured by the publisher.
+     */
+    private var synchronizedOutput = false
 
     /**
      * Replies the remote asked for (device attributes, cursor position) waiting to be written back.
@@ -504,6 +531,20 @@ class AnsiTerminalBuffer(
         wrapPending = false
         resetTabStops()
         revision++
+    }
+
+    /**
+     * Ends a synchronized-output batch from outside the stream.
+     *
+     * The only caller is the collector, when a session ends. A program killed between its `2026 h` and
+     * its `2026 l` - or a connection dropped in between - would otherwise leave the latch set, and the
+     * buffer outlives the session: a reconnect reuses it, and the new shell's output would then never
+     * be published. A batch is a promise from a program that is still running, so the session ending
+     * ends it.
+     */
+    @Synchronized
+    fun releaseSynchronizedOutput() {
+        synchronizedOutput = false
     }
 
     /**
@@ -670,6 +711,7 @@ class AnsiTerminalBuffer(
             title = title,
             alternateScreen = primary != null,
             positionalScreen = positionalScreen,
+            synchronizedOutput = synchronizedOutput,
             applicationCursorKeys = applicationCursorKeys,
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
@@ -1459,6 +1501,9 @@ class AnsiTerminalBuffer(
                 12 -> cursorBlink = enable
                 25 -> cursorVisible = enable
                 2004 -> bracketedPaste = enable
+                // DECSET 2026, synchronized output. The batch is held open until the reset; see
+                // [synchronizedOutput] for what "held" means for a frame.
+                2026 -> setSynchronizedOutput(enable)
                 // 1047 and 1048 are the two halves that 1049 does together; all three are accepted so
                 // an app using the older pair is not left drawing onto the primary screen.
                 1047, 1049 ->
@@ -1468,6 +1513,17 @@ class AnsiTerminalBuffer(
                 47 -> if (enable) enterAlternateScreen(withCursor = false) else leaveAlternateScreen(withCursor = false)
             }
         }
+    }
+
+    /**
+     * Opens or closes a synchronized-output batch, `ESC [ ? 2026 h` and `l`.
+     *
+     * Nothing is done to the grid here, and nothing needs to be: the batch is a statement about when
+     * the screen may be repainted, so the flag rides out on [TerminalFrame.synchronizedOutput] and the
+     * publisher is what holds the frame back. The revision goes on advancing, for the reason on it.
+     */
+    private fun setSynchronizedOutput(enable: Boolean) {
+        synchronizedOutput = enable
     }
 
     /**
@@ -1626,9 +1682,7 @@ class AnsiTerminalBuffer(
      * It is asked in order to decide what to send next, so the answer has to be true rather than
      * flattering: a mode reported as set is one a program will go on to use. Only modes this terminal
      * keeps a state for are reported as set or reset; everything else answers [MODE_UNRECOGNIZED],
-     * including 1048, which saves a cursor rather than switching anything. Measured on Claude Code's
-     * startup, reporting 2026 as set and reporting it unrecognized produce byte-identical output, so
-     * the reason for the honest answer is the protocol and not a reaction observed here.
+     * including 1048, which saves a cursor rather than switching anything.
      */
     private fun reportMode(mode: Int, private: Boolean) {
         val state = when {
@@ -1641,6 +1695,10 @@ class AnsiTerminalBuffer(
                 12 -> onOff(cursorBlink)
                 25 -> onOff(cursorVisible)
                 2004 -> onOff(bracketedPaste)
+                // Answered from the latch rather than claimed as supported: a program that asks and
+                // is told 1 goes on to wrap its repaint in a batch, which is the behaviour the latch
+                // exists for.
+                2026 -> onOff(synchronizedOutput)
                 // 47, 1047 and 1049 are one state here: enterAlternateScreen is what all three call,
                 // and reporting them apart would claim a distinction this terminal does not draw.
                 47, 1047, 1049 -> onOff(primary != null)
@@ -2361,6 +2419,9 @@ class AnsiTerminalBuffer(
         cursorColumn = 0
         wrapPending = false
         positionalScreen = false
+        // A soft reset ends any batch: the program that opened it is gone, and a latch left set would
+        // hold the next program's output back forever.
+        synchronizedOutput = false
         style = TerminalStyle()
         savedStyle = TerminalStyle()
         savedRow = 0

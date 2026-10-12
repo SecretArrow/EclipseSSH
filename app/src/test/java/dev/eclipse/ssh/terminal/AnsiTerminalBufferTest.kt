@@ -456,6 +456,70 @@ class AnsiTerminalBufferTest {
     }
 
     @Test
+    fun `a frame built inside a synchronized output batch says the screen is unfinished`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("$E[?2026habc")
+        val midBatch = buffer.frame()
+        buffer.feed("def$E[?2026l")
+        val closed = buffer.frame()
+
+        // The cells are in the grid either way - the batch is a promise about when they may be drawn,
+        // not about what the buffer holds - so the flag is what carries the promise to the publisher.
+        assertThat(midBatch.synchronizedOutput).isTrue()
+        assertThat(midBatch.lines[0].text()).isEqualTo("abc")
+        assertThat(closed.synchronizedOutput).isFalse()
+        assertThat(closed.lines[0].text()).isEqualTo("abcdef")
+    }
+
+    @Test
+    fun `a synchronized output batch does not hold the revision still`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // Deliberate, and the reason is on the field: TerminalLayoutKey is built from the revision on
+        // the promise that two windows of one revision hold the same cells, and the view memoizes the
+        // layout on it. Freezing the revision across a batch would break that promise and draw the new
+        // cells through the old row geometry - the left-arrow bug this buffer already has a test for.
+        // What the batch holds back is the frame, not the number.
+        buffer.feed("$E[?2026h")
+        val opened = buffer.frame().revision
+        buffer.feed("a")
+        val afterOne = buffer.frame().revision
+        buffer.feed("b")
+        val afterTwo = buffer.frame().revision
+
+        assertThat(afterOne).isGreaterThan(opened)
+        assertThat(afterTwo).isGreaterThan(afterOne)
+    }
+
+    @Test
+    fun `a reset ends a batch a program left open`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // A program that dies mid-batch would otherwise hold the screen back for the life of the
+        // session, with nothing able to clear it - the reset is the one thing that always arrives.
+        buffer.feed("$E[?2026hpartial")
+        buffer.feed("$E[!p")
+
+        assertThat(buffer.frame().synchronizedOutput).isFalse()
+    }
+
+    @Test
+    fun `the end of a session ends a batch too`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // The case a reset cannot cover: the program was killed, or the link went, between its `h` and
+        // its `l`. Nothing arrives to close the batch, and the buffer is reused by the reconnect, so
+        // the collector is what ends it.
+        buffer.feed("$E[?2026hpartial")
+        assertThat(buffer.frame().synchronizedOutput).isTrue()
+
+        buffer.releaseSynchronizedOutput()
+
+        assertThat(buffer.frame().synchronizedOutput).isFalse()
+    }
+
+    @Test
     fun `the prologue Claude Code writes before it draws moves nothing`() {
         val buffer = AnsiTerminalBuffer(columns = 80, rows = 22)
         buffer.feed("$  a prompt line typed by the user\n")

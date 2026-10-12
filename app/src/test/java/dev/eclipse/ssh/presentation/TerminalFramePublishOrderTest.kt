@@ -5,6 +5,9 @@ import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.TerminalFrame
 import org.junit.Test
 
+/** ESC, spelled out so the sequences below stay readable and copy-pasteable. */
+private const val E = "\u001B"
+
 /**
  * The rule that keeps a terminal from being blanked by a frame that was built before the one already
  * on screen.
@@ -94,6 +97,70 @@ class TerminalFramePublishOrderTest {
 
     private fun TerminalFrame.asDrawn(): String =
         lines.joinToString(separator = "\n") { row -> row.joinToString(separator = "") { it.value.toString() } }
+}
+
+/**
+ * The third answer [publishableFrame] gives: a live frame built inside a synchronized-output batch.
+ *
+ * `ESC [ ? 2026 h` is a program saying "do not show this until I am finished". Its repaint arrives in
+ * several writes, and the frame built between two of them is a screen that is half new and half old -
+ * the doubled spinner glyph and the mid-scroll duplication the report is about. Dropping it leaves the
+ * previous complete screen up for the rest of the batch, and the tick after the batch closes publishes
+ * the finished one.
+ *
+ * A scrolled-back frame is exempt, and the reason is not symmetry: the batch is about the live screen,
+ * and refusing to move the window under the user's finger for as long as a program is repainting would
+ * be a second bug in place of the first.
+ */
+class TerminalSynchronizedOutputPublishTest {
+
+    private val buffer = AnsiTerminalBuffer(columns = 40, rows = 8)
+
+    @Test
+    fun `a live frame built inside a batch is not published`() {
+        buffer.feed((1..20).joinToString("\r\n") { "line $it" })
+        val onScreen = buffer.frame(scrollOffset = 0)
+
+        buffer.feed("$E[?2026h" + (21..30).joinToString("\r\n") { "line $it" })
+        val halfPainted = buffer.frame(scrollOffset = 0)
+        assertThat(halfPainted.synchronizedOutput).isTrue()
+        assertThat(halfPainted.revision).isGreaterThan(onScreen.revision)
+
+        assertThat(
+            publishableFrame(published = onScreen, built = halfPainted, builtOffset = 0, currentOffset = 0),
+        ).isNull()
+    }
+
+    @Test
+    fun `the frame after the batch closes is published`() {
+        buffer.feed((1..20).joinToString("\r\n") { "line $it" })
+        val onScreen = buffer.frame(scrollOffset = 0)
+        buffer.feed("$E[?2026h" + (21..30).joinToString("\r\n") { "line $it" })
+        val halfPainted = buffer.frame(scrollOffset = 0)
+
+        buffer.feed("$E[?2026l")
+        val finished = buffer.frame(scrollOffset = 0)
+        assertThat(finished.synchronizedOutput).isFalse()
+
+        assertThat(
+            publishableFrame(published = onScreen, built = finished, builtOffset = 0, currentOffset = 0),
+        ).isSameInstanceAs(finished)
+        assertThat(halfPainted).isNotSameInstanceAs(finished)
+    }
+
+    @Test
+    fun `a scrolled-back frame built inside a batch is published anyway`() {
+        buffer.feed((1..40).joinToString("\r\n") { "line $it" })
+        val live = buffer.frame(scrollOffset = 0)
+        buffer.feed("$E[?2026h")
+
+        val scrolledBack = buffer.frame(scrollOffset = 12)
+        assertThat(scrolledBack.synchronizedOutput).isTrue()
+
+        assertThat(
+            publishableFrame(published = live, built = scrolledBack, builtOffset = 12, currentOffset = 12),
+        ).isSameInstanceAs(scrolledBack)
+    }
 }
 
 /**
