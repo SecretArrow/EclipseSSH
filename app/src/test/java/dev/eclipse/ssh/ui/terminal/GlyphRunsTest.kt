@@ -45,7 +45,7 @@ class GlyphRunsTest {
     fun `a run of ordinary cells is taken whole`() {
         // The case that must not regress: a line of ordinary output is one draw call, not forty. The
         // predicates are the cheap ones for every cell, and the run covers all of them.
-        val end = glyphRunEnd(0, 40, sameStyle = { true }, fitsOneCell = { true })
+        val end = glyphRunEnd(0, 40, joins = { true }, fitsOneCell = { true })
 
         assertThat(end).isEqualTo(40)
     }
@@ -55,11 +55,11 @@ class GlyphRunsTest {
         // Cell 5 is a braille spinner. The run is [0, 5) and the next call starts at 5, which is then
         // a run of its own - so the spinner and the ordinary text after it are both placed on their
         // own cells, and neither inherits the other's advance.
-        val end = glyphRunEnd(0, 40, sameStyle = { true }, fitsOneCell = { it != 5 })
+        val end = glyphRunEnd(0, 40, joins = { true }, fitsOneCell = { it != 5 })
 
         assertThat(end).isEqualTo(5)
-        assertThat(glyphRunEnd(5, 40, sameStyle = { true }, fitsOneCell = { it != 5 })).isEqualTo(6)
-        assertThat(glyphRunEnd(6, 40, sameStyle = { true }, fitsOneCell = { it != 5 })).isEqualTo(40)
+        assertThat(glyphRunEnd(5, 40, joins = { true }, fitsOneCell = { it != 5 })).isEqualTo(6)
+        assertThat(glyphRunEnd(6, 40, joins = { true }, fitsOneCell = { it != 5 })).isEqualTo(40)
     }
 
     @Test
@@ -68,21 +68,24 @@ class GlyphRunsTest {
         // run starts at, so a guard on the loop alone would let a spinner at the start of a line drag
         // the whole line out of alignment. A line usually begins where the program put the glyph, so
         // this is the common shape of the bug rather than a corner of it.
-        val end = glyphRunEnd(9, 40, sameStyle = { true }, fitsOneCell = { it != 9 })
+        val end = glyphRunEnd(9, 40, joins = { true }, fitsOneCell = { it != 9 })
 
         assertThat(end).isEqualTo(10)
     }
 
     @Test
-    fun `a style change ends the run before the cell is measured`() {
-        // The order of the two tests, pinned: a cell of another style belongs to the next run, and
-        // measuring it here would measure it in this run's weight - the one thing the cache is keyed
-        // on. So `fitsOneCell` must not be reached for a cell that already failed the style test.
+    fun `a cell that does not join the run ends it before being measured`() {
+        // The order of the two tests, pinned. A cell that is not this run's is not this run's to
+        // measure: a cell of another style would be measured in this run's weight, which is the one
+        // thing the cache is keyed on, and a cell of another face would be measured in this run's
+        // face, which is what decides whether it fits a cell at all. The caller composes both into
+        // `joins` - see `terminalFaceFor` - so the loop below must not reach the measurement for a
+        // cell that already failed it.
         val measured = mutableListOf<Int>()
         val end = glyphRunEnd(
             from = 0,
             lastColumn = 40,
-            sameStyle = { it < 4 },
+            joins = { it < 4 },
             fitsOneCell = { measured += it; true },
         )
 
@@ -93,8 +96,8 @@ class GlyphRunsTest {
     @Test
     fun `an empty range yields an empty run`() {
         // Total, so that the caller's own guard and this one cannot disagree about an empty row.
-        assertThat(glyphRunEnd(7, 7, sameStyle = { true }, fitsOneCell = { true })).isEqualTo(7)
-        assertThat(glyphRunEnd(9, 7, sameStyle = { true }, fitsOneCell = { true })).isEqualTo(9)
+        assertThat(glyphRunEnd(7, 7, joins = { true }, fitsOneCell = { true })).isEqualTo(7)
+        assertThat(glyphRunEnd(9, 7, joins = { true }, fitsOneCell = { true })).isEqualTo(9)
     }
 
     /** A cell at a phone's font size, which is the scale the tolerance is a fraction of. */

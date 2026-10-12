@@ -135,6 +135,13 @@ val OPEN_SOURCE_LICENSES: List<OpenSourceLicense> = listOf(
         url = "https://github.com/JetBrains/JetBrainsMono",
     ),
     OpenSourceLicense(
+        name = "JuliaMono",
+        version = "0.63.2 (bundled font, subset renamed)",
+        license = "SIL Open Font License 1.1",
+        purpose = "terminal symbols the typeface above does not carry",
+        url = "https://github.com/cormullion/juliamono",
+    ),
+    OpenSourceLicense(
         name = "Apache Commons Compress",
         version = "1.28.0",
         license = "Apache License 2.0",

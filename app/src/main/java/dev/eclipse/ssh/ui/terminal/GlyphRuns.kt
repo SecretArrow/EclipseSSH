@@ -25,11 +25,15 @@ internal fun clusterIsCertainlyOneCell(value: Char, combining: String): Boolean 
  * the cell's advance: the bundled face is a monospace one, so an ordinary letter is exactly one cell
  * and a run of them stays on the grid for as long as the run is long.
  *
- * A glyph the bundled face does not carry is drawn from a fallback face instead, at that face's own
- * advance - which is not the cell's. Every glyph after it in the same run is then displaced by the
- * difference, so the *text* slides out from under the cursor while the cursor itself stays where the
- * grid puts it. That is the whole of the reported symptom: a cursor that does not sit where it looks
+ * A glyph the run's face does not carry is drawn from a face further down the chain instead, at that
+ * face's own advance - which is not the cell's. Every glyph after it in the same run is then displaced
+ * by the difference, so the *text* slides out from under the cursor while the cursor itself stays where
+ * the grid puts it. That is the whole of the reported symptom: a cursor that does not sit where it looks
  * like it sits.
+ *
+ * What is left of that class after [terminalFaceFor] is what the app does not bundle a face for: CJK,
+ * fullwidth forms, and the emoji the platform's colour face owns. Those are still drawn by the platform
+ * at the platform's advance, and they are still what this predicate is for.
  *
  * So a cluster that does not measure one cell has to end the run it is in, and start the next one.
  * This predicate is that decision, and it is deliberately made at **one cluster** at a time rather
@@ -68,28 +72,33 @@ internal const val CLUSTER_MEASURE_REPEAT = 20
 /**
  * The exclusive end of the run of cells that starts at [from] and is drawn as one string.
  *
- * A run is a stretch of cells sharing a style, drawn from one left edge through the font's own
- * advances - which only stays on the grid while every cell in it carries a glyph the bundled face
- * advances by exactly one cell. So the run ends at the first cell that either changes style or does
- * not, and the two are tested in that order: a cell of another style is not this run's to measure,
- * and asking about it would measure it in the wrong weight.
+ * A run is a stretch of cells drawn from one left edge through the font's own advances - which only
+ * stays on the grid while every cell in it carries a glyph the run's own face advances by exactly one
+ * cell. So the run ends at the first cell that either does not join it or does not fit it, and the two
+ * are tested in that order: a cell that is not this run's is not this run's to measure, and asking
+ * about it would measure it in the wrong face.
+ *
+ * [joins] is the caller's answer to "is this cell part of this run", and it is deliberately one
+ * predicate rather than a list of them: the cells of a run are of one style, which decides the weight
+ * the cluster is measured in, and of one face, which decides which font draws it at all - see
+ * [terminalFaceFor]. Both are the caller's to compose, and neither is this function's to know about.
  *
  * The cell the run *starts* at is tested first and on its own. Leaving it out is the trap: it is not
  * reached by the loop below, so an off-grid cluster in the first cell would take the whole following
  * run of ordinary text with it - which is the drift this exists to stop, in its most common shape,
  * since a line usually begins where the program put the glyph.
  *
- * [sameStyle] and [fitsOneCell] are indexed by cell, and neither is called outside `[from, lastColumn)`.
+ * [joins] and [fitsOneCell] are indexed by cell, and neither is called outside `[from, lastColumn)`.
  */
 internal fun glyphRunEnd(
     from: Int,
     lastColumn: Int,
-    sameStyle: (Int) -> Boolean,
+    joins: (Int) -> Boolean,
     fitsOneCell: (Int) -> Boolean,
 ): Int {
     if (from >= lastColumn) return from
     if (!fitsOneCell(from)) return from + 1
     var end = from + 1
-    while (end < lastColumn && sameStyle(end) && fitsOneCell(end)) end++
+    while (end < lastColumn && joins(end) && fitsOneCell(end)) end++
     return end
 }

@@ -965,25 +965,38 @@ private fun DrawScope.drawFrame(
         while (column < lastColumn) {
             val cell = line[column]
             val resolved = cell.style.resolve(foreground, background)
+            // The face this cell is drawn from, decided before the run is delimited rather than by the
+            // platform when the glyph turns out to be missing. See [terminalFaceFor].
+            val face = terminalFaceFor(cell.value, cell.combining)
             val glyphStyle = style.merge(
                 TextStyle(
                     color = resolved.foreground,
-                    fontWeight = if (cell.style.bold) FontWeight.Bold else null,
-                    fontStyle = if (cell.style.italic) FontStyle.Italic else null,
+                    // No weight and no slant on a symbol cell: one symbol cut is bundled, so asking for
+                    // bold would have Compose synthesise it by smearing the outline, and a synthesised
+                    // glyph is the one thing that can move off the cell this renderer keeps it on.
+                    fontWeight = if (face == TerminalFace.TEXT && cell.style.bold) FontWeight.Bold else null,
+                    fontStyle = if (face == TerminalFace.TEXT && cell.style.italic) FontStyle.Italic else null,
+                    fontFamily = face.family,
                     textDecoration = decorationFor(cell),
                 ),
             )
-            // A cluster the bundled face does not carry is drawn from a fallback face, at that face's
-            // own advance - which is not the cell's. Drawn as part of a run, it displaces every glyph
-            // after it by the difference, so the text slides along the row while the cursor stays where
-            // the grid puts it: the cursor is then not where it looks like it is. Ending the run at such
-            // a cluster puts it, and everything after it, back on its own cell. A cluster that measures
-            // one cell - which is every character of the bundled face - leaves the run whole, so a line
-            // of ordinary output is still the single draw call it was.
+            // A run is a stretch of cells drawn as one string, so it is a stretch of cells of one style
+            // *and* one face: the two faces are different typefaces at different advances, and a string
+            // drawn in one of them cannot carry a glyph that belongs to the other. The face is part of
+            // the question `joins` answers, which is why the predicate is asked about it here.
+            //
+            // The other half is why the run has to end at all. A cluster the run's face does not carry
+            // is drawn from a face further down the chain at that face's own advance, which is not the
+            // cell's: inside a run it displaces every glyph after it, so the text slides along the row
+            // while the cursor stays where the grid puts it, and the cursor is then not where it looks
+            // like it is. Ending the run at such a cluster puts it, and everything after it, back on its
+            // own cell. A cluster that measures one cell - which is every character of the face that
+            // draws it, now that a symbol cell names a face that has the glyph - leaves the run whole,
+            // so a line of ordinary output is still the single draw call it was.
             val end = glyphRunEnd(
                 from = column,
                 lastColumn = lastColumn,
-                sameStyle = { line[it].style == cell.style },
+                joins = { line[it].style == cell.style && terminalFaceFor(line[it].value, line[it].combining) == face },
                 fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
             )
             // A wide character's right half is a blank cell and belongs in that character's run. The

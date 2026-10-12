@@ -64,6 +64,11 @@ jobs:
   # app/src carries a NUL byte. So a release that bumps a pin and leaves the
   # prose behind goes red in seconds rather than being noticed a release later.
   # See scripts/check-doc-figures.sh for what it does and does not claim.
+  #
+  # The terminal's symbol table is the same kind of claim in a different shape:
+  # it is generated from the bundled fonts, and scripts/terminal-symbols.py
+  # re-derives it from them - together with the licence obligations the subset
+  # carries. Neither script needs a JDK, an SDK or the NDK.
   docs:
     name: Documentation figures
     runs-on: ubuntu-24.04
@@ -75,6 +80,9 @@ jobs:
 
       - name: Check the documents against the build
         run: bash scripts/check-doc-figures.sh
+
+      - name: Check the symbol table against the fonts
+        run: python3 scripts/terminal-symbols.py
 
   # One native build feeds every consumer. `native` compiles the four-ABI
   # FreeRDP tree and saves the freerdp/build cache; lint, test and assemble
