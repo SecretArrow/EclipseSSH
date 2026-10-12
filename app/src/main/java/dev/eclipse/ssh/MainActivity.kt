@@ -3042,6 +3042,12 @@ private fun TerminalScreen(
     // Dropped when the session changes: the coordinates are buffer lines, so keeping them would
     // highlight an unrelated stretch of the other session's scrollback.
     LaunchedEffect(activeTab.id) { selection = null }
+    // What the soft keyboard is holding provisionally, drawn by the grid at the cursor. The shell has
+    // not been told about it - that is the point of withholding it - so the grid cannot carry it, and
+    // without this the user would be typing blind until each word was committed. Not saved across
+    // rotation: the IME session ends with the activity, and it is the IME that would restore it.
+    var composing by remember { mutableStateOf("") }
+    LaunchedEffect(activeTab.id) { composing = "" }
     val theme = TerminalTheme.named(state.settings.terminalTheme)
     val termBg = Color(theme.background)
     val termFg = Color(theme.foreground)
@@ -3288,6 +3294,7 @@ private fun TerminalScreen(
                         repeat(count) { onMouseWheel(activeTab.id, up, column, row) }
                     },
                     onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
+                    composing = composing,
                     onTap = {
                         if (selection != null) selection = null else showKeyboard()
                     },
@@ -3400,6 +3407,9 @@ private fun TerminalScreen(
             onKey = { key, ctrl, alt, shift -> onSendKey(activeTab.id, key, ctrl, alt, shift) },
             onChar = { char, ctrl, alt -> onSendChar(activeTab.id, char, ctrl, alt) },
             onFocusChanged = { focused -> inputFocused = focused },
+            // The IME's provisional text, which the grid draws at the cursor because the shell has not
+            // been told about it: see [TerminalInputBridge.onComposing] and [composingPreview].
+            onComposing = { text -> composing = text },
         )
     }
 

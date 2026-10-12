@@ -55,6 +55,7 @@ import dev.eclipse.ssh.terminal.TerminalLayout
 import dev.eclipse.ssh.terminal.TerminalSelection
 import dev.eclipse.ssh.terminal.layoutKey
 import dev.eclipse.ssh.terminal.terminalLayout
+import dev.eclipse.ssh.terminal.wrapsForDisplay
 import dev.eclipse.ssh.terminal.TerminalColor
 import dev.eclipse.ssh.terminal.TerminalStyle
 import dev.eclipse.ssh.terminal.TerminalViewport
@@ -261,6 +262,9 @@ private const val TEXT_INSET_FRACTION = 0.01f
  *   See [atMostRows].
  * @param onScroll called with a line delta; positive scrolls back into the history.
  * @param onSelectionChange the live drag selection, in absolute buffer lines, or null when cleared.
+ * @param composing the IME's provisional text - typed, not committed, and therefore not on the far end
+ *   of the pty either. Drawn at the cursor by [composingPreview], which is the one place it can be
+ *   drawn from: the grid does not carry it, and nothing else has the cell it belongs in.
  */
 @Composable
 fun TerminalView(
@@ -304,6 +308,7 @@ fun TerminalView(
      * from a drag would be typed at the shell.
      */
     onArrowKeys: (up: Boolean, count: Int) -> Unit = { _, _ -> },
+    composing: String = "",
 ) {
     val measurer = rememberTextMeasurer()
     // How wide each distinct cluster draws, kept across frames. Keyed on the style and the metrics
@@ -394,6 +399,11 @@ fun TerminalView(
         // From the layout, not the frame: after wrapping, the frame's widest line is no longer drawn as
         // one row, and panning to reach a column that is now on the row below would only lose the text.
         val maxPan = maxPanPx(layout.contentColumns, visible.columns, metrics.width)
+        // Whether the display wraps, which is also the answer to "is the cursor the insertion point".
+        // A shell writing flowed output puts the cursor exactly where the next character goes; a screen
+        // some program painted positionally parks it wherever it likes, and drawing the user's
+        // half-typed word there would put text in the middle of a panel. See [composingPreview].
+        val wraps = wrapsForDisplay(frame.alternateScreen, frame.positionalScreen, visible.columns)
 
         // Follows the cursor, which is the one thing that must never be off-screen: with an 80-column
         // grid on a 45-column phone, typing a long command would otherwise run out of sight and the
@@ -755,6 +765,8 @@ fun TerminalView(
                                 selectionColour = selectionColour,
                                 cursorColour = cursorColour,
                                 cursorOn = cursorOn.value,
+                                composing = composing,
+                                wraps = wraps,
                                 // Read here, in the draw phase, so a drag's fraction of a row costs a
                                 // redraw and nothing else.
                                 shiftPx = scrollShift.floatValue,
@@ -902,6 +914,8 @@ private fun DrawScope.drawFrame(
     selectionColour: Color,
     cursorColour: Color,
     cursorOn: Boolean = true,
+    composing: String = "",
+    wraps: Boolean = false,
     shiftPx: Float = 0f,
 ) {
     val cellWidth = metrics.width
@@ -1035,6 +1049,22 @@ private fun DrawScope.drawFrame(
         )
     }
 
+    // The IME's provisional text, drawn where the cursor is because nowhere else can: the shell has not
+    // been told about it, so the grid does not carry it, and the field the keyboard is composing into
+    // is a pixel of transparent nothing. It is drawn under the cursor, so the hollow block sits on the
+    // first character of the word - which is what a terminal that echoed as you typed would show.
+    //
+    // Clipped to the row it starts on. It is one word and the window is many columns wide, so it fits
+    // almost always; a word longer than the remainder of its row would otherwise paint into the row
+    // below, and a provisional word has no more claim to the next row than an unbreakable token has.
+    composingPreview(composing, layout, wraps, maxRows)?.let { preview ->
+        val left = preview.column * cellWidth
+        val top = preview.row * cellHeight + shift
+        val glyphs = measurer.measure(AnnotatedString(preview.text), style.merge(TextStyle(color = foreground)))
+        clipRect(left, top, left + glyphs.size.width, top + cellHeight) {
+            drawText(glyphs, topLeft = Offset(left, top))
+        }
+    }
     if (cursorOn && frame.cursorVisible && layout.cursorRow in 0 until maxRows) {
         // A hollow block, so the character underneath stays legible - a filled one hides whatever the
         // cursor is on, which on a phone is exactly the character the user is trying to check.
@@ -1050,6 +1080,35 @@ private fun DrawScope.drawFrame(
 }
 
 private const val CURSOR_STROKE = 2f
+
+/**
+ * The IME's provisional text and the cell it is drawn in, or null when there is nothing to draw.
+ *
+ * Three different situations with one answer. The keyboard may be composing nothing, which is every
+ * keyboard that types directly - the text was sent as it was typed. The display may be a screen some
+ * program painted positionally: `top`, `vim`, `nano` and [CC] address cells absolutely and leave the
+ * terminal's cursor wherever they last put it - [CC] parks it on the corner of its input box - so the
+ * cursor is not the insertion point, and drawing the user's half-typed word at it would put text in the
+ * middle of a panel. Or the cursor's row may be off screen, because the user has scrolled back into the
+ * history to read something.
+ *
+ * "The cursor is the insertion point" is exactly [wrapsForDisplay]'s question - a shell writing flowed
+ * output, where the cursor sits on the cell the next character will go into - so this shares that one
+ * answer instead of keeping a second predicate that could drift away from it.
+ */
+internal fun composingPreview(
+    composing: String,
+    layout: TerminalLayout,
+    wraps: Boolean,
+    maxRows: Int,
+): ComposingPreview? {
+    if (composing.isEmpty() || !wraps) return null
+    if (layout.cursorRow !in 0 until maxRows) return null
+    return ComposingPreview(row = layout.cursorRow, column = layout.cursorColumn, text = composing)
+}
+
+/** A cell of the layout and the provisional text drawn in it. */
+internal data class ComposingPreview(val row: Int, val column: Int, val text: String)
 
 /**
  * Half the blink period. 500 ms on, 500 ms off - close enough to xterm's 530 that it reads as a
