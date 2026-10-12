@@ -188,6 +188,23 @@ data class TerminalFrame(
     /** Index into the whole buffer of `lines[0]`, so a selection can be addressed absolutely. */
     val firstLine: Int,
     val totalLines: Int,
+    /**
+     * Index just past the last line the *live* output reaches, which is where this window would end if
+     * the user were at the bottom.
+     *
+     * Not [totalLines], and the difference is the whole reason this field exists. The buffer is sized to
+     * the pty's height - the app-wide floor, 60 rows by default - and filled with blank lines from the
+     * start, so a session with five lines of output on it has `totalLines` 60 and a live end of 5. A
+     * reader that measures "how far behind the live output am I" against [totalLines] is therefore
+     * measuring against rows the shell has not written yet, and reports a large positive number for a
+     * viewport sitting at the bottom: the scrolled-back badge then draws over the grid permanently, and
+     * prints the buffer's un-inked tail as a count of lines below.
+     *
+     * Defaults to [totalLines], which is the same number for a frame cut from a buffer whose whole
+     * height is in use - the shape every hand-built frame in the tests has - so the buffer is the only
+     * caller that has to say otherwise, and it is the only one that knows.
+     */
+    val liveEnd: Int = totalLines,
     /** Row of the cursor within [lines], or -1 when the user has scrolled it out of view. */
     val cursorRow: Int,
     val cursorColumn: Int,
@@ -701,6 +718,10 @@ class AnsiTerminalBuffer(
             lines = window,
             firstLine = first,
             totalLines = lines.size,
+            // The window's own lower edge at rest, which is the anchor: the frame is cut from `anchor`
+            // back by `offset`, so this is the line the live screen ends on. See [TerminalFrame.liveEnd]
+            // for why the buffer's line count cannot stand in for it.
+            liveEnd = anchor,
             cursorRow = if (relativeCursor in 0 until take) relativeCursor else -1,
             cursorColumn = cursorColumn.coerceIn(0, columns - 1),
             columns = columns,

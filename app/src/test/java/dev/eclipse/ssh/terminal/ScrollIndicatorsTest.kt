@@ -109,10 +109,32 @@ class ScrollIndicatorsTest {
         assertThat(frame.linesBelow()).isEqualTo(0)
     }
 
-    private fun frame(firstLine: Int, visibleLines: Int, totalLines: Int) = TerminalFrame(
+    /**
+     * The buffer is the pty's height and starts full of blank rows, so the end of the buffer is not the
+     * end of the output. A session with five lines printed on a sixty-row pty is at its live bottom,
+     * and the rows below the last one written are not lines the user has scrolled past.
+     */
+    @Test
+    fun `blank rows the shell has not written yet are not lines below`() {
+        val frame = frame(firstLine = 0, visibleLines = 11, totalLines = 60, liveEnd = 5)
+
+        assertThat(frame.linesBelow()).isEqualTo(0)
+    }
+
+    @Test
+    fun `the count is measured to the live output, not to the end of the buffer`() {
+        // Scrolled one line back from a live end at 41, in a buffer 60 rows tall: one line below, and
+        // not the twenty the buffer's own height would have said.
+        val frame = frame(firstLine = 29, visibleLines = 11, totalLines = 60, liveEnd = 41)
+
+        assertThat(frame.linesBelow()).isEqualTo(1)
+    }
+
+    private fun frame(firstLine: Int, visibleLines: Int, totalLines: Int, liveEnd: Int = totalLines) = TerminalFrame(
         lines = List(visibleLines) { emptyList() },
         firstLine = firstLine,
         totalLines = totalLines,
+        liveEnd = liveEnd,
         cursorVisible = true,
         revision = 1,
         columns = 80,

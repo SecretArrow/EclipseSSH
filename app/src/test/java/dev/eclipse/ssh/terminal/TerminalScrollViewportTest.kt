@@ -540,6 +540,44 @@ class TerminalScrollViewportTest {
      * how a fragment of a line comes to look like a line of its own, and why these tests assert on the
      * image rather than on the frame.
      */
+    /**
+     * What the scrolled-back badge is told, measured on the real buffer rather than by hand.
+     *
+     * The badge is drawn whenever `linesBelow()` is positive, and the number it prints is that value, so
+     * both are supposed to mean "how far behind the live output this window is" - zero at the bottom.
+     * The buffer is sized to the pty's height and starts full of blank rows, so measuring to the end of
+     * the buffer instead of the end of the output counted rows the shell had not written yet: a session
+     * with three lines printed on a 60-row pty reported fifty-odd lines below while sitting at its own
+     * live bottom, and the badge then drew over the grid permanently, printing the buffer's un-inked
+     * tail as if the user had scrolled past it.
+     */
+    @Test
+    fun `a buffer taller than what has been printed is behind nothing`() {
+        val buffer = session()
+        feedLines(buffer, lines = 3)
+
+        val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+        assertThat(frame.linesBelow()).isEqualTo(0)
+        // The buffer really is taller than its own ink, which is what made the old measure wrong:
+        // without this the test would pass against either definition of "below".
+        assertThat(frame.totalLines).isGreaterThan(frame.firstLine + frame.lines.size)
+    }
+
+    @Test
+    fun `the count below the window is the distance back`() {
+        val buffer = session()
+        feedLines(buffer)
+
+        // At the bottom there is nothing below, whatever the buffer's height is.
+        assertThat(buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(0)
+
+        // And scrolled back it is the offset in lines - the same number the gesture moved the window
+        // by - which is the one thing the badge is trying to say.
+        assertThat(buffer.frame(1, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(1)
+        assertThat(buffer.frame(5, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(5)
+    }
+
     private fun imageOf(buffer: AnsiTerminalBuffer, offset: Int): List<String> {
         val frame = buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS)
         val layout = terminalLayout(frame, WINDOW_COLUMNS, WINDOW_ROWS)
