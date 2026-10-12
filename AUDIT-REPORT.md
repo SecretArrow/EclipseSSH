@@ -11463,7 +11463,7 @@ them §98's two B7 regressions, "a viewport taller than the output keeps the pro
 it", and "a line wider than the screen starts at the top of it and ends on the cursor's row". Those
 tests are the fresh-session and blank-tail cases, and they are right: a 60-row pty holding five lines of
 output must show the prompt at the top of the window, not sixty rows down. The guarded form passes all
-498 tests in the standalone `terminal` package.
+500 tests in the standalone `terminal` package, the two this section adds among them.
 
 **The real recordings do not move.** The three [CC] recordings replayed at 52x60 - 55, 211 and 378 reads
 - are clean at every sampled prefix, so the change alters no frame the harness could already match.
