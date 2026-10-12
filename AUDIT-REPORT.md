@@ -11459,7 +11459,7 @@ rule changed only where the screen had scrolled and its tail was blank.
 **The fix, and the guard in it.** `windowAnchorEnd()` now answers the question both regimes are answers
 to: `if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())`. The unconditional
 form - the anchor is always `lines.size` - was written first and is wrong; it broke sixteen tests, among
-them §97's two B7 regressions, "a viewport taller than the output keeps the prompt where the shell put
+them §98's two B7 regressions, "a viewport taller than the output keeps the prompt where the shell put
 it", and "a line wider than the screen starts at the top of it and ends on the cursor's row". Those
 tests are the fresh-session and blank-tail cases, and they are right: a 60-row pty holding five lines of
 output must show the prompt at the top of the window, not sixty rows down. The guarded form passes all
@@ -11480,3 +11480,179 @@ fixing on its own; whether the ghosts the report saw are this, or this plus some
 device pass's to answer, and that pass is owed. It also does not touch the alternate screen or the
 fresh-session path: the guard leaves both exactly as they were, which is why the tests that pin them
 still pass.
+
+## 101. A repaint sent in several writes was published half-finished
+
+The report's B3 and B12 - a spinner leaving doubled glyphs, and duplication while output is fast - are
+the same defect seen twice: a program that repaints in several writes has every write published as its
+own frame, so the reader sees the intermediate states. Between two writes the screen is half new and
+half old, and the doubled spinner glyph is exactly that.
+
+The mode that exists to prevent it is `ESC [ ? 2026 h` and `l`, synchronized output: the program says
+"do not show this until I am finished". Nothing here knew it existed - `setMode` had no arm for it, and
+DECRQM answered `0`, so a program that asked was told to fall back and one that used it anyway had
+every write drawn.
+
+**The latch is carried on the frame rather than frozen into the revision.** Freezing the revision is
+the obvious reading of "one change per batch" and it is wrong here, which is why the plan's W1 is not
+implemented as written: `TerminalLayoutKey` is built from the revision on the promise that two windows
+of one revision hold the same cells, and the view memoizes the layout on it, so a frozen revision across
+a batch draws the new cells through the old row geometry - the left-arrow bug `TerminalCursorRepaintTest`
+exists for. What the batch holds back is the frame, not the number, and `AnsiTerminalBufferTest` pins
+that the revision keeps advancing with the reason on the field and a test of its own.
+
+So a live frame built inside an open batch is not published, and the tick that lands after the close
+publishes the finished screen. A scrolled-back frame is exempt: the batch is about the live screen, and
+refusing to move the window under the user's finger while a program repaints would be a second bug in
+place of the first. The render audit is not fed a held frame either, so a deliberate hold cannot read as
+"output with no repaint" - the one thing the audit exists to distinguish.
+
+**The mode has to be answerable, not only honourable.** DECRQM now answers 2026 from the latch, and that
+is what makes a program go on to use the mode: a program told `0` uses its fallback and the terminal
+never sees a batch at all. `AnsiTerminalFullScreenTest` asserts the answer is `2` before the `h`, `1`
+between, and `2` after. A soft reset clears the latch, so a program that dies mid-batch cannot hold the
+screen back for the life of a session, and the collector clears it at the end of a session too - the
+case a reset cannot cover, where nothing arrives to close the batch and the buffer is reused by the
+reconnect.
+
+**The fixture is three parts, and two of them are in the harness.** `reproductions/sync-frames.py`
+paints a frame the way an Ink TUI does - several writes with a pause between them - and
+`reproductions/sync.conf` declares `sync` for the terminal, because tmux 3.5a never asks its terminal
+about 2026 and so never wraps a repaint in a batch unless it is told the terminal can take one. The
+third part is `record.py --answer`, without which the recording session's answer is not this app's and
+the recording proves nothing about what the app does with a batch.
+
+## 102. The symbols JetBrains Mono has no glyph for are drawn from a bundled face
+
+B9 is `⏵⏵` in [CC]'s status line rendering as a tofu box, and the block it sits in - Miscellaneous
+Technical - is the block a terminal draws its media controls and its tool-result corner from.
+
+Compose cannot be handed a fallback chain. `FontFamily(...)` is one face per weight, so a character the
+resolved face has no glyph for goes to the platform, which draws it from whatever the device ships at
+*that* face's own advance. Both halves of that are wrong here: the glyph may not be there at all, which
+is the tofu; and the face that does stand in advances its glyph by something other than the cell, so the
+symbol is drawn past its own column and the cell beside it is drawn on top of it. The second half is the
+same misalignment the run-breaking fix exists for, and that fix cannot reach it, because the face it
+would need is not bundled.
+
+So a second face is bundled: `terminal_symbols.ttf`, 212 KB, a subset of JuliaMono cut to exactly the
+code points neither JetBrains Mono face carries, renamed as the SIL Open Font License requires of a
+modified copy and moved onto JetBrains Mono's vertical metrics so a symbol shares the text's baseline.
+JuliaMono is the choice for one measurable reason: its advance is 1200 of a 2000-unit em, which is
+exactly the 0.6 em the cell was measured from, so a symbol lands on its own column with nothing left
+over.
+
+`GlyphFaces.kt` is the decision, and its table is generated rather than written.
+`scripts/terminal-symbols.py` re-derives it from the three bundled fonts and fails on any disagreement -
+it also holds the licence obligations the subset carries, since a regeneration that forgot to drop the
+reserved name would be a violation no build step could see. `scripts/make-terminal-symbols.py` reproduces
+the font byte for byte from a pinned upstream release. Both run in the `docs` job, which needs no JDK and
+no SDK.
+
+Nothing the text face can draw moves: Box Drawing and Block Elements have no gaps in either JetBrains
+Mono face, and both faces are consulted, so only code points absent from both are routed. A cluster
+carrying an emoji presentation selector or a zero-width joiner stays with the platform, which is the only
+face that can draw a variation sequence in colour or join a ZWJ sequence. A symbol cell asks for no weight
+and no slant, because Compose synthesises a weight it is not given by smearing the outline - the one
+thing that can move a glyph off its cell.
+
+Both halves of the decision are pinned by name. `GlyphFacesTest` asserts every code point the report
+named - `⏵`, the triangles beside it, `⎿`, the spinner set, the whole braille block - and asserts by name
+that box drawing, block elements and the arrows the text face carries are *not* routed. `GlyphRunsTest`
+names `⏵` in the predicate that decides whether a cluster may be drawn as part of a run, so a future fast
+path cannot quietly settle a symbol at the bundled face's advance.
+
+## 103. The keyboard's half-typed word no longer reaches the pty
+
+B5 is a hollow box glyph at the wrong position while typing with a predicting keyboard. A predicting
+keyboard does not hand over finished words: it reports the whole field on every keystroke and marks the
+word under its suggestion strip as *composing* - a guess it replaces wholesale when the next key narrows
+it or a suggestion is tapped. The courier field read that report as committed text and diffed it, so
+every letter of a half-typed word reached the shell the moment it appeared, and the correction that
+followed arrived as deletions into text the far end had already been given. That is the reported
+`SED□NG`: a stale cell, and the cursor left inside a word the user had finished typing.
+
+Only the text outside the composition is the shell's business now, and the other half of the fix is the
+diff base: excising the composition from the incoming text alone would be worse than the bug, because the
+base still carries it and the incoming text would then look like the composing region had been deleted -
+the correction would send a run of spurious Backspaces. So the base is the field's committed projection,
+held rather than read back off the field, which is what the shell was last told and the only thing worth
+diffing against.
+
+The provisional word is reported outwards and drawn at the cursor, which is the only place it can appear:
+the shell has not been told about it, so the grid does not carry it, and the field the keyboard composes
+into is one transparent pixel. It is drawn under the hollow cursor block and clipped to the row it starts
+on. The gate is the layout's own `wrapsForDisplay`, because "the cursor is the insertion point" is the
+same question as "the display wraps" - and it is the case that matters here, since [CC] addresses cells
+absolutely and parks the terminal's cursor on the corner of its input box, well past the line being
+typed.
+
+Nothing is reset while a composition is live: a reset is a programmatic edit and the composition is a
+range *into* the text it replaces, so tearing the field is what loses the character a keyboard was
+holding. The Enter path and `nextFieldValue` are both gated, and losing focus clears the word rather than
+leaving it drawn for a keyboard the user has put away.
+
+`fieldStep` is the whole decision as one pure value, so the interleavings that matter are assertions on
+pairs of strings - `TerminalComposingTest`, and `TerminalComposingPreviewTest` for the placement. Both run
+on this host through the host-side runner the other pure suites use: it cuts the pure region out of the
+two Compose files and compiles it against stubbed `TextRange`/`TextFieldValue`, so what is tested is the
+shipped code and not a copy of it.
+
+## 104. The scrollback badge measured the buffer's height, not the live output
+
+B10 is floating pills covering terminal text. The badge that says how far behind the live output the
+window is asked the wrong number: it measured from the window's lower edge to `totalLines`, which is the
+buffer's *height* and not the end of anything. The buffer is sized to the pty's height - the app-wide
+floor, 60 rows by default - and filled with blank lines from the start, so a session with five lines of
+output on a 60-row pty has `totalLines` 60 and a live end of 5. The badge then read 49 lines below at the
+live bottom, drew over the grid of a session that had nothing to scroll back into at all, and printed the
+un-inked tail of the buffer as a count of lines below.
+
+Measured against a real buffer at 52x60, the count was 49 for five lines of output and constant across
+offsets 0 through 6, because a window that cannot move cannot change what the arithmetic says. With 40
+lines it read 19 at the live bottom. It is now 0 there and the scroll offset when scrolled - 1 at offset
+1, 5 at offset 5, 29 at offset 29 - which is what the badge was always trying to say.
+
+The number it needs is where the window's lower edge *would* be at rest, and the buffer already computes
+exactly that: the frame's anchor, the bottommost inked line floored by the cursor, which is what the
+window is cut back from. `TerminalFrame` carries it as `liveEnd`, defaulting to `totalLines` so that a
+hand-built frame - the shape every existing test has - keeps its meaning, and the buffer is the only
+caller that has to say otherwise because it is the only one that knows. Because the window is cut from
+the anchor by the offset, the difference is the offset in lines, and the `coerceAtLeast(0)` still covers
+the one case where it is not: a fresh session whose window was filled downward from the top, where there
+is genuinely nothing below.
+
+The badge's *placement* - `Alignment.TopEnd` with `linesBelow > 0` - is unchanged, and that is the point:
+the pill was not drawn in the wrong place, it was drawn at all, and at the wrong count, on a screen with
+nothing below it.
+
+## 105. A key cap's press could be left drawn
+
+B11 is a stuck loading artifact on a keyboard accessory key. The shortcut bar's caps drew Material's
+ripple, and a press had exactly one way to end: the gesture's own release. The bar also scrolls
+horizontally, and the row is the only thing that knows when a drag has taken a gesture away from the cap
+under it - so a press that the drag carried off had no release coming, and its feedback stayed drawn on
+the key. That is the artifact reported on the `→` cap and then on `PGDN`: a ripple caught mid-expansion,
+which on a key cap is a small round mark.
+
+It is the ripple because nothing else in this path can be left behind, and that is worth stating rather
+than assuming - the plan's W5 read B11 as a latch or a stranded ripple and did not know which. The
+terminal screen has no progress indicator of any kind: `CircularProgressIndicator`,
+`LinearProgressIndicator` and `rememberInfiniteTransition` appear nowhere in `terminal/`, `ui/terminal/`
+or the terminal screen of `MainActivity`, and the latch highlight is a plain state that follows the
+latch, so it cannot stick. An animated overlay is the only thing here that can be caught part-way.
+
+So the press feedback is a state the cap owns instead of an animation, and it ends two ways: the finger
+leaves, or the row moves. `capPressed` is that whole rule, in the terminal package so it runs on the
+host, and `CapPressTest` covers both ends of every branch including the sequence the artifact was - a
+down, a movement, and no release. `Modifier.clickable(interactionSource, indication = null, ...)` is what
+removes the animation, and it means "draw no indication" rather than "draw the local one": foundation
+branches on exactly that null before building the `ClickableElement`, which is why the source handed in
+still carries the press interactions.
+
+Two more defects in the same loop are fixed with it. The caps were laid out by position with no `key`, so
+a slot reused for a different cap - a settings edit, a preset, a layout mode switched to DOUBLE moves
+caps between rows - would have handed the first cap's press state to the second. And the row's edge fade
+read `ScrollState.value` and `maxValue` in composition, which rebuilt the entire row - every `Surface`,
+`Text` and `clickable` in it - once per scrolled pixel; it is read through `derivedStateOf` now, so a
+drag recomposes the fade when an edge actually appears or disappears and nothing else.
