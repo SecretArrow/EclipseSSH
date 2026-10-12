@@ -607,15 +607,30 @@ class AnsiTerminalBuffer(
         // A painted screen is never re-wrapped by the view - see [wrapsForDisplay] - so a window fitted
         // for wrapping would cut `vim`'s screen in half. The rule is asked, not repeated.
         val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
-        val anchor = if (fitWidth > 0) {
-            // The cursor's line, or the last line there is; the fit decides where the window starts, so
-            // there is no lower bound to hold it away from the buffer's own beginning.
-            (cursorRow + 1).coerceIn(1, lines.size)
-        } else {
-            // Never above the cursor, and never so near the start that the window would begin before
-            // the buffer does - the lower bound is what stops a cursor on row 3 of a tall screen from
-            // pulling the window up past the first line the terminal ever wrote.
-            (cursorRow + 1).coerceIn(budget, lines.size)
+        // The window's lower edge, and it is deliberately not the cursor alone.
+        //
+        // A program that paints a screen can leave its cursor *above* its own last line, and every Ink
+        // TUI does: the cursor sits in an input box with a status line drawn under it. Anchoring on the
+        // cursor then puts that status line - and everything else below the cursor - past the bottom of
+        // the window, where no amount of scrolling reaches it, because the window is what the reader is
+        // looking through. Measured on a real [CC] session in tmux at 52x60 with a 30-row viewport: 52
+        // of 55 reads produced a window that ended on the cursor's line, leaving the app's status line
+        // and tmux's own permanently off-screen.
+        //
+        // So the bottommost inked line is a floor as well as the cursor. Both are wanted and the taller
+        // of the two wins; a cursor more than a windowful above the last line is then off-screen, which
+        // is what a real terminal does with a cursor that has been left behind by its own output.
+        val anchor = windowAnchorEnd().let { end ->
+            if (fitWidth > 0) {
+                // The fit decides where the window starts, so there is no lower bound to hold it away
+                // from the buffer's own beginning.
+                end.coerceIn(1, lines.size)
+            } else {
+                // Never so near the start that the window would begin before the buffer does - the lower
+                // bound is what stops a cursor on row 3 of a tall screen from pulling the window up past
+                // the first line the terminal ever wrote.
+                end.coerceIn(budget, lines.size)
+            }
         }
         val ceiling = scrollCeiling(anchor, budget, fitWidth)
         val offset = scrollOffset.coerceIn(0, ceiling)
@@ -864,6 +879,41 @@ class AnsiTerminalBuffer(
     private fun isBlank(line: List<TerminalCell>): Boolean = line.all { it == BLANK_CELL }
 
     /**
+     * One past the last line that paints anything, or 0 when nothing does.
+     *
+     * The floor [frame] puts under its window, so that a program whose cursor sits above its own last
+     * line still gets that line onto the reader's screen. A line carrying only a background colour counts
+     * as painting, which is what makes a `ESC [ 2 K` onto a coloured background keep the window over it.
+     *
+     * Cached on [revision] because the answer changes only when the buffer does, while [frame] asks for it
+     * on every build - a publish and a repaint of one mutation are two. The walk is from the bottom and
+     * stops at the first inked line, so its cost is the blank tail, not the buffer.
+     */
+    private fun bottomInkedEnd(): Int {
+        if (inkCacheRevision == revision) return inkCacheBottom
+        var index = lines.lastIndex
+        while (index >= 0 && isBlank(lines[index])) index--
+        inkCacheBottom = index + 1
+        inkCacheRevision = revision
+        return inkCacheBottom
+    }
+
+    private var inkCacheRevision = -1L
+    private var inkCacheBottom = 0
+
+    /**
+     * The window's lower edge, in lines: the cursor's own line, or the bottommost inked line, whichever
+     * is lower.
+     *
+     * The one expression of the anchor, because three things read it and they have to agree: [frame]
+     * places the window from it, [maxScrollOffset] measures the ceiling from it, and [cursorLine] hands
+     * it to `MainViewModel.pinScrollback`, which gives back the distance it moved so a scrolled-back view
+     * stays still. Two of them disagreeing is a window and a ceiling that do not match - a stored offset
+     * the frame then clamps away - or a view that slides while the user reads it.
+     */
+    private fun windowAnchorEnd(): Int = maxOf(cursorRow + 1, bottomInkedEnd())
+
+    /**
      * The viewport height the buffer is sized to, without building a frame to find out.
      *
      * Exists because reading it off [frame] was costing a whole viewport copy per call, and the two
@@ -878,11 +928,11 @@ class AnsiTerminalBuffer(
      * How far back the view may scroll while showing [viewportRows] lines in a [windowColumns]-wide
      * window.
      *
-     * Measured to the cursor rather than to the end of the buffer, because [frame] anchors there: the
-     * distance that matters is from the cursor up to the first line of scrollback, and measuring to
-     * the buffer's last line instead would hand the view a range of offsets whose upper half draws
-     * exactly the same screen. A tall pty with a little output is where that shows - 960 offsets that
-     * all clamp to the top of the buffer is a scroll gesture that stops responding.
+     * Measured to the window's anchor rather than to the end of the buffer, because [frame] anchors
+     * there: the distance that matters is from the anchor up to the first line of scrollback, and
+     * measuring to the buffer's last line instead would hand the view a range of offsets whose upper
+     * half draws exactly the same screen. A tall pty with a little output is where that shows - 960
+     * offsets that all clamp to the top of the buffer is a scroll gesture that stops responding.
      *
      * [windowColumns] has to be the same width the frame was built with, and it is: the two share
      * [windowCeiling] rather than keeping the arithmetic twice. A view that could scroll to an offset
@@ -893,10 +943,12 @@ class AnsiTerminalBuffer(
     fun maxScrollOffset(viewportRows: Int, windowColumns: Int = 0): Int {
         val budget = viewportRows.coerceIn(1, lines.size)
         val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
-        val anchor = if (fitWidth > 0) {
-            (cursorRow + 1).coerceIn(1, lines.size)
-        } else {
-            (cursorRow + 1).coerceIn(budget, lines.size)
+        val anchor = windowAnchorEnd().let { end ->
+            if (fitWidth > 0) {
+                end.coerceIn(1, lines.size)
+            } else {
+                end.coerceIn(budget, lines.size)
+            }
         }
         return scrollCeiling(anchor, budget, fitWidth)
     }
@@ -905,7 +957,8 @@ class AnsiTerminalBuffer(
     fun lineCount(): Int = lines.size
 
     /**
-     * The line [frame] anchors its window at: the cursor's own line, or the last line there is.
+     * The line [frame] anchors its window at: the cursor's own line, or the bottommost inked line,
+     * whichever is lower - see [windowAnchorEnd] for why the second is in it.
      *
      * The frame's window *ends* here, at `cursorLine - offset`, whatever its start is: the fitted start
      * for a wrapped window, `cursorLine - offset - viewportRows` for an unwrapped one. So this is the
@@ -919,7 +972,7 @@ class AnsiTerminalBuffer(
      * collector iteration, on the terminal's hot path.
      */
     val cursorLine: Int
-        @Synchronized get() = (cursorRow + 1).coerceIn(1, lines.size)
+        @Synchronized get() = windowAnchorEnd().coerceIn(1, lines.size)
 
     /** Whether a paste has to be wrapped in `ESC [ 200 ~` and `ESC [ 201 ~`. */
     @Synchronized

@@ -493,6 +493,42 @@ class TerminalScrollViewportTest {
         assertThat(layout.rows.first().width).isEqualTo(wide.length)
     }
 
+    @Test
+    fun `a cursor parked above its own output still shows the newest output`() {
+        val buffer = session()
+        feedLines(buffer, lines = 60)
+        // The tell of every program that paints its own screen: it names a row *above* where its output
+        // had got to and leaves the cursor there, with its status line drawn below it. `top` does it on
+        // the primary screen and an Ink TUI does it on every frame. Anchoring the window on the cursor
+        // alone put that status line, and everything else under the cursor, past the bottom of the
+        // window - measured on a real [CC] session at 52x60 with a 30-row viewport, 52 of 55 reads.
+        buffer.feed("\u001B[30;1H")
+
+        val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+        assertThat(frame.firstLine + frame.lines.size).isEqualTo(buffer.lineCount())
+        assertThat(imageOf(buffer, offset = 0).joinToString("\n")).contains("$")
+        assertNoRowStartsMidLine(buffer, offset = 0)
+    }
+
+    @Test
+    fun `the window ends on the newest output for every row a program may park its cursor on`() {
+        // The structural form of the rule, over every row rather than only the one the bug was seen on:
+        // the screen has to contain the last thing the program drew, whatever the cursor is doing. It is
+        // also the test that says the anchor, the ceiling and the reported anchor line stay one number.
+        for (row in 1..60) {
+            val buffer = session()
+            feedLines(buffer, lines = 60)
+            buffer.feed("\u001B[${row};1H")
+
+            val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+            assertWithMessage("cursor parked on screen row $row")
+                .that(frame.firstLine + frame.lines.size)
+                .isEqualTo(buffer.lineCount())
+        }
+    }
+
     // ---- the pipeline, exactly as the view calls it ----------------------------------------------
 
     /**
