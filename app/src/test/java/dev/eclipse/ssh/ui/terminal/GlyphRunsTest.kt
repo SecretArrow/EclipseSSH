@@ -139,6 +139,23 @@ class GlyphRunsTest {
     }
 
     @Test
+    fun `the reported symbol is measured rather than settled, so the text after it keeps its cells`() {
+        // B9: `⏵⏵` (U+23F5) in [CC]'s status line, drawn as tofu and with the words after it displaced.
+        // The fast path settles printable ASCII alone, so a symbol is always measured - and the
+        // measurement is what isolates it, because the face that carries it advances a glyph by a whole
+        // em against the bundled face's six tenths. Named here so a future fast path cannot take the
+        // symbol with it: settling one at the bundled face's advance is the displaced text itself.
+        assertThat(clusterIsCertainlyOneCell('⏵', "")).isFalse()
+        assertThat(clusterIsCertainlyOneCell('✻', "")).isFalse()
+        assertThat(clusterIsCertainlyOneCell('⣋', "")).isFalse()
+        // The measurement's answer, and the run it produces: the cell at 3 is the symbol, so the run of
+        // text before it ends there and the text after it starts a run of its own.
+        val em = cell / 0.6f
+        assertThat(clusterFitsOneCell(em, cell)).isFalse()
+        assertThat(glyphRunEnd(0, 40, joins = { true }, fitsOneCell = { it != 3 })).isEqualTo(3)
+    }
+
+    @Test
     fun `the tolerance is a boundary, not a band with a gap in it`() {
         // Inclusive at the edge: a cluster exactly a quarter of a cell out is still the bundled face
         // at the far end of its rounding, and treating it as a fallback would break every long run.
