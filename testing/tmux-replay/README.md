@@ -24,7 +24,7 @@ its own.
 
 | Tool | What it does |
 |---|---|
-| `record.py` | Attaches a tmux client to a pty of a given size and writes what tmux sends it, one length-prefixed frame per read. `--send SECONDS:TEXT` types into that client on a schedule, for a program that draws nothing worth recording until it has been answered. |
+| `record.py` | Attaches a tmux client to a pty of a given size and writes what tmux sends it, one length-prefixed frame per read. `--send SECONDS:TEXT` types into that client on a schedule, for a program that draws nothing worth recording until it has been answered. `--answer` replies to tmux's terminal queries the way the app does, which is what makes tmux choose its supported paths. |
 | `mkframes.py` | Wraps raw bytes (`--escapes` for a readable `\x1b` fixture, `--chunk N` to choose the boundaries) as a recording. |
 | `run-griddump.sh` + `GridDump.kt` | Compiles the real `app/src/main/.../terminal` package with the cached Kotlin compiler and runs the recording through `AnsiTerminalBuffer`, printing the grid. |
 | `oracle.sh` | Replays the same recording into a tmux pane and prints the grid tmux itself ends on, plus its cursor as the app dump spells one. |
@@ -43,6 +43,14 @@ python3 mkframes.py --escapes reproductions/dcs-passthrough.raw /tmp/dcs.frames 
 timeout 1 python3 reproductions/edge-cases.py > /tmp/edge.raw
 python3 mkframes.py /tmp/edge.raw /tmp/edge.frames --chunk 100
 ./replay.sh /tmp/edge.frames --cols 52 --rows 60
+
+# a synchronized-output batch tmux composed itself. Both halves are needed: `sync` in the terminal
+# features, because tmux 3.5a never asks its terminal about 2026, and `--answer`, so tmux is not on its
+# fallback path. A recording made without them contains no `2026 h`/`l` at all, and replaying it proves
+# nothing about what the app does with a batch.
+python3 record.py /tmp/sync.frames 8 --cols 52 --rows 60 --config reproductions/sync.conf --answer \
+  -- python3 reproductions/sync-frames.py
+./replay.sh /tmp/sync.frames --cols 52 --rows 60
 
 # or record a real one: the mimic paints the shapes from the bug report, through a real tmux client
 python3 record.py /tmp/ink.frames 8 --cols 52 --rows 60 --config reproductions/no-status.conf \
@@ -77,9 +85,13 @@ reused between runs; set `GRIDDUMP_REBUILD=1` after changing app code.
 - **Text only.** Colour, attributes and the direction of a wide character are not compared, so a green
   run says the ink is in the right place, not that it is drawn right. The cursor is compared by position,
   not by whether it is painted there.
-- **No terminal answers.** tmux asks its client for DA1, XTVERSION and the colours, and this client
-  answers none of them, so tmux falls back to its own defaults. The recording is verbatim either way;
-  what differs is which sequences tmux would *choose*, never how it frames them.
+- **No terminal answers, unless you ask for them.** tmux asks its client for DA1 and DA2, and by default
+  this client answers neither, so tmux falls back to its own defaults. The recording is verbatim either
+  way; what differs is which sequences tmux would *choose*, never how it frames them. `record.py
+  --answer` replies the way the app does, which matters for one mode in particular: tmux wraps its
+  repaints in `ESC [ ? 2026 h`/`l` only when told the terminal has synchronized output, and on this host
+  it is told only through `reproductions/sync.conf`'s `sync` terminal-feature rather than by asking. A
+  recording made without both cannot contain a batch.
 - **The oracle's own pty** is put in `-echo` mode and has no status line, and the pane size is the size
   given on the command line: the recording already contains the status line tmux composed, so the
   emulator must not reserve a row for one of its own, and it must not echo the answers it sends into the
@@ -113,3 +125,14 @@ wrong. Drawing the cursor is the view's job and is not compared here.
 emoji, ECH/ICH/DCH, insert and delete lines inside a scroll region, save and restore cursor,
 synchronized output, and a line that ends exactly at the margin. The bisection on the mutated parser
 names read 4 of 7 at byte offset 33 and prints `\x1b\x1b[?25l` - the first doubled `ESC`.
+
+## What a batch looks like on the wire
+
+`reproductions/sync-frames.py` recorded through `reproductions/sync.conf` with `--answer`: tmux emits
+`ESC [ ? 2026 h`/`l` around each client repaint, and **always balances them inside one write**. Across
+30 reads, two carry a pair (`read 1: h=2 l=2`, `read 4: h=1 l=1`) and none ends with the batch open. The
+same holds for a 300-line burst: 19 pairs over 7 reads, all balanced.
+
+That is worth knowing before blaming a mid-batch frame for a torn screen. The app reads over SSH, where
+a write can be split, so the mode still has to be honoured - but a recording of a tmux session cannot
+show the case, and this harness's read boundaries are not the app's.

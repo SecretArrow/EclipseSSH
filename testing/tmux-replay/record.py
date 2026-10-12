@@ -16,10 +16,15 @@ will not draw anything worth recording until it has been answered - a first-run 
 can be recorded too. Without it the recording stops at whatever the program shows before it asks
 something.
 
-Known limit, and a deliberate one: tmux asks its terminal questions (DA1, XTVERSION, DECRQM) and this
-harness answers none of them, so tmux falls back to its own defaults for the capabilities a real client
-would have reported. That changes which sequences tmux *chooses*; it does not change how they are
-framed, which is what is being captured.
+Known limit, and a deliberate one: without `--answer` this harness answers none of tmux's questions (DA1,
+XTVERSION, DECRQM), so tmux falls back to its own defaults for the capabilities a real client would have
+reported. That changes which sequences tmux *chooses*; it does not change how they are framed, which is
+what is being captured.
+
+`--answer` closes that gap for the capabilities the app actually reports, and it matters for exactly one
+thing: tmux asks `DECRQM 2026` and wraps its repaints in `ESC [ ? 2026 h`/`l` only once it is told the
+mode is recognized. A recording made without `--answer` therefore cannot contain a synchronized-output
+batch, and replaying it proves nothing about what the app does with one.
 
 Diagnosis only. Nothing here configures the far side for a fix; see the note in README.md.
 """
@@ -27,6 +32,7 @@ import argparse
 import fcntl
 import os
 import pty
+import re
 import select
 import signal
 import struct
@@ -36,6 +42,47 @@ import termios
 import time
 
 SOCKET = "eclipse-replay"
+
+# What the app answers when tmux asks its terminal a question. Mirrors `AnsiTerminalBuffer`'s reply
+# table - the DECRQM mode list, its three answers, and the DA1/DA2/XTVERSION strings - so a recording
+# made with `--answer` contains the sequences tmux only chooses once it is told. The states are the ones
+# a fresh session reports, which is when tmux asks; a session that had already set a mode would report
+# differently and this table does not track it.
+DECRQM_MODES = frozenset(
+    # The modes the buffer keeps a state for, plus the mouse modes it lists by name.
+    [1, 4, 6, 7, 12, 25, 47, 1000, 1002, 1003, 1005, 1006, 1015, 1047, 1049, 2004, 2026]
+)
+# On in a fresh session: auto-wrap, cursor blink and cursor visibility. Everything else the buffer
+# knows about starts off. 1048 is deliberately absent - it saves a cursor rather than switching
+# anything, so the app answers unrecognized for it.
+DECRQM_ON = frozenset([7, 12, 25])
+FIXED_REPLIES = (
+    (b"\x1b[c", b"\x1b[?1;2c"),
+    (b"\x1b[>c", b"\x1b[>0;95;0c"),
+    (b"\x1b[>0q", b"\x1bP>|EclipseSSH(1.22.0)\x1b\\"),
+)
+DECRQM = re.compile(rb"\x1b\[(\?)?(\d+)\$p")
+
+
+def answers_for(chunk: bytes) -> bytes:
+    """The replies the app would send for the questions in one chunk, concatenated.
+
+    Written back to the client's terminal after the chunk is recorded, so the recording holds the query
+    as well - the app sees it too, and a replay that lacked it would not be the same session.
+    """
+    replies = bytearray()
+    for question, answer in FIXED_REPLIES:
+        replies += answer * chunk.count(question)
+    for match in DECRQM.finditer(chunk):
+        private, mode = match.group(1), int(match.group(2))
+        if mode not in DECRQM_MODES:
+            state = 0
+        elif mode in DECRQM_ON:
+            state = 1
+        else:
+            state = 2
+        replies += b"\x1b[" + (private or b"") + str(mode).encode() + b";" + str(state).encode() + b"$y"
+    return bytes(replies)
 
 
 def win_size(cols: int, rows: int) -> bytes:
@@ -83,6 +130,11 @@ def main() -> int:
         default=[],
         metavar="SECONDS:TEXT",
         help="write TEXT to the client's terminal after SECONDS (\\r, \\x1b[B and friends decoded)",
+    )
+    parser.add_argument(
+        "--answer",
+        action="store_true",
+        help="answer tmux's terminal queries the way the app does, so tmux chooses its supported paths",
     )
     args = parser.parse_args(argv[:split])
 
@@ -137,6 +189,10 @@ def main() -> int:
             out.write(chunk)
             frames += 1
             total += len(chunk)
+            if args.answer:
+                reply = answers_for(chunk)
+                if reply:
+                    os.write(master, reply)
 
     client.send_signal(signal.SIGTERM)
     subprocess.run(tmux + ["kill-server"], capture_output=True)
