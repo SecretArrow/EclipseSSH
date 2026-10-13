@@ -1,6 +1,6 @@
 # Continuous integration
 
-Eleven workflows, by purpose:
+Twelve workflows, by purpose:
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Eleven workflows, by purpose:
 | `instrumentation.yml` | Push to `main`, every pull request, `workflow_dispatch` | `connectedDebugAndroidTest` on a booted AVD, against the debug build. |
 | `release.yml` | Push to `main`, `workflow_dispatch` | Signed `assembleRelease` and `bundleRelease`, both signatures verified, checksums computed. |
 | `tagged-release.yml` | A `vX.Y.Z` (or `vX.Y.Z-…`) tag | The same build from the exact tag, then creates the GitHub release with every APK, the AAB and the checksums. |
+| `signing-key-check.yml` | `workflow_dispatch` | Restores the release keystore from the CI secret, asserts its certificate is the canonical one (`testing/verify-keystore.sh`), prints the certificate, and shreds it again — on a red run too. Uploads no artifact, so unlike `export-signing-material.yml` it is safe to dispatch while the repository is public. |
 | `android-release-test.yml` | `release: published`, `workflow_dispatch` | Takes a *published* release and exercises its APK on an emulator matrix, one job per API level. |
 | `universal-apk-test.yml` | `workflow_dispatch` (`apk_source`) | The universal APK on an emulator matrix. Resolve → test → gate → `auto-fix`, which is the autonomous repair loop. |
 | `android-ubuntu-e2e.yml` | `workflow_dispatch` (`mode`) | The Linux userspace end-to-end drive: `SMOKE`, `STANDARD`, or `FULL` (which adds failure injection and needs `adb root`). |

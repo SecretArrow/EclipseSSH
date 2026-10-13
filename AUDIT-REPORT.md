@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §106, *Releasing 1.23.0*, which is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11775,3 +11775,59 @@ every screen height and every offset - and §100's is the first instance of thei
 could produce. Whether the ghosts the report saw are those mechanisms, or those plus something else, is
 what the device pass is for. Saying otherwise would be the cosmetic claim the report asked not to be
 given.
+
+## 107. The signing key stays in the CI secret, and the on-demand path checks it before it signs
+
+The request was to keep the release keystore in the repository as a password-protected zip - `key-sign-apk.zip`,
+encrypted, committed, pushed - so that the key is "there when needed" and the unzipped copy deleted after each
+use. The zip is not committed, and the reason is not the password: it is where the zip would live.
+
+`maragung/EclipseSSH` is made public routinely. Every release cycle opens a CI window, because Actions is
+billing-blocked while the repository is private and the window is what lifts it - twice on 2026-10-13 alone. A
+push lands in history, and history is what a public flip publishes: forks and third-party archives copy it within
+minutes, and flipping back does not recall those copies. So anything that must stay secret cannot live in this
+repository at all, and the release signing key is the thing that must.
+
+The password would not have held either. `zip -P` is PKZIP's ZipCrypto, which is broken: with a known plaintext
+`bkcrack` recovers the archive in minutes, and a JKS has a fixed magic (`FE ED FE ED`) and a highly regular
+structure, so the known plaintext is trivial to obtain. Even an AES-256 archive only slows an offline brute-force
+of a twelve-character password. And the harm is not "a key leaked" but the worst shape of it: whoever holds the
+key can sign an APK that Android accepts as an update over every existing install - silent, no reinstall warning.
+This repository has paid for a signing mistake once already, at v1.5.0, when a regenerated keystore shipped and
+every install answered `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; a leak is strictly worse than that.
+
+The key already lives where it belongs, and the flow the request describes already existed.
+`RELEASE_KEYSTORE_BASE64` is a repository secret; `release.yml` (dispatch) and `tagged-release.yml` (tag) decode it
+onto the runner, `chmod 600`, sign, and shred it in an `always()` step. `.gitignore` states the rule - "Release
+signing material (never commit keystores or passwords)" - and no `.jks` or `.keystore` has ever entered the
+history.
+
+What was missing is that neither path proved *which* key it used. Both report "signed with the release key" as
+soon as a build succeeds, which is a check that *a* key was present - the exact check v1.5.0 passed. Three things
+close that:
+
+- `testing/verify-keystore.sh` reads the canonical certificate out of `verify-release-signer.sh` rather than
+  repeating the fingerprint, so rotating the key stays a one-file edit and the two scripts cannot disagree. It
+  opens the keystore with the alias and password from the properties - which also proves those two belong
+  together - and fails unless the certificate is the canonical one. It prints the certificate and never the
+  password.
+- `release.yml` and `tagged-release.yml` both run it on the restored keystore **before anything is built**, so a
+  wrong secret fails in a minute rather than after a four-ABI build, and never reaches a device.
+- `.github/workflows/signing-key-check.yml` is the on-demand "is the key still there, and is it the right one"
+  path. It restores, verifies, prints the public certificate, and shreds from an EXIT trap so a red run cannot
+  leave the key on disk. It uploads **no artifact**, which is the difference between it and
+  `export-signing-material.yml`: that one uploads the key in the clear and can only be dispatched while the
+  repository is private, while this one is safe while public, because the keystore never leaves the runner.
+
+**Calibrated before it was trusted.** A checker that has never disagreed with reality is not evidence, so
+`verify-keystore.sh` was run against a throwaway keystore generated on this host: it fails on the fingerprint
+mismatch, fails when the alias is absent, fails when the store password is wrong, and exits 2 when the properties
+carry no password - four branches, four verdicts, each the intended one. The *positive* path - a keystore whose
+certificate is the canonical one - is not exercised here, because the canonical key is not on this host and never
+will be; it is exercised by the workflow itself, on the runner, from the secret.
+
+**What this does not claim.** It does not make the secret leak-proof: a repository secret is still readable by
+anyone with admin access to the repository, and that is the trust boundary the whole design rests on. And it does
+not retire `export-signing-material.yml`, which remains the one workflow that can put the key in the clear - its
+own header says to remove it once the keystore has been downloaded, and it is kept only because the canonical
+keystore exists locally nowhere else.
