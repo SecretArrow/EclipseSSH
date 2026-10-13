@@ -1,11 +1,11 @@
 # EclipseSSH — audit, fixes and verification
 
-`dev.eclipse.ssh` · versionCode 56 / versionName 1.22.0 · minSdk 28, targetSdk 35, compileSdk 37
+`dev.eclipse.ssh` · versionCode 57 / versionName 1.23.0 · minSdk 28, targetSdk 35, compileSdk 37
 The per-section figures below are snapshots of the pass that wrote them and are left as they were; this line is the current state.
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §96, *Releasing 1.22.0*, which is the version this file's header names; §95, *Releasing 1.21.0*, is the release before it, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §106, *Releasing 1.23.0*, which is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11146,3 +11146,632 @@ to the user, not to this file.
 **The `specialUse` foreground service type has a publishing consequence.** It is declared so a terminal session
 can outlive the six-hour `dataSync` allowance, and Google Play reviews that declaration; the reasoning is
 written beside the manifest entry. Releases built by CI per ABI are unaffected.
+
+---
+
+## 97. The prompt the report saw twice, cut once, was cut by the program — and the cut the app does make is the one §80 chose
+
+Reported by the user, in their words: a prompt that had been sent sometimes appears twice in the
+scrollback, the first copy "dipotong dengan gaya ellipsis UI" — `…lanjutkan tugas yang mati karena saldo
+habis seb…` — and the second rendered whole and wrapped per row. The demand is three sentences: a
+terminal must not cut a line with an ellipsis, a long line must soft-wrap at the emulator level, and no
+one echo may be redrawn twice. This is the first bug of the 1.23.0 cycle to be closed by measurement
+rather than by a change, and the two instruments that closed it are named here because the finding is
+the deliverable.
+
+**What the claim was, and what the code says.** The claim is that some render path in the app ellipsizes
+terminal text. There is no such path. Every `TextUtils.ellipsize`, `TextOverflow`, `maxLines`, `softWrap`
+and `TruncateAt` in `app/src/main` was enumerated, and the five sites that touch anything terminal-shaped
+are none of them a grid cell: the host search field's placeholder, the session chip's title, the
+session-ended reason row, a key cap's own label, and — the one that does draw terminal text with an
+ellipsis, so it is named rather than skipped — the sessions list's one-line preview of the last thing a
+shell said. That last one is a summary by construction, drawn in the list rather than over the grid, and
+it can only cut the *end* of a line; the report's first copy is cut at both ends, which no `TextOverflow`
+in this app produces.
+
+The grid's own path — `AnsiTerminalBuffer` into `TerminalFrame` into `terminalLayout` into `TerminalView`
+— has no truncation of any kind, and cannot acquire one by accident, because it places cells rather than
+laying out a line of text: there is no text layout on that path for an overflow to be given. The
+transcript view (`showHistory`) draws the whole scrollback with no line limit, so it wraps rather than
+cutting.
+
+**The measurement, on real [CC] streams rather than on the report's prose.** Three recordings of real
+[CC] inside real tmux at 52x60, replayed through the app's parser and diffed row by row against tmux,
+cursor included: a session whose banner and auth warning are followed by one short prompt and its
+answer (55 reads), a 190-character prompt passed on the command line (211 reads), and an 84-character
+prompt typed one character per send and then submitted (378 reads). All three: **IDENTICAL — every row matches tmux, and so does the cursor.** The app
+adds no cell to these streams, so it adds no cut and no duplicate to them either.
+
+**Where the ellipsis actually comes from.** Every `…` in those streams was written by [CC]: 10 in the
+first recording, 16 in the second, 19 in the third, all inside strings [CC] composed. They are its
+spinner and status text (`Booping… `, `Finagling… `, `Thinking for 6s, running 1 shell command…`), its
+status bar truncated at the pane's edge (`⏵⏵ auto mode on (shift+tab to cycle) · ← for ag…`, `· esc to i…`,
+`tmux detected · scroll with PgUp/PgDn · or add …`), the columns of its task list (`perbaiki daftar
+models…`, `14…`, `AP…`), and — in the third recording, which is the report's own case — **the user's own
+prompt**, at the moment it is being worked on:
+
+```
+\x1b[97m\x1b[100m* tolong lanjutkan tugas…\x1b[39m           \x1b[37mst…\x1b[39m
+```
+
+That is one byte run from one read of the typed recording, and it is [CC] shortening a prompt that the
+app never saw in full: the app was given `* tolong lanjutkan tugas…` and nothing else. The report's first
+copy — a prompt cut with a UI-style ellipsis — is [CC]'s own column, not a Compose `Text`. The second copy
+is [CC]'s transcript echo, which [CC] wraps itself: in the 190-character recording the whole prompt lands
+once, across five rows, with no duplication and no ellipsis anywhere in it.
+
+**The one cut the app does make, measured.** The report's second sentence — long lines must soft-wrap —
+is a different matter, and here the app does fall short of it, by design. `wrapsForDisplay` turns
+wrapping off for a screen that is painted, and the two flags that say "painted" are `alternateScreen` and
+`positionalScreen`. [CC] sets both: it runs on the alternate screen (`ESC [ ? 1049 h`), and its Ink
+renderer names rows absolutely, which is exactly what `positionalScreen` records. So for the whole of a
+[CC] session the app lays a grid line out as one row and the reader pans sideways to see the rest.
+Measured on the first recording: **55 of 55 frames are alternate and positional, the view does not wrap at
+44 columns in any of them, and 52 of the 55 frames hold a line wider than 44 columns** (the grid is 52
+wide). Laid out for a 44-column window, rows come back spanning columns `[0,50)` and `[0,52)` — columns
+that exist, are drawn, and are past the window's right edge. This is §80's symptom, on the alternate
+screen, where §80 deliberately left it.
+
+**Why the literal demand is refused.** Soft-wrapping that screen would break the programs the rule
+exists for. §80 measured `less`, `nano`, `vi` and `watch` taking 1, 4, 51 and 13 absolute homes and zero
+relative row moves, and `top -d 1` taking eight `ESC [ H` over eight repaints: every program that paints
+a screen addresses cells, and a wrapped row shifts every row below it, which for `vi` means its status
+line is pushed off the bottom of the window and for a box-drawing TUI — [CC]'s own banner is one — means
+the borders break. Wrapping the alternate screen to make [CC]'s prose readable would introduce the
+box-drawing misplacement the same report files separately. The two cases are indistinguishable in the
+byte stream at the moment the frame is cut, and the report does not get to have both.
+
+**The change.** Two things, neither of them in the renderer. `testing/tmux-replay/run-griddump.sh` now
+reads `GRIDDUMP_KC` — the variable its own failure message has always told the reader to set and that
+nothing in the script ever read, so on a machine with no Gradle module cache the message was a dead end
+rather than an instruction. And `reproductions/prompt-truncation.py` is added: a stand-in for the Ink TUI
+that paints this report's shape exactly — the prompt wrapped whole into a transcript, the same prompt
+truncated with `…` in a narrow column the program made for it, and a status row the program cuts at the
+pane's edge — so the finding can be re-derived offline, without a real [CC] on the recording host, the way
+`ink-mimic.py` covers the other shapes. Its recording replays IDENTICAL.
+
+**What this does not claim.** It does not claim the user did not see a cut line; they did, and this
+section names it: a [CC] session is laid out unwrapped and clipped at the window's right edge. What it
+claims is narrower and checkable — the cut is not an ellipsis the app drew, and the ellipsis is not the
+app's. It also does not claim the wrap rule is final. The candidate change is to drop `alternateScreen`
+from `wrapsForDisplay` and let `positionalScreen` alone say "painted", since §80 measured all four
+alternate-screen programs setting that mark by absolute addressing anyway. It was not made here, and the
+reason is the mark's clear rule rather than the mark: `index()` releases `positionalScreen` whenever
+output scrolls the screen, which on the primary screen is what makes `top`'s exit release it, and on the
+alternate screen would open a window of one or more frames — between a scroll and the repaint that
+follows it, whenever tmux sends them in separate reads — in which `vi` and `less` would be wrapped. The
+size of that window is measurable on a device and is not measurable here, and a one-frame reflow of a
+full-screen editor is a worse defect than a clipped line. That measurement is the next cycle's, not this
+one's.
+
+**The tests.** No app code changed, so no app test changed. The finding is pinned by instruments that can
+be re-run: the three recordings and their `--bisect --step 1` verdicts, the `…` counts and their
+provenance in the byte streams, and `reproductions/prompt-truncation.py`, which is in the repository so
+the shape can be re-recorded without the CLI. The two counts this section states about the app's own
+behaviour — 55 of 55 frames unwrapped, 52 of 55 wider than the window — come from a probe over the real
+buffer, and the property they describe is the one §80's `terminalLayout` tests already pin from the other
+side.
+
+---
+
+## 98. The screen's first row was the middle of a line whenever the window had to be cut
+
+The reported B1, B2 and B13 are one shape in three places: a fragment at the left edge of the screen
+that reads as text beginning in the middle of a word. `ThThought for 4s`, `●aSaya cek langsung di
+kode…`, `macihmerah`, `salahxsatu`, `twhitch matches…`, a box-drawing border on the row above the one
+it belongs to. Two of them are two characters and a whole word; one is a line whose head is missing. A
+terminal that wraps cannot produce any of them, so the question this section answers is not whether the
+shape exists but which of the two layers that *can* produce it does, and the answer for the one layer
+that could be made to produce it is that it no longer can.
+
+**What the parser was already cleared of, and by what.** The tmux replay harness replays a recording of
+what tmux sent its client through the app's own parser and diffs the grid against tmux's, cell by cell,
+at every read prefix - `griddiff.py --bisect --step 1` stops at the first read whose prefix already
+diverges, and compares the cursor as well as the rows. Five real [CC] sessions at 52x60 are IDENTICAL
+under it, over 291, 86, 9, 635, 211 and 378 reads, and three more recordings made for this cycle are
+IDENTICAL too. A grid that agrees with tmux at every prefix is a grid in which `ThThought` cannot be
+sitting in one line of cells, because tmux's own grid does not hold it. So the fragment is not in the
+bytes and not in the parser, and the search moves to the layer the harness does not reach.
+
+**The layer the harness does not reach.** `GridDump.kt` prints the grid; it never calls
+`terminalLayout`. The harness is a statement about `AnsiTerminalBuffer`, and the reported fragments are
+what a *reader* sees, which is the layout's output. `terminalLayout` takes the window the buffer hands
+it and turns each line into the rows it occupies at the window's width, and when the rows it produces
+exceed the screen it drops some - `fittedRows`. Dropping them one *row* at a time from the top is what
+this section is about, because the top row of a wrapped line is a continuation: the view draws a row at
+`(column - row.from) * cellWidth`, so a row whose `from` is 42 is drawn from the *left edge* of the
+screen. That is `now plus a tail` where the line began `output line 39 …` - the reported fragment,
+exactly, and the reason its first characters look like a word's tail.
+
+**It was reachable in one state, and that state is real.** The frame's window is fitted to the rows the
+screen has, so the fit and the layout agree and nothing is dropped - *when the two are given the same
+width*. They are not given the same width before the view has reported one: `MainViewModel` builds the
+frame with `visibleColumnsOf(sessionKey)`, which is zero until the first `viewportChange` lands, and
+zero means "not wrapped for a window" - a window of the pty's *lines*. The view then lays that frame out
+at the width it actually has, and at 44 columns a line of the pty's 80 is two rows, so a window of
+seventeen lines is more than seventeen rows and `fittedRows` cuts. Measured on the real buffer at
+52x60: that state cuts on **every** read - 378 of 378, 211 of 211, 4 of 4 - dropping thirty rows a
+time, because the pty's sixty rows are laid out for a thirty-row screen. The cut itself is right; it is
+the bottom-anchoring, and the oldest thirty lines are the ones to lose. What was wrong was where the
+cut landed.
+
+**The measurement, before and after.** One line of the pty's output is 57 columns, which at 44 is two
+rows: `[0,42)` and `[42,57)`. With a screen of two rows the old cut kept the last two rows and the top
+of the screen read `now plus a tail` - line 39 from column 42 - above the prompt's own row. That is a
+screen whose first row is a word fragment and whose second row is the newest output, and no repaint
+could have removed it: the row is a function of the frame and the width, and both are stable until the
+output moves. After the change the same screen holds the prompt's row alone: one row fewer than the
+budget, because a whole line is worth more than a fragment. The count of screens whose top row is a
+continuation, over every screen height from one row to seventeen, on the same buffer, went from **8 to
+0** - the eight even heights, 2, 4, 6, 8, 10, 12, 14 and 16 rows, because with two rows per line the cut
+lands on a boundary exactly when the height is odd. The fix is asserted that way rather than at the one
+height the phone happens to have: the old code passed at seventeen rows and failed at two, which is
+exactly how a bug like this survives a test suite that tries the phone's own size.
+
+**The fix.** `fittedRows` keeps its two documented rules and gains a third: the top cut moves down to
+the next row that begins a line. One exception, stated in the function's KDoc and covered by a test: a
+line taller than the whole screen has no boundary inside the window, so the screen shows that line's end
+- which is where the cursor is - rather than nothing. There is deliberately no case for the cursor, and
+the reason is asserted rather than argued: the first row that begins a line at or below the cut is at or
+above the first row of the cursor's own line, so the cut can only stop on the cursor's line, never past
+it. A test holds that over every screen height, against where the plain row-wise cut would have put the
+cursor - wherever that kept it, this keeps it too. The whole `terminal` package runs locally: **494
+tests, all green**, three of them new - the structural one above, the cursor one just described, and one
+that pins the guarantee the tall terminal is allowed to have in place of a shrinking pty, that the
+pane's bottommost inked row is inside the window at every width the window may be fitted to (1, 8, 20,
+33, 44, 52, 80 and 200 columns).
+
+**A note on the plan's W2(a), which this does not implement as written.** The plan asked for the
+`windowColumns = 0` fallback path to be closed at the frame, so that the frame is never cut in lines
+when the view will draw it wrapped. The measurement above is why it is not: the cut is not what makes
+the screen wrong - the *landing* was - and moving the guarantee into the layout covers strictly more
+than closing the fallback would have. A frame fitted at one width and laid out at another is not only
+the pre-viewport state; it is also a rotation between the frame's build and the layout, and the layout's
+rule holds there too, where a frame-level flag would not. The frame-level change would also have meant a
+new field on `TerminalFrame` with the meaning "this window was fitted for a window", and every
+hand-built frame in the test suite - which legitimately has no width - would have had to declare
+otherwise, so `terminalLayout` would stop wrapping exactly the frames its own tests wrap today. The
+guarantee is in the layer that draws.
+
+**What this does not claim.** It does not claim B1, B2 and B13 are explained. It claims one mechanism
+that produces their shape, in one reachable state, is closed and is asserted over every screen height.
+The reported fragments themselves are **not reproduced** by any instrument available here: not by the
+replay harness (five real [CC] streams, grid and cursor, every prefix, IDENTICAL), not by the layout
+probe over three more recordings at a phone's window (0 of 378, 0 of 211, 0 of 4 layouts over budget,
+and 0 top-row continuations), and not by the transitional-frame probe, which cuts on every read but
+lands on a line boundary in every one. [CC] runs on the alternate screen and addresses rows absolutely,
+so `wrapsForDisplay` is false for the whole session and its rows are never re-wrapped at all - which
+also means the mechanism this section closes cannot be what the user saw *in [CC]*. The two instruments
+that could settle it are the ones the plan's Fase 0 named and this host cannot supply: a render audit
+and a session log from one device session in which a fragment was on screen, which is what names the
+frame the view drew, and the pattern in the byte stream that preceded it. Until one of those exists,
+B1, B2 and B13 are open with a narrower set of candidate causes than they had, and this section is the
+record of which candidates the measurements have removed.
+
+## 99. A relative move could leave the screen, and the window could leave the cursor's own cell outside it
+
+The report's B6 has three complaints in one sentence: the cursor block "melompat/mendelay/lupa
+dipindahkan saat teks berubah", and the demand that CUP/HVP, CUU/CUD/CUF/CUB and DECSC/DECRC all be
+processed correctly. It is two defects, in two layers, and both were measured before either was
+touched.
+
+**The parser: a relative vertical move was clamped against the whole buffer, not against the screen.**
+`setCursorRow` ended in `row.coerceIn(0, lines.lastIndex)`, and `lines` holds the scrollback as well as
+the screen. A program that homes its cursor and then steps *up* - which is what a full-screen program
+does on its first frame, and what every line editor does when it redraws a wrapped command line - was
+therefore allowed to leave the screen. The cursor landed in the scrollback, the next character printed
+was written *there*, and the row it belonged to was left as it was: the character was invisible, one row
+of history was corrupted, and the screen was unchanged, which is exactly "lupa dipindahkan".
+
+Measured, at 52x60 with 100 lines behind it: `ESC[60A` from the bottom row lands on line 41, the
+screen's first line, in both the old code and the new. `ESC[200A` lands on line 0 in the old code -
+thirty-two rows above the top of the screen - and on line 41 in the new. The mark written after each
+move says the same thing in the grid: before, `X` on absolute line 90 (off the visible screen, one row
+above its top) and `Y` on absolute line 0, where it overwrote the `U` of an unrelated line and left
+`UY`; after, both marks on the screen's first line, and tmux - replayed the same recording at the same
+size - agrees, showing `XYne 042` on screen row 0 with its cursor at 0,2.
+
+The bound is now the screen, and inside a scrolling region it is the region's margin. Both are read
+from where the cursor *is* rather than from where the move ends, because that is what the reference
+does: `ESC[22;28r` with the cursor at row 25, `ESC[9A` stops at row 22 (the region's top) while the same
+`ESC[9A` from row 20 - above the region - is bounded by the screen and lands on row 17; and a cursor
+*below* the region moving up stops at row 22 as well, which is the part a reading of the spec alone
+would not have given. All five cases are a table in `AnsiTerminalFullScreenTest`, each verified against
+tmux before it was written down.
+
+**The view: the pan followed the row's ink and not the cursor's own cell.** `panForCursor` followed
+`min(cursorColumn, cursorRowInk)`, and `cursorRowInk` counts the columns the cursor's row paints. The
+ordinary place for a cursor while a command is being typed is the cell *just after* that ink - so the
+cell the block is drawn in was excluded from the follow, the window settled with it exactly at or past
+its right edge, and the frame was drawn with no cursor block in it at all. Measured over the three real
+[CC] recordings: one read in 378 produced such a frame (the window `[4.0, 48.0)` with the cursor's cell
+`[48.0, 49.0)`). The follow is now `cursorRowInk + 1`, one cell of grace, and the same sweep reports
+zero. The invariant is asserted as a sweep rather than as a case: for every column along a row, with the
+pan carried from call to call the way the view carries it, the cursor's own cell is inside the window.
+
+**The tween is narrowed rather than removed.** The plan asked to remove or narrow the `PAN_FOLLOW_MS`
+animation, and the measurement says which. A follow that arrives inside the tween's own duration cannot
+be one the tween finishes, and with the target moving one cell per frame the shortfall settles at 90/T
+cells - 2.7 of them at 30 fps, which is most of a phone's screen margin and every character the user
+just wrote. So a follow is now *assigned* rather than animated whenever more than one cell of travel is
+asked for, however long the quiet was; only the single-cell crossing a keystroke makes is still slid,
+which is the case the tween was added for.
+
+**What this does not claim.** It does not claim the reported jump is gone on a device - that is the
+device pass's job, and it is still owed. It does not claim the cursor's position comes from anywhere
+other than the layout: it already did, and the two changes above are about which cell the layout names
+and whether the window contains it. And it does not claim the cursor is *always* drawn where the user
+expects in a full-screen program: [CC] parks its cursor on the corner of its input box, some fifty
+columns past the text being typed, and `cursorRowInk` deliberately declines to follow it there. The
+block is drawn at the parked cell when that cell is on screen, which is the same thing a terminal on a
+desktop shows.
+
+**One divergence this fixture exposed and this section does not fix.** `reproductions/cursor-moves.py`
+replays clean at every read through band 3 and through band 6's own moves, but `griddiff.py --bisect`
+stops at read 6, and the report is a *window* offset rather than a cursor one: when a program clears
+the screen (`ESC[2J`) on a session with history and homes its cursor, `frame`'s window ends at the
+bottommost inked line rather than at the end of the buffer, so the whole screen is drawn N rows lower
+than tmux draws it - one row for a blank tail line, and much more for a cleared screen. It is
+pre-existing (the same numbers come out of the code before this change and before §97's), it is in the
+frame's window rather than in the parser, and it is recorded here as the next thing to fix rather than
+as something this section closed. It is the shape of B1/B2/B13 - content on the wrong row - and it is
+the first candidate those three have had that is reproducible on this host. **§100 fixes it.**
+
+## 100. The window ended at the ink, so a screen that had scrolled was drawn one row low
+
+§99 ends by naming a divergence it exposed and did not fix: a program that clears the screen on a
+session with history, and the whole screen then drawn rows low. This section fixes it. It is the shape
+Phase 0 predicted as a candidate for B1/B2/B13 - content on the wrong row - and it is the first instance
+of that shape that reproduces on this host.
+
+**The mechanism.** `frame` builds its window from `windowAnchorEnd()`, the lower edge of the live
+output: `maxOf(cursorRow + 1, bottomInkedEnd())`. Both halves of that answer are *ink* - the cursor's
+row, or the last row that paints anything. Ink is the right answer while the screen has not scrolled,
+and the wrong one once it has. The buffer's blank tail means two different things: before `lines.size`
+passes `rows` those are rows the shell has not written yet, and the window must end at the last of them
+or the badge counts unwritten rows as lines below the live output; after that the tail *is* the screen,
+blank or not, and the live output reaches the end of the buffer. A program that clears its screen
+(`ESC[2J`) or repaints from the top therefore ends its ink above the end of the buffer, and the anchor
+followed it up. `frame` then clamps the anchor into `[budget, lines.size]`, so the window came out one
+line above the screen and one line short of it.
+
+**Measured, before and after, on one recording.** A probe over `reproductions/cursor-moves.py` at 52x60,
+chunked to 100 bytes, printed the numbers `frame` decides its window from, one line per read. Before:
+
+```
+read 3  lines=61  screenTop=1  first=0  take=60 liveEnd=60  cursorAbs=30 cursorIn=30,2
+read 4  lines=61  screenTop=1  first=0  take=60 liveEnd=60  cursorAbs=40 cursorIn=40,9
+read 5  lines=61  screenTop=1  first=0  take=60 liveEnd=60  cursorAbs=57 cursorIn=57,2
+read 15 lines=151 screenTop=91 first=90 take=60 liveEnd=150 cursorAbs=91 cursorIn=1,2
+```
+
+`first` is one below `screenTop` and `liveEnd` one below `lines.size` in all four - the window
+`[0, 60)` where tmux's screen is `[1, 61)`, and `[90, 150)` where it is `[91, 151)`. `griddiff.py
+--bisect --step 1` over the same frames stopped at read 3 of 15 with nine incidents: the app's row 0
+carried `U0` - a marker that belongs one row further down - where tmux's row 0 was blank, four rows came
+out empty where tmux had a marker and the four rows below them carried that marker instead, and the
+cursor read 30,2 where tmux read 29,2. After the change the same probe
+reads `first=1 liveEnd=61 cursorIn=29,2` for read 3 and `first=91 liveEnd=151 cursorIn=0,2` for read 15,
+and the bisect reports "no divergence at any of 15 sampled prefixes, the full replay included". Reads 6
+to 14 - the fixture's scroll and region bands - are identical before and after, which is the point: the
+rule changed only where the screen had scrolled and its tail was blank.
+
+**The fix, and the guard in it.** `windowAnchorEnd()` now answers the question both regimes are answers
+to: `if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())`. The unconditional
+form - the anchor is always `lines.size` - was written first and is wrong; it broke sixteen tests, among
+them §98's two B7 regressions, "a viewport taller than the output keeps the prompt where the shell put
+it", and "a line wider than the screen starts at the top of it and ends on the cursor's row". Those
+tests are the fresh-session and blank-tail cases, and they are right: a 60-row pty holding five lines of
+output must show the prompt at the top of the window, not sixty rows down. The guarded form passes all
+500 tests in the standalone `terminal` package, the two this section adds among them.
+
+**The real recordings do not move.** The three [CC] recordings replayed at 52x60 - 55, 211 and 378 reads
+- are clean at every sampled prefix, so the change alters no frame the harness could already match.
+
+**Regression coverage.** Two tests in `TerminalScrollViewportTest`, one per regime and a sweep across
+the hand-over between them: for every length of output from 0 to 80 lines the window ends at the end of
+the buffer once the screen has scrolled, at most at the end of it before, and contains ink in both. The
+fixture's own docstring said the bisect stopped on this divergence first; it now says the bisect runs
+the whole recording.
+
+**What this does not claim.** It does not claim B1/B2/B13 are closed. It is the same *shape* as those
+three, and it is the first instance of that shape that reproduces here, which is why it was worth
+fixing on its own; whether the ghosts the report saw are this, or this plus something else, is still the
+device pass's to answer, and that pass is owed. It also does not touch the alternate screen or the
+fresh-session path: the guard leaves both exactly as they were, which is why the tests that pin them
+still pass.
+
+## 101. A repaint sent in several writes was published half-finished
+
+The report's B3 and B12 - a spinner leaving doubled glyphs, and duplication while output is fast - are
+the same defect seen twice: a program that repaints in several writes has every write published as its
+own frame, so the reader sees the intermediate states. Between two writes the screen is half new and
+half old, and the doubled spinner glyph is exactly that.
+
+The mode that exists to prevent it is `ESC [ ? 2026 h` and `l`, synchronized output: the program says
+"do not show this until I am finished". Nothing here knew it existed - `setMode` had no arm for it, and
+DECRQM answered `0`, so a program that asked was told to fall back and one that used it anyway had
+every write drawn.
+
+**The latch is carried on the frame rather than frozen into the revision.** Freezing the revision is
+the obvious reading of "one change per batch" and it is wrong here, which is why the plan's W1 is not
+implemented as written: `TerminalLayoutKey` is built from the revision on the promise that two windows
+of one revision hold the same cells, and the view memoizes the layout on it, so a frozen revision across
+a batch draws the new cells through the old row geometry - the left-arrow bug `TerminalCursorRepaintTest`
+exists for. What the batch holds back is the frame, not the number, and `AnsiTerminalBufferTest` pins
+that the revision keeps advancing with the reason on the field and a test of its own.
+
+So a live frame built inside an open batch is not published, and the tick that lands after the close
+publishes the finished screen. A scrolled-back frame is exempt: the batch is about the live screen, and
+refusing to move the window under the user's finger while a program repaints would be a second bug in
+place of the first. The render audit is not fed a held frame either, so a deliberate hold cannot read as
+"output with no repaint" - the one thing the audit exists to distinguish.
+
+**The mode has to be answerable, not only honourable.** DECRQM now answers 2026 from the latch, and that
+is what makes a program go on to use the mode: a program told `0` uses its fallback and the terminal
+never sees a batch at all. `AnsiTerminalFullScreenTest` asserts the answer is `2` before the `h`, `1`
+between, and `2` after. A soft reset clears the latch, so a program that dies mid-batch cannot hold the
+screen back for the life of a session, and the collector clears it at the end of a session too - the
+case a reset cannot cover, where nothing arrives to close the batch and the buffer is reused by the
+reconnect.
+
+**The fixture is three parts, and two of them are in the harness.** `reproductions/sync-frames.py`
+paints a frame the way an Ink TUI does - several writes with a pause between them - and
+`reproductions/sync.conf` declares `sync` for the terminal, because tmux 3.5a never asks its terminal
+about 2026 and so never wraps a repaint in a batch unless it is told the terminal can take one. The
+third part is `record.py --answer`, without which the recording session's answer is not this app's and
+the recording proves nothing about what the app does with a batch.
+
+## 102. The symbols JetBrains Mono has no glyph for are drawn from a bundled face
+
+B9 is `⏵⏵` in [CC]'s status line rendering as a tofu box, and the block it sits in - Miscellaneous
+Technical - is the block a terminal draws its media controls and its tool-result corner from.
+
+Compose cannot be handed a fallback chain. `FontFamily(...)` is one face per weight, so a character the
+resolved face has no glyph for goes to the platform, which draws it from whatever the device ships at
+*that* face's own advance. Both halves of that are wrong here: the glyph may not be there at all, which
+is the tofu; and the face that does stand in advances its glyph by something other than the cell, so the
+symbol is drawn past its own column and the cell beside it is drawn on top of it. The second half is the
+same misalignment the run-breaking fix exists for, and that fix cannot reach it, because the face it
+would need is not bundled.
+
+So a second face is bundled: `terminal_symbols.ttf`, 212 KB, a subset of JuliaMono cut to exactly the
+code points neither JetBrains Mono face carries, renamed as the SIL Open Font License requires of a
+modified copy and moved onto JetBrains Mono's vertical metrics so a symbol shares the text's baseline.
+JuliaMono is the choice for one measurable reason: its advance is 1200 of a 2000-unit em, which is
+exactly the 0.6 em the cell was measured from, so a symbol lands on its own column with nothing left
+over.
+
+`GlyphFaces.kt` is the decision, and its table is generated rather than written.
+`scripts/terminal-symbols.py` re-derives it from the three bundled fonts and fails on any disagreement -
+it also holds the licence obligations the subset carries, since a regeneration that forgot to drop the
+reserved name would be a violation no build step could see. `scripts/make-terminal-symbols.py` reproduces
+the font byte for byte from a pinned upstream release. Both run in the `docs` job, which needs no JDK and
+no SDK.
+
+Nothing the text face can draw moves: Box Drawing and Block Elements have no gaps in either JetBrains
+Mono face, and both faces are consulted, so only code points absent from both are routed. A cluster
+carrying an emoji presentation selector or a zero-width joiner stays with the platform, which is the only
+face that can draw a variation sequence in colour or join a ZWJ sequence. A symbol cell asks for no weight
+and no slant, because Compose synthesises a weight it is not given by smearing the outline - the one
+thing that can move a glyph off its cell.
+
+Both halves of the decision are pinned by name. `GlyphFacesTest` asserts every code point the report
+named - `⏵`, the triangles beside it, `⎿`, the spinner set, the whole braille block - and asserts by name
+that box drawing, block elements and the arrows the text face carries are *not* routed. `GlyphRunsTest`
+names `⏵` in the predicate that decides whether a cluster may be drawn as part of a run, so a future fast
+path cannot quietly settle a symbol at the bundled face's advance.
+
+## 103. The keyboard's half-typed word no longer reaches the pty
+
+B5 is a hollow box glyph at the wrong position while typing with a predicting keyboard. A predicting
+keyboard does not hand over finished words: it reports the whole field on every keystroke and marks the
+word under its suggestion strip as *composing* - a guess it replaces wholesale when the next key narrows
+it or a suggestion is tapped. The courier field read that report as committed text and diffed it, so
+every letter of a half-typed word reached the shell the moment it appeared, and the correction that
+followed arrived as deletions into text the far end had already been given. That is the reported
+`SED□NG`: a stale cell, and the cursor left inside a word the user had finished typing.
+
+Only the text outside the composition is the shell's business now, and the other half of the fix is the
+diff base: excising the composition from the incoming text alone would be worse than the bug, because the
+base still carries it and the incoming text would then look like the composing region had been deleted -
+the correction would send a run of spurious Backspaces. So the base is the field's committed projection,
+held rather than read back off the field, which is what the shell was last told and the only thing worth
+diffing against.
+
+The provisional word is reported outwards and drawn at the cursor, which is the only place it can appear:
+the shell has not been told about it, so the grid does not carry it, and the field the keyboard composes
+into is one transparent pixel. It is drawn under the hollow cursor block and clipped to the row it starts
+on. The gate is the layout's own `wrapsForDisplay`, because "the cursor is the insertion point" is the
+same question as "the display wraps" - and it is the case that matters here, since [CC] addresses cells
+absolutely and parks the terminal's cursor on the corner of its input box, well past the line being
+typed.
+
+Nothing is reset while a composition is live: a reset is a programmatic edit and the composition is a
+range *into* the text it replaces, so tearing the field is what loses the character a keyboard was
+holding. The Enter path and `nextFieldValue` are both gated, and losing focus clears the word rather than
+leaving it drawn for a keyboard the user has put away.
+
+`fieldStep` is the whole decision as one pure value, so the interleavings that matter are assertions on
+pairs of strings - `TerminalComposingTest`, and `TerminalComposingPreviewTest` for the placement. Both run
+on this host through the host-side runner the other pure suites use: it cuts the pure region out of the
+two Compose files and compiles it against stubbed `TextRange`/`TextFieldValue`, so what is tested is the
+shipped code and not a copy of it.
+
+## 104. The scrollback badge measured the buffer's height, not the live output
+
+B10 is floating pills covering terminal text. The badge that says how far behind the live output the
+window is asked the wrong number: it measured from the window's lower edge to `totalLines`, which is the
+buffer's *height* and not the end of anything. The buffer is sized to the pty's height - the app-wide
+floor, 60 rows by default - and filled with blank lines from the start, so a session with five lines of
+output on a 60-row pty has `totalLines` 60 and a live end of 5. The badge then read 49 lines below at the
+live bottom, drew over the grid of a session that had nothing to scroll back into at all, and printed the
+un-inked tail of the buffer as a count of lines below.
+
+Measured against a real buffer at 52x60, the count was 49 for five lines of output and constant across
+offsets 0 through 6, because a window that cannot move cannot change what the arithmetic says. With 40
+lines it read 19 at the live bottom. It is now 0 there and the scroll offset when scrolled - 1 at offset
+1, 5 at offset 5, 29 at offset 29 - which is what the badge was always trying to say.
+
+The number it needs is where the window's lower edge *would* be at rest, and the buffer already computes
+exactly that: the frame's anchor, the bottommost inked line floored by the cursor, which is what the
+window is cut back from. `TerminalFrame` carries it as `liveEnd`, defaulting to `totalLines` so that a
+hand-built frame - the shape every existing test has - keeps its meaning, and the buffer is the only
+caller that has to say otherwise because it is the only one that knows. Because the window is cut from
+the anchor by the offset, the difference is the offset in lines, and the `coerceAtLeast(0)` still covers
+the one case where it is not: a fresh session whose window was filled downward from the top, where there
+is genuinely nothing below.
+
+The badge's *placement* - `Alignment.TopEnd` with `linesBelow > 0` - is unchanged, and that is the point:
+the pill was not drawn in the wrong place, it was drawn at all, and at the wrong count, on a screen with
+nothing below it.
+
+## 105. A key cap's press could be left drawn
+
+B11 is a stuck loading artifact on a keyboard accessory key. The shortcut bar's caps drew Material's
+ripple, and a press had exactly one way to end: the gesture's own release. The bar also scrolls
+horizontally, and the row is the only thing that knows when a drag has taken a gesture away from the cap
+under it - so a press that the drag carried off had no release coming, and its feedback stayed drawn on
+the key. That is the artifact reported on the `→` cap and then on `PGDN`: a ripple caught mid-expansion,
+which on a key cap is a small round mark.
+
+It is the ripple because nothing else in this path can be left behind, and that is worth stating rather
+than assuming - the plan's W5 read B11 as a latch or a stranded ripple and did not know which. The
+terminal screen has no progress indicator of any kind: `CircularProgressIndicator`,
+`LinearProgressIndicator` and `rememberInfiniteTransition` appear nowhere in `terminal/`, `ui/terminal/`
+or the terminal screen of `MainActivity`, and the latch highlight is a plain state that follows the
+latch, so it cannot stick. An animated overlay is the only thing here that can be caught part-way.
+
+So the press feedback is a state the cap owns instead of an animation, and it ends two ways: the finger
+leaves, or the row moves. `capPressed` is that whole rule, in the terminal package so it runs on the
+host, and `CapPressTest` covers both ends of every branch including the sequence the artifact was - a
+down, a movement, and no release. `Modifier.clickable(interactionSource, indication = null, ...)` is what
+removes the animation, and it means "draw no indication" rather than "draw the local one": foundation
+branches on exactly that null before building the `ClickableElement`, which is why the source handed in
+still carries the press interactions.
+
+Two more defects in the same loop are fixed with it. The caps were laid out by position with no `key`, so
+a slot reused for a different cap - a settings edit, a preset, a layout mode switched to DOUBLE moves
+caps between rows - would have handed the first cap's press state to the second. And the row's edge fade
+read `ScrollState.value` and `maxValue` in composition, which rebuilt the entire row - every `Surface`,
+`Text` and `clickable` in it - once per scrolled pixel; it is read through `derivedStateOf` now, so a
+drag recomposes the fade when an edge actually appears or disappears and nothing else.
+
+## 106. Releasing 1.23.0
+
+1.22.0 was what this terminal *answers*. 1.23.0 is what it *draws*, and the report that opened it
+(`prompt-perbaikan-terminal-ssh.md`, thirteen numbered complaints from a device already running 1.22.0)
+is the first one written against a terminal whose protocol answers were correct. So nothing here is a
+wrong reply: every one is the screen itself - a fragment of old text at a line's start, a doubled
+spinner glyph, a cursor block in the wrong cell, a pill over the text, a symbol the font does not have.
+
+**The shape of the reported fragments, and the one instance of it that reproduces here.** B1, B2 and
+B13 are the same complaint at three sizes: a character or two of *some other line* drawn at a row's
+start, a character inside a word that belongs to the previous render, box-drawing glyphs on the wrong
+row. The plan's Phase 0 asked for a mechanism before a patch, and two were found and closed. The
+screen's top cut landed one *row* at a time through a wrapped line, so a row whose `from` was 42 was
+drawn from the left edge of the screen and the fragment at column 0 was that line's middle - §98. And
+the window's lower edge was measured in *ink*, which is right while the screen has not scrolled and
+wrong once it has: a program that clears its screen on a session with history ends its ink above the
+end of the buffer, the window came out one line above the screen and one line short of it, and the
+whole grid was drawn a row low - §100. §100 is the first instance of the reported shape that reproduces
+on this host, and it reproduces exactly: nine grid incidents at read 3 of fifteen, and zero after.
+
+**A repaint sent in several writes is no longer published half-finished.** B3 and B12 are one defect
+seen twice. `ESC [ ? 2026 h` and `l` are a program asking the terminal not to show the intermediate
+states of a repaint it sends in pieces; nothing here knew the mode existed, DECRQM answered `0`, and a
+program that asked was told to fall back. The mode is honoured now - the latch rides on the frame and
+the publisher holds a live frame back until the batch closes, which is what the doubled spinner and the
+duplication during fast output were. The plan's W1 asked for the revision to be frozen across a batch
+and that is *not* what shipped: `TerminalLayoutKey` is built from the revision on the promise that two
+windows of one revision hold the same cells, so a frozen revision draws the new cells through the old
+row geometry. §101 has the reasoning and the test that pins the opposite.
+
+**The symbols the bundled face does not carry are drawn from a second one.** B9's `⏵⏵` was a tofu box,
+and the block it sits in is where a terminal's media controls and tool-result corner live. Compose
+cannot be handed a fallback chain, so a code point the resolved face lacks goes to the platform at the
+platform face's own advance - which is both a missing glyph and a misaligned one. A 212 KB subset of
+JuliaMono is bundled for exactly the code points neither JetBrains Mono face carries, chosen because
+its advance is the 0.6 em the cell was measured from. §102.
+
+**The keyboard's half-typed word no longer reaches the shell.** B5's hollow box at the wrong position
+was a predicting keyboard's *composing* word being read as committed text and diffed: every letter of a
+guess went out the moment it appeared, and the correction that followed arrived as deletions into text
+the far end already had. Only the committed projection is the shell's business now, and the provisional
+word is drawn at the cursor, where the grid cannot carry it because the shell has not been told. §103.
+
+**Two defects the report could only describe, fixed from their measurements.** B10's pills were not in
+the wrong place - they were drawn *at all*, at the wrong count, on a screen with nothing below it: the
+badge measured to the buffer's height rather than to the end of the live output, and read 49 lines
+below on a session with five lines of output. B11's stuck artifact was a Material ripple whose press
+had exactly one way to end, and the shortcut row scrolls - so a press the drag carried off had no
+release coming. Both are §104 and §105.
+
+**The cursor, and the two halves of B6.** The parser clamped a relative vertical move against the whole
+buffer rather than the screen, so a program that homed its cursor and stepped up landed in the
+scrollback and wrote there - invisible, and one row of history corrupted. The view followed the row's
+ink and not the cursor's own cell, which is the ordinary place for it while a command is being typed,
+so the window settled with that cell at or past its right edge and the frame was drawn with no cursor
+block in it: one read in 378 on a real stream. Both are §99, and the follow's tween is narrowed rather
+than removed - a jump of more than one cell is assigned, because the tween cannot finish inside the
+interval a follow arrives in.
+
+**Two of the thirteen are not fixes, and the report says which.** B4 - the prompt that appeared twice,
+the first copy ellipsized - is a **measurement finding**: the ellipsis is the program's own, and §97
+attributes the cut to the program that made it. B8's literal request, that the pty shrink when the
+keyboard opens, is **refused by decision**: `ptyRows` stays the pty's floor because that is what the
+tall terminal is for, and the guarantee delivered instead is the one the complaint was really about -
+the pane's bottommost inked row is always inside the window, asserted at every width the window may be
+fitted to. §98.
+
+**The harness is what makes the fixes measurable rather than plausible.** `testing/tmux-replay/` feeds
+recorded byte streams through the real parser and diffs the grid *and the cursor* against tmux at every
+read prefix. It gained the ability to answer tmux's queries the way the app does, without which no
+recording can contain a synchronized-output batch at all, and `reproductions/cursor-moves.py` is the
+fixture §99 and §100 were found on. Three real [CC] recordings - 55, 211 and 378 reads - replay clean at
+52x60, and so does the new fixture at every one of its fifteen prefixes.
+
+| | bug | what it was | where |
+|---|---|---|---|
+| 1 | B1, B2, B13 | content on the wrong row: a mid-line cut at the screen's top, and a window anchored to ink after the screen had scrolled | §98, §100 |
+| 2 | B3, B12 | a repaint sent in several writes published half-finished | §101 |
+| 3 | B5 | a keyboard's composing word sent to the shell as committed text | §103 |
+| 4 | B6 | a relative move leaving the screen; the pan excluding the cursor's own cell | §99 |
+| 5 | B7 | the newest output off screen when a program parked its cursor above it | §98 |
+| 6 | B9 | `⏵⏵` drawn as tofu, and displaced when a fallback face drew it | §102 |
+| 7 | B10 | the scrollback badge measuring the buffer's height, not the live output | §104 |
+| 8 | B11 | a key cap's ripple stranded by a horizontal drag | §105 |
+| 9 | B4 | not a defect: the ellipsis is the program's own | §97 |
+| 10 | B8 | refused as asked; delivered as the pane's bottom row always being visible | §98 |
+
+### Why this is a minor release and not a patch
+
+The rule §41, §56, §67, §69, §71, §79, §81, §84, §88, §90, §92, §93, §95 and §96 set: **a patch number
+is honest when the artifact a user installs behaves as its predecessor's does.** This one fails that
+test on the first screenful. A program that repaints in pieces no longer flickers through its
+intermediate states; a symbol the font lacks is drawn rather than boxed; a predicting keyboard's guess
+no longer goes out over the wire; and the grid a full-screen program draws is on the rows tmux draws it
+on.
+
+### The suite
+
+The suite is 2,573 JVM/Robolectric test methods in 203 files - 63 more than 1.22.0's 2,510 in 198, five
+of them new files - and `scripts/check-doc-figures.sh` re-derives that figure from the sources on every
+push, so a stale count fails CI rather than standing until someone reads it again. The same script now
+also holds the replay harness's copy of the XTVERSION reply to `versionName`, which the release bump had
+left behind twice.
+
+### What this release does not claim
+
+**Nobody has felt it on a device.** Every figure above is from this host: the standalone `terminal`
+package, the harness, and the pure-logic runners that cut the decision functions out of the Compose
+files. What that covers is that each rule is exact and each branch has its own test. What it does not
+cover is the device the report came from - and the plan puts that pass *before* the release ritual for
+exactly that reason. It is owed, and it is the user's to run.
+
+**The reported fragments themselves were never reproduced here.** B1, B2 and B13 are closed as
+*mechanisms* - two ways the app can put content on the wrong row, both now fixed and both asserted over
+every screen height and every offset - and §100's is the first instance of their shape that this host
+could produce. Whether the ghosts the report saw are those mechanisms, or those plus something else, is
+what the device pass is for. Saying otherwise would be the cosmetic claim the report asked not to be
+given.

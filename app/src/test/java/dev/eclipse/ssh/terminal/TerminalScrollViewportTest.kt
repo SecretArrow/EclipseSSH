@@ -493,6 +493,186 @@ class TerminalScrollViewportTest {
         assertThat(layout.rows.first().width).isEqualTo(wide.length)
     }
 
+    @Test
+    fun `a cursor parked above its own output still shows the newest output`() {
+        val buffer = session()
+        feedLines(buffer, lines = 60)
+        // The tell of every program that paints its own screen: it names a row *above* where its output
+        // had got to and leaves the cursor there, with its status line drawn below it. `top` does it on
+        // the primary screen and an Ink TUI does it on every frame. Anchoring the window on the cursor
+        // alone put that status line, and everything else under the cursor, past the bottom of the
+        // window - measured on a real [CC] session at 52x60 with a 30-row viewport, 52 of 55 reads.
+        buffer.feed("\u001B[30;1H")
+
+        val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+        assertThat(frame.firstLine + frame.lines.size).isEqualTo(buffer.lineCount())
+        assertThat(imageOf(buffer, offset = 0).joinToString("\n")).contains("$")
+        assertNoRowStartsMidLine(buffer, offset = 0)
+    }
+
+    @Test
+    fun `the window ends on the newest output for every row a program may park its cursor on`() {
+        // The structural form of the rule, over every row rather than only the one the bug was seen on:
+        // the screen has to contain the last thing the program drew, whatever the cursor is doing. It is
+        // also the test that says the anchor, the ceiling and the reported anchor line stay one number.
+        for (row in 1..60) {
+            val buffer = session()
+            feedLines(buffer, lines = 60)
+            buffer.feed("\u001B[${row};1H")
+
+            val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+            assertWithMessage("cursor parked on screen row $row")
+                .that(frame.firstLine + frame.lines.size)
+                .isEqualTo(buffer.lineCount())
+        }
+    }
+
+    @Test
+    fun `a screen that has scrolled ends its window at the end of the buffer, blank tail and all`() {
+        val buffer = session()
+        feedLines(buffer, lines = 60)
+        // The state the divergence was measured in: the screen has scrolled, so the buffer is taller than
+        // the pty, and the program now clears it and homes its cursor. Every row the ink had reached is
+        // blank, and the window still has to end where the live output does - at the end of the buffer -
+        // rather than at the last line that paints.
+        buffer.feed("\u001b[2J\u001b[H")
+
+        val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+        assertThat(buffer.lineCount()).isGreaterThan(buffer.viewportRows)
+        assertThat(frame.firstLine + frame.lines.size).isEqualTo(buffer.lineCount())
+        assertThat(frame.liveEnd).isEqualTo(buffer.lineCount())
+        // And what the reader sees is the cleared screen. An ink floor puts the session's oldest output
+        // back on the screen here, one row lower than the program drew it, which is the shape of the
+        // reported fragments and the whole of the divergence `reproductions/cursor-moves.py` exposes.
+        assertThat(imageOf(buffer, offset = 0).all { it.isEmpty() }).isTrue()
+    }
+
+    @Test
+    fun `the live window ends where the live output does at every length of output`() {
+        // The anchor's two regimes, walked through the line where they change hands rather than asserted
+        // at one point on either side of it. The buffer is sized to the pty and filled with blank lines
+        // from the start, so until the screen scrolls its tail is rows the shell has not written and the
+        // window ends at the ink; from the first scroll on, the tail *is* the screen and the window ends
+        // at the buffer, whatever those rows happen to hold.
+        var sawScrolled = false
+        var sawUnscrolled = false
+        for (lines in 0..80) {
+            val buffer = session()
+            feedLines(buffer, lines = lines)
+
+            val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+            val end = frame.firstLine + frame.lines.size
+            val note = "$lines lines of output"
+
+            if (buffer.lineCount() > buffer.viewportRows) {
+                sawScrolled = true
+                assertWithMessage(note).that(end).isEqualTo(buffer.lineCount())
+            } else {
+                sawUnscrolled = true
+                assertWithMessage(note).that(end).isAtMost(buffer.lineCount())
+            }
+            // Either way the newest output is one of the rows drawn, which is the guarantee the tall pty
+            // is allowed to have in place of a shrinking one.
+            assertWithMessage(note)
+                .that(frame.lines.any { line -> line.any { it != TerminalCell() } })
+                .isTrue()
+        }
+        // Both regimes really were walked, so neither half of the rule can pass by never being asked.
+        assertThat(sawScrolled).isTrue()
+        assertThat(sawUnscrolled).isTrue()
+    }
+
+    @Test
+    fun `the newest output is on screen at every width the window may be fitted to`() {
+        // The guarantee the tall terminal is allowed to have instead of a shrinking pty: whatever the
+        // window's width, the bottommost inked row of the pane is one of the rows drawn. Measured over
+        // widths rather than at one of them because the width is what decides how many rows the window
+        // takes: a window that fits at 52 columns is more rows than the screen at 20, and the row that
+        // falls off the top is the one this rule protects.
+        for (width in intArrayOf(1, 8, 20, 33, 44, 52, 80, 200)) {
+            val buffer = session()
+            feedLines(buffer, lines = 40)
+
+            val frame = buffer.frame(0, WINDOW_ROWS, width)
+            val layout = terminalLayout(frame, width, WINDOW_ROWS)
+            val full = buffer.frame(0, buffer.lineCount(), 0)
+            val inked = full.firstLine + full.lines.indexOfLast { line -> line.any { it != TerminalCell() } }
+
+            assertWithMessage("width $width")
+                .that(layout.rows.map { frame.firstLine + it.line })
+                .contains(inked)
+        }
+    }
+
+    @Test
+    fun `a cut that moves to a line boundary never takes the cursor off the screen`() {
+        // [fittedRows] has no case for the cursor because it needs none - moving the cut down to a line
+        // boundary stops at or above the first row of the cursor's own line - and this is that claim
+        // asserted rather than argued, over every screen height. The comparison is against where the
+        // plain row-wise cut would have put the cursor: wherever that kept it, this must too.
+        val buffer = session()
+        feedLines(buffer)
+        val frame = buffer.frame(0, WINDOW_ROWS, windowColumns = 0)
+        val whole = terminalLayout(frame, WINDOW_COLUMNS, Int.MAX_VALUE)
+        assertThat(whole.cursorRow).isAtLeast(0)
+
+        for (screen in 1..WINDOW_ROWS) {
+            val layout = terminalLayout(frame, WINDOW_COLUMNS, screen)
+            val plain = whole.rows.size - screen
+
+            assertWithMessage("a screen of $screen rows")
+                .that(layout.cursorRow >= 0 || whole.cursorRow < plain)
+                .isTrue()
+            if (layout.cursorRow >= 0) {
+                assertThat(layout.rows[layout.cursorRow].line).isEqualTo(frame.cursorRow)
+            }
+        }
+    }
+
+    @Test
+    fun `a window the view has to cut never starts the screen in the middle of a line`() {
+        // The state a session is in before its view has reported a size: `visibleColumnsOf` is zero until
+        // the first measurement, so the window is built in *lines* while the view lays it out at the
+        // width it actually has - and at 44 columns a line of the pty's 80 is two rows, so the frame is
+        // more rows than the screen and [fittedRows] has to drop some. Dropping them one *row* at a time
+        // from the top left the screen's first row the middle of a line, which reads at the left edge as
+        // text starting in the middle of a word: the reported one-character fragment.
+        //
+        // Every screen height, rather than the one the phone happens to have: whether the cut lands on a
+        // line boundary is a matter of parity, so a single case passes or fails by luck.
+        val buffer = session()
+        feedLines(buffer)
+        val frame = buffer.frame(0, WINDOW_ROWS, windowColumns = 0)
+        val whole = terminalLayout(frame, WINDOW_COLUMNS, Int.MAX_VALUE).rows
+
+        // The frame really is over the screen's budget, which is what makes the cut happen at all:
+        // without this the test would pass against a layout that never had to drop anything.
+        assertThat(frame.lines.size).isEqualTo(WINDOW_ROWS)
+        assertThat(whole.size).isGreaterThan(WINDOW_ROWS)
+
+        for (screen in 1..WINDOW_ROWS) {
+            val layout = terminalLayout(frame, WINDOW_COLUMNS, screen)
+            val top = layout.rows.first()
+            // One exception, and it is the case [fittedRows] documents: a single line taller than the
+            // whole screen has no line boundary to start at, and showing its end is the only way to show
+            // the cursor. Anything else starts the screen at the beginning of a line.
+            val tallerThanTheScreen = whole.count { it.line == top.line } > screen
+            assertWithMessage("a screen of $screen rows")
+                .that(top.from == 0 || tallerThanTheScreen)
+                .isTrue()
+            // And the rows below it either continue the row above or begin a line, so the screen reads
+            // as whole lines from its first row down.
+            layout.rows.zipWithNext().forEach { (above, below) ->
+                assertWithMessage("screen $screen: row starting line ${below.line} at column ${below.from}")
+                    .that(below.from == 0 || (above.line == below.line && above.to == below.from))
+                    .isTrue()
+            }
+        }
+    }
+
     // ---- the pipeline, exactly as the view calls it ----------------------------------------------
 
     /**
@@ -504,6 +684,44 @@ class TerminalScrollViewportTest {
      * how a fragment of a line comes to look like a line of its own, and why these tests assert on the
      * image rather than on the frame.
      */
+    /**
+     * What the scrolled-back badge is told, measured on the real buffer rather than by hand.
+     *
+     * The badge is drawn whenever `linesBelow()` is positive, and the number it prints is that value, so
+     * both are supposed to mean "how far behind the live output this window is" - zero at the bottom.
+     * The buffer is sized to the pty's height and starts full of blank rows, so measuring to the end of
+     * the buffer instead of the end of the output counted rows the shell had not written yet: a session
+     * with three lines printed on a 60-row pty reported fifty-odd lines below while sitting at its own
+     * live bottom, and the badge then drew over the grid permanently, printing the buffer's un-inked
+     * tail as if the user had scrolled past it.
+     */
+    @Test
+    fun `a buffer taller than what has been printed is behind nothing`() {
+        val buffer = session()
+        feedLines(buffer, lines = 3)
+
+        val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
+
+        assertThat(frame.linesBelow()).isEqualTo(0)
+        // The buffer really is taller than its own ink, which is what made the old measure wrong:
+        // without this the test would pass against either definition of "below".
+        assertThat(frame.totalLines).isGreaterThan(frame.firstLine + frame.lines.size)
+    }
+
+    @Test
+    fun `the count below the window is the distance back`() {
+        val buffer = session()
+        feedLines(buffer)
+
+        // At the bottom there is nothing below, whatever the buffer's height is.
+        assertThat(buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(0)
+
+        // And scrolled back it is the offset in lines - the same number the gesture moved the window
+        // by - which is the one thing the badge is trying to say.
+        assertThat(buffer.frame(1, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(1)
+        assertThat(buffer.frame(5, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(5)
+    }
+
     private fun imageOf(buffer: AnsiTerminalBuffer, offset: Int): List<String> {
         val frame = buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS)
         val layout = terminalLayout(frame, WINDOW_COLUMNS, WINDOW_ROWS)

@@ -55,6 +55,7 @@ import dev.eclipse.ssh.terminal.TerminalLayout
 import dev.eclipse.ssh.terminal.TerminalSelection
 import dev.eclipse.ssh.terminal.layoutKey
 import dev.eclipse.ssh.terminal.terminalLayout
+import dev.eclipse.ssh.terminal.wrapsForDisplay
 import dev.eclipse.ssh.terminal.TerminalColor
 import dev.eclipse.ssh.terminal.TerminalStyle
 import dev.eclipse.ssh.terminal.TerminalViewport
@@ -226,62 +227,6 @@ fun terminalTextInset(screenWidthDp: Int, screenHeightDp: Int): Dp =
 private const val TEXT_INSET_FRACTION = 0.01f
 
 /**
- * How far the grid may be panned to the left, in pixels.
- *
- * Only *painted* columns are pannable. A shell screen is mostly empty on the right, and being able to
- * drag the text away to stare at that emptiness is a way to lose the output rather than a feature - so
- * the extent comes from [dev.eclipse.ssh.terminal.TerminalLayout.contentColumns], which counts what is
- * actually on the widest drawn row (including the cursor's own cell), and not from the width the pty was
- * given. After wrapping that is usually the window itself and there is nothing to pan; what is left is
- * the alternate screen, and the single token too wide to break.
- */
-internal fun maxPanPx(contentColumns: Int, visibleColumns: Int, cellWidth: Float): Float =
-    ((maxOf(contentColumns, visibleColumns) - visibleColumns) * cellWidth).coerceAtLeast(0f)
-
-/**
- * The pan offset that keeps the cursor on screen, given where it is now.
- *
- * The cursor is the one thing a terminal may never hide. With an 80-column grid on a phone that shows
- * forty-five, a command long enough to pass the right edge would otherwise be typed out of sight -
- * the characters arrive, the line is correct, and the user cannot see what they are editing. So the
- * view follows: it pans just far enough to bring the cursor's cell inside the window, from whichever
- * side it left, and otherwise leaves the offset exactly where it was. That "otherwise" is what makes a
- * deliberate pan sideways stick while output is arriving - it is given up only when the cursor moves
- * somewhere it cannot be seen.
- *
- * What is followed is [cursorColumn] only for as long as the cursor is inside the text of its own row.
- * A full-screen program may park the terminal's cursor away from the text it draws the user's caret in
- * - Claude Code leaves it on the corner of its input box, fifty columns past the line being typed - and
- * following a parked cursor drags the window onto the empty half of the row, taking the user's message
- * off the left edge. Past the row's paint the cursor is therefore read as [cursorRowInk], which is where
- * a program drawing its own caret puts that caret: at the end of what the user typed.
- *
- * [current] is re-clamped on every call, because the extent shrinks under it: a narrower frame, or
- * scrolling back to a region of short lines, can leave a stored offset past the end of what exists.
- */
-internal fun panForCursor(
-    current: Float,
-    cursorColumn: Int,
-    cursorRowInk: Int,
-    cursorOnScreen: Boolean,
-    cellWidth: Float,
-    visibleWidthPx: Float,
-    maxPan: Float,
-): Float {
-    val ceiling = maxPan.coerceAtLeast(0f)
-    val clamped = current.coerceIn(0f, ceiling)
-    if (!cursorOnScreen || cellWidth <= 0f || visibleWidthPx <= 0f) return clamped
-    val followed = cursorColumn.coerceAtMost(cursorRowInk)
-    val left = followed * cellWidth
-    val right = left + cellWidth
-    // The least pan that puts the followed cell inside the window, which is the only place it moves to:
-    // a cursor leaving to the right is caught at the right edge, and one that comes back left of the
-    // window is met where it is rather than pushed to the left edge of a window that scrolled further.
-    val wanted = (right - visibleWidthPx).coerceIn(0f, ceiling)
-    return if (right > clamped + visibleWidthPx || left < clamped) wanted else clamped
-}
-
-/**
  * Draws a [TerminalFrame] and turns touches into terminal input.
  *
  * A `Canvas` rather than a `LazyColumn` of `Text`, and that is the whole point of this file. The
@@ -317,6 +262,9 @@ internal fun panForCursor(
  *   See [atMostRows].
  * @param onScroll called with a line delta; positive scrolls back into the history.
  * @param onSelectionChange the live drag selection, in absolute buffer lines, or null when cleared.
+ * @param composing the IME's provisional text - typed, not committed, and therefore not on the far end
+ *   of the pty either. Drawn at the cursor by [composingPreview], which is the one place it can be
+ *   drawn from: the grid does not carry it, and nothing else has the cell it belongs in.
  */
 @Composable
 fun TerminalView(
@@ -360,6 +308,7 @@ fun TerminalView(
      * from a drag would be typed at the shell.
      */
     onArrowKeys: (up: Boolean, count: Int) -> Unit = { _, _ -> },
+    composing: String = "",
 ) {
     val measurer = rememberTextMeasurer()
     // How wide each distinct cluster draws, kept across frames. Keyed on the style and the metrics
@@ -450,12 +399,28 @@ fun TerminalView(
         // From the layout, not the frame: after wrapping, the frame's widest line is no longer drawn as
         // one row, and panning to reach a column that is now on the row below would only lose the text.
         val maxPan = maxPanPx(layout.contentColumns, visible.columns, metrics.width)
+        // Whether the display wraps, which is also the answer to "is the cursor the insertion point".
+        // A shell writing flowed output puts the cursor exactly where the next character goes; a screen
+        // some program painted positionally parks it wherever it likes, and drawing the user's
+        // half-typed word there would put text in the middle of a panel. See [composingPreview].
+        val wraps = wrapsForDisplay(frame.alternateScreen, frame.positionalScreen, visible.columns)
 
         // Follows the cursor, which is the one thing that must never be off-screen: with an 80-column
         // grid on a 45-column phone, typing a long command would otherwise run out of sight and the
         // user would be editing a line they cannot see. Keyed on the cursor rather than on the frame,
         // so this settles once per cursor move and a manual pan is left alone until the cursor moves
         // again - and re-clamped here too, because a narrower frame can strand an old pan past its end.
+        //
+        // The clock read and the distance are here to answer one question between them, and the answer
+        // decides whether this follow can be tweened: see [followShouldAnimate]. A tween cannot be asked
+        // for on every cursor move, because a program printing a long line moves the cursor every frame,
+        // and a tween that is restarted before it finishes never arrives - it leaves the pan short of the
+        // cursor, which is the newest characters and the cursor itself drawn off the right edge for as
+        // long as the output lasts. Nor for a move of more than one cell, which is a jump rather than the
+        // keystroke crossing the edge the tween was added for, and a jump spread over the tween's
+        // duration is the cursor off the window for exactly that long. The one slot is a plain array
+        // rather than snapshot state because no composition and no draw reads it.
+        val lastFollowNanos = remember { longArrayOf(0L) }
         LaunchedEffect(layout.cursorColumn, layout.cursorRowInk, layout.cursorRow, maxPan, visible.columns, metrics.width) {
             val target = panForCursor(
                 current = pan.floatValue,
@@ -471,10 +436,23 @@ fun TerminalView(
                 visibleWidthPx = visibleWidthPx,
                 maxPan = maxPan,
             )
+            val now = System.nanoTime()
+            val sinceLastFollow = now - lastFollowNanos[0]
+            lastFollowNanos[0] = now
             if (target == pan.floatValue) return@LaunchedEffect
+            // How far the window has to travel, in cells, because that is what decides whether this is
+            // the one-cell courtesy the tween is for or a jump it must not spread out: see
+            // [followShouldAnimate]. The distance is asked for rather than worked out here, so its two
+            // edges - an unmeasured cell and the float arithmetic of a one-cell move - are the pure
+            // function's business and are tested with it.
+            val cellsMoved = cellsBetween(pan.floatValue, target, metrics.width)
+            if (!followShouldAnimate(sinceLastFollow, cellsMoved)) {
+                pan.floatValue = target
+                return@LaunchedEffect
+            }
             // Animated rather than assigned. The assignment moved the whole screen sideways in a single
             // frame every time the cursor crossed the right edge, which is the other half of what a
-            // terminal that "jumps while typing" is. Linear and short on purpose: the effect restarts on
+            // terminal that "jumps while typing" is. Linear and short on purpose: the follow restarts on
             // every cursor move, and an eased tween would spend its slow beginning again each keystroke.
             animate(
                 initialValue = pan.floatValue,
@@ -794,6 +772,8 @@ fun TerminalView(
                                 selectionColour = selectionColour,
                                 cursorColour = cursorColour,
                                 cursorOn = cursorOn.value,
+                                composing = composing,
+                                wraps = wraps,
                                 // Read here, in the draw phase, so a drag's fraction of a row costs a
                                 // redraw and nothing else.
                                 shiftPx = scrollShift.floatValue,
@@ -941,6 +921,8 @@ private fun DrawScope.drawFrame(
     selectionColour: Color,
     cursorColour: Color,
     cursorOn: Boolean = true,
+    composing: String = "",
+    wraps: Boolean = false,
     shiftPx: Float = 0f,
 ) {
     val cellWidth = metrics.width
@@ -965,25 +947,38 @@ private fun DrawScope.drawFrame(
         while (column < lastColumn) {
             val cell = line[column]
             val resolved = cell.style.resolve(foreground, background)
+            // The face this cell is drawn from, decided before the run is delimited rather than by the
+            // platform when the glyph turns out to be missing. See [terminalFaceFor].
+            val face = terminalFaceFor(cell.value, cell.combining)
             val glyphStyle = style.merge(
                 TextStyle(
                     color = resolved.foreground,
-                    fontWeight = if (cell.style.bold) FontWeight.Bold else null,
-                    fontStyle = if (cell.style.italic) FontStyle.Italic else null,
+                    // No weight and no slant on a symbol cell: one symbol cut is bundled, so asking for
+                    // bold would have Compose synthesise it by smearing the outline, and a synthesised
+                    // glyph is the one thing that can move off the cell this renderer keeps it on.
+                    fontWeight = if (face == TerminalFace.TEXT && cell.style.bold) FontWeight.Bold else null,
+                    fontStyle = if (face == TerminalFace.TEXT && cell.style.italic) FontStyle.Italic else null,
+                    fontFamily = face.family,
                     textDecoration = decorationFor(cell),
                 ),
             )
-            // A cluster the bundled face does not carry is drawn from a fallback face, at that face's
-            // own advance - which is not the cell's. Drawn as part of a run, it displaces every glyph
-            // after it by the difference, so the text slides along the row while the cursor stays where
-            // the grid puts it: the cursor is then not where it looks like it is. Ending the run at such
-            // a cluster puts it, and everything after it, back on its own cell. A cluster that measures
-            // one cell - which is every character of the bundled face - leaves the run whole, so a line
-            // of ordinary output is still the single draw call it was.
+            // A run is a stretch of cells drawn as one string, so it is a stretch of cells of one style
+            // *and* one face: the two faces are different typefaces at different advances, and a string
+            // drawn in one of them cannot carry a glyph that belongs to the other. The face is part of
+            // the question `joins` answers, which is why the predicate is asked about it here.
+            //
+            // The other half is why the run has to end at all. A cluster the run's face does not carry
+            // is drawn from a face further down the chain at that face's own advance, which is not the
+            // cell's: inside a run it displaces every glyph after it, so the text slides along the row
+            // while the cursor stays where the grid puts it, and the cursor is then not where it looks
+            // like it is. Ending the run at such a cluster puts it, and everything after it, back on its
+            // own cell. A cluster that measures one cell - which is every character of the face that
+            // draws it, now that a symbol cell names a face that has the glyph - leaves the run whole,
+            // so a line of ordinary output is still the single draw call it was.
             val end = glyphRunEnd(
                 from = column,
                 lastColumn = lastColumn,
-                sameStyle = { line[it].style == cell.style },
+                joins = { line[it].style == cell.style && terminalFaceFor(line[it].value, line[it].combining) == face },
                 fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
             )
             // A wide character's right half is a blank cell and belongs in that character's run. The
@@ -1061,6 +1056,22 @@ private fun DrawScope.drawFrame(
         )
     }
 
+    // The IME's provisional text, drawn where the cursor is because nowhere else can: the shell has not
+    // been told about it, so the grid does not carry it, and the field the keyboard is composing into
+    // is a pixel of transparent nothing. It is drawn under the cursor, so the hollow block sits on the
+    // first character of the word - which is what a terminal that echoed as you typed would show.
+    //
+    // Clipped to the row it starts on. It is one word and the window is many columns wide, so it fits
+    // almost always; a word longer than the remainder of its row would otherwise paint into the row
+    // below, and a provisional word has no more claim to the next row than an unbreakable token has.
+    composingPreview(composing, layout, wraps, maxRows)?.let { preview ->
+        val left = preview.column * cellWidth
+        val top = preview.row * cellHeight + shift
+        val glyphs = measurer.measure(AnnotatedString(preview.text), style.merge(TextStyle(color = foreground)))
+        clipRect(left, top, left + glyphs.size.width, top + cellHeight) {
+            drawText(glyphs, topLeft = Offset(left, top))
+        }
+    }
     if (cursorOn && frame.cursorVisible && layout.cursorRow in 0 until maxRows) {
         // A hollow block, so the character underneath stays legible - a filled one hides whatever the
         // cursor is on, which on a phone is exactly the character the user is trying to check.
@@ -1078,13 +1089,39 @@ private fun DrawScope.drawFrame(
 private const val CURSOR_STROKE = 2f
 
 /**
+ * The IME's provisional text and the cell it is drawn in, or null when there is nothing to draw.
+ *
+ * Three different situations with one answer. The keyboard may be composing nothing, which is every
+ * keyboard that types directly - the text was sent as it was typed. The display may be a screen some
+ * program painted positionally: `top`, `vim`, `nano` and [CC] address cells absolutely and leave the
+ * terminal's cursor wherever they last put it - [CC] parks it on the corner of its input box - so the
+ * cursor is not the insertion point, and drawing the user's half-typed word at it would put text in the
+ * middle of a panel. Or the cursor's row may be off screen, because the user has scrolled back into the
+ * history to read something.
+ *
+ * "The cursor is the insertion point" is exactly [wrapsForDisplay]'s question - a shell writing flowed
+ * output, where the cursor sits on the cell the next character will go into - so this shares that one
+ * answer instead of keeping a second predicate that could drift away from it.
+ */
+internal fun composingPreview(
+    composing: String,
+    layout: TerminalLayout,
+    wraps: Boolean,
+    maxRows: Int,
+): ComposingPreview? {
+    if (composing.isEmpty() || !wraps) return null
+    if (layout.cursorRow !in 0 until maxRows) return null
+    return ComposingPreview(row = layout.cursorRow, column = layout.cursorColumn, text = composing)
+}
+
+/** A cell of the layout and the provisional text drawn in it. */
+internal data class ComposingPreview(val row: Int, val column: Int, val text: String)
+
+/**
  * Half the blink period. 500 ms on, 500 ms off - close enough to xterm's 530 that it reads as a
  * terminal cursor rather than as something flashing for attention.
  */
 private const val CURSOR_BLINK_MS = 500L
-
-/** How long the view takes to slide sideways when the cursor runs past the edge of the window. */
-private const val PAN_FOLLOW_MS = 90
 
 private fun decorationFor(cell: TerminalCell): TextDecoration? = when {
     cell.style.underline && cell.style.strikethrough ->

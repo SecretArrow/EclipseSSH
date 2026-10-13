@@ -32,7 +32,7 @@ private const val TAB_WIDTH = 8
  * `scripts/check-doc-figures.sh` holds this constant against `versionName` in app/build.gradle.kts,
  * so a release bump cannot leave it behind.
  */
-const val TERMINAL_IDENTITY = "EclipseSSH(1.22.0)"
+const val TERMINAL_IDENTITY = "EclipseSSH(1.23.0)"
 
 // DECRQM's three answers: the mode is on, it is off, or this terminal has never heard of it.
 private const val MODE_SET = 1
@@ -188,6 +188,23 @@ data class TerminalFrame(
     /** Index into the whole buffer of `lines[0]`, so a selection can be addressed absolutely. */
     val firstLine: Int,
     val totalLines: Int,
+    /**
+     * Index just past the last line the *live* output reaches, which is where this window would end if
+     * the user were at the bottom.
+     *
+     * Not [totalLines], and the difference is the whole reason this field exists. The buffer is sized to
+     * the pty's height - the app-wide floor, 60 rows by default - and filled with blank lines from the
+     * start, so a session with five lines of output on it has `totalLines` 60 and a live end of 5. A
+     * reader that measures "how far behind the live output am I" against [totalLines] is therefore
+     * measuring against rows the shell has not written yet, and reports a large positive number for a
+     * viewport sitting at the bottom: the scrolled-back badge then draws over the grid permanently, and
+     * prints the buffer's un-inked tail as a count of lines below.
+     *
+     * Defaults to [totalLines], which is the same number for a frame cut from a buffer whose whole
+     * height is in use - the shape every hand-built frame in the tests has - so the buffer is the only
+     * caller that has to say otherwise, and it is the only one that knows.
+     */
+    val liveEnd: Int = totalLines,
     /** Row of the cursor within [lines], or -1 when the user has scrolled it out of view. */
     val cursorRow: Int,
     val cursorColumn: Int,
@@ -218,6 +235,15 @@ data class TerminalFrame(
      * the geometry carries the meaning and that re-wrapping would destroy it.
      */
     val positionalScreen: Boolean = false,
+    /**
+     * Whether this frame was built while a synchronized-output batch (`ESC [ ? 2026 h`) was open.
+     *
+     * A live frame carrying this is a screen the program has not finished painting, so it is not
+     * published: the reader keeps the previous complete screen until the batch closes. A frame built
+     * for a scrolled-back view is published regardless - the batch is about the live screen, and
+     * refusing to move the window under the user's finger would be a different bug.
+     */
+    val synchronizedOutput: Boolean = false,
     /** DECCKM. Decides whether an arrow key sends `ESC [ A` or `ESC O A`; see [TerminalKeys]. */
     val applicationCursorKeys: Boolean = false,
     /** DECKPAM. Some full-screen apps expect the keypad to send SS3 sequences. */
@@ -436,7 +462,25 @@ class AnsiTerminalBuffer(
     /** Set while the alternate screen is up; holds everything the primary screen needs back. */
     private var primary: PrimaryScreen? = null
 
+    /**
+     * The revision a frame carries, and the ordering every consumer of one compares.
+     *
+     * It advances on every mutation, including inside a synchronized-output batch, and that is
+     * deliberate: [TerminalLayoutKey] is built from it on the promise that two windows of one revision
+     * hold the same cells, so a batch that froze it would hand the view's layout memo a key that
+     * describes a screen the frame no longer holds. The batch is honoured where it is observable - the
+     * frame says the screen is unfinished and is not published - rather than by falsifying this number.
+     */
     private var revision = 0L
+
+    /**
+     * Whether a synchronized-output batch (`ESC [ ? 2026 h`) is open.
+     *
+     * The mode is a promise about what the reader sees: a program saying "do not show this until I am
+     * finished" wants the previous complete screen to stay up, and a frame published mid-batch would
+     * replace it with a half-painted one. So it is carried on the frame and honoured by the publisher.
+     */
+    private var synchronizedOutput = false
 
     /**
      * Replies the remote asked for (device attributes, cursor position) waiting to be written back.
@@ -504,6 +548,20 @@ class AnsiTerminalBuffer(
         wrapPending = false
         resetTabStops()
         revision++
+    }
+
+    /**
+     * Ends a synchronized-output batch from outside the stream.
+     *
+     * The only caller is the collector, when a session ends. A program killed between its `2026 h` and
+     * its `2026 l` - or a connection dropped in between - would otherwise leave the latch set, and the
+     * buffer outlives the session: a reconnect reuses it, and the new shell's output would then never
+     * be published. A batch is a promise from a program that is still running, so the session ending
+     * ends it.
+     */
+    @Synchronized
+    fun releaseSynchronizedOutput() {
+        synchronizedOutput = false
     }
 
     /**
@@ -607,15 +665,30 @@ class AnsiTerminalBuffer(
         // A painted screen is never re-wrapped by the view - see [wrapsForDisplay] - so a window fitted
         // for wrapping would cut `vim`'s screen in half. The rule is asked, not repeated.
         val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
-        val anchor = if (fitWidth > 0) {
-            // The cursor's line, or the last line there is; the fit decides where the window starts, so
-            // there is no lower bound to hold it away from the buffer's own beginning.
-            (cursorRow + 1).coerceIn(1, lines.size)
-        } else {
-            // Never above the cursor, and never so near the start that the window would begin before
-            // the buffer does - the lower bound is what stops a cursor on row 3 of a tall screen from
-            // pulling the window up past the first line the terminal ever wrote.
-            (cursorRow + 1).coerceIn(budget, lines.size)
+        // The window's lower edge, and it is deliberately not the cursor alone.
+        //
+        // A program that paints a screen can leave its cursor *above* its own last line, and every Ink
+        // TUI does: the cursor sits in an input box with a status line drawn under it. Anchoring on the
+        // cursor then puts that status line - and everything else below the cursor - past the bottom of
+        // the window, where no amount of scrolling reaches it, because the window is what the reader is
+        // looking through. Measured on a real [CC] session in tmux at 52x60 with a 30-row viewport: 52
+        // of 55 reads produced a window that ended on the cursor's line, leaving the app's status line
+        // and tmux's own permanently off-screen.
+        //
+        // So the bottommost inked line is a floor as well as the cursor. Both are wanted and the taller
+        // of the two wins; a cursor more than a windowful above the last line is then off-screen, which
+        // is what a real terminal does with a cursor that has been left behind by its own output.
+        val anchor = windowAnchorEnd().let { end ->
+            if (fitWidth > 0) {
+                // The fit decides where the window starts, so there is no lower bound to hold it away
+                // from the buffer's own beginning.
+                end.coerceIn(1, lines.size)
+            } else {
+                // Never so near the start that the window would begin before the buffer does - the lower
+                // bound is what stops a cursor on row 3 of a tall screen from pulling the window up past
+                // the first line the terminal ever wrote.
+                end.coerceIn(budget, lines.size)
+            }
         }
         val ceiling = scrollCeiling(anchor, budget, fitWidth)
         val offset = scrollOffset.coerceIn(0, ceiling)
@@ -645,6 +718,10 @@ class AnsiTerminalBuffer(
             lines = window,
             firstLine = first,
             totalLines = lines.size,
+            // The window's own lower edge at rest, which is the anchor: the frame is cut from `anchor`
+            // back by `offset`, so this is the line the live screen ends on. See [TerminalFrame.liveEnd]
+            // for why the buffer's line count cannot stand in for it.
+            liveEnd = anchor,
             cursorRow = if (relativeCursor in 0 until take) relativeCursor else -1,
             cursorColumn = cursorColumn.coerceIn(0, columns - 1),
             columns = columns,
@@ -655,6 +732,7 @@ class AnsiTerminalBuffer(
             title = title,
             alternateScreen = primary != null,
             positionalScreen = positionalScreen,
+            synchronizedOutput = synchronizedOutput,
             applicationCursorKeys = applicationCursorKeys,
             applicationKeypad = applicationKeypad,
             bracketedPaste = bracketedPaste,
@@ -864,6 +942,63 @@ class AnsiTerminalBuffer(
     private fun isBlank(line: List<TerminalCell>): Boolean = line.all { it == BLANK_CELL }
 
     /**
+     * One past the last line that paints anything, or 0 when nothing does.
+     *
+     * The floor [frame] puts under its window, so that a program whose cursor sits above its own last
+     * line still gets that line onto the reader's screen. A line carrying only a background colour counts
+     * as painting, which is what makes a `ESC [ 2 K` onto a coloured background keep the window over it.
+     *
+     * Cached on [revision] because the answer changes only when the buffer does, while [frame] asks for it
+     * on every build - a publish and a repaint of one mutation are two. The walk is from the bottom and
+     * stops at the first inked line, so its cost is the blank tail, not the buffer.
+     */
+    private fun bottomInkedEnd(): Int {
+        if (inkCacheRevision == revision) return inkCacheBottom
+        var index = lines.lastIndex
+        while (index >= 0 && isBlank(lines[index])) index--
+        inkCacheBottom = index + 1
+        inkCacheRevision = revision
+        return inkCacheBottom
+    }
+
+    private var inkCacheRevision = -1L
+    private var inkCacheBottom = 0
+
+    /**
+     * The window's lower edge, in lines: the end of the screen once it has scrolled, and otherwise the
+     * cursor's own line or the bottommost inked line, whichever is lower.
+     *
+     * The one expression of the anchor, because three things read it and they have to agree: [frame]
+     * places the window from it, [maxScrollOffset] measures the ceiling from it, and [cursorLine] hands
+     * it to `MainViewModel.pinScrollback`, which gives back the distance it moved so a scrolled-back view
+     * stays still. Two of them disagreeing is a window and a ceiling that do not match - a stored offset
+     * the frame then clamps away - or a view that slides while the user reads it.
+     *
+     * The two regimes are one question: *where does the live output end?* Before the screen has scrolled,
+     * the buffer's blank tail is rows the shell has not written yet - the pty is 60 rows tall and a fresh
+     * session has five lines on it - and the window has to end at the last of them, or the badge counts
+     * the unwritten rows as lines below and the view scrolls back into nothing. Once `lines.size` exceeds
+     * [rows] the tail is the *screen*, blank or not, and the live output reaches the end of the buffer.
+     *
+     * That second case is not a refinement, it is the whole of the divergence this rule was measured on.
+     * A screen that has scrolled and whose last lines are blank - `ESC [ 2 J` on a session with history,
+     * or any program that homes its cursor and repaints from the top - ends its output *above* the end of
+     * the buffer, so an ink floor leaves the window short and the whole screen is drawn one row lower
+     * than the reference draws it: the line that scrolled off is still on the reader's screen and the
+     * newest row of the program's own drawing is off it. Measured against tmux at 52x60 on
+     * `reproductions/cursor-moves.py`: reads 3 to 5 handed the view `[0, 60)` where tmux's screen is
+     * `[1, 61)`, and read 15 handed it `[90, 150)` where the screen is `[91, 151)` - the cursor reported
+     * one row low in every one of them.
+     *
+     * The cursor is not a bound of its own in the scrolled case, and does not need to be: the screen is
+     * the last [rows] lines and the cursor is always inside it, so the window that is the screen has the
+     * cursor in it - which is what the ink floor was added for, and it still does that job for the screen
+     * that has not scrolled yet.
+     */
+    private fun windowAnchorEnd(): Int =
+        if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())
+
+    /**
      * The viewport height the buffer is sized to, without building a frame to find out.
      *
      * Exists because reading it off [frame] was costing a whole viewport copy per call, and the two
@@ -878,11 +1013,11 @@ class AnsiTerminalBuffer(
      * How far back the view may scroll while showing [viewportRows] lines in a [windowColumns]-wide
      * window.
      *
-     * Measured to the cursor rather than to the end of the buffer, because [frame] anchors there: the
-     * distance that matters is from the cursor up to the first line of scrollback, and measuring to
-     * the buffer's last line instead would hand the view a range of offsets whose upper half draws
-     * exactly the same screen. A tall pty with a little output is where that shows - 960 offsets that
-     * all clamp to the top of the buffer is a scroll gesture that stops responding.
+     * Measured to the window's anchor rather than to the end of the buffer, because [frame] anchors
+     * there: the distance that matters is from the anchor up to the first line of scrollback, and
+     * measuring to the buffer's last line instead would hand the view a range of offsets whose upper
+     * half draws exactly the same screen. A tall pty with a little output is where that shows - 960
+     * offsets that all clamp to the top of the buffer is a scroll gesture that stops responding.
      *
      * [windowColumns] has to be the same width the frame was built with, and it is: the two share
      * [windowCeiling] rather than keeping the arithmetic twice. A view that could scroll to an offset
@@ -893,10 +1028,12 @@ class AnsiTerminalBuffer(
     fun maxScrollOffset(viewportRows: Int, windowColumns: Int = 0): Int {
         val budget = viewportRows.coerceIn(1, lines.size)
         val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
-        val anchor = if (fitWidth > 0) {
-            (cursorRow + 1).coerceIn(1, lines.size)
-        } else {
-            (cursorRow + 1).coerceIn(budget, lines.size)
+        val anchor = windowAnchorEnd().let { end ->
+            if (fitWidth > 0) {
+                end.coerceIn(1, lines.size)
+            } else {
+                end.coerceIn(budget, lines.size)
+            }
         }
         return scrollCeiling(anchor, budget, fitWidth)
     }
@@ -905,7 +1042,8 @@ class AnsiTerminalBuffer(
     fun lineCount(): Int = lines.size
 
     /**
-     * The line [frame] anchors its window at: the cursor's own line, or the last line there is.
+     * The line [frame] anchors its window at: the cursor's own line, or the bottommost inked line,
+     * whichever is lower - see [windowAnchorEnd] for why the second is in it.
      *
      * The frame's window *ends* here, at `cursorLine - offset`, whatever its start is: the fitted start
      * for a wrapped window, `cursorLine - offset - viewportRows` for an unwrapped one. So this is the
@@ -919,7 +1057,7 @@ class AnsiTerminalBuffer(
      * collector iteration, on the terminal's hot path.
      */
     val cursorLine: Int
-        @Synchronized get() = (cursorRow + 1).coerceIn(1, lines.size)
+        @Synchronized get() = windowAnchorEnd().coerceIn(1, lines.size)
 
     /** Whether a paste has to be wrapped in `ESC [ 200 ~` and `ESC [ 201 ~`. */
     @Synchronized
@@ -1268,8 +1406,8 @@ class AnsiTerminalBuffer(
         val private = prefix == '?'
         revision++
         when (final) {
-            'A' -> { setCursorRow(cursorRow - first); wrapPending = false }
-            'B', 'e' -> { setCursorRow(cursorRow + first); wrapPending = false }
+            'A' -> setCursorRow(cursorRow - first)
+            'B', 'e' -> setCursorRow(cursorRow + first)
             'C', 'a' -> setCursorColumn(cursorColumn + first)
             'D' -> setCursorColumn(cursorColumn - first)
             'E' -> { setCursorRow(cursorRow + first); setCursorColumn(0) }
@@ -1406,6 +1544,9 @@ class AnsiTerminalBuffer(
                 12 -> cursorBlink = enable
                 25 -> cursorVisible = enable
                 2004 -> bracketedPaste = enable
+                // DECSET 2026, synchronized output. The batch is held open until the reset; see
+                // [synchronizedOutput] for what "held" means for a frame.
+                2026 -> setSynchronizedOutput(enable)
                 // 1047 and 1048 are the two halves that 1049 does together; all three are accepted so
                 // an app using the older pair is not left drawing onto the primary screen.
                 1047, 1049 ->
@@ -1415,6 +1556,17 @@ class AnsiTerminalBuffer(
                 47 -> if (enable) enterAlternateScreen(withCursor = false) else leaveAlternateScreen(withCursor = false)
             }
         }
+    }
+
+    /**
+     * Opens or closes a synchronized-output batch, `ESC [ ? 2026 h` and `l`.
+     *
+     * Nothing is done to the grid here, and nothing needs to be: the batch is a statement about when
+     * the screen may be repainted, so the flag rides out on [TerminalFrame.synchronizedOutput] and the
+     * publisher is what holds the frame back. The revision goes on advancing, for the reason on it.
+     */
+    private fun setSynchronizedOutput(enable: Boolean) {
+        synchronizedOutput = enable
     }
 
     /**
@@ -1573,9 +1725,7 @@ class AnsiTerminalBuffer(
      * It is asked in order to decide what to send next, so the answer has to be true rather than
      * flattering: a mode reported as set is one a program will go on to use. Only modes this terminal
      * keeps a state for are reported as set or reset; everything else answers [MODE_UNRECOGNIZED],
-     * including 1048, which saves a cursor rather than switching anything. Measured on Claude Code's
-     * startup, reporting 2026 as set and reporting it unrecognized produce byte-identical output, so
-     * the reason for the honest answer is the protocol and not a reaction observed here.
+     * including 1048, which saves a cursor rather than switching anything.
      */
     private fun reportMode(mode: Int, private: Boolean) {
         val state = when {
@@ -1588,6 +1738,10 @@ class AnsiTerminalBuffer(
                 12 -> onOff(cursorBlink)
                 25 -> onOff(cursorVisible)
                 2004 -> onOff(bracketedPaste)
+                // Answered from the latch rather than claimed as supported: a program that asks and
+                // is told 1 goes on to wrap its repaint in a batch, which is the behaviour the latch
+                // exists for.
+                2026 -> onOff(synchronizedOutput)
                 // 47, 1047 and 1049 are one state here: enterAlternateScreen is what all three call,
                 // and reporting them apart would claim a distinction this terminal does not draw.
                 47, 1047, 1049 -> onOff(primary != null)
@@ -1768,15 +1922,42 @@ class AnsiTerminalBuffer(
     private fun osc(body: String): String = "$ESC]$body${ESC}\\"
 
     /**
-     * The two ways a cursor position is assigned, clamped on both ends.
+     * A *relative* vertical move - CUU, CUD, CNL, CPL, and the two-byte `ESC A`/`ESC B` - clamped by the
+     * screen and by the scrolling region.
      *
      * Every call site used to clamp for itself, in the one direction its own sequence moved in, and a
-     * parameter that reversed that direction slipped past the missing end. `cursorRow` is an array
-     * index into [lines] and the cost of getting it wrong is an exception, not a mis-drawn cell, so
-     * the bound belongs here rather than in eleven separate expressions.
+     * parameter that reversed that direction slipped past the missing end. `cursorRow` is an array index
+     * into [lines] and the cost of getting it wrong is an exception, not a mis-drawn cell, so the bound
+     * belongs here rather than in eleven separate expressions.
+     *
+     * The screen is the outer bound, and it is the one that was wrong: clamping against the whole buffer
+     * let an up-move leave the screen for the scrollback, where the next character printed was written.
+     * One row of history was corrupted, the character was invisible, and the row it belonged to was left
+     * as it was - and a full-screen program that homes to the top row and then steps up reaches this on
+     * its first frame. [setScreenRow] answers the other question - which row a program *names* - and is
+     * bounded by the margin only under DECOM; a relative move is bounded by the margin always, which is
+     * what tmux does and therefore what this emulator has to do with the sequences tmux composed.
+     *
+     * Both bounds are read from where the cursor *is*, not from where the move ends. A cursor below the
+     * region moving up stops at the region's top rather than at the screen's, and one above the region
+     * is bounded by the screen; the comparison is inclusive at the margin, so a cursor already *on* the
+     * region's top row moving up stays there and one on its bottom row moving down stays there too.
+     * Measured against tmux rather than read off the spec, because the cursor exactly at the margin is
+     * the case a reading is most likely to get wrong - and the markers that show it are each overwritten
+     * by the case that follows, so it took a fixture of its own to see them at all.
      */
     private fun setCursorRow(row: Int) {
-        cursorRow = row.coerceIn(0, lines.lastIndex)
+        val top = screenTop()
+        cursorRow = if (row < cursorRow) {
+            val floor = top + topMargin
+            if (cursorRow >= floor) row.coerceAtLeast(floor) else row.coerceAtLeast(top)
+        } else {
+            val ceiling = top + bottomMargin
+            if (cursorRow <= ceiling) row.coerceAtMost(ceiling) else row.coerceAtMost(lines.lastIndex)
+        }
+        // A move of any kind cancels the pending wrap, the same way [setCursorColumn] does for a
+        // horizontal one: the cell the cursor was left in is no longer where the next character goes.
+        wrapPending = false
         revision++
     }
 
@@ -1796,9 +1977,9 @@ class AnsiTerminalBuffer(
      * to the top-left on a screen it has nothing above is beginning a repaint, and `top`'s first frame
      * can be exactly that.
      *
-     * DECOM, DECSTBM and DECRC call [setScreenRow]/[setCursorRow] directly, because those move the
-     * cursor as a side effect of something else and a shell drawing a two-line prompt with
-     * `ESC 7`/`ESC 8` is not a program painting a screen.
+     * DECOM, DECSTBM and DECRC call [setScreenRow] directly, because those move the cursor as a side
+     * effect of something else and a shell drawing a two-line prompt with `ESC 7`/`ESC 8` is not a
+     * program painting a screen.
      */
     private fun addressScreenRow(row: Int) {
         val from = cursorRow
@@ -2308,6 +2489,9 @@ class AnsiTerminalBuffer(
         cursorColumn = 0
         wrapPending = false
         positionalScreen = false
+        // A soft reset ends any batch: the program that opened it is gone, and a latch left set would
+        // hold the next program's output back forever.
+        synchronizedOutput = false
         style = TerminalStyle()
         savedStyle = TerminalStyle()
         savedRow = 0

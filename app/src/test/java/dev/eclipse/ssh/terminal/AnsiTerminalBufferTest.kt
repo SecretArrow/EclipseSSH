@@ -20,6 +20,15 @@ private fun List<TerminalCell>.text(): String =
 private fun AnsiTerminalBuffer.backgrounds(row: Int): List<TerminalColor> =
     snapshot().lines[row].map { it.style.background }
 
+/**
+ * What an otherwise blank screen reads as when one cell of it carries a mark.
+ *
+ * The cursor-movement table clears the screen, moves the cursor, and prints one character, so the whole
+ * grid is that character's row: blank lines above it, spaces before it, and nothing after.
+ */
+private fun markedRow(row: Int, column: Int): String =
+    "\n".repeat(row) + " ".repeat(column) + "X"
+
 class AnsiTerminalBufferTest {
     @Test
     fun `ansi control sequences do not leak into plain terminal text`() {
@@ -376,6 +385,65 @@ class AnsiTerminalBufferTest {
         assertThat(buffer.snapshot().lines[0][3].value).isEqualTo('Q')
     }
 
+    @Test
+    fun `every cursor movement sequence lands on the cell it names`() {
+        // The family the bug report asks for by name - CUP/HVP, CUU/CUD/CUF/CUB, save and restore - plus
+        // the forms that share the dispatch, as one table rather than a test each: a sequence left out is
+        // then a missing row instead of a missing test. Each case homes the cursor to row 5 column 3
+        // (0-based 4,2), moves it, and prints a mark; the mark's cell is the answer.
+        val cases = listOf(
+            "$E[3A" to (1 to 2),          // up 3
+            "$E[A" to (3 to 2),           // up 1
+            "$E[0A" to (3 to 2),          // a parameter of zero means one
+            "$E[3B" to (7 to 2),          // down 3
+            "$E[B" to (5 to 2),           // down 1
+            "$E[4C" to (4 to 6),          // forward 4
+            "$E[C" to (4 to 3),           // forward 1
+            "$E[4D" to (4 to 0),          // back 4, stopping at the left margin
+            "$E[D" to (4 to 1),           // back 1
+            "$E[2E" to (6 to 0),          // next line, column 1
+            "$E[2F" to (2 to 0),          // previous line, column 1
+            "$E[7G" to (4 to 6),          // absolute column
+            "$E[7`" to (4 to 6),          // the same, spelled HPA
+            "$E[8d" to (7 to 2),          // absolute row
+            "$E[3;9H" to (2 to 8),        // CUP
+            "$E[3;9f" to (2 to 8),        // HVP, the other name for it
+        )
+        for ((sequence, cell) in cases) {
+            val buffer = AnsiTerminalBuffer(columns = 20, rows = 10)
+            buffer.feed("$E[2J$E[5;3H$sequence" + "X")
+            assertWithMessage("%s from 5,3", sequence.replace(E, "ESC"))
+                .that(buffer.plainText()).isEqualTo(markedRow(cell.first, cell.second))
+        }
+    }
+
+    @Test
+    fun `an up-move from the screen's top row cannot reach the scrollback`() {
+        // A relative move clamped against the whole buffer instead of the screen put the cursor above
+        // the screen - into the history - and the next character printed was written there. A row of
+        // history was corrupted, the character was invisible, and the row it belonged to was left as it
+        // was. A full-screen program that homes to the top row and then steps up reaches this at once.
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 4, scrollbackLimit = 50)
+        repeat(8) { buffer.feed("row $it\r\n") }
+        val screenTop = buffer.lineCount() - 4
+
+        buffer.feed("$E[1;1H$E[3AY")
+
+        assertThat(buffer.lineCount()).isEqualTo(screenTop + 4)
+        assertThat(buffer.snapshot().cursorRow).isAtLeast(screenTop)
+        assertThat(buffer.snapshot().lines[screenTop].text()).isEqualTo("Yow 5")
+    }
+
+    @Test
+    fun `a down-move from the last row stays on the last row`() {
+        val buffer = AnsiTerminalBuffer(columns = 10, rows = 4)
+
+        buffer.feed("$E[4;1H$E[9B" + "X")
+
+        assertThat(buffer.frame().cursorRow).isEqualTo(3)
+        assertThat(buffer.snapshot().lines[3].text()).isEqualTo("X")
+    }
+
     // --- The same final byte, a different question, when a prefix is present ---
 
     @Test
@@ -453,6 +521,70 @@ class AnsiTerminalBufferTest {
         buffer.feed("\n")
 
         assertThat(buffer.snapshot().lines[0].text()).isEqualTo("A")
+    }
+
+    @Test
+    fun `a frame built inside a synchronized output batch says the screen is unfinished`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        buffer.feed("$E[?2026habc")
+        val midBatch = buffer.frame()
+        buffer.feed("def$E[?2026l")
+        val closed = buffer.frame()
+
+        // The cells are in the grid either way - the batch is a promise about when they may be drawn,
+        // not about what the buffer holds - so the flag is what carries the promise to the publisher.
+        assertThat(midBatch.synchronizedOutput).isTrue()
+        assertThat(midBatch.lines[0].text()).isEqualTo("abc")
+        assertThat(closed.synchronizedOutput).isFalse()
+        assertThat(closed.lines[0].text()).isEqualTo("abcdef")
+    }
+
+    @Test
+    fun `a synchronized output batch does not hold the revision still`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // Deliberate, and the reason is on the field: TerminalLayoutKey is built from the revision on
+        // the promise that two windows of one revision hold the same cells, and the view memoizes the
+        // layout on it. Freezing the revision across a batch would break that promise and draw the new
+        // cells through the old row geometry - the left-arrow bug this buffer already has a test for.
+        // What the batch holds back is the frame, not the number.
+        buffer.feed("$E[?2026h")
+        val opened = buffer.frame().revision
+        buffer.feed("a")
+        val afterOne = buffer.frame().revision
+        buffer.feed("b")
+        val afterTwo = buffer.frame().revision
+
+        assertThat(afterOne).isGreaterThan(opened)
+        assertThat(afterTwo).isGreaterThan(afterOne)
+    }
+
+    @Test
+    fun `a reset ends a batch a program left open`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // A program that dies mid-batch would otherwise hold the screen back for the life of the
+        // session, with nothing able to clear it - the reset is the one thing that always arrives.
+        buffer.feed("$E[?2026hpartial")
+        buffer.feed("$E[!p")
+
+        assertThat(buffer.frame().synchronizedOutput).isFalse()
+    }
+
+    @Test
+    fun `the end of a session ends a batch too`() {
+        val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
+
+        // The case a reset cannot cover: the program was killed, or the link went, between its `h` and
+        // its `l`. Nothing arrives to close the batch, and the buffer is reused by the reconnect, so
+        // the collector is what ends it.
+        buffer.feed("$E[?2026hpartial")
+        assertThat(buffer.frame().synchronizedOutput).isTrue()
+
+        buffer.releaseSynchronizedOutput()
+
+        assertThat(buffer.frame().synchronizedOutput).isFalse()
     }
 
     @Test

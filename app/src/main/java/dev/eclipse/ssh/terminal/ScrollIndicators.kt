@@ -30,5 +30,12 @@ fun rowOverflow(scrollValue: Int, maxScrollValue: Int): RowOverflow =
  * why this is not a subtraction at the call site. The window is cut from the buffer by whoever asked
  * for the frame, so a tall window on a short buffer, or a frame built before the first line arrived,
  * subtracts to a negative; and a badge reading "-5 lines below" is not a state the user can be in.
+ *
+ * Measured to [TerminalFrame.liveEnd] rather than to [TerminalFrame.totalLines], which is the buffer's
+ * *height* and not the end of anything: a 60-row pty with five lines of output has 55 blank rows after
+ * the last one it has written, and counting those as lines below the window put a permanent "49 lines
+ * below" over the grid of a session that had nothing to scroll back into at all. At the bottom the
+ * window's own lower edge is the live end, so this is the scroll offset in lines - and only the
+ * offset, which is what the badge is trying to say.
  */
-fun TerminalFrame.linesBelow(): Int = (totalLines - (firstLine + lines.size)).coerceAtLeast(0)
+fun TerminalFrame.linesBelow(): Int = (liveEnd - (firstLine + lines.size)).coerceAtLeast(0)

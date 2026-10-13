@@ -2315,6 +2315,11 @@ class MainViewModel @Inject constructor(
             // anything drawing a multi-line prompt, waits for a reply that never comes. Cheap insurance
             // against that ever becoming reachable again.
             if (buffer.responder === responder) buffer.responder = null
+            // A batch is a promise from a program that is still running, and this one is not. The
+            // buffer outlives the session - a reconnect reuses it - so a latch left set here would hold
+            // the new shell's output back for as long as it was connected. See
+            // [AnsiTerminalBuffer.releaseSynchronizedOutput].
+            buffer.releaseSynchronizedOutput()
             // A truncated codepoint at the end of the stream becomes one replacement character
             // instead of vanishing, so a session cut mid-character still ends with what arrived.
             val tail = decoder.flush()
@@ -2624,8 +2629,11 @@ class MainViewModel @Inject constructor(
         // After the write, not inside it: `update` may run its lambda more than once, and a note
         // written twice would read as a screen that blanked twice. Only the live view is recorded -
         // a scrolled-back window is a function of where the finger went, and a window panned past the
-        // end of the text is empty for reasons that have nothing to do with a session. See [renderAudits].
-        if (offset == 0 && isDisplaying(sessionKey, buffer)) {
+        // end of the text is empty for reasons that have nothing to do with a session. A frame held
+        // back by a synchronized-output batch is not recorded either: nothing was published, and the
+        // audit would otherwise read the hold as output that arrived without a repaint, which is the
+        // very thing it exists to report as a fault.
+        if (offset == 0 && !frame.synchronizedOutput && isDisplaying(sessionKey, buffer)) {
             terminalFrames.value[sessionKey]?.let { renderAudit(sessionKey).onFrame(sampleOf(it)) }
         }
     }
@@ -5841,6 +5849,12 @@ internal fun newerTerminalFrame(published: TerminalFrame?, built: TerminalFrame)
  * one. Nothing is lost by dropping it: the scroll that superseded it has already published a frame of
  * its own, and when the user scrolls back to where the collector's frame was built, that offset is the
  * current one again and the frame is published like any other.
+ *
+ * The third answer is [TerminalFrame.synchronizedOutput]: a live frame built inside a synchronized-output
+ * batch is a screen the program has not finished painting, and publishing it is the tearing the batch
+ * exists to prevent. It is dropped for the same reason as the stale one, and the tick that lands after
+ * the batch closes publishes the finished screen. Scrolled-back frames are exempt, so the window still
+ * follows the user's finger through a batch.
  */
 internal fun publishableFrame(
     published: TerminalFrame?,
@@ -5848,7 +5862,11 @@ internal fun publishableFrame(
     builtOffset: Int,
     currentOffset: Int,
 ): TerminalFrame? =
-    if (builtOffset != currentOffset) null else newerTerminalFrame(published, built)
+    when {
+        builtOffset != currentOffset -> null
+        built.synchronizedOutput && builtOffset == 0 -> null
+        else -> newerTerminalFrame(published, built)
+    }
 
 /**
  * Where a scrolled-back view has to move to stay on the same text after [growth] lines arrived below it.
