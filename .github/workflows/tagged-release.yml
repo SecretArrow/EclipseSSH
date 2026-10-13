@@ -106,6 +106,14 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify the restored keystore is the canonical one
+        # Before anything is built. `verify-release-signer.sh` near the end of
+        # this job catches a wrong key from the finished APK; this catches it from
+        # the keystore, so a tag signed with the wrong secret fails in a minute
+        # rather than after a full four-ABI build. v1.5.0 is why both exist.
+        if: steps.signing.outputs.signed == 'true'
+        run: testing/verify-keystore.sh keystore/eclipse-release.jks keystore.properties
+
       - name: Verify the build is from a clean tag
         run: |
           set -euo pipefail
