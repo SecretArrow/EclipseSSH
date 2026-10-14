@@ -645,7 +645,7 @@ class AnsiTerminalBuffer(
     var themeColors: (() -> TerminalColors?)? = null
 
     init {
-        repeat(rows) { lines += blankLine() }
+        repeat(rows) { lines += defaultLine() }
         resetTabStops()
     }
 
@@ -655,7 +655,7 @@ class AnsiTerminalBuffer(
         val wasFullRegion = topMargin == 0 && bottomMargin == previousRows - 1
         columns = newColumns.coerceIn(TERMINAL_COLUMN_RANGE)
         rows = newRows.coerceIn(TERMINAL_ROW_RANGE)
-        while (lines.size < rows) lines += blankLine()
+        while (lines.size < rows) lines += defaultLine()
         trimBlankRowsForShrink(lines, cursorRow)
         normalizeScreen(lines)
         // A region that covered the whole screen still covers it at the new height. One that did not
@@ -672,7 +672,7 @@ class AnsiTerminalBuffer(
         // `vim` is open otherwise dropped the user back onto a shell screen still laid out for the
         // old width, with every wrapped line folded at the wrong column.
         primary?.let { saved ->
-            while (saved.lines.size < rows) saved.lines += blankLine()
+            while (saved.lines.size < rows) saved.lines += defaultLine()
             trimBlankRowsForShrink(saved.lines, saved.cursorRow)
             normalizeScreen(saved.lines)
         }
@@ -1784,6 +1784,26 @@ class AnsiTerminalBuffer(
         modifyOtherKeys = level.coerceIn(ModifyOtherKeys.OFF, ModifyOtherKeys.ALL)
     }
 
+    /**
+     * `ESC [ ? 47 h`, `ESC [ ? 1047 h` and `ESC [ ? 1049 h`: a second screen, blank, to paint over.
+     *
+     * Three things about the switch are measured against tmux 3.5a rather than assumed, and each of
+     * them is a way a hand-written switch gets it wrong:
+     *
+     * - **The new screen is [defaultLine], not the pen.** A cell a screen switch creates takes no
+     *   background where a cell an erase vacates takes the pen's, and the measurement is on that
+     *   function. Getting it wrong is worse here than anywhere else, because tmux believes those cells
+     *   are default and never repaints them: the tint stays for the life of the screen.
+     * - **The cursor is not moved.** `ESC [ 3 ; 5 H` then any of the three leaves the cursor at row 2,
+     *   column 4; a program that switches and paints without positioning first starts where the shell
+     *   left off. The old code reset it to 0,0.
+     * - **The scroll region is.** CUP to a row below the primary's region lands on that row rather
+     *   than being clamped into it, so the region does not survive the switch.
+     *
+     * [withCursor] is 1049's extra half, and it is the only one that has any: it saves the cursor and
+     * the pen on the way in, and [leaveAlternateScreen] puts them back. 47 and 1047 are one screen's
+     * worth of state swapped for another with the cursor and the pen left alone - see that function.
+     */
     private fun enterAlternateScreen(withCursor: Boolean) {
         if (primary != null) return
         if (withCursor) saveCursor()
@@ -1795,9 +1815,7 @@ class AnsiTerminalBuffer(
             bottomMargin = bottomMargin,
         )
         lines = ArrayList(rows)
-        repeat(rows) { lines += blankLine() }
-        cursorRow = 0
-        cursorColumn = 0
+        repeat(rows) { lines += defaultLine() }
         wrapPending = false
         positionalScreen = false
         topMargin = 0
@@ -1816,16 +1834,30 @@ class AnsiTerminalBuffer(
     private fun leaveAlternateScreen(withCursor: Boolean) {
         val saved = primary ?: return
         primary = null
+        // Where the cursor is in *screen* rows on the screen being left, read before the swap. The
+        // alternate screen is exactly [rows] tall, so its index is already one; the primary's is an
+        // index into a list that may carry scrollback, which is why the two cannot be interchanged.
+        val screenRow = cursorRow
+        val screenColumn = cursorColumn
         lines = saved.lines
         // The screen may have been resized while the alternate one was up; resize() keeps the stored
         // lines in step, but a fresh height still has to be topped up here.
-        while (lines.size < rows) lines += blankLine()
+        while (lines.size < rows) lines += defaultLine()
         trimBlankRowsForShrink(lines, saved.cursorRow)
         normalizeScreen(lines)
         topMargin = saved.topMargin.coerceIn(0, rows - 1)
         bottomMargin = saved.bottomMargin.coerceIn(topMargin, rows - 1)
-        cursorRow = saved.cursorRow.coerceIn(0, lines.lastIndex)
-        cursorColumn = saved.cursorColumn.coerceIn(0, columns - 1)
+        // 1049 puts back the cursor and the pen it saved on the way in. 47 and 1047 do neither: they
+        // are one value shared by both screens, so where the alternate screen left the cursor and the
+        // pen is where the primary resumes. Measured - a colour set inside the alternate screen is
+        // still in force after `ESC [ ? 1047 l`, and the cursor keeps the column it was moved to
+        // there, while after `ESC [ ? 1049 l` both are the ones from before the switch.
+        if (withCursor) {
+            restoreCursor()
+        } else {
+            setScreenRow(screenRow.coerceIn(0, rows - 1))
+            setCursorColumn(screenColumn)
+        }
         wrapPending = false
         positionalScreen = false
         // The program that had the screen is gone, and whatever it turned on went with it. A program
@@ -1834,7 +1866,6 @@ class AnsiTerminalBuffer(
         // primary screen's own are what the shell gets back.
         mouseModes = emptySet()
         keyboardFlags = primaryKeyboardFlags
-        if (withCursor) restoreCursor()
         markDamageAll()
     }
 
@@ -2673,12 +2704,14 @@ class AnsiTerminalBuffer(
 
     private fun reset() {
         primary = null
-        // The style first: [blankLine] erases with the current background (BCE), and a reset is a
-        // return to the default one rather than a fill with whatever the last program left behind.
+        // A reset is a return to the default state, and that includes the screen's fill: [defaultLine]
+        // is what a screen nothing has painted yet carries, so a reset screen does not keep whatever
+        // background the last program left behind. The style is reset with it, so every write after
+        // this starts from the default pen.
         style = TerminalStyle()
         savedStyle = TerminalStyle()
         lines = ArrayList(rows)
-        repeat(rows) { lines += blankLine() }
+        repeat(rows) { lines += defaultLine() }
         cursorRow = 0
         cursorColumn = 0
         wrapPending = false
@@ -2718,7 +2751,21 @@ class AnsiTerminalBuffer(
         revision++
     }
 
-    private fun blankLine() = MutableList(columns) { eraseBlank() }
+    /**
+     * A row of cells for a program to paint over: a screen it has just switched to, or a line a
+     * resize has just added.
+     *
+     * Default cells, not [eraseBlank]. The two fills are different operations and tmux 3.5a fills
+     * them differently, measured: a cell an erase, a scroll, an insert or a delete *vacates* takes
+     * the pen's background, and a cell a screen switch or a resize *creates* takes none. Entering the
+     * alternate screen with `ESC [ 41 m` in force leaves a pane with no background on it, and so does
+     * growing a pane from 10x3 to 10x6 or to 16x3 - the capture carries `ESC [ 49 m` where the line
+     * was padded and nothing at all for the rows below it. Filling either with the pen invents a
+     * colour the program never asked for, and on the alternate screen it is invisible to the fix
+     * afterwards: tmux believes those cells are default, so it never repaints them and the tint stays
+     * for as long as the screen does.
+     */
+    private fun defaultLine() = MutableList(columns) { BLANK_CELL }
 
     /**
      * Fits the *screen* to the current width, and deliberately does not touch the scrollback.
@@ -2741,7 +2788,10 @@ class AnsiTerminalBuffer(
     }
 
     private fun normalizeLine(line: MutableList<TerminalCell>) {
-        while (line.size < columns) line += eraseBlank()
+        // Padding a line to the width is a resize, and a resize creates cells rather than vacating
+        // them, so these take no background - measured: growing a pane with `ESC [ 41 m` in force
+        // leaves the added columns unpainted. See [defaultLine].
+        while (line.size < columns) line += BLANK_CELL
         while (line.size > columns) line.removeAt(line.lastIndex)
         // A truncation can take a wide character's right half off the end of the line, which leaves the
         // glyph drawn across the two cells of whatever comes after it in the renderer's run.

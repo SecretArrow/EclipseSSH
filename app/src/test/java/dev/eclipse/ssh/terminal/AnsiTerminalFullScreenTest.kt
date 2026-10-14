@@ -79,8 +79,12 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3, scrollbackLimit = 20)
         buffer.feed("primary\n")
 
+        // The switch does not move the cursor. Measured against tmux 3.5a: `primary\n`, then
+        // `ESC [ ? 47 h`, then `alt` reads `alt` on the *second* row, because that is where the
+        // newline left the cursor. 47 and 1047 do not save it the way 1049 does, so there is nothing
+        // for the way out to put back either.
         buffer.feed("${ESCAPE}[?47halt")
-        assertThat(buffer.plainText()).isEqualTo("alt")
+        assertThat(buffer.plainText()).isEqualTo("\nalt")
 
         buffer.feed("${ESCAPE}[?47l")
         assertThat(buffer.plainText()).isEqualTo("primary")

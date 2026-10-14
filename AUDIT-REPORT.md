@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §109, *The replay harness could not see a colour, and the erase families cut wide characters*; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before it; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before it; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11954,3 +11954,51 @@ that consistently painted the wrong palette entry would pass. The four wide-char
 measurements of one oracle on one host, and the split-half rule is a choice between two emulators rather
 than a measurement of either. And the harness's read boundaries are its own: it replays a recording of a
 tmux session, so a write split differently over SSH is still a case only the unit suite can reach.
+
+## 110. The alternate screen came up tinted, and the switch moved the cursor the program had parked
+
+§109 widened the harness to read backgrounds, and the audit it was written for asked a narrower question
+than it should have: *do the paths that build a blank use the pen?* They all did. Asking what the pen
+should be in each of them is the question that had an answer, and two of those paths were wrong in the
+opposite direction from the one being hunted.
+
+**A cell a screen switch creates is not a cell an erase vacates.** Entering the alternate screen with
+`ESC [ 41 m` in force filled all eight rows from the pen, and tmux 3.5a fills them with nothing:
+`capture-pane -p -e` on the same bytes is empty, with no `ESC [ 41 m` on it at all. The same holds for a
+resize - growing a pane from 10x3 to 10x6, or from 10 to 16 columns, leaves the added rows and columns
+unpainted and writes `ESC [ 49 m` where the line that was already there was padded. So the rule is not
+"every blank is the pen's"; it is that an erase, a scroll, an insert and a delete *vacate* cells and take
+the pen (that is BCE, and `bce-erase.raw` pins it), while a screen switch and a resize *create* them and
+take none.
+
+That distinction matters more than it looks, because of how tmux talks to a client. tmux's grid says
+those cells are default, so tmux never sends them: a fill from the pen is not corrected on the next
+repaint, it stands for the life of the screen. On a phone this is the shape that gets reported as "the
+screen went red after I quit the editor" - the shell's own prompt colour, inherited by a full-screen
+program's blank screen and left behind on the way out. `defaultLine` is the fill for the three places
+that create rows and for the padding `normalizeLine` does, and `eraseBlank` is untouched everywhere it
+was already right.
+
+**The switch does not move the cursor, and 47 and 1047 do not save it either.** `ESC [ 3 ; 5 H` then any
+of `ESC [ ? 47 h`, `1047 h` or `1049 h` leaves tmux's cursor at row 2, column 4 - a program that switches
+and paints without positioning first starts where the shell left off, and this emulator reset it to 0,0.
+The three sequences then part company on the way out, measured on the same pane:
+
+- `1049` saves the cursor and the pen on the way in and restores both. A colour set inside the alternate
+  screen is gone after `ESC [ ? 1049 l`; the pen from before the switch is back.
+- `47` and `1047` are one value shared by the two screens. A colour set inside the alternate screen is
+  *still in force* after `ESC [ ? 1047 l`, and the cursor keeps the column it was moved to there. Putting
+  the primary's saved position back - which is what this emulator did for all three - is a program's next
+  write landing rows away from where it meant it.
+
+The scroll region is the third thing the switch resets, and the one case where the old code was already
+right: a CUP to a row below the shell's region lands on that row rather than being clamped into it, so
+the alternate screen starts with no region at all. That is now measured rather than assumed.
+
+**What this does not claim.** The two fill rules are measurements of one oracle on one host; the resize
+half of it cannot be replayed through the differential harness at all, because that harness fixes the
+pane size before the recording starts, so `AlternateScreenSwitchTest` states it against a direct
+`resize-window` capture instead and the fixture covers the switch. Nothing here is compared for
+foregrounds or for the colours themselves, as §109 says. And the switch's other state - mouse modes, the
+keyboard flags, `modifyOtherKeys` - is not touched by this pass, beyond the keyboard flags the code
+already put aside.

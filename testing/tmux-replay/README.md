@@ -55,6 +55,16 @@ python3 mkframes.py --escapes reproductions/wide-boundaries.raw /tmp/wide.frames
 python3 mkframes.py --escapes reproductions/bce-erase.raw /tmp/bce.frames --chunk 7
 ./replay.sh /tmp/bce.frames --cols 20 --rows 8 --attrs
 
+# what a screen switch does to the screen, the cursor and the pen. 47 and 1047 share both, 1049 saves
+# and restores them, and none of the three moves the cursor. This one ends on the alternate screen,
+# which is the only place a switch's fill can be seen - leaving discards it.
+python3 mkframes.py --escapes reproductions/screen-fill.raw /tmp/fill.frames --chunk 7
+./replay.sh /tmp/fill.frames --cols 20 --rows 8 --attrs
+
+# and what the way out puts back, which needs the primary screen visible, so this one ends there.
+python3 mkframes.py --escapes reproductions/screen-switch.raw /tmp/switch.frames --chunk 7
+./replay.sh /tmp/switch.frames --cols 20 --rows 8 --attrs
+
 # a synchronized-output batch tmux composed itself. Both halves are needed: `sync` in the terminal
 # features, because tmux 3.5a never asks its terminal about 2026, and `--answer`, so tmux is not on its
 # fallback path. A recording made without them contains no `2026 h`/`l` at all, and replaying it proves
@@ -145,6 +155,8 @@ implemented, which is what makes it a gate rather than a decoration. Both are re
 |---|---|---|
 | `reproductions/wide-boundaries.raw`, 20x18, 95 reads | DIVERGES - 2 rows, both `0123 67` where tmux has `012367` and `0123中67`: a delete on a wide character removed one cell and left a blank | IDENTICAL |
 | `reproductions/bce-erase.raw`, 20x8, 22 reads | DIVERGES - 3 rows of background: an erase, a scroll and an insert filled with a default cell where tmux filled with the pen's | IDENTICAL |
+| `reproductions/screen-fill.raw`, 20x8, 17 reads | DIVERGES - 8 rows of background and one ghost: the alternate screen was filled from the pen where tmux fills it with nothing, and the switch reset the cursor to 0,0 | IDENTICAL |
+| `reproductions/screen-switch.raw`, 20x8, 15 reads | DIVERGES - 2 rows and the cursor: 47 and 1047 put the primary's saved cursor back where tmux keeps the alternate screen's | IDENTICAL |
 
 Real Claude Code in tmux, 52x60, every prefix checked with `--bisect --step 1`, rows and cursor both:
 
@@ -179,6 +191,16 @@ one. It covers a delete on each half and on an ordinary cell, an insert on each 
 whose range does or does not cover the whole pair. Every rule it encodes is written down with the
 measurement that produced it in `WideCharacterBoundaryTest`, which is where a reader looking for "what
 should this do" should go.
+
+`bce-erase.raw` and the two `screen-*` fixtures are the same rule seen from both sides, and they are the
+reason `--attrs` exists. A cell an erase, a scroll, an insert or a delete *vacates* takes the pen's
+background; a cell a screen switch or a resize *creates* takes none. Filling either with the other is
+invisible to a text diff - the glyphs are the same either way - and on the alternate screen it is
+permanent, because tmux believes those cells are default and never repaints them. The switch fixtures
+also pin the cursor and the pen across `47`, `1047` and `1049`: measured, `1049` saves both on the way in
+and puts them back on the way out, `47` and `1047` are one value shared by the two screens, and none of
+the three moves the cursor. `AlternateScreenSwitchTest` is where each of those is stated with the
+measurement behind it.
 
 ## What a batch looks like on the wire
 

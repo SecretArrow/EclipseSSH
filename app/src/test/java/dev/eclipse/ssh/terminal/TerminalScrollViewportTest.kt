@@ -476,7 +476,11 @@ class TerminalScrollViewportTest {
         val wide = "top - 12:04:01 up 3 days, 4:12, 1 user, load average: 0.04 0.10 0.09"
         val buffer = session(columns = 200)
         buffer.feed("$wide\r\n$wide\r\n$wide\r\n")
-        buffer.feed("\u001b[?1049h")
+        // `ESC [ H` because a program that paints its own screen homes the cursor before its first
+        // paint; the switch itself does not move it, which is measured against tmux 3.5a. Without the
+        // home the two lines below would land under the shell's three, and the window - which ends at
+        // the cursor - would start on a blank row.
+        buffer.feed("\u001b[?1049h\u001b[H")
         buffer.feed("$wide\r\n$wide\r\n")
 
         val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
