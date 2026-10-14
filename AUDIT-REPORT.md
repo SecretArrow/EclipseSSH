@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before it; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before it; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12425,3 +12425,72 @@ model are ignored on both sides by decision, so a program using SGR 5 or 6 (blin
 (overline), 58 or 59 (underline colour) or a `:n` underline style is not compared on them; that blind
 spot is now written down in `griddiff.py` and in the harness README rather than left to be discovered.
 And this is still a statement about the grid: a green replay is not a green screen.
+
+---
+
+## 118. A shell can say which line its own prompt is on, and the marks now move with the lines they describe
+
+**What the sequence says, and what this terminal keeps of it.** A shell that has been taught to announce
+itself sends `OSC 133 ; A` before printing a prompt, `B` after printing it, `C` when it accepts the
+command line, and `D ; <status>` when the command finishes. None of that is about the grid: the letters
+carry no glyph, no colour and no cell, and a terminal that ignored the whole family would draw exactly
+the same screen. What they carry is *which line the cursor was on when each one arrived*, and that is
+the whole of the record kept here - four kinds as a set, the column `B` arrived at, and the status `D`
+carried. A line that a shell said nothing about holds null, which is the ordinary case: every shell
+that has not been configured to announce itself leaves a screen full of nulls.
+
+**Why the mark cannot ride on a cell.** §115 put a hyperlink on the cell, and its comment argues the
+case for doing that rather than keeping a table of runs: every operation that moves a cell already
+copies cells, so a fact stored on the cell needs no second structure kept in step. The same argument
+would put a prompt mark on the cell, and it fails here for a reason the hyperlink case does not have.
+A shell redraws its prompt *in place* on every keystroke - `readline` rewrites the line from column 0 -
+so a mark riding on column 0 of the prompt row would be written over by the very redraw it describes,
+and would be gone before the user pressed Enter. The mark belongs to the line, so it is stored per line:
+a second `ArrayList` beside `lines`, one entry each, the mark or null.
+
+**The lockstep, in one place rather than ten.** A parallel list is only correct while it stays exactly as
+long as `lines`, and the buffer rearranges `lines` in ten places: the two scrolls (`scrollRegionUp` in
+region and whole-screen, `scrollRegionDown`), `trimScrollback`, `ESC [ 3 J`, `ESC [ 2 J`'s and
+`ESC [ 1 J`'s full-row fills, `IL`, `DL`, and the three that replace the list outright (entering the
+alternate screen, leaving it, and a reset) plus `resize`. Every one of them now goes through
+`insertLine`/`appendDefaultLine`/`dropLine`/`blankLine`, which touch both lists in the same call, rather
+than through `lines` directly - so the rule is stated once and the ten call sites cannot each get it
+right or wrong on their own. `resize`'s shrink path needed the pair too: `trimBlankRowsForShrink` takes
+the marks list alongside the lines and drops the last of each together.
+
+**The rules that were chosen, and the ones refused.** `A` and `B` usually land on one line, because a
+one-line prompt is printed on one line; they merge into one mark carrying both kinds, and a later mark's
+column or status wins while a later mark that has neither leaves the earlier one's alone. The extension
+points around `133` - `P`, `k`, `s`, `i` and anything else - are refused rather than guessed at: they are
+open-ended, and a terminal that invented a meaning for one would be reporting a mark the shell never
+made. A bare `D` is kept as *no* status and not as zero, because a reader that reported a failure as a
+success is worse than one that reported nothing. `C`'s column is not kept at all: a shell may or may not
+print a newline between the command it accepted and the output it is about to print, so the column the
+mark arrives at says nothing about where the output begins - which is not true of `B`'s column, where
+the cursor's position is exactly the end of the prompt. And a whole-line erase drops the mark while a
+partial one keeps it: `ESC [ K` clears from the cursor rightward and leaves the prompt the shell printed
+at the start of the line standing, so the line is still the prompt's line, whereas `ESC [ 2 K` leaves
+nothing that the mark could be about.
+
+**A mark is a new frame but not a repaint.** The mark is part of what the screen *reports*, so it belongs
+in `TerminalFrame`'s hand-written `equals`/`hashCode` pair - and, because a new constructor property
+belongs in both, in `TerminalFrameEqualityTest`'s enumeration of "every other field still decides
+identity". It is deliberately not part of the layout key, and it raises no damage: no cell changed, so
+the renderer has nothing to erase, and both halves of that are asserted rather than assumed.
+
+**The gate.** Twenty-two new tests. One per parse branch (each of the four letters, a bare `D`, a `D`
+with a status and a message after it, a status that is not a number, the four extension letters, an empty
+payload, a payload with no separator at all) and one per mutation site above (both scrolls, the trim, both
+whole-screen erases, the three `ESC [ K` modes, `IL` then `DL` round-tripping the marks back, the
+alternate screen in and out, a reset, a grow, and a shrink that discards a blank row and the status on
+it), plus a drive that feeds all of them in sequence and asks after each step that the frame's marks are
+one per line of the frame. The suite is 628 methods, green, up from 606. The other half of the gate is
+the harness: this change touches the emulator's core, so all nine fixtures and both recorded streams were
+replayed again with `--attrs` - every one IDENTICAL, which is the evidence that not one cell moved.
+
+**What this does not claim.** Nothing acts on a mark yet. The terminal records them and reports them; no
+row is coloured, nothing jumps to a prompt, and the review surface that will read them is a later change.
+A mark is not persisted: it lives in the buffer with the lines, so a session that ends takes its marks
+with it and a reconnect starts empty. And a shell that does not announce itself is not detected or
+inferred - the terminal does not guess a prompt's line from the text on it, which would be inventing a
+mark the shell never made.

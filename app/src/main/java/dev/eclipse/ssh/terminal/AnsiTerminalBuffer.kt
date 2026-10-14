@@ -226,6 +226,18 @@ enum class TerminalCursorShape { BLOCK, UNDERLINE, BAR }
  */
 data class TerminalFrame(
     val lines: List<List<TerminalCell>>,
+    /**
+     * What the shell said about each line of [lines], one entry per line and in the same order, or null
+     * for a line it said nothing about.
+     *
+     * Window-aligned, like [lines], so a reader indexes the two together and a mark cannot be attributed
+     * to a row that has since moved out from under it. A shell that never announces itself leaves this
+     * full of nulls, which is the ordinary case rather than an error.
+     *
+     * Deliberately not part of the layout key: a mark changes nothing about where a row goes or how wide
+     * it is, so a screen that gains a prompt mark is not a screen the view has to lay out again.
+     */
+    val promptMarks: List<PromptMark?> = emptyList(),
     /** Index into the whole buffer of `lines[0]`, so a selection can be addressed absolutely. */
     val firstLine: Int,
     val totalLines: Int,
@@ -394,6 +406,7 @@ data class TerminalFrame(
         if (this === other) return true
         if (other !is TerminalFrame) return false
         return lines == other.lines &&
+            promptMarks == other.promptMarks &&
             firstLine == other.firstLine &&
             totalLines == other.totalLines &&
             liveEnd == other.liveEnd &&
@@ -427,6 +440,7 @@ data class TerminalFrame(
     /** The same fields as [equals], in the same order - see there for why it is not generated. */
     override fun hashCode(): Int {
         var result = lines.hashCode()
+        result = 31 * result + promptMarks.hashCode()
         result = 31 * result + firstLine
         result = 31 * result + totalLines
         result = 31 * result + liveEnd
@@ -480,6 +494,19 @@ class AnsiTerminalBuffer(
     private val scrollbackLimit: Int = MAX_SCROLLBACK,
 ) {
     private var lines = ArrayList<MutableList<TerminalCell>>()
+
+    /**
+     * One entry per line of [lines]: what the shell said about that line, or null.
+     *
+     * Kept in lockstep with [lines], and that lockstep is the whole of its cost. Every operation that
+     * adds, drops or moves a line has to move this too, so they all go through [insertLine] and
+     * [dropLine] instead of touching [lines] directly - one place to get right rather than ten.
+     *
+     * A mark belongs to a *line* rather than to a cell, which is why it is not a field on
+     * [TerminalCell] the way [TerminalCell.hyperlink] is. A shell redraws its prompt in place on every
+     * keystroke, so a mark riding on column 0 would be written over by the very redraw it describes.
+     */
+    private var marks = ArrayList<PromptMark?>()
     private var cursorRow = 0
     private var cursorColumn = 0
 
@@ -703,7 +730,10 @@ class AnsiTerminalBuffer(
     var themeColors: (() -> TerminalColors?)? = null
 
     init {
-        repeat(rows) { lines += defaultLine() }
+        repeat(rows) {
+            lines += defaultLine()
+            marks += null
+        }
         resetTabStops()
     }
 
@@ -713,8 +743,8 @@ class AnsiTerminalBuffer(
         val wasFullRegion = topMargin == 0 && bottomMargin == previousRows - 1
         columns = newColumns.coerceIn(TERMINAL_COLUMN_RANGE)
         rows = newRows.coerceIn(TERMINAL_ROW_RANGE)
-        while (lines.size < rows) lines += defaultLine()
-        trimBlankRowsForShrink(lines, cursorRow)
+        while (lines.size < rows) appendDefaultLine()
+        trimBlankRowsForShrink(lines, marks, cursorRow)
         normalizeScreen(lines)
         // A region that covered the whole screen still covers it at the new height. One that did not
         // is clamped instead, so a shrink cannot leave a margin pointing past the last row - every
@@ -730,8 +760,11 @@ class AnsiTerminalBuffer(
         // `vim` is open otherwise dropped the user back onto a shell screen still laid out for the
         // old width, with every wrapped line folded at the wrong column.
         primary?.let { saved ->
-            while (saved.lines.size < rows) saved.lines += defaultLine()
-            trimBlankRowsForShrink(saved.lines, saved.cursorRow)
+            while (saved.lines.size < rows) {
+                saved.lines += defaultLine()
+                saved.marks += null
+            }
+            trimBlankRowsForShrink(saved.lines, saved.marks, saved.cursorRow)
             normalizeScreen(saved.lines)
         }
         cursorRow = cursorRow.coerceIn(0, lines.lastIndex)
@@ -918,6 +951,12 @@ class AnsiTerminalBuffer(
             lines = window,
             firstLine = first,
             totalLines = lines.size,
+            // The window's own marks, one per row of [TerminalFrame.lines] and in the same order, so a
+            // reader indexes the two together. Only the window: a mark has no pixels, and the margins
+            // below exist to be slid into the strip a drag opens, where a label would have nothing to
+            // label. Navigation past the window asks the buffer, which is the only thing that holds the
+            // whole list.
+            promptMarks = marks.subList(first, end).toList(),
             // The window's own lower edge at rest, which is the anchor: the frame is cut from `anchor`
             // back by `offset`, so this is the line the live screen ends on. See [TerminalFrame.liveEnd]
             // for why the buffer's line count cannot stand in for it.
@@ -1137,9 +1176,14 @@ class AnsiTerminalBuffer(
      * because output below the cursor is still output, and the cursor's own row, because a shell that
      * has just been given a newline is about to print its prompt there.
      */
-    private fun trimBlankRowsForShrink(target: ArrayList<MutableList<TerminalCell>>, cursorRow: Int) {
+    private fun trimBlankRowsForShrink(
+        target: ArrayList<MutableList<TerminalCell>>,
+        targetMarks: ArrayList<PromptMark?>,
+        cursorRow: Int,
+    ) {
         while (target.size > rows && target.lastIndex > cursorRow && isBlank(target[target.lastIndex])) {
             target.removeAt(target.lastIndex)
+            targetMarks.removeAt(targetMarks.lastIndex)
         }
     }
 
@@ -1908,13 +1952,15 @@ class AnsiTerminalBuffer(
         if (withCursor) saveCursor()
         primary = PrimaryScreen(
             lines = lines,
+            marks = marks,
             cursorRow = cursorRow,
             cursorColumn = cursorColumn,
             topMargin = topMargin,
             bottomMargin = bottomMargin,
         )
         lines = ArrayList(rows)
-        repeat(rows) { lines += defaultLine() }
+        marks = ArrayList(rows)
+        repeat(rows) { appendDefaultLine() }
         wrapPending = false
         positionalScreen = false
         topMargin = 0
@@ -1939,10 +1985,11 @@ class AnsiTerminalBuffer(
         val screenRow = cursorRow
         val screenColumn = cursorColumn
         lines = saved.lines
+        marks = saved.marks
         // The screen may have been resized while the alternate one was up; resize() keeps the stored
         // lines in step, but a fresh height still has to be topped up here.
-        while (lines.size < rows) lines += defaultLine()
-        trimBlankRowsForShrink(lines, saved.cursorRow)
+        while (lines.size < rows) appendDefaultLine()
+        trimBlankRowsForShrink(lines, marks, saved.cursorRow)
         normalizeScreen(lines)
         topMargin = saved.topMargin.coerceIn(0, rows - 1)
         bottomMargin = saved.bottomMargin.coerceIn(topMargin, rows - 1)
@@ -2094,7 +2141,8 @@ class AnsiTerminalBuffer(
 
     private fun finishOsc() {
         // OSC 0 and 2 set the window title, which the session tab shows; 8 makes the text that follows
-        // a hyperlink; 10 and 11 ask what this terminal's default colours are. Everything else - the
+        // a hyperlink; 10 and 11 ask what this terminal's default colours are; 133 is the shell telling
+        // the terminal which line each of its own prompts and commands is on. Everything else - the
         // palette and cursor-colour queries, and OSC 52 in particular - is discarded rather than acted
         // on: 52 lets a remote host write the *local* clipboard, which is not a capability this app is
         // willing to hand to a server it has just connected to.
@@ -2110,12 +2158,59 @@ class AnsiTerminalBuffer(
                 revision++
             }
             8 -> setHyperlink(rest)
+            133 -> setPromptMark(rest)
             // Only `?` is a query. A payload that is a colour is a *set*, and this terminal does not
             // take one: the theme is the user's, chosen in settings, and a remote repainting the screen
             // it was given for the length of a session is a remote changing the user's display.
             10, 11 -> if (rest == "?") answerColorQuery(code)
             else -> Unit
         }
+    }
+
+    /**
+     * OSC 133: the shell's own marks, `OSC 133 ; A` through `D`, recorded against the line the cursor is
+     * on when each one arrives.
+     *
+     * The line is the whole of the record, and it is what the sequence is for: a shell emits `A` on the
+     * line it is about to print a prompt on and `D` on the line its last command ended, so a terminal
+     * that keeps the line index can hand a reader the boundaries of every command on the screen without
+     * re-reading a byte of the output between them. Nothing here acts on a mark - the marks are reported
+     * and the reader decides - which is the same line OSC 8 is on.
+     *
+     * What the sequence means beyond the four letters is the shell's business and not this terminal's.
+     * A payload whose first character is not one of the four is dropped rather than guessed at, and so
+     * is one with no payload at all: the extension points around `133` are open-ended, and a terminal
+     * that invented a meaning for `P`, `k`, `s` or `i` would be reporting a mark the shell never made.
+     *
+     * The trailing fields are read only where the standard gives them a meaning this terminal can use.
+     * `D`'s first field is the command's exit status; a bare `D` says the command finished without
+     * saying how, which is kept as *no* status rather than as zero, because a reader that reported a
+     * failure as a success would be worse than one that reported nothing.
+     */
+    private fun setPromptMark(payload: String) {
+        val kind = when (payload.firstOrNull()) {
+            'A' -> PromptMarkKind.PROMPT
+            'B' -> PromptMarkKind.INPUT
+            'C' -> PromptMarkKind.OUTPUT
+            'D' -> PromptMarkKind.FINISHED
+            else -> return
+        }
+        if (cursorRow !in marks.indices) return
+        val mark = PromptMark(
+            kinds = setOf(kind),
+            inputColumn = if (kind == PromptMarkKind.INPUT) cursorColumn.coerceIn(0, columns - 1) else null,
+            exitCode = if (kind == PromptMarkKind.FINISHED) exitStatusOf(payload) else null,
+        )
+        marks[cursorRow] = marks[cursorRow]?.and(mark) ?: mark
+        revision++
+    }
+
+    /** `D`'s first field after the letter: the command's exit status, when the shell sent one. */
+    private fun exitStatusOf(payload: String): Int? {
+        val separator = payload.indexOf(';')
+        if (separator < 0) return null
+        val field = payload.substring(separator + 1).substringBefore(';')
+        return field.toIntOrNull()
     }
 
     /**
@@ -2681,14 +2776,14 @@ class AnsiTerminalBuffer(
     private fun scrollRegionUp() {
         val fullScreen = topMargin == 0 && bottomMargin == rows - 1
         if (fullScreen && primary == null) {
-            lines += MutableList(columns) { eraseBlank() }
+            insertLine(lines.size)
             trimScrollback()
             cursorRow = lines.lastIndex
         } else {
             val top = screenTop() + topMargin
             val bottom = screenTop() + bottomMargin
-            lines.removeAt(top)
-            lines.add(bottom, MutableList(columns) { eraseBlank() })
+            dropLine(top)
+            insertLine(bottom)
         }
         // A scroll moves every row of the region: erase them all end-to-end rather than trusting
         // the global clear to hide the line each one replaced.
@@ -2699,8 +2794,8 @@ class AnsiTerminalBuffer(
     private fun scrollRegionDown() {
         val top = screenTop() + topMargin
         val bottom = screenTop() + bottomMargin
-        lines.removeAt(bottom)
-        lines.add(top, MutableList(columns) { eraseBlank() })
+        dropLine(bottom)
+        insertLine(top)
         markDamageAll()
         revision++
     }
@@ -2714,7 +2809,7 @@ class AnsiTerminalBuffer(
         // redraws in place, and anything pushed off its top is a fragment of a frame, not history.
         val limit = rows + if (primary == null) scrollbackLimit else 0
         while (lines.size > limit) {
-            lines.removeAt(0)
+            dropLine(0)
             cursorRow = (cursorRow - 1).coerceAtLeast(0)
         }
     }
@@ -2725,15 +2820,15 @@ class AnsiTerminalBuffer(
         when (mode) {
             // Only the screen, never the scrollback: `clear` at a shell prompt must not throw away
             // the history the user scrolled back to read.
-            2 -> for (row in top until lines.size) lines[row].fill(blank)
-            0 -> { eraseLine(0); for (row in cursorRow + 1 until lines.size) lines[row].fill(blank) }
-            1 -> { eraseLine(1); for (row in top until cursorRow) lines[row].fill(blank) }
+            2 -> for (row in top until lines.size) blankLine(row, blank)
+            0 -> { eraseLine(0); for (row in cursorRow + 1 until lines.size) blankLine(row, blank) }
+            1 -> { eraseLine(1); for (row in top until cursorRow) blankLine(row, blank) }
             // `ESC [ 3 J` is the explicit "and drop the scrollback too" that `clear` sends on a modern
             // system, and the only sequence allowed to discard history. It also releases
             // [positionalScreen]: throwing the history away is a statement that nothing on the way out
             // needs preserving, which is the opposite of a program repainting a screen it means to keep.
             3 -> {
-                while (lines.size > rows) { lines.removeAt(0); cursorRow = (cursorRow - 1).coerceAtLeast(0) }
+                while (lines.size > rows) { dropLine(0); cursorRow = (cursorRow - 1).coerceAtLeast(0) }
                 positionalScreen = false
             }
         }
@@ -2747,7 +2842,7 @@ class AnsiTerminalBuffer(
         when (mode) {
             // A whole line goes in one move, so there is no half-character to leave behind: nothing on
             // it survives to be overprinted by the other half of a wide glyph.
-            2 -> line.fill(eraseBlank())
+            2 -> blankLine(cursorRow, eraseBlank())
             1 -> for (i in 0..cursorColumn.coerceAtMost(columns - 1)) clearUnit(line, i)
             else -> for (i in cursorColumn.coerceIn(0, columns - 1) until columns) clearUnit(line, i)
         }
@@ -2821,8 +2916,8 @@ class AnsiTerminalBuffer(
         val bottom = screenTop() + bottomMargin
         if (cursorRow < top || cursorRow > bottom) return
         repeat(count) {
-            lines.removeAt(bottom)
-            lines.add(cursorRow, MutableList(columns) { eraseBlank() })
+            dropLine(bottom)
+            insertLine(cursorRow)
         }
         markDamageRange(top, bottom)
     }
@@ -2832,8 +2927,8 @@ class AnsiTerminalBuffer(
         val bottom = screenTop() + bottomMargin
         if (cursorRow < top || cursorRow > bottom) return
         repeat(count) {
-            lines.removeAt(cursorRow)
-            lines.add(bottom, MutableList(columns) { eraseBlank() })
+            dropLine(cursorRow)
+            insertLine(bottom)
         }
         markDamageRange(top, bottom)
     }
@@ -2847,7 +2942,8 @@ class AnsiTerminalBuffer(
         style = TerminalStyle()
         savedStyle = TerminalStyle()
         lines = ArrayList(rows)
-        repeat(rows) { lines += defaultLine() }
+        marks = ArrayList(rows)
+        repeat(rows) { appendDefaultLine() }
         cursorRow = 0
         cursorColumn = 0
         wrapPending = false
@@ -2906,6 +3002,48 @@ class AnsiTerminalBuffer(
     private fun defaultLine() = MutableList(columns) { BLANK_CELL }
 
     /**
+     * Adds a line at [index] to both halves of the screen at once, so [marks] cannot drift out of step
+     * with [lines].
+     *
+     * [index] may be [lines].size, which appends. The cells default to [eraseBlank], which is what every
+     * scroll, insert and delete wants: the row this call adds is one a program's line *moved* onto, and
+     * a cell vacated by a move takes the pen's background. A row a screen switch or a resize *creates*
+     * takes no background and goes through [appendDefaultLine] instead - see [defaultLine] for why the
+     * two are not the same cell.
+     */
+    private fun insertLine(
+        index: Int,
+        cells: MutableList<TerminalCell> = MutableList(columns) { eraseBlank() },
+    ) {
+        lines.add(index, cells)
+        marks.add(index, null)
+    }
+
+    /** Appends a line a program has yet to paint: a screen switch, a reset, or a resize growing. */
+    private fun appendDefaultLine() {
+        lines += defaultLine()
+        marks += null
+    }
+
+    /** Drops the line at [index] from both halves. Whatever the shell said about it goes with it. */
+    private fun dropLine(index: Int) {
+        lines.removeAt(index)
+        marks.removeAt(index)
+    }
+
+    /**
+     * Blanks a whole line and drops whatever the shell had said about it.
+     *
+     * A line erased end to end is not the line it was, so a mark on it would send a reader to a row of
+     * blanks. A *partial* erase is not this - clearing from the cursor rightward leaves the line's
+     * beginning, and with it the prompt the shell printed there, so the mark stands.
+     */
+    private fun blankLine(row: Int, blank: TerminalCell) {
+        lines[row].fill(blank)
+        marks[row] = null
+    }
+
+    /**
      * Fits the *screen* to the current width, and deliberately does not touch the scrollback.
      *
      * [normalizeLine] pads a short line and truncates a long one, and it used to be applied to every
@@ -2939,6 +3077,7 @@ class AnsiTerminalBuffer(
     /** The primary screen, set aside while the alternate one is on display. */
     private class PrimaryScreen(
         val lines: ArrayList<MutableList<TerminalCell>>,
+        val marks: ArrayList<PromptMark?>,
         val cursorRow: Int,
         val cursorColumn: Int,
         val topMargin: Int,

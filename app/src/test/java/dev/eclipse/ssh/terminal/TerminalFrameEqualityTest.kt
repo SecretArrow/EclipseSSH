@@ -54,6 +54,7 @@ class TerminalFrameEqualityTest {
         val base = frame()
         val others = listOf(
             "lines" to base.copy(lines = base.lines.dropLast(1)),
+            "promptMarks" to base.copy(promptMarks = listOf(PromptMark(setOf(PromptMarkKind.PROMPT)))),
             "firstLine" to base.copy(firstLine = base.firstLine + 1),
             "totalLines" to base.copy(totalLines = base.totalLines + 1),
             "liveEnd" to base.copy(liveEnd = base.liveEnd + 1),
