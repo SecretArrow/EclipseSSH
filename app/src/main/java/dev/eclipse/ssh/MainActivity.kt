@@ -307,6 +307,7 @@ import dev.eclipse.ssh.data.saf.readPickedKeyFile
 import dev.eclipse.ssh.ssh.RemoteFile
 import dev.eclipse.ssh.data.saf.LocalFile
 import androidx.compose.ui.focus.FocusRequester
+import dev.eclipse.ssh.terminal.ReviewedCommand
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalSelection
@@ -317,6 +318,7 @@ import dev.eclipse.ssh.terminal.terminalCellText
 import dev.eclipse.ssh.ui.terminal.KeyBarPrefsCodec
 import dev.eclipse.ssh.ui.terminal.TerminalInputBridge
 import dev.eclipse.ssh.ui.terminal.TerminalKeyRow
+import dev.eclipse.ssh.ui.terminal.TerminalReviewPane
 import dev.eclipse.ssh.ui.terminal.TerminalView
 import dev.eclipse.ssh.ui.terminal.minTerminalColumns
 import dev.eclipse.ssh.ui.terminal.rememberTerminalCellMetrics
@@ -1424,6 +1426,8 @@ private fun EclipseWorkspace(
                     onResizeTerminal = viewModel::resizeTerminal,
                     onScrollTerminal = viewModel::scrollTerminalBy,
                     onScrollTerminalTo = viewModel::scrollTerminal,
+                    onSessionReview = viewModel::sessionReview,
+                    onScrollToLine = viewModel::scrollTerminalToLine,
                     onMouseWheel = viewModel::sendMouseWheel,
                     onArrowKeys = viewModel::sendArrowKeys,
                     onCopySelection = { hostId, sel ->
@@ -1634,6 +1638,8 @@ private fun EclipseWorkspace(
                     onResizeTerminal = viewModel::resizeTerminal,
                     onScrollTerminal = viewModel::scrollTerminalBy,
                     onScrollTerminalTo = viewModel::scrollTerminal,
+                    onSessionReview = viewModel::sessionReview,
+                    onScrollToLine = viewModel::scrollTerminalToLine,
                     onMouseWheel = viewModel::sendMouseWheel,
                     onArrowKeys = viewModel::sendArrowKeys,
                     onCopySelection = { hostId, sel ->
@@ -2405,6 +2411,10 @@ private fun WorkspaceScaffold(
     onResizeTerminal: (String, TerminalViewport) -> Unit = { _, _ -> },
     onScrollTerminal: (String, Int) -> Unit = { _, _ -> },
     onScrollTerminalTo: (String, Int) -> Unit = { _, _ -> },
+    /** Reads one session's commands, for the review pane - see MainViewModel.sessionReview. */
+    onSessionReview: (String) -> List<ReviewedCommand> = { emptyList() },
+    /** Scrolls one session so an absolute buffer line is at the top of the window. */
+    onScrollToLine: (String, Int) -> Unit = { _, _ -> },
     onMouseWheel: (String, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
     onArrowKeys: (String, Boolean, Int) -> Unit = { _, _, _ -> },
     onCopySelection: (String, TerminalSelection) -> Unit = { _, _ -> },
@@ -2524,6 +2534,8 @@ private fun WorkspaceScaffold(
             onResize = onResizeTerminal,
             onScroll = onScrollTerminal,
             onScrollTo = onScrollTerminalTo,
+            onSessionReview = onSessionReview,
+            onScrollToLine = onScrollToLine,
             onMouseWheel = onMouseWheel,
             onArrowKeys = onArrowKeys,
             onCopySelection = onCopySelection,
@@ -2968,6 +2980,10 @@ private fun TerminalScreen(
     onResize: (String, TerminalViewport) -> Unit,
     onScroll: (String, Int) -> Unit,
     onScrollTo: (String, Int) -> Unit,
+    /** Reads one session's commands for the review pane - see MainViewModel.sessionReview. */
+    onSessionReview: (String) -> List<ReviewedCommand>,
+    /** Scrolls one session so an absolute buffer line is at the top of the window. */
+    onScrollToLine: (String, Int) -> Unit,
     /** A turn of the wheel, for a program that asked the terminal to report the mouse. */
     onMouseWheel: (String, Boolean, Int, Int) -> Unit,
     /** Arrow key presses, for a drag on a screen with no history behind it. */
@@ -3019,6 +3035,7 @@ private fun TerminalScreen(
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showCommandBar by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showReview by rememberSaveable { mutableStateOf(false) }
     // For the one thing this screen launches rather than draws: the snippets window.
     val context = LocalContext.current
     /**
@@ -3085,6 +3102,38 @@ private fun TerminalScreen(
     // stop producing frames nobody can see.
     val currentFrames by frames.collectAsStateWithLifecycle()
     val frame = currentFrames[activeTab.id] ?: TerminalFrame.EMPTY
+    /**
+     * The commands the review pane is showing.
+     *
+     * A snapshot rather than a flow, because the read is the *whole* session - every line turned into a
+     * string, then cut into commands - while the frame flow carries a window of forty-odd lines at a
+     * time. Deriving it in the composition would put a pass over the entire scrollback on every
+     * recomposition. So it is taken while the pane is open and the session has moved on since the last
+     * reading, which is what [REVIEW_POLL_MS] paces; with the pane closed, nothing here runs at all.
+     *
+     * Held across a close and a reopen, so a reader who jumps out to look at a command and comes back
+     * finds the list they left rather than an empty pane for a frame.
+     */
+    var review by remember(activeTab.id) { mutableStateOf<List<ReviewedCommand>>(emptyList()) }
+    LaunchedEffect(activeTab.id, showReview) {
+        if (!showReview) return@LaunchedEffect
+        // Read through the *state*, not through `frame` above: a lambda captures the value that was
+        // computed in the composition that launched this effect, and that value is the screen as it was
+        // when the pane opened. `currentFrames` is the state itself, so this sees each new frame.
+        var read = Long.MIN_VALUE
+        while (true) {
+            val revision = currentFrames[activeTab.id]?.revision ?: Long.MIN_VALUE
+            if (revision != read) {
+                // Off the main thread: the read takes the buffer's lock and walks the session, and the
+                // main thread is drawing a terminal. The revision is written only once the list it
+                // describes exists, so a frame that lands mid-read is read next time round rather than
+                // being lost.
+                review = withContext(Dispatchers.Default) { onSessionReview(activeTab.id) }
+                read = revision
+            }
+            delay(REVIEW_POLL_MS)
+        }
+    }
     val latches = rememberTerminalLatches()
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -3159,9 +3208,9 @@ private fun TerminalScreen(
      *    the keyboard while they are open, and stealing focus from the search box mid-query would make
      *    it impossible to type in.
      */
-    LaunchedEffect(activeTab.id, activeTab.state, showCommandBar, showSearch, showHistory) {
+    LaunchedEffect(activeTab.id, activeTab.state, showCommandBar, showSearch, showHistory, showReview) {
         if (!activeTab.state.isLive) return@LaunchedEffect
-        if (showCommandBar || showSearch || showHistory) return@LaunchedEffect
+        if (showCommandBar || showSearch || showHistory || showReview) return@LaunchedEffect
         var attempts = 0
         while (!inputFocused && attempts < TERMINAL_FOCUS_ATTEMPTS) {
             // One frame per attempt: the bridge is composed in the same pass as this effect, so the
@@ -3186,9 +3235,9 @@ private fun TerminalScreen(
      * [keyboardOffered] still holds it to one offer per tab, so a keyboard the user dismissed to read
      * output is not thrown back at them by the next reconnect, resize or rotation.
      */
-    LaunchedEffect(activeTab.id, activeTab.state, inputFocused, showCommandBar, showSearch, showHistory) {
+    LaunchedEffect(activeTab.id, activeTab.state, inputFocused, showCommandBar, showSearch, showHistory, showReview) {
         if (!activeTab.state.isLive) return@LaunchedEffect
-        if (showCommandBar || showSearch || showHistory) return@LaunchedEffect
+        if (showCommandBar || showSearch || showHistory || showReview) return@LaunchedEffect
         if (inputFocused && keyboardOffered.add(activeTab.id)) keyboard?.show()
     }
 
@@ -3217,7 +3266,11 @@ private fun TerminalScreen(
             onReconnect = { onReconnectSession(activeTab.id) },
             onToggleSearch = { showSearch = !showSearch },
             onToggleCommandBar = { showCommandBar = !showCommandBar },
-            onToggleHistory = { showHistory = !showHistory },
+            // The transcript and the review are alternatives to the grid and to each other, so opening
+            // one closes the other: two flags that could both be set would leave the menu offering
+            // "Live terminal" twice and the screen drawing whichever the branch happens to test first.
+            onToggleHistory = { showHistory = !showHistory; if (showHistory) showReview = false },
+            onToggleReview = { showReview = !showReview; if (showReview) showHistory = false },
             // A window rather than a sheet over this grid: the saved commands are only worth offering
             // while the command line they will land on is legible, and a sheet is a slot at the
             // bottom of the screen - exactly where the grid's own last lines are. It carries nothing:
@@ -3241,6 +3294,7 @@ private fun TerminalScreen(
             showSearch = showSearch,
             showCommandBar = showCommandBar,
             showHistory = showHistory,
+            showReview = showReview,
             terminalText = terminalText,
             // The strip draws on the terminal's own background; these two are where every chrome
             // colour on it is derived from. See TerminalTabStrip's parameter docs.
@@ -3270,6 +3324,21 @@ private fun TerminalScreen(
                             .padding(textInset),
                     )
                 }
+            } else if (showReview) {
+                // The same session, cut into commands rather than drawn as a grid - see
+                // [TerminalReviewPane] for why that is what makes it readable. The jump is the pane's
+                // only action, and it closes the pane as it goes: the reader asked to see the command,
+                // and the text it describes is in the grid behind this one.
+                TerminalReviewPane(
+                    commands = review,
+                    foreground = termFg,
+                    fontSize = liveFontSize.toFloat(),
+                    onJump = { command ->
+                        showReview = false
+                        onScrollToLine(activeTab.id, command.promptLine)
+                    },
+                    modifier = Modifier.padding(textInset),
+                )
             } else {
                 TerminalView(
                     frame = frame,
@@ -3526,6 +3595,17 @@ private const val SCROLLBACK_BADGE_ALPHA = 0.82f
  * stops asking rather than spinning for the life of the session.
  */
 private const val TERMINAL_FOCUS_ATTEMPTS = 60
+
+/**
+ * How often the review pane asks whether the session has moved on.
+ *
+ * A poll rather than a signal off the frame flow, because a revision-keyed effect is cancelled and
+ * restarted by every frame: on a session that is streaming output the read would be cancelled before it
+ * finished, every time, and the pane would sit empty. Half a second is a compromise between a list that
+ * lags behind a command the reader just watched finish and a full pass over the scrollback twice a
+ * second - and the pass is skipped outright when nothing has changed.
+ */
+private const val REVIEW_POLL_MS = 500L
 
 /**
  * The Terminal destination with no shell open: every live session, as a list.
@@ -4126,6 +4206,7 @@ private fun TerminalTabStrip(
     onToggleSearch: () -> Unit,
     onToggleCommandBar: () -> Unit,
     onToggleHistory: () -> Unit,
+    onToggleReview: () -> Unit,
     onSnippets: () -> Unit,
     onSaveLogs: () -> Unit,
     /** Saves the raw session log; the item is hidden until the session has output to save. */
@@ -4146,6 +4227,7 @@ private fun TerminalTabStrip(
     showSearch: Boolean,
     showCommandBar: Boolean,
     showHistory: Boolean,
+    showReview: Boolean,
     terminalText: String,
     /**
      * The terminal's own background and foreground, the pair the strip sits on. Every chrome colour
@@ -4258,6 +4340,10 @@ private fun TerminalTabStrip(
                 DropdownMenuItem(
                     text = { Text(if (showHistory) "Live terminal" else "Transcript") },
                     onClick = { menuOpen = false; onToggleHistory() },
+                )
+                DropdownMenuItem(
+                    text = { Text(if (showReview) "Live terminal" else "Command review") },
+                    onClick = { menuOpen = false; onToggleReview() },
                 )
                 DropdownMenuItem(
                     text = { Text(if (keyRowVisible) "Hide shortcut keys" else "Show shortcut keys") },

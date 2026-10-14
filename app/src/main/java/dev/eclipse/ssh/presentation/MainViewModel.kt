@@ -110,8 +110,11 @@ import dev.eclipse.ssh.feature.terminallog.SilenceDetector
 import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.FrameSample
 import dev.eclipse.ssh.terminal.KeyboardModes
+import dev.eclipse.ssh.terminal.offsetToShowLine
 import dev.eclipse.ssh.terminal.paintedCells
 import dev.eclipse.ssh.terminal.RenderAudit
+import dev.eclipse.ssh.terminal.ReviewedCommand
+import dev.eclipse.ssh.terminal.reviewCommands
 import dev.eclipse.ssh.terminal.screenKind
 import dev.eclipse.ssh.terminal.TerminalColors
 import dev.eclipse.ssh.terminal.TerminalFrame
@@ -3091,6 +3094,34 @@ class MainViewModel @Inject constructor(
      */
     fun renderAuditText(sessionKey: String): String? =
         renderAudits[sessionKey]?.report(sessionLogs[sessionKey]?.dropped())
+
+    /**
+     * One session's commands as a reader reads them, for the review pane - see [reviewCommands].
+     *
+     * Read on demand rather than pushed through [uiState], for the reason [sessionLogText] gives and one
+     * of its own: it is wanted only while the pane is open, and it is the *whole* session rather than the
+     * window a frame carries, so publishing it would put a full pass over the scrollback - every line of
+     * it turned into a string - on the frame path, for a pane that is usually closed. Empty when the
+     * session has no buffer (its tab was closed) or its shell has announced no prompts, which the pane
+     * reports as "nothing to review" rather than as a failure; both are the same answer to the question
+     * the pane asks.
+     */
+    fun sessionReview(sessionKey: String): List<ReviewedCommand> =
+        terminalBuffers[sessionKey]?.sessionLines()?.let(::reviewCommands).orEmpty()
+
+    /**
+     * Scrolls [sessionKey] so the absolute buffer line [line] is at the top of the window, as near as the
+     * scrollback allows - the jump a review entry makes to the text it describes.
+     *
+     * The arithmetic is [offsetToShowLine]'s, over the same anchor the live view uses: the offset is
+     * measured from the cursor's line, which is what makes zero mean "following the output". A line that
+     * is already on screen therefore answers zero and the view stays where it is, which is the right
+     * result for a reader who jumped to a command they could already see.
+     */
+    fun scrollTerminalToLine(sessionKey: String, line: Int) {
+        val buffer = terminalBuffers[sessionKey] ?: return
+        scrollTerminal(sessionKey, offsetToShowLine(buffer.cursorLine, line, visibleRowsOf(sessionKey, buffer)))
+    }
 
     /**
      * Arms "Notify when done" for one session: a notification when the session's output - which

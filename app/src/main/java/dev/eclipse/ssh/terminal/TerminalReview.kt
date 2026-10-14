@@ -92,6 +92,36 @@ fun reviewCommands(lines: List<SessionLine>): List<ReviewedCommand> {
     return commands
 }
 
+/**
+ * As much of one command's output as a review draws, with a count of what it left out.
+ *
+ * A review entry is one line of a list, and a command can print a hundred thousand of them: drawing a
+ * `find /` in full would lay out a whole scrollback inside a single list item, which is the wrong thing
+ * to draw and the wrong thing to ask a screen reader to walk through. So an entry shows the head and the
+ * tail and says how many lines lie between.
+ *
+ * Both ends rather than one, because which end matters is the command's business and not the pane's. A
+ * failing command's verdict is on its last line - the compiler's error count, the `No such file` - while
+ * a listing's first lines are where the reader looks; a pane that cut to one end would hide the answer
+ * for half the commands it drew.
+ *
+ * [output] is the block the cut already produced, not the buffer, so a command that printed nothing
+ * gives back nothing. A block that fits is handed back unchanged, byte for byte: the common case must
+ * not be rewritten by the rule that exists for the uncommon one.
+ */
+fun reviewOutputExcerpt(output: String): String {
+    val lines = output.split('\n')
+    if (lines.size <= REVIEW_OUTPUT_HEAD + REVIEW_OUTPUT_TAIL) return output
+    val omitted = lines.size - REVIEW_OUTPUT_HEAD - REVIEW_OUTPUT_TAIL
+    return (lines.take(REVIEW_OUTPUT_HEAD) +
+        "… $omitted more ${if (omitted == 1) "line" else "lines"}" +
+        lines.takeLast(REVIEW_OUTPUT_TAIL))
+        .joinToString("\n")
+}
+
+private const val REVIEW_OUTPUT_HEAD = 8
+private const val REVIEW_OUTPUT_TAIL = 8
+
 private fun reviewCommand(
     lines: List<SessionLine>,
     marks: List<PromptMark?>,

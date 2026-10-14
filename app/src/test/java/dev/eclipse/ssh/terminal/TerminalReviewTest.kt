@@ -211,4 +211,38 @@ class TerminalReviewTest {
             .containsExactly("notes.txt", "grep: file: No such file or directory").inOrder()
         assertThat(commands.map { it.exitCode }).containsExactly(0, 2).inOrder()
     }
+
+    /** A block of [count] numbered lines, so which end a line came from is visible in the fixture. */
+    private fun block(count: Int): String = (1..count).joinToString("\n") { "line $it" }
+
+    @Test
+    fun `output a review can draw whole is handed back byte for byte`() {
+        // The common case is not rewritten by the rule that exists for the uncommon one, and a command
+        // that printed nothing is that rule's zero rather than a special case.
+        assertThat(reviewOutputExcerpt("")).isEmpty()
+        assertThat(reviewOutputExcerpt("one")).isEqualTo("one")
+        assertThat(reviewOutputExcerpt(block(16))).isEqualTo(block(16))
+    }
+
+    @Test
+    fun `output one line over the limit loses its middle and says one line went`() {
+        val excerpt = reviewOutputExcerpt(block(17)).lines()
+
+        assertThat(excerpt).hasSize(17)
+        assertThat(excerpt[8]).isEqualTo("… 1 more line")
+        // The two ends are the block's own ends, not the first lines of the head and tail rules.
+        assertThat(excerpt.first()).isEqualTo("line 1")
+        assertThat(excerpt.last()).isEqualTo("line 17")
+    }
+
+    @Test
+    fun `a longer block keeps both ends and counts what it dropped in the plural`() {
+        val excerpt = reviewOutputExcerpt(block(100)).lines()
+
+        assertThat(excerpt).hasSize(17)
+        assertThat(excerpt[8]).isEqualTo("… 84 more lines")
+        // The verdict a reader is looking for is on the last line, so the tail is the last lines and not
+        // a second helping of the head.
+        assertThat(excerpt.last()).isEqualTo("line 100")
+    }
 }

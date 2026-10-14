@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §120, *A session is cut into the commands a reader reads, and the question a mark answers depends on what you are holding*; §119, *The marks answer the three questions a reader has, and the arithmetic is out of the view model*, is the change before it; §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*, is the change before that; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before that; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §121, *The review has a pane now, and the pane is what makes a session readable*; §120, *A session is cut into the commands a reader reads, and the question a mark answers depends on what you are holding*, is the change before it; §119, *The marks answer the three questions a reader has, and the arithmetic is out of the view model*, is the change before that; §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*, is the change before that; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before that; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12634,3 +12634,92 @@ change, and this one is the model they read. The review covers the buffer, so a 
 has been trimmed loses those commands with the lines - and marks are still not persisted, so a reconnect
 starts empty. A shell that announces nothing gives no entries, which is not the same as a session where
 no command ran, and the empty list is reported as itself rather than as a failure.
+
+---
+
+## 121. The review has a pane now, and the pane is what makes a session readable
+
+**What §120 left unbuilt.** §120 cut a session into the commands a reader reads and said, in its own
+closing note, that nothing drew them: the pane, the toggle that opens it and the jump that takes a reader
+from an entry to the text it describes were the next change. This is that change -
+`ui/terminal/TerminalReviewPane.kt`, a `Command review` item beside `Transcript` in the terminal's own
+overflow menu, and `MainViewModel.scrollTerminalToLine`.
+
+**Why the accessible half of this item is a pane and not semantics on the canvas.** The live terminal is a
+grid of painted cells: it is drawn by `TerminalView` with no text nodes at all, so a screen reader has
+nothing to walk and a reader cannot move by command. The obvious-looking fix - a semantics tree describing
+the grid - is a second rendering of the same screen, kept in step by hand, with no reader for it: a cell
+grid read out cell by cell is not a session read out, it is a picture described. So the affordance is a
+list instead. Every entry is an ordinary `Text`, every fact in it is a word rather than a colour, and
+`Modifier.clickable` merges an entry into one node, which makes the spoken sentence and the tap target the
+same object. A command that failed says `exited 2`; it does not only turn red. That is not decoration, it
+is the reason the model in §120 was written in sentences (`ReviewedCommand.end`) in the first place - the
+pane has nothing to interpret, and a reader who cannot see the colour is told the same thing as one who
+can.
+
+**The colour is the weaker cue, on purpose.** The only colour the pane adds is alpha on the terminal's own
+foreground: a failed command's status line is drawn at full foreground and everything else at 0.65. That
+reads as "prominent" against every one of the nine terminal themes, each of which pairs its own foreground
+with its own background, without inventing a red or a green that the Light and Solarized-light themes would
+wash out - and without a colour-only signal, which is the thing the sentence above exists to avoid.
+
+**The read is on demand and polled, and both halves of that were forced.** `MainViewModel.sessionReview`
+takes the buffer's lock, turns every line of the whole session into a string and cuts it into commands -
+the entire scrollback, not the forty-odd-line window a frame carries - so deriving it in the composition
+would put a full pass over the session on every recomposition. It is therefore read into a snapshot when
+the pane opens. The obvious way to refresh it is a `LaunchedEffect` keyed on the frame's revision, and that
+way is wrong: a new revision *cancels* the effect that is running, so on a session that is streaming output
+every read would be cancelled before it finished and the pane would sit empty for exactly as long as there
+was something to read. The effect is keyed on the session and the pane being open instead, and polls the
+revision half a second at a time, skipping the pass outright when nothing has changed. `REVIEW_POLL_MS`
+carries that reasoning where the number is.
+
+**The read goes off the main thread, and reads the state rather than the value.** `withContext(Dispatchers
+.Default)` around the read, because the main thread is drawing a terminal. And the poll reads
+`currentFrames[activeTab.id]?.revision` rather than the `frame` local beside it: a lambda captures the
+*value* that was computed in the composition that launched the effect, so a long-lived effect holding
+`frame` would be looking at the screen as it was when the pane opened and would never see a second frame.
+`currentFrames` is the state itself, so each pass sees the current one.
+
+**The excerpt, and why both ends.** A command can print a hundred thousand lines, and drawing them all
+would lay out a scrollback inside one list item. `reviewOutputExcerpt` in `TerminalReview.kt` shows the
+head and the tail and counts what lies between - both ends, because which end matters is the command's
+business and not the pane's: a failing command's verdict is on its last line and a listing's first lines
+are where the reader looks, so a pane that cut to one end would hide the answer for half the commands it
+drew. A block that fits is handed back byte for byte, so the common case is not rewritten by the rule that
+exists for the uncommon one. It is in `TerminalReview.kt` rather than in the composable for the reason the
+rest of that file's prose is: the boundary (`head + tail`, the singular/plural of the count) is exactly
+where an off-by-one hides, and a pure function can be tested and a composable cannot.
+
+**The jump needs the anchor, and the anchor is not in the frame.** Tapping an entry closes the pane and
+asks the view model for `scrollTerminalToLine(sessionKey, promptLine)`. The offset is
+`offsetToShowLine(buffer.cursorLine, line, visibleRowsOf(...))` - the arithmetic §119 already pinned, over
+the same anchor the live view uses, which is what makes zero mean "following the output" and a line that is
+already on screen answer zero. It could not be computed from the frame the screen holds: the window's
+first line has the current scroll offset *already applied* to it, so the frame cannot say where the
+cursor's line is without the offset it was built from, which lives in the view model.
+
+**Two panes, one at a time.** `Transcript` and `Command review` are alternatives to the grid and to each
+other, so opening one closes the other. Two independent flags could both be set, and the menu would then
+offer `Live terminal` twice while the screen drew whichever branch was tested first.
+
+**The gate.** Three new tests, for the excerpt's three branches - a block that fits, a block one line over
+the limit (the singular count, and the ends being the block's own ends), and a longer one (the plural, and
+the tail being the *last* lines rather than a second helping of the head). The suite is 655 methods, green,
+up from 652. `app/src/main` was type-checked before and after the change and the two normalised error
+multisets are identical: 1 803 errors, byte for byte the same lines, with `MainActivity.kt` at its 28 and
+`MainViewModel.kt` at its 120. Those are the errors of a classpath that cannot resolve this project's
+sshd, Hilt and `documentfile` dependencies - the known local limitation - and what the comparison buys is
+that the change adds none: the new pane file compiles with **zero** errors, which is the part of the app's
+Compose API that a missing-classpath check can still vouch for. `scripts/check-doc-figures.sh` reports all
+201 claims agree.
+
+**What this does not claim.** Nothing here has run on a device: this host has no usable emulator, and the
+Robolectric assertions that would open the menu and read the pane back are a CI-window activity, not a
+result this pass produced. The pane is only as good as the shell's marks - a shell that emits no OSC 133
+prompts gets the empty state, which says so in its own words rather than looking broken, and the app does
+not offer to configure the far-end shell because that is not the app's to write. Nothing reads the review
+out automatically: the pane is a list a screen reader *can* walk, not a live region that announces a
+command finishing. The grid itself still has no semantics of its own, by the argument above, and the pane
+refreshes on a half-second poll, so a command that finished a moment ago may take up to that long to
+appear.
