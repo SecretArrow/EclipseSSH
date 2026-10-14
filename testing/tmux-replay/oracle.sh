@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
 # tmux as the reference emulator: replay a recording into a pane and print the grid it ends on.
 #
-#   oracle.sh <recording.frames> <columns> <rows> [--frames N]
+#   oracle.sh <recording.frames> <columns> <rows> [--frames N] [--attrs]
 #
 # [--frames N] replays only the first N reads, so a prefix can be compared against what tmux would have
 # shown after seeing exactly the same prefix. That is what makes the bisection in griddiff.py honest.
+#
+# [--attrs] adds one `# attrsraw <row> <capture -e row>` line per row. The plain capture cannot see a
+# cell that carries a background and no glyph, and that is the cell an erase leaves behind, so the
+# background is asked for separately. It is a second capture of the same frozen pane rather than a
+# derivation from the plain one, because the two are not the same text: `-e` keeps the `SO`/`SI` a
+# program's own charset shift emits and the plain capture drops them, so stripping escapes out of `-e`
+# would quietly change what the text comparison sees.
 set -uo pipefail
 frames=$1 cols=$2 rows=$3
+shift 3
 limit=""
-if [ "${4:-}" = "--frames" ]; then limit=${5:?--frames needs a count}; fi
+attrs=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --frames) limit=${2:?--frames needs a count}; shift 2 ;;
+    --attrs) attrs=1; shift ;;
+    *) echo "oracle.sh: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
 
 bin=$(mktemp -t oracle-raw.XXXXXX)
 cfg=$(mktemp -t oracle-conf.XXXXXX)
@@ -62,3 +77,13 @@ flag=$(tmux -L eclipse-oracle display -p -t ora '#{cursor_flag}')
 if [ "$flag" = "1" ]; then visible=true; else visible=false; fi
 printf '# cursor %s visible %s\n' "$cursor" "$visible"
 printf '%s\n' "$prev"
+
+if [ "$attrs" = 1 ]; then
+  # `IFS= read -r` so a row's own leading and trailing spaces survive: a trailing run of coloured blanks
+  # is the shape a BCE erase leaves, and it is one of the things this section is here to see.
+  row=0
+  while IFS= read -r line; do
+    printf '# attrsraw %s %s\n' "$row" "$line"
+    row=$((row + 1))
+  done < <(tmux -L eclipse-oracle capture-pane -p -e -t ora 2>/dev/null)
+fi

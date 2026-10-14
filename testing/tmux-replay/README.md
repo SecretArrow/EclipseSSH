@@ -26,9 +26,9 @@ its own.
 |---|---|
 | `record.py` | Attaches a tmux client to a pty of a given size and writes what tmux sends it, one length-prefixed frame per read. `--send SECONDS:TEXT` types into that client on a schedule, for a program that draws nothing worth recording until it has been answered. `--answer` replies to tmux's terminal queries the way the app does, which is what makes tmux choose its supported paths. |
 | `mkframes.py` | Wraps raw bytes (`--escapes` for a readable `\x1b` fixture, `--chunk N` to choose the boundaries) as a recording. |
-| `run-griddump.sh` + `GridDump.kt` | Compiles the real `app/src/main/.../terminal` package with the cached Kotlin compiler and runs the recording through `AnsiTerminalBuffer`, printing the grid. |
-| `oracle.sh` | Replays the same recording into a tmux pane and prints the grid tmux itself ends on, plus its cursor as the app dump spells one. |
-| `griddiff.py` | Row-by-row diff with an incident count, and `--bisect`: the first read whose prefix already diverges. The cursor is compared too - a grid that agrees while the cursor does not is the reported "the cursor is somewhere else than the text" failure, and a row diff alone cannot see it. |
+| `run-griddump.sh` + `GridDump.kt` | Compiles the real `app/src/main/.../terminal` package with the cached Kotlin compiler and runs the recording through `AnsiTerminalBuffer`, printing the grid. `--attrs` adds one line per row giving each column's background as a label. |
+| `oracle.sh` | Replays the same recording into a tmux pane and prints the grid tmux itself ends on, plus its cursor as the app dump spells one. `--attrs` adds tmux's own `capture-pane -e` row for each line, so the same question is asked of both sides. |
+| `griddiff.py` | Row-by-row diff with an incident count, and `--bisect`: the first read whose prefix already diverges. The cursor is compared too - a grid that agrees while the cursor does not is the reported "the cursor is somewhere else than the text" failure, and a row diff alone cannot see it. `--attrs` compares each row's backgrounds as well; see below for what that can and cannot settle. |
 | `replay.sh` | The whole loop. |
 
 ## Running it
@@ -43,6 +43,17 @@ python3 mkframes.py --escapes reproductions/dcs-passthrough.raw /tmp/dcs.frames 
 timeout 1 python3 reproductions/edge-cases.py > /tmp/edge.raw
 python3 mkframes.py /tmp/edge.raw /tmp/edge.frames --chunk 100
 ./replay.sh /tmp/edge.frames --cols 52 --rows 60
+
+# where an erase, an insert and a delete may cut a wide character, which is a rule a hand-written
+# emulator gets wrong by default. One case per row, so a divergence names itself.
+python3 mkframes.py --escapes reproductions/wide-boundaries.raw /tmp/wide.frames --chunk 7
+./replay.sh /tmp/wide.frames --cols 20 --rows 18
+
+# every blank an erase, a scroll, an insert or a delete leaves behind, against the pen that made it.
+# Text alone cannot see a cell that carries a colour and no glyph, which is the cell an erase leaves
+# behind, so this one is read with `--attrs` - and the same flag on any of the others.
+python3 mkframes.py --escapes reproductions/bce-erase.raw /tmp/bce.frames --chunk 7
+./replay.sh /tmp/bce.frames --cols 20 --rows 8 --attrs
 
 # a synchronized-output batch tmux composed itself. Both halves are needed: `sync` in the terminal
 # features, because tmux 3.5a never asks its terminal about 2026, and `--answer`, so tmux is not on its
@@ -88,9 +99,21 @@ reused between runs; set `GRIDDUMP_REBUILD=1` after changing app code.
 
 ## What it does not prove
 
-- **Text only.** Colour, attributes and the direction of a wide character are not compared, so a green
-  run says the ink is in the right place, not that it is drawn right. The cursor is compared by position,
-  not by whether it is painted there.
+- **Text, and - with `--attrs` - the background.** Foregrounds and text attributes (bold, underline,
+  reverse, ...) are still not compared, and neither are the colours themselves: `--attrs` compares each
+  row's backgrounds as a *pattern* - which columns share one and which are unpainted - because this
+  emulator draws a palette entry as the theme's own shade of it and tmux draws the entry. Comparing the
+  colours would compare two themes. So a green run says the ink is in the right place and the erases
+  filled what they should, not that anything is drawn in the right colour. The cursor is compared by
+  position, not by whether it is painted there.
+- **A wide character a sequence cuts in half.** tmux keeps the surviving half as a continuation cell
+  with nothing on the other side, and renders that cell as no glyph at all; this emulator has no such
+  cell, so the two stop agreeing about which column everything after it is in. A text diff then reports
+  the shift rather than the defect, which is why `reproductions/wide-boundaries.raw` holds only the
+  cases where the pair survives or goes whole. The cut is pinned instead by
+  `WideCharacterBoundaryTest`, where the two readings can be stated side by side. What the harness *can*
+  answer here is the case that matters for this app: replay the recording of tmux in that state, and
+  every cell of what tmux sent its client comes back IDENTICAL.
 - **No terminal answers, unless you ask for them.** tmux asks its client for DA1 and DA2, and by default
   this client answers neither, so tmux falls back to its own defaults. The recording is verbatim either
   way; what differs is which sequences tmux would *choose*, never how it frames them. `record.py
@@ -113,6 +136,15 @@ reused between runs; set `GRIDDUMP_REBUILD=1` after changing app code.
 | `reproductions/ink-mimic.py`, 52x60, 8s recording | - | IDENTICAL |
 | `reproductions/prompt-truncation.py`, 52x60, 8s recording | - | IDENTICAL |
 | `reproductions/edge-cases.py`, 52x60, 705 B raw | - | IDENTICAL |
+
+The two fixtures below pin rules a hand-written emulator gets wrong by default, so each is worth more
+than it looks: "before" is the same recording against the emulator as it stood before that rule was
+implemented, which is what makes it a gate rather than a decoration. Both are read with `--attrs`.
+
+| Recording | Before | After |
+|---|---|---|
+| `reproductions/wide-boundaries.raw`, 20x18, 95 reads | DIVERGES - 2 rows, both `0123 67` where tmux has `012367` and `0123中67`: a delete on a wide character removed one cell and left a blank | IDENTICAL |
+| `reproductions/bce-erase.raw`, 20x8, 22 reads | DIVERGES - 3 rows of background: an erase, a scroll and an insert filled with a default cell where tmux filled with the pen's | IDENTICAL |
 
 Real Claude Code in tmux, 52x60, every prefix checked with `--bisect --step 1`, rows and cursor both:
 
@@ -140,6 +172,13 @@ wrong. Drawing the cursor is the view's job and is not compared here.
 emoji, ECH/ICH/DCH, insert and delete lines inside a scroll region, save and restore cursor,
 synchronized output, and a line that ends exactly at the margin. The bisection on the mutated parser
 names read 4 of 7 at byte offset 33 and prints `\x1b\x1b[?25l` - the first doubled `ESC`.
+
+`wide-boundaries.raw` is where those families are pinned rather than exercised: one case per row, each a
+wide character with an ordinary cell on either side, so a widened range reads differently from a shifted
+one. It covers a delete on each half and on an ordinary cell, an insert on each half, and the erases
+whose range does or does not cover the whole pair. Every rule it encodes is written down with the
+measurement that produced it in `WideCharacterBoundaryTest`, which is where a reader looking for "what
+should this do" should go.
 
 ## What a batch looks like on the wire
 

@@ -7,10 +7,16 @@
  * could not see one. [--frames N] stops after N frames, which is how the bisection in griddiff.py
  * finds the first prefix that already diverges.
  *
- * Usage: GridDump <columns> <rows> [--frames N] < recording.frames
+ * [--attrs] adds a second, per-column view of the same rows: which columns share a background, and
+ * which are unpainted. Text alone cannot see a cell that carries a colour and no glyph, which is
+ * exactly the cell an erase leaves behind, so the background is compared as well. See [backgroundKeys]
+ * for what the letters mean and griddiff.py for how tmux's side of the same question is derived.
+ *
+ * Usage: GridDump <columns> <rows> [--frames N] [--attrs] < recording.frames
  */
 import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.TerminalCell
+import dev.eclipse.ssh.terminal.TerminalColor
 import dev.eclipse.ssh.terminal.Utf8StreamDecoder
 import java.io.DataInputStream
 
@@ -19,6 +25,7 @@ fun main(args: Array<String>) {
     val rows = args.getOrNull(1)?.toIntOrNull() ?: 24
     val limit = args.indexOf("--frames").takeIf { it >= 0 }
         ?.let { args.getOrNull(it + 1)?.toIntOrNull() } ?: Int.MAX_VALUE
+    val attrs = args.contains("--attrs")
 
     val buffer = AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 200)
     val decoder = Utf8StreamDecoder()
@@ -47,6 +54,7 @@ fun main(args: Array<String>) {
     val view = buffer.frame()
     println("# frames $frame columns $columns rows $rows cursor ${view.cursorRow},${view.cursorColumn} visible ${view.cursorVisible}")
     view.lines.forEach { println(rowText(it)) }
+    if (attrs) view.lines.forEachIndexed { index, line -> println("# attrs $index ${backgroundKeys(line)}") }
 }
 
 private fun rowText(line: List<TerminalCell>): String {
@@ -59,6 +67,38 @@ private fun rowText(line: List<TerminalCell>): String {
     }
     return text.toString().trimEnd()
 }
+
+/**
+ * One character per column: `.` for a cell with no background, and a letter for each distinct
+ * background, assigned in the order the row first uses it.
+ *
+ * The letters are labels, not colours - `a` is "the first background this row painted", whichever
+ * colour that is. That is deliberate, and it is what makes the two sides comparable: this emulator
+ * renders a palette colour as the theme's own shade of it and tmux as the palette entry, so comparing
+ * the colours themselves would compare two themes rather than two grids. What the labels do compare is
+ * the *pattern*: which columns share a background, and which are unpainted. A cell that should carry a
+ * colour and does not - an erase that filled with a default cell, which is the ghost this harness
+ * exists to catch - reads as `.` here and as a letter there.
+ *
+ * A row with more than [LABELS] distinct backgrounds is not a screen anyone drew; it fails loudly
+ * rather than wrapping the alphabet and comparing two cells as equal that are not.
+ */
+private fun backgroundKeys(line: List<TerminalCell>): String {
+    val labels = HashMap<Int, Char>()
+    val keys = StringBuilder(line.size)
+    line.forEach { cell ->
+        val background = cell.style.background.value
+        if (background == TerminalColor.COLOR_DEFAULT) {
+            keys.append('.')
+        } else {
+            check(labels.size < LABELS.length) { "a row with more than ${LABELS.length} backgrounds" }
+            keys.append(labels.getOrPut(background) { LABELS[labels.size] })
+        }
+    }
+    return keys.toString()
+}
+
+private const val LABELS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 /** A socket read is at most a few hundred KiB; anything larger is a mis-framed recording. */
 private const val MAX_FRAME_BYTES = 4 * 1024 * 1024

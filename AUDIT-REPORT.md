@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §108, *A tmux pane's rewritten screen kept the ink the program had erased*; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before it; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §109, *The replay harness could not see a colour, and the erase families cut wide characters*; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before it; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11890,3 +11890,67 @@ attributes, so the BCE half of this fix rests on hand measurement and unit tests
 differential run; widening that comparison to colour and attributes is the next pass. The wide-character
 rules above are likewise measured by hand for `DCH`; the erase, insert and display families
 (`ECH`, `EL`, `ED`, `ICH`) have not been pinned against the oracle yet, and are not claimed.
+
+## 109. The replay harness could not see a colour, and the erase families cut wide characters
+
+§108 fixed a ghost whose cause was a blank that should have carried a background, and left two things
+open in writing: the differential harness compared text only, so the colour half of that fix rested on
+hand measurement, and the erase, insert and display families had not been pinned against the oracle at
+all. Both are closed here, and closing them turned up one rule that is a choice rather than a
+measurement.
+
+**The harness reads the background now.** `GridDump` gained `--attrs`, which prints one line per row
+giving every column a label: `.` for a cell with no background, and a letter for each distinct
+background, assigned in the order the row first uses it. `oracle.sh` gained the same flag and answers it
+with tmux's own `capture-pane -e` row, so the question is asked of both sides rather than derived from
+one. Labels rather than colours, deliberately: this emulator draws a palette entry as the theme's own
+shade of it and tmux draws the entry, so comparing colours would compare two themes. What the labels do
+compare is the pattern - which columns share a background and which are unpainted - and that is exactly
+what sees the cell §108 was about, the one that carries a colour and no glyph.
+
+Deriving tmux's side from `-e` needed one non-obvious thing to be right. The capture is **one** SGR
+stream across the whole pane, not one per row, so a row that opens with no escape is painted in
+whatever the row above ended in - which is precisely what an erase that reaches past the end of its line
+produces. Padding each row with its own last style instead reads every such row as unpainted and reports
+the erase as a divergence that is not there; the first version of this did exactly that, on row 6 of the
+`bce-erase` fixture, and the fix was to carry the style from row to row.
+
+**Where an erase, an insert and a delete may cut a wide character.** `reproductions/wide-boundaries.raw`
+puts one case per row on `0123中67`, so a widened range reads differently from a shifted one, and
+`WideCharacterBoundaryTest` states each rule with the measurement that produced it. Measured against
+tmux 3.5a:
+
+- A delete widens its range to whole characters: `DCH 1` on the left half reads `012367` (the pair goes
+  and the tail shifts by two), and `DCH 1` on the right half reads `0123中67` - the row is untouched,
+  because the count is cells and one of them is spent leaving that half in place. `DCH 2` on the left
+  half reads `012367` as well, which is what makes this one range rather than repeated single-cell
+  deletes. §108 landed these; the fixture is what keeps them landed.
+- An erase does **not** widen. `ECH` and `EL` blank exactly the cells their range names and no more,
+  so a range that covers the whole pair takes it whole and one that covers half of it does not.
+- A parameter of zero means the default of one, not zero: `ESC [ 0 P` is `ESC [ P` and `ESC [ 0 X` is
+  `ESC [ X`. Two tests written the other way were wrong and were corrected against the measurement.
+- The vacated cells a delete leaves are at the **end of the line**, not at the cursor: the whole line
+  shifts, trailing blanks included, and the tail takes the pen's background. A two-colour probe settles
+  this where a single-colour one cannot - with the character painted red and the pen switched to blue,
+  the vacated cells come back blue and the cells that merely shifted come back red.
+
+**One rule here is a choice, and the harness is the wrong instrument for it.** A range that cuts a wide
+character in half leaves tmux holding a continuation cell with no left half, and tmux's capture renders
+that cell as no glyph at all - so a text diff stops agreeing about which column everything after it is
+in and reports the shift rather than the defect. This emulator has no continuation cell to hold, so the
+two cannot be compared there and the fixture does not try: it holds only the cases where the pair
+survives or goes whole. The cut is pinned in `WideCharacterBoundaryTest` instead, where the two readings
+can be stated side by side, and it is a choice because two emulators disagree. Fed the same sequence,
+this emulator takes the whole character, and so does GNU screen 4.09.01; tmux keeps the half-glyph drawn
+across a cell the program has just cleared. A half-character is not something a screen can draw, and
+taking the pair is the reading that leaves no ink over a column the program believes it erased - which is
+the same rule `clearUnit` was already written to enforce. What the harness *can* answer is the case that
+matters for this app: replay the recording of tmux in exactly that state, and every cell of what tmux
+sent its client comes back IDENTICAL, in both halves of the pair.
+
+**What this does not claim.** The comparison is still backgrounds only - foregrounds and the text
+attributes are not compared, and the colours are compared as a pattern rather than as values, so a grid
+that consistently painted the wrong palette entry would pass. The four wide-character rules are
+measurements of one oracle on one host, and the split-half rule is a choice between two emulators rather
+than a measurement of either. And the harness's read boundaries are its own: it replays a recording of a
+tmux session, so a write split differently over SSH is still a case only the unit suite can reach.
