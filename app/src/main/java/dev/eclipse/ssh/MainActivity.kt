@@ -311,6 +311,7 @@ import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalSelection
 import dev.eclipse.ssh.terminal.TerminalViewport
+import dev.eclipse.ssh.terminal.hyperlinkAt
 import dev.eclipse.ssh.terminal.linesBelow
 import dev.eclipse.ssh.terminal.terminalCellText
 import dev.eclipse.ssh.ui.terminal.KeyBarPrefsCodec
@@ -3048,6 +3049,17 @@ private fun TerminalScreen(
     // rotation: the IME session ends with the activity, and it is the IME that would restore it.
     var composing by remember { mutableStateOf("") }
     LaunchedEffect(activeTab.id) { composing = "" }
+    /**
+     * The hyperlink a tap landed on, waiting to be confirmed.
+     *
+     * A link is *offered*, never followed on the tap itself: the target was chosen by the program on
+     * the far end, and handing a remote host the ability to launch an intent on one stray touch is the
+     * same trade OSC 52 is refused for. The dialog names the target, so the reader sees where it goes
+     * before anything leaves the app. Not saved across rotation - it is a modal question, and one the
+     * user has not answered is better asked again than restored silently.
+     */
+    var hyperlinkTarget by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeTab.id) { hyperlinkTarget = null }
     val theme = TerminalTheme.named(state.settings.terminalTheme)
     val termBg = Color(theme.background)
     val termFg = Color(theme.foreground)
@@ -3295,8 +3307,17 @@ private fun TerminalScreen(
                     },
                     onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
                     composing = composing,
-                    onTap = {
-                        if (selection != null) selection = null else showKeyboard()
+                    onTap = { line, column ->
+                        // A link first, because the tap was aimed at the cell the finger is on and a
+                        // linked cell is the one case where a tap means something other than "give me
+                        // the keyboard" - and a reader who tapped a link did not mean to dismiss a
+                        // selection they were reading either.
+                        val target = hyperlinkAt(frame, line, column)
+                        when {
+                            target != null -> hyperlinkTarget = target
+                            selection != null -> selection = null
+                            else -> showKeyboard()
+                        }
                     },
                     onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
                     onZoom = { scale, ended ->
@@ -3343,6 +3364,25 @@ private fun TerminalScreen(
                     )
                 }
             }
+        }
+        // Offered rather than followed: the tap opens this, and nothing leaves the app until the reader
+        // agrees to the target it names. See [hyperlinkTarget].
+        hyperlinkTarget?.let { target ->
+            ConfirmOpenLinkDialog(
+                target = target,
+                onConfirm = {
+                    hyperlinkTarget = null
+                    // No handler is a normal outcome for a scheme this device has nothing for, and the
+                    // alternative to swallowing it is crashing the session the reader was reading.
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(target))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                },
+                onDismiss = { hyperlinkTarget = null },
+            )
         }
         // Collapsible, and collapsed state persisted: the row is what makes a phone keyboard usable
         // against a shell - ESC for vi, TAB for completion, CTRL for ^C - but it is also two rows of
@@ -3856,6 +3896,44 @@ private fun ConfirmCloseSessionDialog(
         },
         confirmButton = {
             Button(onClick = onConfirm) { Text("Close session") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/**
+ * The confirmation a tapped hyperlink asks, which is what keeps OSC 8 from being an intent launcher.
+ *
+ * The target is the program's, not the user's: a remote host prints `OSC 8 ; ; <anything>` and the
+ * cells that follow become a link to it, so following one on the tap itself would let the far end
+ * choose where the reader goes - and a link is exactly the kind of cell a finger lands on while it is
+ * scrolling or aiming at the keyboard. The target is shown *verbatim* rather than prettified, because
+ * the thing the reader is agreeing to is the string that will be opened, and a tidied-up display of it
+ * would be a different thing from the one that leaves the app.
+ *
+ * App-themed like the other confirmations here, for the reason on [ConfirmCloseSessionDialog].
+ */
+@Composable
+private fun ConfirmOpenLinkDialog(
+    target: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Open this link?") },
+        text = {
+            Text(
+                target,
+                // An address is one long token, so it is set small: the reader is being asked to check
+                // the whole string, and the fewer lines it takes the more of it is on screen at once.
+                style = MaterialTheme.typography.bodySmall,
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text("Open") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

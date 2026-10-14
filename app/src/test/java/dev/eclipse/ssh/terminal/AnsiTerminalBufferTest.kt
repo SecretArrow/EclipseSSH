@@ -1381,7 +1381,7 @@ class AnsiTerminalBufferTest {
     fun `an unterminated escape intermediate is abandoned so printing resumes`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("$E" + " ".repeat(500) + "X")
+        buffer.feed("$E" + " ".repeat(5_000) + "X")
 
         assertThat(buffer.plainText()).endsWith("X")
     }

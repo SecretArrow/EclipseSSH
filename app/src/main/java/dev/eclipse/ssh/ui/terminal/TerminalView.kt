@@ -282,7 +282,15 @@ fun TerminalView(
     onSelectionChange: (TerminalSelection?) -> Unit = {},
     onSelectionFinished: (TerminalSelection) -> Unit = {},
     onScroll: (Int) -> Unit = {},
-    onTap: () -> Unit = {},
+    /**
+     * A tap, reported as the cell it landed on rather than as a bare event.
+     *
+     * The cell is what tells a hyperlink from ordinary text, and the view is the only thing that can
+     * work it out: the position is in pixels and the mapping to a buffer line goes through the layout,
+     * the pan and the drag shift. The caller does the rest - follow the link, drop a selection, raise
+     * the keyboard - because what a tap means is the screen's decision and not the grid's.
+     */
+    onTap: (line: Int, column: Int) -> Unit = { _, _ -> },
     onViewportChange: (TerminalViewport) -> Unit = {},
     onLongPressCell: (line: Int, column: Int) -> Unit = { _, _ -> },
     /**
@@ -689,7 +697,11 @@ fun TerminalView(
                 }
                 .pointerInput(metrics, origin) {
                     detectTapGestures(
-                        onTap = { tap() },
+                        onTap = { position ->
+                            val (line, column) =
+                                position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue, scrollShift.floatValue)
+                            tap(line, column)
+                        },
                         onLongPress = { position ->
                             val (line, column) =
                                 position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue, scrollShift.floatValue)
@@ -988,6 +1000,11 @@ private fun DrawScope.drawFrame(
             // drawn in one of them cannot carry a glyph that belongs to the other. The face is part of
             // the question `joins` answers, which is why the predicate is asked about it here.
             //
+            // The link is part of it for the same reason and one more: a run's style is built once from
+            // its first cell, and a linked cell is underlined where the program did not ask for it - so
+            // a run spanning a link's edge would either underline the text after the link or leave the
+            // link itself with no mark on it, depending on which side the run began.
+            //
             // The other half is why the run has to end at all. A cluster the run's face does not carry
             // is drawn from a face further down the chain at that face's own advance, which is not the
             // cell's: inside a run it displaces every glyph after it, so the text slides along the row
@@ -999,7 +1016,11 @@ private fun DrawScope.drawFrame(
             val end = glyphRunEnd(
                 from = column,
                 lastColumn = lastColumn,
-                joins = { line[it].style == cell.style && terminalFaceFor(line[it].value, line[it].combining) == face },
+                joins = {
+                    line[it].style == cell.style &&
+                        line[it].hyperlink == cell.hyperlink &&
+                        terminalFaceFor(line[it].value, line[it].combining) == face
+                },
                 fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
             )
             // A wide character's right half is a blank cell and belongs in that character's run. The
@@ -1162,12 +1183,17 @@ internal data class ComposingPreview(val row: Int, val column: Int, val text: St
  */
 private const val CURSOR_BLINK_MS = 500L
 
-private fun decorationFor(cell: TerminalCell): TextDecoration? = when {
-    cell.style.underline && cell.style.strikethrough ->
-        TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
-    cell.style.underline -> TextDecoration.Underline
-    cell.style.strikethrough -> TextDecoration.LineThrough
-    else -> null
+private fun decorationFor(cell: TerminalCell): TextDecoration? {
+    // A linked cell is underlined even where the program did not ask for it: a link the reader cannot
+    // see is a link the reader cannot choose to follow.
+    val underline = cell.style.underline || cell.hyperlink != null
+    return when {
+        underline && cell.style.strikethrough ->
+            TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
+        underline -> TextDecoration.Underline
+        cell.style.strikethrough -> TextDecoration.LineThrough
+        else -> null
+    }
 }
 
 /**

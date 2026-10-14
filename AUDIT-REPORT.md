@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before it; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before it; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12220,3 +12220,85 @@ wrongly would be a picture rather than a failing test, and the honest place to c
 manual pass on a real device. Nor does this implement the shapes above 6 that some terminals draw: 7 to
 9 are not in the standard, and this terminal answers the way it answers every other sequence it does
 not implement, by leaving the cursor alone.
+
+---
+
+## 115. A link a program printed is a link now, and the tap asks before it goes anywhere
+
+**What was missing.** OSC 8 is how a program puts a target on the text it is about to print, and the
+programs that do it are the ones a reader uses every day: `git` for a remote, `gh` for a pull request,
+`ls` with its hyperlink option, `gcc`'s diagnostics, and a long tail of CLIs. This terminal read the
+sequence, discarded it and printed the text as ordinary characters. The reader got the words with
+nothing behind them, and no way to tell that the program had offered anything at all.
+
+**The rule.** `OSC 8 ; params ; URI ST` opens a link and the same sequence with an empty URI closes it;
+everything printed in between carries the target. The parameters between the code and the target are
+not read - they are the ones the standard reserves for future use - and the payload is split at the
+*first* separator only, because a target may itself contain a semicolon. That is not a detail: a link
+whose address this terminal rewrote would go somewhere else, and the reader would have no way to know.
+A sequence with no separator at all is not a link, and it leaves the open link alone rather than
+closing it: a sequence this terminal cannot read is not evidence that the program meant to end the one
+it was in. A link that is never closed covers the cells that were printed under it and no more - a
+terminal that guessed at a closing point would be inventing one, and one that spread the link across
+the rest of the row would be inventing cells.
+
+**It lives on the cell, and not in a table of runs.** Every operation that already moves a cell moves
+the link with it, and none of those paths needed a line of code for it: a scroll into the scrollback, a
+re-wrap at a new width, the alternate screen's switch, an insert, a delete. Two of those cases are
+pinned rather than assumed - a link read back out of the scrollback through a scrolled window, and the
+right half of a wide character, which is one character to the reader and so one link whichever half a
+finger lands on. The alternative, a table of runs keyed by row and column, would have had to be
+re-indexed by every one of those operations and would have been wrong in each of them until it was.
+
+**It is not part of the style.** A style is what a cell looks like; a link is what it points at, and
+folding the second into the first would have made them inseparable everywhere the style is copied,
+compared or merged. Keeping them apart is what lets the blank an erase leaves keep the pen's background
+- BCE, which is a promise about colour - while being no link at all: there is no text on that blank for
+a reader to have tapped. `ESC c` forgets the open link, as it forgets everything else.
+
+**The target is bounded, and refused rather than clipped.** A program can open a link on every cell it
+prints, and each run's target is one string the buffer holds for as long as its cells live, so a target
+has to have a limit. It is 2048 characters. What it must not be is *shortened* to fit, which is the
+same rule as reading it verbatim: half an address is a different destination from the one the program
+printed. A target past the limit is therefore no link at all - and it does close the link that was
+open, because carrying the previous target onto cells the program meant to point elsewhere would be the
+worse of the two readings.
+
+**That forced a second bound up, and the measurement is why.** The parser abandons a control sequence
+that grows past `MAX_CONTROL_LENGTH`, which was 256 - a number chosen when the longest OSC this app
+sent was a window title. A hyperlink target is a URL, and a few hundred characters of URL is ordinary,
+so the parser's bound was about to be the thing that silently dropped real links. Not reasoned about:
+with the cap still at 256, the first version of the bound test fed a 2 KB target and the cell came back
+with no link, so the sequence had been abandoned long before the link's own bound was reached - a test
+that failed for the wrong reason. The cap is 4096 now, which clears the longest payload this terminal
+keeps with room to spare: a link is lost to its own bound and never to the parser's. The three tests
+that assert abandonment fed 300 and 500 bytes against the old cap and now feed 5,000; what they assert
+is unchanged, and it is the same assertion they always made - far more than the cap.
+
+**The tap offers, it does not follow.** A linked cell is underlined even where the program did not ask
+for it, because a link the reader cannot see is a link the reader cannot choose to follow - and the tap
+opens a confirmation naming the target *verbatim*, so the string the reader agrees to is the string that
+will be opened and not a tidied-up display of it. Nothing leaves the app until that is answered.
+Following a link on the tap itself would hand the far end the ability to launch an intent on one stray
+touch, and a link is exactly the kind of cell a finger lands on while it is scrolling or aiming at the
+keyboard; it is the same trade OSC 52 is refused for on the other side. The lookup is asked with a
+buffer line and a column that came out of a gesture, so a line or a column the frame does not have
+answers nothing rather than throwing: a tap that lands nowhere is a tap that does nothing.
+
+**One rendering consequence, found by reading rather than by a test.** A run of cells is drawn as one
+string with one style built from the run's first cell, and the run-break predicate compared the style
+and the face. A link is neither of those things, and the underline follows from it, so a run spanning a
+link's edge would take its decoration from whichever side it happened to begin on - underlining the
+text *after* the link, or leaving the link itself with no mark on it. The predicate includes the link
+now, which makes a link boundary a run boundary. This one was caught by reading the run grouping; no
+test in this repository would have caught it, because the drawing is Compose and this host cannot run
+it.
+
+**What this does not claim.** The parse, the cell, the frame and the lookup are what the pure terminal
+package exercises, and they are pinned here; the underline, the confirmation and the intent are Compose
+and Android and were not run on a device from this host. Nor is the confirmation anything but this
+app's policy: the sequence is read and the cell carries the target, and what a tap does with it is the
+screen's decision - which is why nothing in the parser launches anything, and why the app's half of it
+is a dialog rather than a call. A target that is not a URL is not filtered here either: the dialog shows
+the string the program sent and the intent is handed to whatever the device has for the scheme, and a
+device with nothing for it swallows the failure rather than taking the session down with it.

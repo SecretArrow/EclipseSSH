@@ -16,11 +16,13 @@ private const val DEFAULT_ROWS = 40
 /**
  * How many bytes an escape sequence may accumulate before it is treated as malformed.
  *
- * Generous next to anything real - a CSI sequence is a handful of bytes and the longest OSC an app
- * like this sees is a window title - and the point is only to make "never terminated" a bounded
- * condition rather than an unbounded one.
+ * Generous next to anything real - a CSI sequence is a handful of bytes, and the longest OSC an app
+ * like this sends is a window title or a hyperlink target - and the point is only to make "never
+ * terminated" a bounded condition rather than an unbounded one. It clears the longest payload this
+ * terminal keeps with room to spare, so that a link is lost to its own bound and never to the
+ * parser's.
  */
-private const val MAX_CONTROL_LENGTH = 256
+private const val MAX_CONTROL_LENGTH = 4096
 
 /** Where the default tab stops sit, on this terminal and on every other one since the VT100. */
 private const val TAB_WIDTH = 8
@@ -143,10 +145,11 @@ data class TerminalStyle(
  * [clearUnit] for the rule that keeps the two together, and [repairLine] for what happens when
  * something shifts them apart.
  *
- * Everything that draws or copies a cell reads [value] plus [combining]. Everything that addresses a
- * cell by column reads [value] alone and needs no part of [combining], because a mark always sits on
- * a base: the base is what decides whether a cell is a word character or a painted one, so those two
- * tests are unchanged by a mark, and no cell ever holds a mark without a base under it.
+ * Everything that draws or copies a cell reads [value] plus [combining], and anything that follows a
+ * link reads [hyperlink]. Everything that addresses a cell by column reads [value] alone and needs no
+ * part of [combining], because a mark always sits on a base: the base is what decides whether a cell is
+ * a word character or a painted one, so those two tests are unchanged by a mark, and no cell ever holds
+ * a mark without a base under it.
  */
 data class TerminalCell(
     val value: Char = ' ',
@@ -154,6 +157,19 @@ data class TerminalCell(
     val combining: String = "",
     /** True on the left half of a two-column character; the cell after it is its right half. */
     val wide: Boolean = false,
+    /**
+     * The target this cell is a hyperlink to, from OSC 8, or null for ordinary text.
+     *
+     * A link is a run of cells rather than one cell, and every cell of the run carries the same
+     * reference to the same string - so a long URL on a wide row costs one string and one pointer per
+     * cell, and a tap anywhere in the run resolves to the same target. The cell keeps it rather than a
+     * per-line run table because every operation that moves a cell - an insert, a delete, a scroll, a
+     * re-wrap - already copies cells, and a run table would be a second structure for all of them to
+     * keep in step. It is deliberately *not* part of [TerminalStyle]: a style is what a cell looks like
+     * and a link is what it points at, and a blank an erase leaves behind keeps the style's background
+     * but is not a link to anything.
+     */
+    val hyperlink: String? = null,
 )
 
 data class TerminalSnapshot(
@@ -574,6 +590,15 @@ class AnsiTerminalBuffer(
     private var cursorVisible = true
     private var cursorBlink = true
     private var cursorShape = TerminalCursorShape.BLOCK
+
+    /**
+     * The hyperlink OSC 8 has open, or null when it has none; see [setHyperlink].
+     *
+     * A property of the output stream rather than of the screen, like the pen: it survives a screen
+     * switch, because a program that opened a link and then switched screens is still in it, and it is
+     * cleared by a reset, which is a program saying to forget everything.
+     */
+    private var hyperlink: String? = null
     private var applicationCursorKeys = false
     private var applicationKeypad = false
     private var bracketedPaste = false
@@ -2059,11 +2084,11 @@ class AnsiTerminalBuffer(
     }
 
     private fun finishOsc() {
-        // OSC 0 and 2 set the window title, which the session tab shows; 10 and 11 ask what this
-        // terminal's default colours are. Everything else - hyperlinks, the palette and cursor-colour
-        // queries, and OSC 52 in particular - is discarded rather than acted on: 52 lets a remote host
-        // write the *local* clipboard, which is not a capability this app is willing to hand to a
-        // server it has just connected to.
+        // OSC 0 and 2 set the window title, which the session tab shows; 8 makes the text that follows
+        // a hyperlink; 10 and 11 ask what this terminal's default colours are. Everything else - the
+        // palette and cursor-colour queries, and OSC 52 in particular - is discarded rather than acted
+        // on: 52 lets a remote host write the *local* clipboard, which is not a capability this app is
+        // willing to hand to a server it has just connected to.
         val payload = controlBuffer.toString()
         controlBuffer.clear()
         val separator = payload.indexOf(';')
@@ -2075,12 +2100,44 @@ class AnsiTerminalBuffer(
                 title = rest.take(MAX_TITLE_LENGTH).takeIf { it.isNotBlank() }
                 revision++
             }
+            8 -> setHyperlink(rest)
             // Only `?` is a query. A payload that is a colour is a *set*, and this terminal does not
             // take one: the theme is the user's, chosen in settings, and a remote repainting the screen
             // it was given for the length of a session is a remote changing the user's display.
             10, 11 -> if (rest == "?") answerColorQuery(code)
             else -> Unit
         }
+    }
+
+    /**
+     * OSC 8: `OSC 8 ; params ; URI ST` opens a hyperlink, and the empty URI closes it.
+     *
+     * The parameters between the `8` and the URI are the ones the standard reserves for future use and
+     * nothing here reads; what matters is the second separator, because the URI itself may contain a
+     * semicolon. So the payload is split at the *first* separator only and the URI is everything after
+     * it, verbatim - a link is opened by the reader and a target this terminal rewrote would be a
+     * different destination from the one the program printed.
+     *
+     * A link is opened, not followed. Nothing here launches anything: the cell carries the target and
+     * the reader decides. That is the same line OSC 52 is on the other side of - a remote that can make
+     * the local machine *do* something with no gesture is a remote acting as the user - and it is why
+     * the target is bounded, since a program can open a link on every cell it prints and each run's
+     * target is one string the buffer then holds for as long as its cells live.
+     *
+     * A payload with no separator at all is not a link, and leaves whatever link was open alone rather
+     * than closing it: the sequence this terminal cannot read is not evidence that the program meant to
+     * end the one it was in.
+     *
+     * A target longer than this terminal will keep is refused rather than clipped, which is the same
+     * rule as reading it verbatim: half an address is a different destination from the one the program
+     * printed. Refusing it does close the open link, though - the program asked for a new target, and
+     * carrying the old one onto cells it meant to point elsewhere would be the worse of the two.
+     */
+    private fun setHyperlink(payload: String) {
+        val separator = payload.indexOf(';')
+        if (separator < 0) return
+        val target = payload.substring(separator + 1)
+        hyperlink = target.takeIf { it.isNotEmpty() && it.length <= MAX_HYPERLINK_LENGTH }
     }
 
     /**
@@ -2358,8 +2415,13 @@ class AnsiTerminalBuffer(
         val line = lines[cursorRow]
         clearUnit(line, cursorColumn)
         clearUnit(line, cursorColumn + 1)
-        line[cursorColumn] = TerminalCell(glyph, style, wide = true)
-        if (cursorColumn + 1 < line.size) line[cursorColumn + 1] = TerminalCell(' ', style.blanked)
+        line[cursorColumn] = TerminalCell(glyph, style, wide = true, hyperlink = hyperlink)
+        // The right half carries the link too, so a tap on either half of a wide character resolves to
+        // the same target: the two cells are one character to the reader, and the half a finger lands
+        // on is not a choice the reader made.
+        if (cursorColumn + 1 < line.size) {
+            line[cursorColumn + 1] = TerminalCell(' ', style.blanked, hyperlink = hyperlink)
+        }
         lastPrinted = glyph
         if (cursorColumn + 2 >= columns) wrapPending = true else cursorColumn += 2
         markDamageRow(cursorRow)
@@ -2459,14 +2521,14 @@ class AnsiTerminalBuffer(
             if (cursorColumn in 1 until line.size && line[cursorColumn - 1].wide) {
                 clearUnit(line, cursorColumn - 1)
             }
-            line.add(cursorColumn, TerminalCell(glyph, style))
+            line.add(cursorColumn, TerminalCell(glyph, style, hyperlink = hyperlink))
             while (line.size > columns) line.removeAt(line.lastIndex)
             repairLine(line)
         } else {
             // Overwriting either half of a wide character destroys the whole one: a glyph with a new
             // character under one of its two columns is the overlap this is all for.
             clearUnit(line, cursorColumn)
-            line[cursorColumn] = TerminalCell(glyph, style)
+            line[cursorColumn] = TerminalCell(glyph, style, hyperlink = hyperlink)
         }
         lastPrinted = glyph
         if (cursorColumn >= columns - 1) wrapPending = true else cursorColumn++
@@ -2797,6 +2859,7 @@ class AnsiTerminalBuffer(
         cursorVisible = true
         cursorBlink = true
         cursorShape = TerminalCursorShape.BLOCK
+        hyperlink = null
         applicationCursorKeys = false
         applicationKeypad = false
         bracketedPaste = false
@@ -2881,6 +2944,14 @@ class AnsiTerminalBuffer(
 
         const val MAX_PENDING_REPLIES = 32
         const val MAX_TITLE_LENGTH = 200
+
+        /**
+         * How long a hyperlink target may be. Bounded because a program can open one on every cell it
+         * prints, and each run's target is one string the buffer holds for as long as its cells do -
+         * and longer than any address a program has a reason to print. This is a limit on what is kept
+         * and not on what is read: a longer target is refused, never clipped.
+         */
+        const val MAX_HYPERLINK_LENGTH = 2048
 
         /** How many titles XTWINOPS may hold per stack. xterm's own limit, and it is enough. */
         const val MAX_TITLE_STACK = 10

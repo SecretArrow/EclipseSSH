@@ -99,7 +99,7 @@ class TerminalControlStringTest {
         // given up and whatever follows is treated as the text it turns out to be.
         val buffer = session()
 
-        buffer.feed("$E" + "P" + "x".repeat(500) + "tail")
+        buffer.feed("$E" + "P" + "x".repeat(5_000) + "tail")
 
         assertThat(buffer.plainText()).contains("tail")
     }
@@ -121,7 +121,7 @@ class TerminalControlStringTest {
     fun `an unterminated dcs past the cap gives up and prints what follows`() {
         val buffer = session()
 
-        buffer.feed("$E" + "P" + "z".repeat(300))
+        buffer.feed("$E" + "P" + "z".repeat(5_000))
         buffer.feed("tail")
 
         assertThat(buffer.plainText()).contains("tail")
