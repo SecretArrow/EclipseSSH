@@ -848,16 +848,24 @@ class AnsiTerminalBuffer(
     )
 
     /**
-     * The whole buffer's prompt marks, indexed by absolute line, for a reader that has to look outside
-     * the window it was given.
+     * Every line of the session - its text and whatever the shell said about it - read together so that
+     * the two cannot describe different lines.
      *
-     * A frame carries the marks of the lines it shows, which is what a screen needs; navigation needs
-     * the ones it does not, because the prompt a reader is walking towards is by definition off-screen.
+     * This is what a review of a session reads: [SessionLine] pairs a line's text with its mark, and one
+     * read of one list is the whole of the guarantee that they agree. A caller that took the marks and
+     * the text as two calls could take them from either side of a scrollback trim, and every command
+     * after the cut would then be attributed to the wrong prompt - [reviewCommands] would be right about
+     * lines that no longer hold what it was told they hold.
+     *
      * A copy, and a synchronized one, so the caller holds a list that cannot change under it while it
-     * walks - the buffer is fed from another thread.
+     * walks: the buffer is fed from another thread.
      */
     @Synchronized
-    fun promptMarksSnapshot(): List<PromptMark?> = marks.toList()
+    fun sessionLines(): List<SessionLine> = lines.mapIndexed { index, line ->
+        val out = StringBuilder(columns)
+        appendLineText(out, line)
+        SessionLine(out.toString(), marks[index])
+    }
 
     /**
      * The window the view can actually draw: [viewportRows] lines ending at the cursor, [scrollOffset]
@@ -1426,21 +1434,7 @@ class AnsiTerminalBuffer(
         val out = StringBuilder(lines.size * (columns + 1))
         lines.forEachIndexed { index, line ->
             if (index > 0) out.append('\n')
-            // Right-trim this line only, never back past the separator: the same scope
-            // joinToString gave each line's own trimEnd().
-            val lineStart = out.length
-            line.forEachIndexed { column, cell ->
-                // The right half of a wide character is a cell rather than a character, and the space
-                // it is stored as is not part of the text - see [textIn].
-                if (column > 0 && line[column - 1].wide) return@forEachIndexed
-                out.append(cell.value)
-                // The same cluster [textIn] writes, for the same reason: this is the text a person
-                // reads, and the reason the two have to agree is spelled out above.
-                out.append(cell.combining)
-            }
-            var lineEnd = out.length
-            while (lineEnd > lineStart && out[lineEnd - 1].isWhitespace()) lineEnd--
-            out.setLength(lineEnd)
+            appendLineText(out, line)
         }
         // The outer trimEnd(), which is what removes the run of newlines left by blank lines at the
         // bottom of an otherwise empty screen.
@@ -1448,6 +1442,31 @@ class AnsiTerminalBuffer(
         while (end > 0 && out[end - 1].isWhitespace()) end--
         out.setLength(end)
         return out.toString()
+    }
+
+    /**
+     * One line's text, right-trimmed, appended to [out] - the one place the two rules that make a line's
+     * text are applied, so the whole buffer's text and a single line's text cannot disagree.
+     *
+     * Right-trims this line only, never back past the separator: the same scope `joinToString` gave each
+     * line's own `trimEnd()`. It writes into the caller's builder rather than returning a `String`
+     * because [plainText] is called once per frame over up to 2 000 lines, and a `String` per line is
+     * the allocation this shape exists to avoid - see [plainText].
+     */
+    private fun appendLineText(out: StringBuilder, line: List<TerminalCell>) {
+        val lineStart = out.length
+        line.forEachIndexed { column, cell ->
+            // The right half of a wide character is a cell rather than a character, and the space it is
+            // stored as is not part of the text - see [textIn].
+            if (column > 0 && line[column - 1].wide) return@forEachIndexed
+            out.append(cell.value)
+            // The same cluster [textIn] writes, for the same reason: this is the text a person reads,
+            // and the reason the two have to agree is spelled out above.
+            out.append(cell.combining)
+        }
+        var lineEnd = out.length
+        while (lineEnd > lineStart && out[lineEnd - 1].isWhitespace()) lineEnd--
+        out.setLength(lineEnd)
     }
 
     private fun consume(char: Char) {

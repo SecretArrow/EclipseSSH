@@ -14,6 +14,8 @@ package dev.eclipse.ssh.terminal
  * arithmetic is what goes wrong: which prompt is "the one before this line" when the line *is* a
  * prompt, what a command's status is when the shell marked its end and the next prompt's start on the
  * same row, and what to answer when the shell has said nothing at all. None of that needs a device.
+ *
+ * [TerminalReview] is the other half: the same marks, cut into the commands a reader actually reads.
  */
 
 /**
@@ -40,7 +42,14 @@ fun nextPrompt(marks: List<PromptMark?>, line: Int): Int? {
 }
 
 /**
- * The mark that says how the command behind [line] ended, or null when the shell has not said.
+ * The line the mark that says how the command behind [line] ended is on, or null when the shell has not
+ * said - the line rather than the mark because the two callers want different halves of it: [commandEndAt]
+ * hands back the mark, so a caller can ask what the status was, and a caller cutting a session into
+ * blocks wants the boundary.
+ *
+ * This is the question a caller holding a *line* asks. A caller holding a *command* asks a different one,
+ * because the row that carries one command's `D` and the next prompt's `A` answers for both - see
+ * [TerminalReview], which reads a command's own end rather than the end of the command above a line.
  *
  * The command behind a line is the one whose prompt is the nearest at or above it - and the line that
  * *carries* that prompt is the shell's own boundary, so it belongs to the command it ends as well as to
@@ -53,20 +62,42 @@ fun nextPrompt(marks: List<PromptMark?>, line: Int): Int? {
  *
  * [line] past the end of [marks] is answered as the last line is, because the question a reader asks is
  * always about the text it is looking at, and a window can sit below the last mark the shell has made.
+ */
+fun commandEndLine(marks: List<PromptMark?>, line: Int): Int? {
+    if (marks.isEmpty()) return null
+    val start = line.coerceIn(0, marks.lastIndex)
+    val limit = (nextPrompt(marks, start) ?: marks.lastIndex) + 1
+    for (index in start until limit) {
+        if (PromptMarkKind.FINISHED in (marks[index]?.kinds ?: emptySet())) return index
+    }
+    return null
+}
+
+/**
+ * The mark that says how the command behind [line] ended, or null when the shell has not said.
  *
  * The mark is returned rather than its status because a bare `D` is a real answer: the command finished,
  * and the shell did not say how, which a reader has to be able to tell apart from a shell that said
  * nothing at all.
  */
-fun commandEndAt(marks: List<PromptMark?>, line: Int): PromptMark? {
-    if (marks.isEmpty()) return null
-    val start = line.coerceIn(0, marks.lastIndex)
-    val limit = (nextPrompt(marks, start) ?: marks.lastIndex) + 1
-    for (index in start until limit) {
-        val mark = marks[index] ?: continue
-        if (PromptMarkKind.FINISHED in mark.kinds) return mark
-    }
-    return null
-}
+fun commandEndAt(marks: List<PromptMark?>, line: Int): PromptMark? =
+    commandEndLine(marks, line)?.let { marks[it] }
+
+/**
+ * The scroll offset that brings absolute [line] into a [rows]-row window whose bottom edge is [anchor],
+ * putting it as near the window's top as the scrollback allows.
+ *
+ * The offset counts lines *above* the live bottom, so the top of the window is `rows - 1` lines above
+ * the anchor and this is the distance to that. A line already on the last screenful gives zero or less,
+ * and zero is the answer rather than a negative one: it means "follow the output again", which is where
+ * a reader asking about a line that is still on screen wants the view to be.
+ *
+ * [anchor] is the line the window's bottom sits on with no scrolling at all - [AnsiTerminalBuffer]'s
+ * `cursorLine`. It is read before the scroll, so a caller that scrolls and then reads it again has moved
+ * its own reference; and the buffer clamps whatever offset it is given, so a line near the top of the
+ * scrollback lands wherever there is room rather than being pushed off the screen to reach the top.
+ */
+fun offsetToShowLine(anchor: Int, line: Int, rows: Int): Int =
+    (anchor - line - (rows - 1).coerceAtLeast(0)).coerceAtLeast(0)
 
 private fun PromptMark?.isPrompt(): Boolean = this != null && PromptMarkKind.PROMPT in kinds

@@ -326,23 +326,23 @@ class PromptMarkTest {
     }
 
     @Test
-    fun `the snapshot reaches the marks a window cannot show, and is a copy`() {
+    fun `the session read reaches past the window, and pairs each line's text with its mark`() {
         val buffer = buffer(rows = 4)
 
-        buffer.feed(mark("A") + "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n")
+        buffer.feed(mark("A") + "user@host:~$ one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n")
 
         // Line 0 has scrolled off the four-row screen into the history, so the window cannot show the
-        // mark on it - and the reader walking towards a prompt is walking towards one that is usually
-        // off-screen, which is why the whole session is readable and not just the frame.
-        val snapshot = buffer.promptMarksSnapshot()
+        // mark on it - and a review of a session has to read the lines the window does not hold.
+        val lines = buffer.sessionLines()
         assertThat(buffer.frame().promptMarks.any { it != null }).isFalse()
-        assertThat(snapshot).hasSize(7)
-        assertThat(snapshot.first()?.kinds).containsExactly(PromptMarkKind.PROMPT)
+        assertThat(lines).hasSize(7)
+        assertThat(lines.first().text).isEqualTo("user@host:~$ one")
+        assertThat(lines.first().mark?.kinds).containsExactly(PromptMarkKind.PROMPT)
 
-        // A copy, so the buffer can be fed while the reader walks a list that does not move under it.
+        // A copy, so the buffer can be fed while a reader walks a list that does not move under it.
         buffer.feed(mark("D;0"))
-        assertThat(snapshot[6]).isNull()
-        assertThat(buffer.promptMarksSnapshot()[6]?.kinds).containsExactly(PromptMarkKind.FINISHED)
+        assertThat(lines[6].mark).isNull()
+        assertThat(buffer.sessionLines()[6].mark?.kinds).containsExactly(PromptMarkKind.FINISHED)
     }
 
     @Test

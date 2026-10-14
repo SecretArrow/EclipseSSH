@@ -142,4 +142,40 @@ class PromptReviewTest {
         assertThat(nextPrompt(marks, 99)).isNull()
         assertThat(commandEndAt(emptyList(), 0)).isNull()
     }
+
+    @Test
+    fun `the line an end is on is the line the mark is handed back from`() {
+        val marks = session()
+
+        // The two are the same rule read for different halves, so they cannot disagree: `commandEndAt`
+        // hands back the mark, `commandEndLine` the line it sits on.
+        assertThat(commandEndLine(marks, 1)).isEqualTo(3)
+        assertThat(commandEndAt(marks, 1)).isEqualTo(marks[3])
+        assertThat(commandEndLine(marks, 4)).isEqualTo(5)
+        // The boundary row again: the command above ends there, and it is also a prompt.
+        assertThat(commandEndLine(marks, 3)).isEqualTo(3)
+        assertThat(commandEndLine(marks, 6)).isEqualTo(5)
+        assertThat(commandEndLine(emptyList(), 0)).isNull()
+    }
+
+    @Test
+    fun `a line is scrolled to the top of the window it is asked to appear in`() {
+        // A ten-row window whose bottom sits on line 100: lines 91 to 100 are on screen already, and the
+        // answer for any of them is "do not scroll" - the view stays where it is, following the output.
+        assertThat(offsetToShowLine(anchor = 100, line = 100, rows = 10)).isEqualTo(0)
+        assertThat(offsetToShowLine(anchor = 100, line = 91, rows = 10)).isEqualTo(0)
+        // One line above the window, so one line of scrolling puts it on the top row.
+        assertThat(offsetToShowLine(anchor = 100, line = 90, rows = 10)).isEqualTo(1)
+        assertThat(offsetToShowLine(anchor = 100, line = 50, rows = 10)).isEqualTo(41)
+    }
+
+    @Test
+    fun `a line near the top of the buffer is asked for by an offset the buffer clamps`() {
+        // The arithmetic does not know how much scrollback there is; the buffer does, and clamps what it
+        // is given. Asking for the top of the window is still the right request - the line lands wherever
+        // there is room, which is the top of the buffer, rather than being pushed off the bottom of the
+        // window to reach the top of it.
+        assertThat(offsetToShowLine(anchor = 100, line = 3, rows = 10)).isEqualTo(88)
+        assertThat(offsetToShowLine(anchor = 9, line = 0, rows = 10)).isEqualTo(0)
+    }
 }

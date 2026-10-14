@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §119, *The marks answer the three questions a reader has, and the arithmetic is out of the view model*; §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*, is the change before it; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before that; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §120, *A session is cut into the commands a reader reads, and the question a mark answers depends on what you are holding*; §119, *The marks answer the three questions a reader has, and the arithmetic is out of the view model*, is the change before it; §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*, is the change before that; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before that; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12549,3 +12549,88 @@ surface is the next change, and these functions are what it will call. They take
 frame, so a caller that hands them a window's marks gets a window's answers; reaching past the window is
 the caller's job, and `promptMarksSnapshot()` is the one way to do it. And nothing here persists a mark:
 a session that ends still takes its marks with it.
+
+---
+
+## 120. A session is cut into the commands a reader reads, and the question a mark answers depends on what you are holding
+
+**What a review needs that the marks alone do not give.** §119 answered three questions about a *line*:
+which prompt is above it, which below, and how the command behind it ended. A review of a session needs
+a fourth thing, and it is not arithmetic: the words. "Command 3, exited 2" is worth nothing without
+`grep nope file` and the error it printed, so this change reads the lines as well as the marks and cuts
+the session into one entry per command - `SessionLine`, `ReviewedCommand` and `reviewCommands` in
+`TerminalReview.kt`, with the prose (`ReviewedCommand.end`) in the same file for the same reason the
+arithmetic is: a sentence that reports a command which never finished as one that did is a defect a test
+can pin and a look at a screen cannot.
+
+**The two reads had to become one.** The marks and the text are two lists indexed by the same thing, and
+a caller that fetched them as two calls could fetch them from either side of a scrollback trim: the marks
+would then be one line longer than the text, and every command after the cut would be attributed to the
+wrong prompt - `reviewCommands` would be exactly right about lines that no longer hold what it was told
+they hold. So the accessor §119 added for this (`promptMarksSnapshot`, the marks alone) is now
+`AnsiTerminalBuffer.sessionLines`: a `SessionLine` per line, text and mark together, built under one lock
+and copied out. §119's note that the snapshot is "the one way" to reach past the window is superseded by
+this - the same reach, with the words attached, and no way to misalign them.
+
+**The cut is by prompt, not by the acceptance mark.** A command's block runs from its prompt line to the
+line before the next prompt, because the prompt is the one boundary every announcing shell sends, whereas
+the acceptance mark is optional: a shell that omits it would otherwise run two commands together into one
+entry. The acceptance mark says only where *within* the block the output starts, and its line is the first
+output line rather than the last command line - the shell accepts the command line only after the last
+continuation, and the cursor is then on the line the command's own first output goes to. That is what
+makes a multi-line command's continuations part of the command rather than of its output, and it is
+pinned by a fixture whose acceptance mark sits *below* the continuations, which is where a shell puts it.
+
+**The finding: the question a mark answers depends on what the caller is holding.** §119 settled that the
+row carrying one command's `D` and the next prompt's `A` belongs to both, and answered "how did the
+command behind this line end" with the command that *ends* there. Asked of a *command* - which is what a
+review does, because a review has the command's prompt line in hand and not a cursor - that same rule
+hands back the **previous** command's status: the row is a prompt, so the command "behind" it is the one
+that just finished. A review that showed a command as failed because the command before it failed is
+precisely the defect that makes a review worse than useless, so the review scans for its own end instead:
+from the line after the prompt to the next prompt's line inclusive. A `D` on that last line is still this
+command's, and the reason is the ordering of the shell's own hooks - a shell reports a command's end from
+its prompt hook, *before* printing the prompt, so a finished command's `D` can never be below the prompt
+that follows it and the previous command's can never be below this one's prompt. The two questions are
+kept as two functions rather than folded into one, because they are genuinely different questions with
+different answers on exactly one row, and both are now pinned by a test on that row. The line-scoped one
+has no caller yet; it is the question a caller holding a line asks, and it stays until something holds a
+line and asks it.
+
+**Three states of "how it ended", kept apart in words.** A command with no end reported may still be
+running, or may have been killed before it could say. A command that finished without a status ran to
+completion and its shell did not say how. A status is the one case where a number is the answer. The
+first two are not "no status": reporting them together would tell a reader that a command which never
+finished had finished, and the whole point of a review is to be able to see which command failed - which
+is also why `ReviewedCommand` carries `endLine` and `exitCode` separately rather than one nullable
+status.
+
+**The prompt comes off the command.** A reader wants `grep nope file`, not `user@host:~$ grep nope
+file`, and `inputColumn` - the column `B` arrived at, kept since §118 - is what says where the prompt
+ends. The cut is bounded by the block's first line, so the continuation lines of a multi-line command
+(which carry the shell's secondary prompt, and are part of what the user typed) cannot be cut into. A
+shell that announced its prompt but not where the typing starts leaves the prompt in the text, which is
+honest and better than a boundary guessed out of the prompt's own characters.
+
+**One appender for a line's text.** Reading the lines meant having a line's text as a `String`, which
+`plainText` builds only as one long one. Extracting it as a per-line function would have re-introduced
+the allocation `plainText` exists to avoid - a `String` per line, on a call that runs at frame rate over
+up to 2 000 lines - so the two rules that make a line's text (skip a wide character's right half, append
+the combining cluster) moved into one `appendLineText` that writes into a caller's builder. `plainText`
+passes its own builder; `sessionLines` passes a fresh one per line. The rules are now in one place, which
+is what stops the text a review shows from disagreeing with the text a search finds or a log saves.
+
+**The gate.** Thirteen new tests: ten for the cut (each command's bounds, the three prose states, the
+boundary row's two answers, a command that never reported an end, a multi-line command's continuations,
+a shell that omits the acceptance mark, a shell that omits the input column, the prompt being typed at,
+a session whose shell announced nothing, and one drive through a real feed so the cut has to agree with
+the marks the parser actually produces), and three for the new line-scoped and offset arithmetic. The
+suite is 652 methods, green, up from 639. The buffer was touched, so all nine fixtures and both recorded
+streams were replayed with `--attrs` again: every one IDENTICAL.
+
+**What this does not claim.** Nothing draws a review yet: the pane that reads these entries, the toggle
+that opens it and the jump that takes a reader from an entry to the text it describes are the next
+change, and this one is the model they read. The review covers the buffer, so a session whose scrollback
+has been trimmed loses those commands with the lines - and marks are still not persisted, so a reconnect
+starts empty. A shell that announces nothing gives no entries, which is not the same as a session where
+no command ran, and the empty list is reported as itself rather than as a failure.
