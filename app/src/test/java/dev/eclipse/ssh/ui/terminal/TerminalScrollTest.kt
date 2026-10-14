@@ -457,23 +457,40 @@ class TerminalScrollTest {
     // --- dragTarget --------------------------------------------------------
 
     @Test
-    fun `a program reading SGR mouse reports gets the wheel`() {
-        for (mode in listOf(MouseMode.NORMAL, MouseMode.BUTTON, MouseMode.ANY)) {
+    fun `a program that asked for the finger's movement gets the drag itself`() {
+        // 1002 and 1003 named movement, so a drag on either is the report they are waiting for: a wheel
+        // report is not a drag, and handing one to an editor that asked for a visual selection turns the
+        // selection into a scroll.
+        for (mode in listOf(MouseMode.BUTTON, MouseMode.ANY)) {
             assertThat(dragTarget(mode, mouseSgr = true, alternateScreen = true))
-                .isEqualTo(DragTarget.Wheel)
+                .isEqualTo(DragTarget.Motion)
             assertThat(dragTarget(mode, mouseSgr = true, alternateScreen = false))
-                .isEqualTo(DragTarget.Wheel)
+                .isEqualTo(DragTarget.Motion)
         }
+    }
+
+    @Test
+    fun `a program reading SGR mouse reports that asked for no movement gets the wheel`() {
+        // 1000 named presses and releases and nothing else, and a touchscreen has no wheel to turn: the
+        // drag is the only scroll it can be given, which is what makes `less` and `htop` scrollable.
+        assertThat(dragTarget(MouseMode.NORMAL, mouseSgr = true, alternateScreen = true))
+            .isEqualTo(DragTarget.Wheel)
+        assertThat(dragTarget(MouseMode.NORMAL, mouseSgr = true, alternateScreen = false))
+            .isEqualTo(DragTarget.Wheel)
     }
 
     @Test
     fun `tracking without SGR is not reported in an encoding this terminal cannot send`() {
         // The program asked for the old format; it gets the keys a terminal with no mouse would send
-        // rather than SGR bytes it would read as text.
+        // rather than SGR bytes it would read as text - the mode that asked for the drag included.
         assertThat(dragTarget(MouseMode.NORMAL, mouseSgr = false, alternateScreen = true))
             .isEqualTo(DragTarget.Arrows)
         assertThat(dragTarget(MouseMode.ANY, mouseSgr = false, alternateScreen = false))
             .isEqualTo(DragTarget.Scrollback)
+        assertThat(dragTarget(MouseMode.BUTTON, mouseSgr = false, alternateScreen = true))
+            .isEqualTo(DragTarget.Arrows)
+        assertThat(dragTarget(MouseMode.ANY, mouseSgr = false, alternateScreen = true))
+            .isEqualTo(DragTarget.Arrows)
     }
 
     @Test
@@ -501,16 +518,20 @@ class TerminalScrollTest {
     @Test
     fun `no combination of mode and screen goes unanswered`() {
         val reading = listOf(MouseMode.NORMAL, MouseMode.BUTTON, MouseMode.ANY)
+        val drags = listOf(MouseMode.BUTTON, MouseMode.ANY)
 
         for (mode in MouseMode.entries) {
             for (sgr in listOf(false, true)) {
                 for (alternate in listOf(false, true)) {
                     val target = dragTarget(mode, sgr, alternate)
 
-                    // A wheel is only ever what a program that reads the mouse in SGR asked for.
-                    if (target == DragTarget.Wheel) {
+                    // A report is only ever what a program that reads the mouse in SGR asked for, and
+                    // which one is the gesture it named: the drag for the modes that asked for movement,
+                    // the wheel for the mode that asked only for presses and releases.
+                    if (target == DragTarget.Wheel || target == DragTarget.Motion) {
                         assertThat(sgr).isTrue()
                         assertThat(mode in reading).isTrue()
+                        assertThat(target).isEqualTo(if (mode in drags) DragTarget.Motion else DragTarget.Wheel)
                     } else {
                         // Everything else follows from the screen: a scrollback off the alternate
                         // screen, arrow keys on it.

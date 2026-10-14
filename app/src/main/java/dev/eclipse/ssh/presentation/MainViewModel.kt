@@ -110,6 +110,7 @@ import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.FrameSample
 import dev.eclipse.ssh.terminal.KeyboardModes
 import dev.eclipse.ssh.terminal.MouseEncoding
+import dev.eclipse.ssh.terminal.MouseGesture
 import dev.eclipse.ssh.terminal.offsetToShowLine
 import dev.eclipse.ssh.terminal.paintedCells
 import dev.eclipse.ssh.terminal.RenderAudit
@@ -2904,6 +2905,20 @@ class MainViewModel @Inject constructor(
     fun sendMouseWheel(sessionKey: String, up: Boolean, column: Int, row: Int) {
         val button = if (up) MouseEncoding.Button.SCROLL_UP else MouseEncoding.Button.SCROLL_DOWN
         writeToTerminal(sessionKey, MouseEncoding.encode(button = button, column = column, row = row))
+    }
+
+    /**
+     * Reports one gesture of the finger to a program that asked for the mouse, at a 1-based screen cell.
+     *
+     * Raw bytes, like [sendMouseWheel] and for the same reason: a mouse report is a fixed escape sequence
+     * the program parses, not a keystroke and not typed text.
+     *
+     * Whether the program is owed this gesture is the caller's answer, not this one's. The caller is the
+     * view, which decides from the frame it is drawing - so the report and the local gesture it was told
+     * apart from are read off the same set of modes and cannot disagree about who owns the screen.
+     */
+    fun sendMouseGesture(sessionKey: String, gesture: MouseGesture, column: Int, row: Int) {
+        writeToTerminal(sessionKey, MouseEncoding.encodeGesture(gesture, column, row))
     }
 
     /**

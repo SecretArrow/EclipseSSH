@@ -1,6 +1,8 @@
 package dev.eclipse.ssh.ui.terminal
 
+import dev.eclipse.ssh.terminal.MouseGesture
 import dev.eclipse.ssh.terminal.MouseMode
+import dev.eclipse.ssh.terminal.MouseModes
 import dev.eclipse.ssh.terminal.TerminalVisualRow
 import kotlin.math.abs
 import kotlin.math.floor
@@ -227,32 +229,38 @@ sealed interface DragTarget {
 
     /** Arrow key presses to the remote, one per step crossed. */
     data object Arrows : DragTarget
+
+    /** Motion reports to the remote, one per cell the finger crosses. */
+    data object Motion : DragTarget
 }
 
 /**
  * Where a vertical drag goes, given who is listening.
  *
- * A program that asked for SGR mouse reports is waiting for the wheel and gets it. Everything else on
- * the alternate screen gets arrow keys, which is xterm's alternate-scroll behaviour and the only thing
- * that can move a program which has taken the screen and is not reading the mouse - there is no
- * scrollback behind it to move instead. Off the alternate screen there *is* a scrollback, so that is
- * where the drag goes: a program addressing the primary screen keeps its lines in the history, and
- * typing arrow keys into the shell on a drag is worse than doing nothing at all.
+ * The first question is whether the program asked for the finger's movement, and it is asked of
+ * [MouseModes.reports] rather than answered again here: a drag handed to a program that asked for one is
+ * the visual selection an editor is waiting for, and the same drag handed to a program that did not ask
+ * is a scroll it never requested. The four tracking modes are told apart for exactly this, and asking
+ * the mode rather than re-deriving it is what keeps the two answers from drifting apart.
+ *
+ * The one mouse-reading mode that did not ask for the drag is 1000, and it gets the wheel - which is the
+ * only scroll a touchscreen has to offer a program that has taken the screen, since there is no wheel to
+ * turn. `less` scrolls a line per report and `htop` a panel. X10 does not get one: the oldest mode
+ * predates the wheel, and a program that asked for it is asking where the finger went down.
+ *
+ * Everything else on the alternate screen gets arrow keys, which is xterm's alternate-scroll behaviour
+ * and the only thing that can move a program which has taken the screen and is not reading the mouse -
+ * there is no scrollback behind it to move instead. Off the alternate screen there *is* a scrollback, so
+ * that is where the drag goes: a program addressing the primary screen keeps its lines in the history,
+ * and typing arrow keys into the shell on a drag is worse than doing nothing at all.
  *
  * Tracking without SGR falls through to those same two answers rather than inventing the legacy
  * encoding: this terminal sends SGR coordinates or none, so a program asking for the old format gets
  * the same keys it would get from a terminal without a mouse.
  */
-fun dragTarget(mouseMode: MouseMode, mouseSgr: Boolean, alternateScreen: Boolean): DragTarget {
-    val wheel = when (mouseMode) {
-        // X10 reports presses and nothing else, and a wheel is not a press. A drag on a program that
-        // asked only for that gets the arrow keys it would get from a terminal with no mouse at all.
-        MouseMode.OFF, MouseMode.X10 -> false
-        MouseMode.NORMAL, MouseMode.BUTTON, MouseMode.ANY -> mouseSgr
-    }
-    return when {
-        wheel -> DragTarget.Wheel
-        alternateScreen -> DragTarget.Arrows
-        else -> DragTarget.Scrollback
-    }
+fun dragTarget(mouseMode: MouseMode, mouseSgr: Boolean, alternateScreen: Boolean): DragTarget = when {
+    MouseModes.reports(mouseMode, mouseSgr, MouseGesture.MOTION, buttonHeld = true) -> DragTarget.Motion
+    mouseMode == MouseMode.NORMAL && mouseSgr -> DragTarget.Wheel
+    alternateScreen -> DragTarget.Arrows
+    else -> DragTarget.Scrollback
 }

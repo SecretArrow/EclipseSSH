@@ -307,6 +307,7 @@ import dev.eclipse.ssh.data.saf.readPickedKeyFile
 import dev.eclipse.ssh.ssh.RemoteFile
 import dev.eclipse.ssh.data.saf.LocalFile
 import androidx.compose.ui.focus.FocusRequester
+import dev.eclipse.ssh.terminal.MouseGesture
 import dev.eclipse.ssh.terminal.ReviewedCommand
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
@@ -1430,6 +1431,7 @@ private fun EclipseWorkspace(
                     onScrollToLine = viewModel::scrollTerminalToLine,
                     onMouseWheel = viewModel::sendMouseWheel,
                     onArrowKeys = viewModel::sendArrowKeys,
+                    onMouseGesture = viewModel::sendMouseGesture,
                     onCopySelection = { hostId, sel ->
                         val range = sel.toTextRange()
                         val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
@@ -1642,6 +1644,7 @@ private fun EclipseWorkspace(
                     onScrollToLine = viewModel::scrollTerminalToLine,
                     onMouseWheel = viewModel::sendMouseWheel,
                     onArrowKeys = viewModel::sendArrowKeys,
+                    onMouseGesture = viewModel::sendMouseGesture,
                     onCopySelection = { hostId, sel ->
                         val range = sel.toTextRange()
                         val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
@@ -2417,6 +2420,8 @@ private fun WorkspaceScaffold(
     onScrollToLine: (String, Int) -> Unit = { _, _ -> },
     onMouseWheel: (String, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
     onArrowKeys: (String, Boolean, Int) -> Unit = { _, _, _ -> },
+    /** One gesture of the finger, for a program that asked the terminal to report the mouse. */
+    onMouseGesture: (String, MouseGesture, Int, Int) -> Unit = { _, _, _, _ -> },
     onCopySelection: (String, TerminalSelection) -> Unit = { _, _ -> },
     onCopyTerminalText: (String) -> Unit = {},
     onPasteTerminal: (String) -> Unit = {},
@@ -2538,6 +2543,7 @@ private fun WorkspaceScaffold(
             onScrollToLine = onScrollToLine,
             onMouseWheel = onMouseWheel,
             onArrowKeys = onArrowKeys,
+            onMouseGesture = onMouseGesture,
             onCopySelection = onCopySelection,
             onCopyText = onCopyTerminalText,
             onPaste = onPasteTerminal,
@@ -2988,6 +2994,8 @@ private fun TerminalScreen(
     onMouseWheel: (String, Boolean, Int, Int) -> Unit,
     /** Arrow key presses, for a drag on a screen with no history behind it. */
     onArrowKeys: (String, Boolean, Int) -> Unit,
+    /** One gesture of the finger, for a program that asked the terminal to report the mouse. */
+    onMouseGesture: (String, MouseGesture, Int, Int) -> Unit,
     onCopySelection: (String, TerminalSelection) -> Unit,
     onCopyText: (String) -> Unit,
     onPaste: (String) -> Unit,
@@ -3375,6 +3383,9 @@ private fun TerminalScreen(
                         repeat(count) { onMouseWheel(activeTab.id, up, column, row) }
                     },
                     onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
+                    onMouseGesture = { gesture, column, row ->
+                        onMouseGesture(activeTab.id, gesture, column, row)
+                    },
                     composing = composing,
                     onTap = { line, column ->
                         // A link first, because the tap was aimed at the cell the finger is on and a

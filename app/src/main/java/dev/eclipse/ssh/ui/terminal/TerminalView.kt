@@ -47,6 +47,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.eclipse.ssh.terminal.MouseGesture
+import dev.eclipse.ssh.terminal.MouseModes
 import dev.eclipse.ssh.terminal.TERMINAL_COLUMN_RANGE
 import dev.eclipse.ssh.terminal.TERMINAL_ROW_RANGE
 import dev.eclipse.ssh.terminal.TerminalCell
@@ -317,6 +319,17 @@ fun TerminalView(
      * from a drag would be typed at the shell.
      */
     onArrowKeys: (up: Boolean, count: Int) -> Unit = { _, _ -> },
+    /**
+     * One gesture of the finger, for a program that asked the terminal to report the mouse.
+     *
+     * Reported at a 1-based *screen* cell, which is what a mouse report carries: a program reading the
+     * mouse has never seen the scrollback, so the cell it is told about is one of its own.
+     *
+     * Whether the program is owed the gesture is decided here rather than by the caller, from the mode in
+     * the frame being drawn. The local gesture a report stands in for is read off that same frame, so the
+     * two can never come from different pictures of who owns the screen.
+     */
+    onMouseGesture: (gesture: MouseGesture, column: Int, row: Int) -> Unit = { _, _, _ -> },
     composing: String = "",
 ) {
     val measurer = rememberTextMeasurer()
@@ -349,6 +362,7 @@ fun TerminalView(
     val zoom by rememberUpdatedState(onZoom)
     val mouseWheel by rememberUpdatedState(onMouseWheel)
     val arrowKeys by rememberUpdatedState(onArrowKeys)
+    val mouseGesture by rememberUpdatedState(onMouseGesture)
 
     BoxWithConstraints(modifier.background(background)) {
         val widthPx = with(density) { maxWidth.toPx() }
@@ -507,6 +521,22 @@ fun TerminalView(
         // move must not invalidate anything.
         val pointerAt = remember { FloatArray(2) }
 
+        // Whether the finger's own gesture has been taken from the program by a long press. A bare
+        // BooleanArray for the same reason [pointerAt] is one, and shared between two handlers that
+        // cannot call each other: the tap handler raises it when the long press fires, and the gesture
+        // loop below reads it to stop reporting a drag the user has taken back for a selection.
+        val localGesture = remember { BooleanArray(1) }
+
+        // The geometry a mouse report's cell is worked out from. Read through state wrappers because the
+        // loop below is keyed on nothing - it has to outlive a recomposition, or a pinch, which changes
+        // the font size and therefore the metrics, would tear the gesture in half - and a captured
+        // [metrics] would then be the size the gesture started at, so every report would name the wrong
+        // cell.
+        val reportMetrics by rememberUpdatedState(metrics)
+        val reportOrigin by rememberUpdatedState(origin)
+        val reportColumns by rememberUpdatedState(visible.columns)
+        val reportRows by rememberUpdatedState(visible.rows)
+
         // Fractional travel is accumulated rather than discarded, so a slow drag is not dead, and a
         // fast one is reported as one delta the caller publishes once instead of once per crossing.
         val scrollAccumulator = remember { ScrollAccumulator() }
@@ -532,7 +562,10 @@ fun TerminalView(
             // starts: a program can turn its mouse reporting on mid-drag, and the answer is read from
             // the frame being drawn so the two can never disagree about who owns the screen.
             val target = dragTarget(currentFrame.mouseMode, currentFrame.mouseSgr, currentFrame.alternateScreen)
-            var steps = scrollAccumulator.dragBy(-delta, backPx, forwardPx)
+            // A drag the program owns is not a scroll, and it is not charged against the accumulator
+            // either: those pixels are spent as the reports the finger produced, and a step taken out of
+            // the same travel would be a second answer to one gesture.
+            var steps = if (target == DragTarget.Motion) 0 else scrollAccumulator.dragBy(-delta, backPx, forwardPx)
             if (steps == 0 && target == DragTarget.Scrollback) {
                 // Guarded by the offset this view believes it is at, not by the one the frame carries:
                 // frames arrive through a StateFlow, so the frame can still be one publication behind
@@ -545,9 +578,9 @@ fun TerminalView(
                     currentFrame.scrollCeiling,
                 )
             }
-            // Only the scrollback draws a shift: a wheel report and an arrow key are answered by the
-            // program scrolling its own screen, and translating this one would slide the picture out
-            // from under the answer it is about to receive.
+            // Only the scrollback draws a shift: a wheel report, an arrow key and a drag the program
+            // owns are all answered by the program moving something of its own, and translating this
+            // screen would slide the picture out from under the answer it is about to receive.
             scrollShift.floatValue =
                 if (target == DragTarget.Scrollback) scrollShiftPx(scrollAccumulator.pendingPx, backPx, forwardPx)
                 else 0f
@@ -565,6 +598,10 @@ fun TerminalView(
                         mouseWheel(up, column, row, abs(steps))
                     }
                     DragTarget.Arrows -> arrowKeys(up, abs(steps))
+                    // Nothing here, and nothing above either: a motion report is one per cell the finger
+                    // crosses rather than one per line of travel, and the gesture loop is what sees every
+                    // cell, so the loop is what reports them.
+                    DragTarget.Motion -> Unit
                 }
             }
             delta
@@ -664,11 +701,65 @@ fun TerminalView(
                 // are untouched. A two-finger gesture is not something any of them can serve: vertical
                 // `scrollable` would read the pinch as a scroll and throw the scrollback around while
                 // the user was trying to make the text bigger.
+                //
+                // It is also the only place that sees a whole gesture, which is why the mouse reports are
+                // made here rather than in the handlers below. A tap is a press and a release, a drag is a
+                // press and a movement and a release, and telling the two apart needs the down, the moves
+                // and the up together - and the up is an event no `detect*` helper hands back: `onTap`
+                // never fires for a drag, and a drag's release is exactly what a program tracking a
+                // selection is waiting for.
                 .pointerInput(Unit) {
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        var scale = 1f
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        pointerAt[0] = down.position.x
+                        pointerAt[1] = down.position.y
+
+                        // The 1-based screen cell a finger is over, written into [out] rather than
+                        // returned: this runs on every move of every gesture, and a Pair per event is an
+                        // allocation a drag does not need. The geometry comes through the state wrappers
+                        // above, because this loop outlives a recomposition.
+                        fun cellAt(position: Offset, out: IntArray) {
+                            val (column, row) = position.toScreenCell(
+                                reportMetrics,
+                                reportOrigin,
+                                pan.floatValue,
+                                reportColumns,
+                                reportRows,
+                            )
+                            out[0] = column
+                            out[1] = row
+                        }
+
+                        // Whether the program is owed a gesture. Asked per report rather than once at the
+                        // down, because a program can turn its mouse reporting on or off in the middle of
+                        // a gesture and the frame being drawn is the only thing that knows.
+                        fun owed(gesture: MouseGesture, held: Boolean) = MouseModes.reports(
+                            currentFrame.mouseMode,
+                            currentFrame.mouseSgr,
+                            gesture,
+                            buttonHeld = held,
+                        )
+
+                        // What the finger has done so far, all of it per gesture and therefore locals
+                        // rather than state. The press is deliberately not reported at the down: the
+                        // gesture could still turn out to be a pinch or a long press, and a report already
+                        // sent cannot be taken back. It goes out with the first movement - which is what
+                        // makes a drag - or with the release, and either way it carries the cell the
+                        // finger went down on.
+                        val downCell = IntArray(2).also { cellAt(down.position, it) }
+                        // The cell the finger is on, and the last cell a report named - the down cell
+                        // until a movement report replaces it.
+                        val at = IntArray(2).also { it[0] = downCell[0]; it[1] = downCell[1] }
+                        var namedX = downCell[0]
+                        var namedY = downCell[1]
+                        var moved = false
+                        var pressSent = false
                         var pinching = false
+                        // Cleared at every down: it is the long press's answer about the gesture in
+                        // flight, and a stale one would silence the next gesture instead.
+                        localGesture[0] = false
+
+                        var scale = 1f
                         do {
                             val event = awaitPointerEvent()
                             // Recorded on the way past, whatever the gesture turns out to be: a wheel
@@ -679,8 +770,8 @@ fun TerminalView(
                                 pointerAt[0] = it.position.x
                                 pointerAt[1] = it.position.y
                             }
-                            val down = event.changes.count { it.pressed }
-                            if (down >= 2) {
+                            val fingers = event.changes.count { it.pressed }
+                            if (fingers >= 2) {
                                 pinching = true
                                 val step = event.calculateZoom()
                                 if (step != 0f && step != 1f) {
@@ -690,9 +781,53 @@ fun TerminalView(
                                 // Consumed only while two fingers are down, which is what stops the
                                 // scroll handlers from also acting on the same pointers.
                                 event.changes.forEach { it.consume() }
+                            } else if (!pinching && !localGesture[0]) {
+                                // Taken on every event, the one that lifts the finger included: a release
+                                // says where the button came up, which is not always where the last
+                                // movement left it.
+                                event.changes.lastOrNull()?.let { cellAt(it.position, at) }
+                                if (at[0] != downCell[0] || at[1] != downCell[1]) moved = true
+                                // One report per cell crossed, which is the granularity a mouse has: a
+                                // finger that has not left its cell has not moved anywhere the program can
+                                // see, and sub-cell jitter inside a cell is not a report either. A motion
+                                // is a button held and moving, so the lift - which is the release below -
+                                // is not one.
+                                if (fingers == 1 && (at[0] != namedX || at[1] != namedY) &&
+                                    owed(MouseGesture.MOTION, held = true)
+                                ) {
+                                    if (!pressSent) {
+                                        pressSent = owed(MouseGesture.PRESS, held = false)
+                                        if (pressSent) mouseGesture(MouseGesture.PRESS, downCell[0], downCell[1])
+                                    }
+                                    mouseGesture(MouseGesture.MOTION, at[0], at[1])
+                                    namedX = at[0]
+                                    namedY = at[1]
+                                }
                             }
                         } while (event.changes.any { it.pressed })
                         if (pinching) zoom(scale, true)
+
+                        // A drag has already reported its press and is waiting for the release that says
+                        // where the button came up. A pinch and a long press are this terminal's own
+                        // gestures - two fingers zoom, and a hold selects - so neither is reported; but a
+                        // press that went out before the second finger or the hold arrived is closed
+                        // rather than left open, because a program left holding a button down is worse
+                        // than one that saw a click it did not ask for.
+                        if (pressSent) {
+                            if (owed(MouseGesture.RELEASE, held = false)) {
+                                mouseGesture(MouseGesture.RELEASE, at[0], at[1])
+                            }
+                        } else if (!moved && !pinching && !localGesture[0]) {
+                            // A tap: a press and a release at the one cell the finger never left. A drag
+                            // the program did not ask for is not this - it was the terminal's own scroll,
+                            // and [moved] is what tells the two apart.
+                            if (owed(MouseGesture.PRESS, held = false)) {
+                                mouseGesture(MouseGesture.PRESS, downCell[0], downCell[1])
+                                if (owed(MouseGesture.RELEASE, held = false)) {
+                                    mouseGesture(MouseGesture.RELEASE, downCell[0], downCell[1])
+                                }
+                            }
+                        }
                     }
                 }
                 .pointerInput(metrics, origin) {
@@ -703,6 +838,10 @@ fun TerminalView(
                             tap(line, column)
                         },
                         onLongPress = { position ->
+                            // The finger has taken the gesture back from the program. A long press is this
+                            // terminal's own selection - the way a held Shift is in a terminal with a
+                            // keyboard - so the drag that follows it is not the program's to hear about.
+                            localGesture[0] = true
                             val (line, column) =
                                 position.toCell(currentFrame, currentLayout, metrics, origin, pan.floatValue, scrollShift.floatValue)
                             longPress(line, column)
