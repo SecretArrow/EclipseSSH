@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before it; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before it; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12113,3 +12113,52 @@ copied into the repository. A fetch that fails, or a file that no longer matches
 the two it was. And the emoji are not a table of their own - the "emoji" widened by Unicode 9 are the
 `W` runs of the emoji blocks, and they are in the wide table with everything else, so the derivation
 covers them by covering that.
+
+---
+
+## 113. The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one
+
+**The property, and why it is asked as one.** `TerminalFrame.damageFrom`/`damageTo`/`damageFull` are the
+renderer's instruction for which rows to erase before drawing the next frame. They are not a hint. tmux
+sends only the cells it believes changed, so a row this app fails to repaint is never resent by the far
+side: the damage is the app's own copy of that belief, and a row missing from it keeps whatever ink was
+there for the life of the session. That is exactly the shape of the ghost §108 and §109 were about, and
+it is why the test that pins it is a *property* rather than a table of expectations. A table says the
+cases someone thought of are covered; the property says every row that changed is named, and a case it
+misses is a case nobody wrote down. Under-reporting is the defect class; over-reporting only costs a
+repaint, so a range wider than the rows that changed is not looked for and not a failure.
+
+**What the test does.** `TerminalDamagePrecisionTest` feeds a sequence, takes a frame after every step,
+and compares it with the frame before: of the buffer lines the frame shows, which hold different cells,
+and are they all inside `damageFrom..damageTo`? Two details make the comparison honest. It is by
+*absolute buffer line* - `firstLine + index` - rather than by position in the window, because a step
+that appends a line moves the window without moving the text, and a window-relative comparison would
+call that a change on every row. And a `damageFull` frame is exempt, because it claims everything by
+construction. The first frame is taken and discarded, so the first step is compared against a real
+window rather than against the buffer's initial all-dirty state.
+
+The cases are one per mutation family rather than one per escape: printing, a wrap onto the next row,
+erase (`EL` 0/1/2, `ECH`, `ED`), insert and delete (`ICH`, `DCH`), a scroll (`SU`, `SD`, `IL`, `DL`),
+a line scrolled in at the bottom of the screen, a screen switch, an erase that reaches past the end of
+its line, a wide character, and - deliberately - the two sequences that change *nothing* the grid can
+see, a pen change and a title or mode change. Those last two are in the set because they are the ones a
+mutation-shaped implementation over-reports, and the property is written so that a frame with no changed
+row is not asked to carry a range either. The cursor is not part of the comparison: the renderer paints
+it from the frame's own position, not from the damage range.
+
+**The gate has been seen to fail, in both directions.** Removing one marking call is enough to break it,
+which is the point. Commenting out the `markDamageRange(top, bottom)` in `insertLines` - a scroll that
+still moves the lines but no longer says so - fails `a scroll marks every row of its region` with `step 4
+(ESC[1;3rESC[1;1HESC[1L) changed [2, 3] and left [2, 3] outside -1..-1`: the range stayed empty, and the
+message names the rows the renderer would have kept. Commenting out the ordinary print's
+`markDamageRow(cursorRow)` - the original ghost, precisely - fails twelve tests, the new ones and the
+existing `TmuxGhostRegressionTest` together, each naming the row it left behind. Restore either call and
+the suite is green again. A check whose failure has not been seen is a claim rather than a check, which
+is the same reason §110, §111 and §112 built counterfactuals for theirs.
+
+**What this does not claim.** That the range is tight. A mutation that marks a whole screen where one
+row changed passes this test, and is not a defect: the cost is a repaint, and tightening the range is a
+performance question with no correctness stake. Nor does it claim the *timing* of the hand-out - the
+test reads a frame after each step, so it observes the accumulated damage since the last frame, not the
+damage of the step in isolation; a frame taken mid-sequence would see the union, which is what the
+renderer sees. Nor the initial full-screen damage, nor the cursor, as above.
