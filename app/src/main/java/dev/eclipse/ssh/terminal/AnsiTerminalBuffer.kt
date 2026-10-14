@@ -848,6 +848,18 @@ class AnsiTerminalBuffer(
     )
 
     /**
+     * The whole buffer's prompt marks, indexed by absolute line, for a reader that has to look outside
+     * the window it was given.
+     *
+     * A frame carries the marks of the lines it shows, which is what a screen needs; navigation needs
+     * the ones it does not, because the prompt a reader is walking towards is by definition off-screen.
+     * A copy, and a synchronized one, so the caller holds a list that cannot change under it while it
+     * walks - the buffer is fed from another thread.
+     */
+    @Synchronized
+    fun promptMarksSnapshot(): List<PromptMark?> = marks.toList()
+
+    /**
      * The window the view can actually draw: [viewportRows] lines ending at the cursor, [scrollOffset]
      * lines above it.
      *

@@ -326,6 +326,26 @@ class PromptMarkTest {
     }
 
     @Test
+    fun `the snapshot reaches the marks a window cannot show, and is a copy`() {
+        val buffer = buffer(rows = 4)
+
+        buffer.feed(mark("A") + "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n")
+
+        // Line 0 has scrolled off the four-row screen into the history, so the window cannot show the
+        // mark on it - and the reader walking towards a prompt is walking towards one that is usually
+        // off-screen, which is why the whole session is readable and not just the frame.
+        val snapshot = buffer.promptMarksSnapshot()
+        assertThat(buffer.frame().promptMarks.any { it != null }).isFalse()
+        assertThat(snapshot).hasSize(7)
+        assertThat(snapshot.first()?.kinds).containsExactly(PromptMarkKind.PROMPT)
+
+        // A copy, so the buffer can be fed while the reader walks a list that does not move under it.
+        buffer.feed(mark("D;0"))
+        assertThat(snapshot[6]).isNull()
+        assertThat(buffer.promptMarksSnapshot()[6]?.kinds).containsExactly(PromptMarkKind.FINISHED)
+    }
+
+    @Test
     fun `the marks stay one per line however the screen is rearranged`() {
         val buffer = buffer(rows = 4, scrollback = 3)
         val script = listOf(
