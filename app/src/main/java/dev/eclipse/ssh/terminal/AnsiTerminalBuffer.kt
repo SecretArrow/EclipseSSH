@@ -114,15 +114,24 @@ data class TerminalStyle(
     val hidden: Boolean = false,
 ) {
     /**
-     * This style as a blank cell can still show it.
+     * This style as a blank cell can still show it: the two colours, and nothing else.
      *
-     * A blank has no glyph, so bold, dim, italic, underline, strikethrough and conceal draw nothing
-     * on one, and every terminal's own erase drops them - keeping them would only let a cleared cell
-     * join the run beside it and carry that run's decoration across what the program cleared. What is
-     * left is the two colours and the swap between them, and both are visible: the background is
-     * painted, and under [inverse] it is the foreground that is painted in its place.
+     * A blank has no glyph, so bold, dim, italic, underline, strikethrough and conceal draw nothing on
+     * one - keeping them would only let a cleared cell join the run beside it and carry that run's
+     * decoration across what the program cleared.
+     *
+     * Reverse goes with them, and that is not the same argument: it is not that a swap draws nothing on
+     * a blank, it is that the swap is not *kept*. A cell the terminal itself blanks takes the pen's
+     * foreground and background as they were set and no attribute at all, which is the reading two
+     * independent emulators give it - one of them measured here, `ESC [ 7 ; 41 m` then `ESC [ K` coming
+     * back with the erased cells painted in the background and not in the foreground the swap would have
+     * chosen, and the other read from its own source, where the erased cell is built from the pen's two
+     * colours with the comment that the reverse bit is left in its reset state. Keeping the swap here
+     * painted a band of the foreground colour across every line a program erased under `ESC [ 7 m`, where
+     * both of those paint the background - and the swap is what makes that band, so it cannot be kept
+     * "because it is visible".
      */
-    val blanked: TerminalStyle get() = TerminalStyle(foreground, background, inverse = inverse)
+    val blanked: TerminalStyle get() = TerminalStyle(foreground, background)
 }
 
 /**

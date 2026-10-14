@@ -26,9 +26,9 @@ its own.
 |---|---|
 | `record.py` | Attaches a tmux client to a pty of a given size and writes what tmux sends it, one length-prefixed frame per read. `--send SECONDS:TEXT` types into that client on a schedule, for a program that draws nothing worth recording until it has been answered. `--answer` replies to tmux's terminal queries the way the app does, which is what makes tmux choose its supported paths. |
 | `mkframes.py` | Wraps raw bytes (`--escapes` for a readable `\x1b` fixture, `--chunk N` to choose the boundaries) as a recording. |
-| `run-griddump.sh` + `GridDump.kt` | Compiles the real `app/src/main/.../terminal` package with the cached Kotlin compiler and runs the recording through `AnsiTerminalBuffer`, printing the grid. `--attrs` adds one line per row giving each column's background as a label. |
+| `run-griddump.sh` + `GridDump.kt` | Compiles the real `app/src/main/.../terminal` package with the cached Kotlin compiler and runs the recording through `AnsiTerminalBuffer`, printing the grid. `--attrs` adds a second, per-column view of each row: which columns share a style, and which carry the default one. |
 | `oracle.sh` | Replays the same recording into a tmux pane and prints the grid tmux itself ends on, plus its cursor as the app dump spells one. `--attrs` adds tmux's own `capture-pane -e` row for each line, so the same question is asked of both sides. |
-| `griddiff.py` | Row-by-row diff with an incident count, and `--bisect`: the first read whose prefix already diverges. The cursor is compared too - a grid that agrees while the cursor does not is the reported "the cursor is somewhere else than the text" failure, and a row diff alone cannot see it. `--attrs` compares each row's backgrounds as well; see below for what that can and cannot settle. |
+| `griddiff.py` | Row-by-row diff with an incident count, and `--bisect`: the first read whose prefix already diverges. The cursor is compared too - a grid that agrees while the cursor does not is the reported "the cursor is somewhere else than the text" failure, and a row diff alone cannot see it. `--attrs` compares each row's styles as well; see below for what that can and cannot settle. |
 | `replay.sh` | The whole loop. |
 
 ## Running it
@@ -54,6 +54,13 @@ python3 mkframes.py --escapes reproductions/wide-boundaries.raw /tmp/wide.frames
 # behind, so this one is read with `--attrs` - and the same flag on any of the others.
 python3 mkframes.py --escapes reproductions/bce-erase.raw /tmp/bce.frames --chunk 7
 ./replay.sh /tmp/bce.frames --cols 20 --rows 8 --attrs
+
+# what a blank takes from a *reversed* pen, which is the same rule with one attribute in the way: a
+# program that erases under `ESC [ 7 m` gets the pen's two colours and not the swap. Every erase family
+# is here under reverse, plus a delete, an insert, a scroll fill, a pen that had reverse turned off
+# before the erase, and one where the swap and the colours would paint the same cell either way.
+python3 mkframes.py --escapes reproductions/reverse-erase.raw /tmp/rev.frames --chunk 7
+./replay.sh /tmp/rev.frames --cols 20 --rows 8 --attrs
 
 # the same families as a case table: one case per row of a 20x20 pane, the erase and parameter families
 # here and the scroll families below, each row naming the case it holds. This is the recording behind
@@ -140,12 +147,18 @@ is, and the shape left behind on a host whose module cache has been cleared. On 
 
 ## What it does not prove
 
-- **Text, and - with `--attrs` - the background.** Foregrounds and text attributes (bold, underline,
-  reverse, ...) are still not compared, and neither are the colours themselves: `--attrs` compares each
-  row's backgrounds as a *pattern* - which columns share one and which are unpainted - because this
-  emulator draws a palette entry as the theme's own shade of it and tmux draws the entry. Comparing the
-  colours would compare two themes. So a green run says the ink is in the right place and the erases
-  filled what they should, not that anything is drawn in the right colour. The cursor is compared by
+- **Text, and - with `--attrs` - each row's styles as a *pattern*.** A style is compared by which
+  columns share one and which carry the default, never by what the style *is*: this emulator draws a
+  palette entry as the theme's own shade of it and tmux draws the entry, so comparing the colours
+  themselves would compare two themes. So a green run says the ink is in the right place, that the
+  erases filled what they should, and that a run of cells is one style rather than two - not that
+  anything is drawn in the right colour. The pattern is also the limit of what a divergence *proves*:
+  two sides that agree on the pattern can still differ inside a style, and a cell that carries a flag
+  neither side's neighbour carries reads as a style of its own on both sides whether the flag is there
+  or not. A rule the pattern cannot see by construction is pinned in the app's own suite instead.
+  Attributes the emulator does not model are ignored on both sides by decision - SGR 5 and 6 (blink,
+  recorded as nothing for battery reasons), 53 and 55 (overline), 58 and 59 (underline colour), and the
+  `:n` style of SGR 4 - so a program that uses those is not compared on them. The cursor is compared by
   position, not by whether it is painted there.
 - **A wide character a sequence cuts in half.** tmux keeps the surviving half as a continuation cell
   with nothing on the other side, and renders that cell as no glyph at all; this emulator has no such
@@ -178,9 +191,12 @@ is, and the shape left behind on a host whose module cache has been cleared. On 
 | `reproductions/prompt-truncation.py`, 52x60, 8s recording | - | IDENTICAL |
 | `reproductions/edge-cases.py`, 52x60, 705 B raw | - | IDENTICAL |
 
-The two fixtures below pin rules a hand-written emulator gets wrong by default, so each is worth more
+The fixtures below pin rules a hand-written emulator gets wrong by default, so each is worth more
 than it looks: "before" is the same recording against the emulator as it stood before that rule was
-implemented, which is what makes it a gate rather than a decoration. Both are read with `--attrs`.
+implemented, which is what makes it a gate rather than a decoration. All of them are read with
+`--attrs`. The "before" figures below the `reverse-erase` row were measured while that flag compared
+backgrounds only and are left as measured; every "after" figure has been re-measured with the styles
+included.
 
 | Recording | Before | After |
 |---|---|---|
@@ -191,12 +207,15 @@ implemented, which is what makes it a gate rather than a decoration. Both are re
 | `reproductions/screen-fill.raw`, 20x8, 17 reads | DIVERGES - 8 rows of background and one ghost: the alternate screen was filled from the pen where tmux fills it with nothing, and the switch reset the cursor to 0,0 | IDENTICAL |
 | `reproductions/screen-switch.raw`, 20x8, 15 reads | DIVERGES - 2 rows and the cursor: 47 and 1047 put the primary's saved cursor back where tmux keeps the alternate screen's | IDENTICAL |
 | `reproductions/hyperlinks.raw`, 20x12, 100 reads | DIVERGES - the reader, not the emulator: it counted the URI in `capture -e`'s OSC sequence as columns and reported a 41-column row in a 20-column pane | IDENTICAL |
+| `reproductions/reverse-erase.raw`, 20x8, 30 reads | DIVERGES - 5 rows of style: every erase family, a delete and an insert under `ESC [ 7 m` filled with the swap the pen was painting, where tmux fills with the pen's two colours and no attribute | IDENTICAL |
 
-The last two rows are the one place "before" is not an earlier emulator but a deliberate revert: the rule
-they pin was already in place when they were written, so their "before" is that recording against the
-same source with `eraseBlank` returning a default cell instead of the pen's - one line, and the row
-above is what it costs. A gate whose failure has not been seen is a claim rather than a gate, and this
-is the cheapest way to see one.
+The `conformance` and `scroll-families` rows are the one place "before" is not an earlier emulator but a
+deliberate revert: the rule they pin was already in place when they were written, so their "before" is
+that recording against the same source with `eraseBlank` returning a default cell instead of the pen's.
+A gate whose failure has not been seen is a claim rather than a gate, and this is the cheapest way to
+see one. The `reverse-erase` row is the same method applied to the other half of that rule - its
+"before" is the same source with `blanked` keeping the swap, which is one line - and it is the one row
+here whose "before" was measured with the styles compared rather than the backgrounds.
 
 The `hyperlinks` row is the other way round: the emulator was never the question, and what failed first
 was this harness's own reader, which could not read a row containing a link at all. That mattered beyond
@@ -249,6 +268,16 @@ also pin the cursor and the pen across `47`, `1047` and `1049`: measured, `1049`
 and puts them back on the way out, `47` and `1047` are one value shared by the two screens, and none of
 the three moves the cursor. `AlternateScreenSwitchTest` is where each of those is stated with the
 measurement behind it.
+
+`reverse-erase.raw` is that same rule with one attribute in the way, and it is where the "takes the
+pen's two colours" half is pinned rather than the "takes the background" half: a program that erases
+under `ESC [ 7 m` gets the pen's foreground and background *as they were set* and no attribute at all,
+so the erased cells come out in the pen's background - never in the colour the swap was painting, which
+for a pen with only a foreground set is the whole difference between a filled screen and an empty one.
+tmux 3.5a was asked directly: `ESC [ 7 ; 41 m` `abc` `ESC [ K` comes back with the erased cells carrying
+`41` and no `7`, and the same holds for every erase family, for a delete and an insert, and for the rows
+a scroll fills. A pen that had `27` sent before the erase fills with its colours and nothing else, which
+is the control that says the rule is about the pen at the moment of the erase.
 
 `conformance.raw` and `scroll-families.raw` are those same families written as a case table, and they
 exist so that a *case* is cheap to add. Where `wide-boundaries.raw` and `bce-erase.raw` grew one rule at

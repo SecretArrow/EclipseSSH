@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before it; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before it; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12352,3 +12352,76 @@ a link is neither, so the fixture does not compare the link itself. That is pinn
 grid rules holding with a link present, and the reader surviving one. Neither defect was found by a
 test; both were found by running the plan's stated verification and disbelieving its first answer,
 which is the only reason the answer is worth having.
+
+---
+
+## 117. An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles
+
+**The comparison was the change; the defect was what it found.** §109 widened `--attrs` from text to
+*backgrounds*, and that is what made the BCE rules measurable at all. It stopped one attribute short,
+though, and the reason was a good one at the time: the letters are per-row labels assigned in order of
+first use, so the two sides are compared as a *pattern* - which columns share a style and which are
+default - because this emulator renders a palette entry as the theme's own shade and tmux renders the
+palette entry, and comparing the colours themselves would compare two themes. A pattern comparison is
+the right tool for a colour. It is not the right tool for an attribute: bold, underline, reverse,
+conceal and strikethrough are the same fact on both sides, and there is no theme in the way. So the
+comparison now carries all of them - `GridDump.kt`'s key is both colours and the seven flags the
+emulator models, `griddiff.py` reads the same set out of `capture -e`, and the sub-parameter forms the
+capture actually emits (`38:5:n`, `38;2:r;g;b`, `4:3`, `58;5;1`) are parsed rather than stepped over.
+A row that a style leaked across, or that lost an attribute an erase should not have taken, now reads
+as a letter where it should read as a dot.
+
+**What that bought, immediately.** Asking tmux 3.5a directly: on a 20x8 pane, `ESC [ 7 ; 41 m` `abc`
+`ESC [ K` comes back from `capture -e` as `[7m[41mabc[0m[41m`. The text carries the swap; the *erased*
+cells carry `41` and no `7`. The same holds for every erase family (`EL`, `ED`, `ECH`), for a delete
+and an insert, and for the rows a scroll fills - and for a pen with only a foreground set the erased
+cells come back with nothing at all, which is the reading that rules out the alternative explanation.
+The alternative was that tmux *resolves* the swap into the two colours at erase time rather than
+dropping it, which would look identical whenever the pen has a background and differ only here: a pen
+of `ESC [ 7 ; 31 m` erases to no colour at all, not to a red background. It does not resolve. It keeps
+the pen's foreground and background as they were set and drops the attribute.
+
+**A second reading, independent of the first.** The same conclusion follows from the design of an
+erase in another emulator's source: its erased cell is built from the pen's two colours, with the
+comment that the reverse bit is left in its reset state - "leave things like rv in reset state". That
+is a different kind of evidence from a measurement (a reading of what someone intended, rather than of
+what a program did), and it is the reason the fix is stated as a rule about *blanking* rather than as a
+special case for reverse. Two independent implementations agree, and the two readings were taken
+separately rather than one being used to explain the other.
+
+**The defect.** `TerminalStyle.blanked` - the style an erased, scrolled, inserted or deleted cell is
+filled with - kept `inverse`. That is not a blank that draws nothing: under `ESC [ 7 m` the swap is
+exactly what makes the cell visible, so a program that cleared a line while reversed got a band of the
+*foreground* colour where tmux paints the background. On the alternate screen it is worse than a
+one-frame artifact, because tmux believes those cells are default and never repaints them. `blanked`
+now takes the two colours and no attribute, which is the same rule the other six attributes already
+followed - reverse was the one that looked different because it is visible, and "it is visible" is not
+a reason to keep something the terminal does not keep.
+
+**The gate, and its failure seen.** `reproductions/reverse-erase.raw` is the same shape as
+`bce-erase.raw` with one attribute in the way: one erase family per row of a 20x8 pane, a delete and an
+insert under reverse, a scroll fill, a pen that had `27` sent before the erase (the control that says
+the rule is about the pen at the moment of the erase, not about the row), and a pen where the swap and
+the colours would paint the same cell either way. Against the source with `blanked` keeping the swap -
+one line reverted - five of the eight rows diverge on style, all five in the app. Against the source as
+it stands, all eight are IDENTICAL. A gate whose failure has not been seen is a claim rather than a
+gate, and this is the cheapest way to see one.
+
+**What is pinned now.** The corpus is nine recordings, all IDENTICAL against tmux 3.5a with `--attrs`
+on: the eight §116 left, plus `reproductions/reverse-erase.raw`. Every "after" figure in
+`testing/tmux-replay/README.md` was re-measured with the styles included rather than the backgrounds
+alone, and the "before" figures measured under the narrower comparison are left as they were measured.
+The app's own suite is 606 methods, green, and it holds the rule on its own: the test that used to
+assert an erased cell keeps the swap now asserts it drops it, and fails against the old code.
+
+**What this does not claim.** The pattern comparison is still a pattern comparison, and that limits
+what a *divergence* proves as well as what a green run proves. Two sides that agree on which columns
+share a style can still differ inside one; and an app-side style that carries one flag too many reads
+as a style of its own on the app's side, which the diff only catches when the run it belongs to would
+otherwise have merged with its neighbour - which is why five rows of the new fixture catch the defect
+and three do not. The three that do not are the two whose fill is uniform across the row and the one
+where the fill and the text are different styles on both sides anyway. Attributes the emulator does not
+model are ignored on both sides by decision, so a program using SGR 5 or 6 (blink), 53 or 55
+(overline), 58 or 59 (underline colour) or a `:n` underline style is not compared on them; that blind
+spot is now written down in `griddiff.py` and in the harness README rather than left to be discovered.
+And this is still a statement about the grid: a green replay is not a green screen.

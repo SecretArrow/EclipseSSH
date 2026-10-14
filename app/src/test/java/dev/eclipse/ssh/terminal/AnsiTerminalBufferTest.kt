@@ -277,18 +277,29 @@ class AnsiTerminalBufferTest {
     }
 
     @Test
-    fun `an erase under reverse video keeps the swap, which is what gets painted`() {
+    fun `an erase under reverse video takes the pen's two colours and drops the swap`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
-        buffer.feed("$E[7;31mX")
-        val painted = buffer.snapshot().lines[0][0].style
 
+        // Reverse over a foreground: the pen paints red, and the swap is the only thing making it.
+        buffer.feed("$E[7;31mX")
+        val reversed = buffer.snapshot().lines[0][0].style
         buffer.feed("$E[2J")
 
-        // Reversed, the cell paints its foreground - so an erased cell that lost `inverse` would come
-        // out in the default background instead of the colour the program is filling the screen with.
+        // A cell the terminal itself blanks takes the pen's two colours as they were set and no
+        // attribute at all, so the erased cells come out in the pen's *background* - here the default,
+        // where keeping the swap would have flooded the screen with the red the pen was painting.
         val erased = buffer.snapshot().lines[1][0].style
-        assertThat(erased.inverse).isTrue()
-        assertThat(erased.foreground).isEqualTo(painted.foreground)
+        assertThat(erased.inverse).isFalse()
+        assertThat(erased.foreground).isEqualTo(reversed.foreground)
+        assertThat(erased.background).isEqualTo(reversed.background)
+
+        // The same reading with the colour on the other side of the swap, which is the case that shows
+        // it: reverse over a red background blanks to a red background, never to a red foreground.
+        buffer.feed("$E[0m$E[7;41mX")
+        buffer.feed("$E[2J")
+        val filled = buffer.snapshot().lines[0][0].style
+        assertThat(filled.inverse).isFalse()
+        assertThat(filled.background).isEqualTo(reversed.foreground)
     }
 
     @Test
