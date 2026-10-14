@@ -20,9 +20,14 @@ package dev.eclipse.ssh.terminal
  *
  * The reference is glibc's `wcwidth`, because that is what `readline`, `ncurses` and every shell on the
  * far side are actually using. The tables at the end of this file are that function's own answers,
- * transcribed as a run-length encoding of its output rather than written by hand: every range boundary
- * below is a boundary where the reference's answer changes, so an off-by-one there is a transcription
- * error rather than a judgement call. Four consequences are worth stating.
+ * written as a run-length encoding in which every boundary is a boundary where the reference's answer
+ * changes, so an off-by-one there is a transcription error rather than a judgement call. Measured on
+ * glibc 2.41 under `C.UTF-8`, the two generated tables below are that function's answers exactly, over
+ * all 122,237 code points it calls wide and all 1,997 it calls zero-width marks.
+ *
+ * They are generated rather than written, and checked rather than trusted: `scripts/terminal-width.py`
+ * derives both from a pinned Unicode release and fails when the source no longer agrees, so the next
+ * release is a diff instead of a discovery. Four consequences are worth stating.
  *
  * **Ambiguous is 1, never 2.** The East Asian convention that widens "ambiguous" characters is a
  * different convention from the one the far side uses, and adopting it here would widen every
@@ -173,10 +178,15 @@ private val NARROW_MARKS = setOf(
 )
 
 /**
- * Every combining mark the reference counts as zero-width, transcribed exactly. The category rule in
- * [isZeroWidth] would catch most of these on a current platform; they are here so that the answer does
- * not depend on which platform is asking.
+ * Every combining mark that takes no column, generated from the standard's own general category - `Mn`
+ * and `Me` - rather than kept by hand. The category rule in [isZeroWidth] would catch most of these on
+ * a current platform; they are here so that the answer does not depend on which platform is asking.
+ *
+ * Generated and checked by `scripts/terminal-width.py`, which reads [ZERO_WIDTH_RANGES] and
+ * [NARROW_MARKS] back out of this file as its inputs: those two are the reference's own answer and no
+ * standard's data file contains them, so they are the part of the table a person has to keep.
  */
+// BEGIN GENERATED zero-width-marks
 private val ZERO_WIDTH_MARKS = listOf(
     0x00300..0x0036F,
     0x00483..0x00489,
@@ -523,11 +533,19 @@ private val ZERO_WIDTH_MARKS = listOf(
     0x1E944..0x1E94A,
     0xE0100..0xE01EF,
 )
+// END GENERATED zero-width-marks
 
 /**
  * Every zero-width code point that is not a combining mark: the format characters, the joiners and the
- * directional marks, the Hangul fillers and the tags. Exhaustive by construction, the same way
- * [ZERO_WIDTH_MARKS] is.
+ * directional marks, the Hangul fillers and the tags.
+ *
+ * This is the one list here that is kept by hand, and it is kept because nothing else can keep it.
+ * [ZERO_WIDTH_MARKS] is the standard's own general category and [WIDE_RANGES] is its own
+ * `East_Asian_Width`, but this list is the reference's answer and the standard has no property that
+ * spells it: a joiner and a soft hyphen are both format characters, and the reference counts one as no
+ * column and the other as one. `scripts/terminal-width.py` reads it out of this file and treats it as
+ * an input, so the part of the table that cannot be derived is also the part no check pretends to
+ * derive.
  */
 private val ZERO_WIDTH_RANGES = listOf(
     0x00000..0x00000,  // NUL, which the width function answers before it ever reaches a table
@@ -563,85 +581,92 @@ private val ZERO_WIDTH_RANGES = listOf(
 )
 
 /**
- * Every code point the reference counts as two columns, transcribed the same way. A run of these is
- * what [AnsiTerminalBuffer] gives two cells to - see "What acts on this" at the top of this file.
+ * Every code point that takes two columns. A run of these is what [AnsiTerminalBuffer] gives two cells
+ * to - see "What acts on this" at the top of this file.
+ *
+ * Generated and checked by `scripts/terminal-width.py`: the standard's `East_Asian_Width` restricted to
+ * assigned code points, minus the zero-width tables above, plus the eight the reference counts wide and
+ * the standard calls ambiguous. The derivation reproduces these runs boundary for boundary, which is
+ * what makes the block a check rather than a rewrite - a Unicode release is a diff here, and a hand
+ * edit is a red one.
  */
+// BEGIN GENERATED wide-ranges
 private val WIDE_RANGES = listOf(
-    0x01100..0x0115F,  // Hangul Jamo initial consonants
-    0x0231A..0x0231B,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02329..0x0232A,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x023E9..0x023EC,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x023F0..0x023F0,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x023F3..0x023F3,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x025FD..0x025FE,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02614..0x02615,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02630..0x02637,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02648..0x02653,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x0267F..0x0267F,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x0268A..0x0268F,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02693..0x02693,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026A1..0x026A1,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026AA..0x026AB,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026BD..0x026BE,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026C4..0x026C5,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026CE..0x026CE,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026D4..0x026D4,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026EA..0x026EA,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026F2..0x026F3,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026F5..0x026F5,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026FA..0x026FA,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x026FD..0x026FD,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02705..0x02705,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x0270A..0x0270B,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02728..0x02728,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x0274C..0x0274C,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x0274E..0x0274E,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02753..0x02755,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02757..0x02757,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02795..0x02797,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x027B0..0x027B0,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x027BF..0x027BF,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02B1B..0x02B1C,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02B50..0x02B50,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02B55..0x02B55,  // the BMP symbols Unicode 9 widened, which a shell prints constantly
-    0x02E80..0x02E99,  // CJK radicals, Kangxi radicals, ideographic description
-    0x02E9B..0x02EF3,  // CJK radicals, Kangxi radicals, ideographic description
-    0x02F00..0x02FD5,  // CJK radicals, Kangxi radicals, ideographic description
-    0x02FF0..0x03029,  // CJK radicals, Kangxi radicals, ideographic description
-    0x0302E..0x0303E,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x03041..0x03096,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x0309B..0x030FF,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x03105..0x0312F,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x03131..0x03163,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x03165..0x0318E,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x03190..0x031E5,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
-    0x031EF..0x0321E,  // Hangul compatibility Jamo, CJK symbols, kana, Bopomofo, CJK compatibility
+    0x01100..0x0115F,
+    0x0231A..0x0231B,
+    0x02329..0x0232A,
+    0x023E9..0x023EC,
+    0x023F0..0x023F0,
+    0x023F3..0x023F3,
+    0x025FD..0x025FE,
+    0x02614..0x02615,
+    0x02630..0x02637,
+    0x02648..0x02653,
+    0x0267F..0x0267F,
+    0x0268A..0x0268F,
+    0x02693..0x02693,
+    0x026A1..0x026A1,
+    0x026AA..0x026AB,
+    0x026BD..0x026BE,
+    0x026C4..0x026C5,
+    0x026CE..0x026CE,
+    0x026D4..0x026D4,
+    0x026EA..0x026EA,
+    0x026F2..0x026F3,
+    0x026F5..0x026F5,
+    0x026FA..0x026FA,
+    0x026FD..0x026FD,
+    0x02705..0x02705,
+    0x0270A..0x0270B,
+    0x02728..0x02728,
+    0x0274C..0x0274C,
+    0x0274E..0x0274E,
+    0x02753..0x02755,
+    0x02757..0x02757,
+    0x02795..0x02797,
+    0x027B0..0x027B0,
+    0x027BF..0x027BF,
+    0x02B1B..0x02B1C,
+    0x02B50..0x02B50,
+    0x02B55..0x02B55,
+    0x02E80..0x02E99,
+    0x02E9B..0x02EF3,
+    0x02F00..0x02FD5,
+    0x02FF0..0x03029,
+    0x0302E..0x0303E,
+    0x03041..0x03096,
+    0x0309B..0x030FF,
+    0x03105..0x0312F,
+    0x03131..0x03163,
+    0x03165..0x0318E,
+    0x03190..0x031E5,
+    0x031EF..0x0321E,
     0x03220..0x0A48C,
-    0x0A490..0x0A4C6,  // Yi radicals
-    0x0A960..0x0A97C,  // Hangul Jamo Extended-A
-    0x0AC00..0x0D7A3,  // Hangul syllables
-    0x0F900..0x0FA6D,  // CJK compatibility ideographs
-    0x0FA70..0x0FAD9,  // CJK compatibility ideographs
-    0x0FE10..0x0FE19,  // vertical forms
-    0x0FE30..0x0FE52,  // CJK compatibility forms, which the small form variants belong to
-    0x0FE54..0x0FE66,  // CJK compatibility forms, which the small form variants belong to
-    0x0FE68..0x0FE6B,  // CJK compatibility forms, which the small form variants belong to
-    0x0FF01..0x0FF60,  // fullwidth forms
-    0x0FFE0..0x0FFE6,  // fullwidth signs
-    0x16FE0..0x16FE3,  // Tangut, Khitan and Nushu
-    0x16FF0..0x16FF1,  // Tangut, Khitan and Nushu
-    0x17000..0x187F7,  // Tangut, Khitan and Nushu
-    0x18800..0x18CD5,  // Tangut, Khitan and Nushu
-    0x18CFF..0x18D08,  // Tangut, Khitan and Nushu
-    0x1AFF0..0x1AFF3,  // Kana extended and Kana supplement
-    0x1AFF5..0x1AFFB,  // Kana extended and Kana supplement
-    0x1AFFD..0x1AFFE,  // Kana extended and Kana supplement
-    0x1B000..0x1B122,  // Kana extended and Kana supplement
-    0x1B132..0x1B132,  // Kana extended and Kana supplement
-    0x1B150..0x1B152,  // Kana extended and Kana supplement
-    0x1B155..0x1B155,  // Kana extended and Kana supplement
-    0x1B164..0x1B167,  // Kana extended and Kana supplement
-    0x1B170..0x1B2FB,  // Kana extended and Kana supplement
+    0x0A490..0x0A4C6,
+    0x0A960..0x0A97C,
+    0x0AC00..0x0D7A3,
+    0x0F900..0x0FA6D,
+    0x0FA70..0x0FAD9,
+    0x0FE10..0x0FE19,
+    0x0FE30..0x0FE52,
+    0x0FE54..0x0FE66,
+    0x0FE68..0x0FE6B,
+    0x0FF01..0x0FF60,
+    0x0FFE0..0x0FFE6,
+    0x16FE0..0x16FE3,
+    0x16FF0..0x16FF1,
+    0x17000..0x187F7,
+    0x18800..0x18CD5,
+    0x18CFF..0x18D08,
+    0x1AFF0..0x1AFF3,
+    0x1AFF5..0x1AFFB,
+    0x1AFFD..0x1AFFE,
+    0x1B000..0x1B122,
+    0x1B132..0x1B132,
+    0x1B150..0x1B152,
+    0x1B155..0x1B155,
+    0x1B164..0x1B167,
+    0x1B170..0x1B2FB,
     0x1D300..0x1D356,
     0x1D360..0x1D376,
     0x1F004..0x1F004,
@@ -653,49 +678,50 @@ private val WIDE_RANGES = listOf(
     0x1F240..0x1F248,
     0x1F250..0x1F251,
     0x1F260..0x1F265,
-    0x1F300..0x1F320,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F32D..0x1F335,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F337..0x1F37C,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F37E..0x1F393,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F3A0..0x1F3CA,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F3CF..0x1F3D3,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F3E0..0x1F3F0,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F3F4..0x1F3F4,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F3F8..0x1F43E,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F440..0x1F440,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F442..0x1F4FC,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F4FF..0x1F53D,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F54B..0x1F54E,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F550..0x1F567,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F57A..0x1F57A,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F595..0x1F596,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F5A4..0x1F5A4,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F5FB..0x1F64F,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F680..0x1F6C5,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F6CC..0x1F6CC,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F6D0..0x1F6D2,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F6D5..0x1F6D7,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F6DC..0x1F6DF,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F6EB..0x1F6EC,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F6F4..0x1F6FC,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F7E0..0x1F7EB,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F7F0..0x1F7F0,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F90C..0x1F93A,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F93C..0x1F945,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1F947..0x1F9FF,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1FA70..0x1FA7C,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1FA80..0x1FA89,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1FA8F..0x1FAC6,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1FACE..0x1FADC,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1FADF..0x1FAE9,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x1FAF0..0x1FAF8,  // emoji: the pictographs, transport symbols, emoticons and their supplements
-    0x20000..0x2A6DF,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x2A700..0x2B739,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x2B740..0x2B81D,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x2B820..0x2CEA1,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x2CEB0..0x2EBE0,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x2EBF0..0x2EE5D,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x2F800..0x2FA1D,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x30000..0x3134A,  // CJK unified ideographs extension B and beyond, up to the noncharacters
-    0x31350..0x323AF,  // CJK unified ideographs extension B and beyond, up to the noncharacters
+    0x1F300..0x1F320,
+    0x1F32D..0x1F335,
+    0x1F337..0x1F37C,
+    0x1F37E..0x1F393,
+    0x1F3A0..0x1F3CA,
+    0x1F3CF..0x1F3D3,
+    0x1F3E0..0x1F3F0,
+    0x1F3F4..0x1F3F4,
+    0x1F3F8..0x1F43E,
+    0x1F440..0x1F440,
+    0x1F442..0x1F4FC,
+    0x1F4FF..0x1F53D,
+    0x1F54B..0x1F54E,
+    0x1F550..0x1F567,
+    0x1F57A..0x1F57A,
+    0x1F595..0x1F596,
+    0x1F5A4..0x1F5A4,
+    0x1F5FB..0x1F64F,
+    0x1F680..0x1F6C5,
+    0x1F6CC..0x1F6CC,
+    0x1F6D0..0x1F6D2,
+    0x1F6D5..0x1F6D7,
+    0x1F6DC..0x1F6DF,
+    0x1F6EB..0x1F6EC,
+    0x1F6F4..0x1F6FC,
+    0x1F7E0..0x1F7EB,
+    0x1F7F0..0x1F7F0,
+    0x1F90C..0x1F93A,
+    0x1F93C..0x1F945,
+    0x1F947..0x1F9FF,
+    0x1FA70..0x1FA7C,
+    0x1FA80..0x1FA89,
+    0x1FA8F..0x1FAC6,
+    0x1FACE..0x1FADC,
+    0x1FADF..0x1FAE9,
+    0x1FAF0..0x1FAF8,
+    0x20000..0x2A6DF,
+    0x2A700..0x2B739,
+    0x2B740..0x2B81D,
+    0x2B820..0x2CEA1,
+    0x2CEB0..0x2EBE0,
+    0x2EBF0..0x2EE5D,
+    0x2F800..0x2FA1D,
+    0x30000..0x3134A,
+    0x31350..0x323AF,
 )
+// END GENERATED wide-ranges

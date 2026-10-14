@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before it; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before it; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12052,3 +12052,64 @@ both and a different pattern. Foregrounds and the text attributes are still not 
 colours are compared as a pattern rather than as values, as §109 says. And the counts that do fit are in
 the table because both sides agree on them; the one that does not fit is in its own file, argued rather
 than tabulated.
+
+## 112. The width tables are generated from the Unicode data now, and the check has been seen to fail
+
+§109, §110 and §111 each added a *rule* - a statement with a measurement behind it, next to the case
+that made it worth stating. The width tables are the other kind of claim: a large enumerated answer
+that goes stale in silence. `TerminalWidth.kt`'s own KDoc already said what they are - the reference's
+`wcwidth` answers, "transcribed as a run-length encoding of its output rather than written by hand" -
+and a transcription is exactly the thing that drifts with nothing to notice it. A wrong column is a
+perfectly legal column, so a table that is one character behind the far side draws a broken dialog
+border or walks a column of CJK one cell further left on every line, and no layer of the app can
+report it.
+
+**What the tables actually were, measured first.** This host's glibc is 2.41. Asking its `wcwidth`,
+under `C.UTF-8`, for every code point from U+0000 to U+10FFFF, and comparing that set with the
+committed `WIDE_RANGES`, gives **exactly nothing in either direction**: 122,237 code points, the same
+122,237. The same question of `isZeroWidth` and the two zero-width lists gives 1,997 and 1,997, again
+with no code point on one side only. So the KDoc's claim is not an aspiration - it is a fact about the
+committed table, and it is now a fact this repository can re-derive instead of restate.
+
+**Both tables are a function of the standard's data, plus two lists the standard does not have.** The
+derivation, which is what `scripts/terminal-width.py` implements:
+
+- `ZERO_WIDTH_MARKS` is the standard's own general category, `Mn` and `Me`, minus the two hand-kept
+  lists below it.
+- `WIDE_RANGES` is `East_Asian_Width` of `W` or `F`, restricted to assigned code points, minus the
+  zero-width set, plus one eight-point exception (below).
+- `ZERO_WIDTH_RANGES` and `NARROW_MARKS` are the reference's own answer and **no** Unicode data file
+  contains them: a joiner and a soft hyphen are both format characters, and the reference counts one as
+  no column and the other as one. So they are inputs. The script reads them back out of the Kotlin
+  source, which is the honest shape - the part of the table that cannot be derived is the part no check
+  pretends to derive, and the KDoc there now says so.
+
+**The derivation reproduces the committed table boundary for boundary**, which is what makes the script
+a gate rather than a rewrite: 131 runs of wide code points and 344 runs of marks, both maximal, both
+identical to the ones in the source. `--print` emits the two blocks exactly as the Kotlin spells them,
+so regenerating after a Unicode release is a paste of the printed block and a read of the diff.
+
+**The gate has been seen to fail.** Shrinking one run - `0x231A..0x231B` to `0x231A..0x231A`, the kind
+of slip a hand edit makes - makes the script exit 1 and print `missing from the source: U+231B..U+231B`.
+Restore the run and it is green again. A check whose failure has not been seen is a claim rather than a
+check, which is the same reason §110 and §111 built counterfactuals for their fixtures.
+
+**The one place the reference departs from the standard, stated rather than smoothed over.** U+3248 to
+U+324F, the circled numbers on black squares, are `A` - ambiguous, one column - and glibc answers 2 for
+all eight. This emulator follows the reference, because agreeing with the far side is the entire purpose
+of the table, and the exception is one line in the script with the measurement behind it rather than a
+widened range that a later reader would have to reverse-engineer. `East_Asian_Width` also calls a great
+many *unassigned* code points wide, which is why the derivation intersects with assigned code points:
+the reference answers -1 for those rather than 2, and this function answers 1, so they belong in
+neither table.
+
+**What this does not claim.** The pin is a statement about a version, not a promise that the version is
+current: the check is against Unicode 16.0.0 as the reference's own table stands today, and if glibc
+moves to a newer release before the pin does, the check stays green while the two disagree - the diff
+that would show it is a `--print` run against a newer pin, which is a thing a person does, not a thing
+CI can see. It also reads the network, and deliberately: the Unicode data is a build-time input rather
+than an artifact the app ships, so it is pinned by release and by SHA-256 in the script instead of being
+copied into the repository. A fetch that fails, or a file that no longer matches its hash, says which of
+the two it was. And the emoji are not a table of their own - the "emoji" widened by Unicode 9 are the
+`W` runs of the emoji blocks, and they are in the wide table with everything else, so the derivation
+covers them by covering that.

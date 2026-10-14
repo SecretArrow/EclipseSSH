@@ -68,7 +68,10 @@ jobs:
   # The terminal's symbol table is the same kind of claim in a different shape:
   # it is generated from the bundled fonts, and scripts/terminal-symbols.py
   # re-derives it from them - together with the licence obligations the subset
-  # carries. Neither script needs a JDK, an SDK or the NDK.
+  # carries. The terminal's two width tables are the same claim again, and
+  # scripts/terminal-width.py re-derives them from a pinned Unicode release.
+  # None of the three scripts needs a JDK, an SDK or the NDK; only the width one
+  # reads the network, and it is pinned so that what it reads is a version.
   docs:
     name: Documentation figures
     runs-on: ubuntu-24.04
@@ -83,6 +86,13 @@ jobs:
 
       - name: Check the symbol table against the fonts
         run: python3 scripts/terminal-symbols.py
+
+      # The one check here that reads the network, and deliberately: the Unicode data is a build-time
+      # input rather than an artifact the app ships, so it is pinned by release and by SHA-256 in the
+      # script rather than copied into the repository. A fetch that fails, or a file that no longer
+      # matches its hash, says which of the two it was.
+      - name: Check the width tables against the Unicode data
+        run: python3 scripts/terminal-width.py
 
   # One native build feeds every consumer. `native` compiles the four-ABI
   # FreeRDP tree and saves the freerdp/build cache; lint, test and assemble
