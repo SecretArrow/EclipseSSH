@@ -165,6 +165,22 @@ data class TerminalSnapshot(
 )
 
 /**
+ * What shape the cursor is drawn in, set by `ESC [ Ps SP q` (DECSCUSR).
+ *
+ * A bar and an underline are the two shapes that mean something to the reader rather than to the
+ * program: `vim`, `readline` and every other modal editor put a bar in insert mode and a block in
+ * command mode, and the shape is then the mode indicator, which is why a terminal that ignores the
+ * sequence leaves the user unsure which mode they are in. [BLOCK] is what this emulator draws by
+ * default, and the view draws it hollow rather than filled - a filled block on a phone hides exactly
+ * the character the user is looking at - so the two shapes below it are the ones that change anything.
+ *
+ * The blink half of DECSCUSR's parameter is not here; it lands in [TerminalFrame.cursorBlink], which is
+ * where `ESC [ ? 12 h` already puts it, because "is there a cursor blinking at me" is one question
+ * however it was asked.
+ */
+enum class TerminalCursorShape { BLOCK, UNDERLINE, BAR }
+
+/**
  * One drawable window onto the buffer: exactly the lines the view can show, and nothing else.
  *
  * [TerminalSnapshot] copies the entire scrollback - 2 000 lines by 120 columns is a quarter of a
@@ -263,6 +279,11 @@ data class TerminalFrame(
      * turn on and off. Not part of the layout key, like the mouse modes: the rows do not move with it.
      */
     val cursorBlink: Boolean = true,
+    /**
+     * The shape the cursor is drawn in; see [TerminalCursorShape]. Not part of the layout key either -
+     * a bar and a block occupy the same cell, so nothing moves.
+     */
+    val cursorShape: TerminalCursorShape = TerminalCursorShape.BLOCK,
     /**
      * How far this window is scrolled back into the history, and how far it can go, both in buffer
      * lines.
@@ -367,6 +388,7 @@ data class TerminalFrame(
             bracketedPaste == other.bracketedPaste &&
             keyboardModes == other.keyboardModes &&
             cursorBlink == other.cursorBlink &&
+            cursorShape == other.cursorShape &&
             scrollOffset == other.scrollOffset &&
             scrollCeiling == other.scrollCeiling &&
             mouseMode == other.mouseMode &&
@@ -399,6 +421,7 @@ data class TerminalFrame(
         result = 31 * result + bracketedPaste.hashCode()
         result = 31 * result + keyboardModes.hashCode()
         result = 31 * result + cursorBlink.hashCode()
+        result = 31 * result + cursorShape.hashCode()
         result = 31 * result + scrollOffset
         result = 31 * result + scrollCeiling
         result = 31 * result + mouseMode.hashCode()
@@ -550,6 +573,7 @@ class AnsiTerminalBuffer(
     private var insertMode = false
     private var cursorVisible = true
     private var cursorBlink = true
+    private var cursorShape = TerminalCursorShape.BLOCK
     private var applicationCursorKeys = false
     private var applicationKeypad = false
     private var bracketedPaste = false
@@ -880,6 +904,7 @@ class AnsiTerminalBuffer(
             bracketedPaste = bracketedPaste,
             keyboardModes = keyboardModes(),
             cursorBlink = cursorBlink,
+            cursorShape = cursorShape,
             scrollOffset = offset,
             scrollCeiling = ceiling,
             mouseMode = MouseModes.modeOf(mouseModes),
@@ -1628,8 +1653,14 @@ class AnsiTerminalBuffer(
             // travels on the wire and a program may branch on it, and claiming to be an xterm is a
             // claim this terminal cannot back with features. DECLL (`CSI Ps q`) and every other `q`
             // form stay unanswered, which is what a terminal that does not implement them says.
-            'q' -> if (prefix == '>' && (params.firstOrNull() ?: 0) == 0) {
-                queueReply(dcs(">|$TERMINAL_IDENTITY"))
+            'q' -> when {
+                prefix == '>' && (params.firstOrNull() ?: 0) == 0 ->
+                    queueReply(dcs(">|$TERMINAL_IDENTITY"))
+                // DECSCUSR, whose parameter is separated from the `q` by a space - the one thing that
+                // tells it from DECLL, which is the same final byte with no intermediate. The space
+                // arrives inside the body rather than as a prefix, so it is looked for there.
+                prefix == null && body.endsWith(' ') -> setCursorShape(body.trimEnd())
+                else -> Unit
             }
             'h' -> setMode(params, private, true)
             'l' -> setMode(params, private, false)
@@ -1712,6 +1743,40 @@ class AnsiTerminalBuffer(
      */
     private fun setSynchronizedOutput(enable: Boolean) {
         synchronizedOutput = enable
+    }
+
+    /**
+     * DECSCUSR: `ESC [ Ps SP q` picks the cursor's shape, and the parameter's own bit picks its blink.
+     *
+     * The parameter is one number that answers two questions, which is why it is read here as a pair
+     * rather than as a shape alone: 0 and 1 are the blinking block, 2 the steady block, 3 the blinking
+     * underline, 4 the steady underline, 5 the blinking bar and 6 the steady bar. An omitted or
+     * non-numeric parameter is 0, the default, which is what `ESC [ SP q` means.
+     *
+     * Setting the blink here *overrides* `ESC [ ? 12 h` / `l` rather than being overridden by it, and
+     * that is the standard's reading rather than a choice: the sequence that names a cursor shape names
+     * a complete one, and a program that asks for a steady bar has asked for it to stop blinking.
+     * Nothing else in the mode set is touched, and a parameter above 6 leaves the cursor exactly as it
+     * was - an emulator that invented a shape for a value it does not know would be drawing something
+     * the program never asked for.
+     */
+    private fun setCursorShape(parameter: String) {
+        // One parameter or none: anything else is a sequence this terminal does not know, and leaving
+        // the cursor alone is the honest answer to it.
+        val digits = parameter.trimEnd()
+        if (digits.any { it !in '0'..'9' }) return
+        val ps = digits.toIntOrNull() ?: 0
+        val (shape, blink) = when (ps) {
+            0, 1 -> TerminalCursorShape.BLOCK to true
+            2 -> TerminalCursorShape.BLOCK to false
+            3 -> TerminalCursorShape.UNDERLINE to true
+            4 -> TerminalCursorShape.UNDERLINE to false
+            5 -> TerminalCursorShape.BAR to true
+            6 -> TerminalCursorShape.BAR to false
+            else -> return
+        }
+        cursorShape = shape
+        cursorBlink = blink
     }
 
     /**
@@ -2731,6 +2796,7 @@ class AnsiTerminalBuffer(
         insertMode = false
         cursorVisible = true
         cursorBlink = true
+        cursorShape = TerminalCursorShape.BLOCK
         applicationCursorKeys = false
         applicationKeypad = false
         bracketedPaste = false

@@ -73,6 +73,7 @@ class TerminalFrameEqualityTest {
             "bracketedPaste" to base.copy(bracketedPaste = !base.bracketedPaste),
             "keyboardModes" to base.copy(keyboardModes = KeyboardModes(kittyFlags = 1)),
             "cursorBlink" to base.copy(cursorBlink = !base.cursorBlink),
+            "cursorShape" to base.copy(cursorShape = TerminalCursorShape.BAR),
             "scrollOffset" to base.copy(scrollOffset = base.scrollOffset + 1),
             "scrollCeiling" to base.copy(scrollCeiling = base.scrollCeiling + 1),
             "mouseMode" to base.copy(mouseMode = MouseMode.X10),

@@ -57,6 +57,7 @@ import dev.eclipse.ssh.terminal.layoutKey
 import dev.eclipse.ssh.terminal.terminalLayout
 import dev.eclipse.ssh.terminal.wrapsForDisplay
 import dev.eclipse.ssh.terminal.TerminalColor
+import dev.eclipse.ssh.terminal.TerminalCursorShape
 import dev.eclipse.ssh.terminal.TerminalStyle
 import dev.eclipse.ssh.terminal.TerminalViewport
 import dev.eclipse.ssh.terminal.TerminalVisualRow
@@ -1093,16 +1094,34 @@ private fun DrawScope.drawFrame(
         }
     }
     if (cursorOn && frame.cursorVisible && layout.cursorRow in 0 until maxRows) {
-        // A hollow block, so the character underneath stays legible - a filled one hides whatever the
-        // cursor is on, which on a phone is exactly the character the user is trying to check.
+        // The block is drawn hollow, so the character underneath stays legible - a filled one hides
+        // whatever the cursor is on, which on a phone is exactly the character the user is trying to
+        // check. A bar and an underline are the shapes a program picks to say which mode it is in, and
+        // neither covers a character, so both are drawn solid.
         val left = layout.cursorColumn * cellWidth
         val top = layout.cursorRow * cellHeight + shift
-        drawRect(
-            cursorColour,
-            topLeft = Offset(left, top),
-            size = Size(cellWidth, cellHeight),
-            style = Stroke(width = CURSOR_STROKE),
-        )
+        when (frame.cursorShape) {
+            TerminalCursorShape.BLOCK -> drawRect(
+                cursorColour,
+                topLeft = Offset(left, top),
+                size = Size(cellWidth, cellHeight),
+                style = Stroke(width = CURSOR_STROKE),
+            )
+            // At the bottom edge of the cell, inside it rather than under it, so it cannot bleed into
+            // the row below.
+            TerminalCursorShape.UNDERLINE -> drawRect(
+                cursorColour,
+                topLeft = Offset(left, top + cellHeight - CURSOR_STROKE),
+                size = Size(cellWidth, CURSOR_STROKE),
+            )
+            // The left edge, which is where an insertion point belongs: the caret sits *before* the
+            // character it would replace rather than over it.
+            TerminalCursorShape.BAR -> drawRect(
+                cursorColour,
+                topLeft = Offset(left, top),
+                size = Size(CURSOR_STROKE, cellHeight),
+            )
+        }
     }
 }
 

@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before it; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before it; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12162,3 +12162,61 @@ performance question with no correctness stake. Nor does it claim the *timing* o
 test reads a frame after each step, so it observes the accumulated damage since the last frame, not the
 damage of the step in isolation; a frame taken mid-sequence would see the union, which is what the
 renderer sees. Nor the initial full-screen damage, nor the cursor, as above.
+
+---
+
+## 114. The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode
+
+**What was missing.** `ESC [ Ps SP q` - DECSCUSR - is how a program says what shape the cursor should
+be drawn in, and this terminal discarded it. The blink half was already here: `ESC [ ? 12 h` / `l` is
+what terminfo's `cvvis` and `cnorm` are made of, and it has been honoured for a while. The shape was
+not, and the shape is the part a reader uses. `vim`, `readline` and every other modal editor put a bar
+in insert mode and a block in command mode, so a terminal that ignores the sequence leaves the user
+unable to tell which mode they are in from the screen - which is precisely the thing the sequence
+exists to say.
+
+**The parameter is one number answering two questions**, which is why it is read as a pair rather than
+as a shape alone: 0 and 1 are the blinking block, 2 the steady block, 3 the blinking underline, 4 the
+steady underline, 5 the blinking bar and 6 the steady bar. An omitted parameter is 0, the default.
+Setting the blink here *overrides* `ESC [ ? 12 h` / `l` rather than being overridden by it, and that is
+the standard's reading rather than a choice: a sequence that names a complete cursor has named its
+blink too, so a program asking for a steady bar has asked for it to stop blinking. The blink mode stays
+a switch of its own afterwards - turning it off does not change the shape, which is the half DECSCUSR
+does not own. Both directions have a case.
+
+**The space is the whole of what tells it from DECLL.** `ESC [ 5 q` is DECSCUSR and `ESC [ 5 q` without
+the space is DECLL, which this terminal does not implement; the parameter arrives inside the CSI body
+rather than as a prefix, so it is looked for there. Both are pinned, because reading the two as one
+sequence is the way this goes wrong, and so is reading DECSCUSR as nothing - which is what happened
+before this pass.
+
+**Three shapes, and the two new ones are solid.** The block stays hollow, for the reason it always was:
+a filled block on a phone hides exactly the character the user is trying to check. A bar and an
+underline are the shapes a program picks to say which mode it is in, and neither covers a character, so
+both are drawn solid - the bar at the left edge of the cell, where an insertion point belongs, and the
+underline inside the bottom edge so it cannot bleed into the row below. A parameter above 6, or a
+malformed one, leaves the cursor exactly as it was: an emulator that invented a shape for a value it
+does not know would be drawing something the program never asked for, and the same convention already
+governs the mouse modes and the DEC private modes this terminal declines.
+
+**The shape is the cursor's own property, not the screen's.** Like the blink mode and unlike the mouse
+modes, it is *not* cleared when a program hands the alternate screen back: a shell that set a bar and
+then ran `vim` should still have a bar when `vim` exits, and one that dies without undoing its mouse
+modes must not leave the shell reporting every drag. A soft reset (`ESC [ ! p`) and a full reset
+(`ESC c`) both put the default cursor back, because both are a program saying "forget everything".
+
+**The shape is in the frame's identity and not in the layout key**, and both halves have a case. It is
+in `equals`/`hashCode` - a frame whose cursor shape changed is a different screen and must be
+republished - and it is *not* in `TerminalLayoutKey`, because a bar and a block are drawn in the same
+cell and nothing about the rows moves. That is the same distinction the blink mode already draws, and
+`TerminalFrameEqualityTest` and `TerminalLayoutTest` are the two files that make a field dropped from
+either side a failing test rather than a screen.
+
+**What this does not claim.** The drawing is Compose and was not run on a device from this host: what is
+pinned here is the parse, the frame, and the reset behaviour, all of which the pure terminal package
+exercises. The three shapes were checked against the pinned `ui-graphics` artifact's `drawRect`
+signature - the default `style` is `Fill`, which is what the solid shapes need - but a shape drawn
+wrongly would be a picture rather than a failing test, and the honest place to catch that is the
+manual pass on a real device. Nor does this implement the shapes above 6 that some terminals draw: 7 to
+9 are not in the standard, and this terminal answers the way it answers every other sequence it does
+not implement, by leaving the cursor alone.

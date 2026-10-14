@@ -408,6 +408,18 @@ class TerminalLayoutTest {
     }
 
     @Test
+    fun `the cursor shape is deliberately not in the key either`() {
+        // A bar and a block are drawn in the same cell, so `ESC [ 5 SP q` changes no row - it is the
+        // view's drawing that differs, and rebuilding the layout for it would be work with no result.
+        val frame = frameOf(listOf("ready", "$ "), cursorRow = 1, cursorColumn = 2)
+
+        assertThat(layoutKey(frame.copy(cursorShape = TerminalCursorShape.BAR), columns = 20, rows = 24))
+            .isEqualTo(layoutKey(frame, columns = 20, rows = 24))
+        assertThat(textOf(terminalLayout(frame.copy(cursorShape = TerminalCursorShape.UNDERLINE), 20, 24), "ready"))
+            .isEqualTo(textOf(terminalLayout(frame, 20, 24), "ready"))
+    }
+
+    @Test
     fun `the two screen flags are in the key because they change the layout`() {
         // Not every field is a change worth memoizing on, and these two are the ones that are: the same
         // frame and the same width, wrapped on the flowing screen and left over-wide on the painted one.
