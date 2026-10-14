@@ -303,6 +303,16 @@ data class TerminalFrame(
     val marginBelow: List<List<TerminalCell>> = emptyList(),
     val stepRowsBack: Int = 0,
     val stepRowsForward: Int = 0,
+    /**
+     * Damage range in the spirit of libvterm's `damagerect`: absolute buffer lines that changed
+     * since the previous published frame, so the renderer erases exactly those rows end-to-end.
+     *
+     * `damageFull` covers resize, scroll, alternate-screen switches and anything that moves every
+     * row: the renderer then treats the whole window as dirty. Both reset on the next [frame].
+     */
+    val damageFrom: Int = -1,
+    val damageTo: Int = -1,
+    val damageFull: Boolean = true,
 ) {
     companion object {
         val EMPTY = TerminalFrame(
@@ -342,6 +352,47 @@ class AnsiTerminalBuffer(
     private var lines = ArrayList<MutableList<TerminalCell>>()
     private var cursorRow = 0
     private var cursorColumn = 0
+
+    /**
+     * Damage tracking in the spirit of libvterm's `damagerect`: which rows changed since the last
+     * published frame, so the renderer can erase exactly those rows end-to-end instead of trusting
+     * one global clear to hide a shorter line's tail.
+     *
+     * Merged as a single row range plus a full-screen flag: every mutation widens the range via
+     * [markDamageRow]/[markDamageRange]/[markDamageAll], and [frame] carries it out and resets it.
+     * `revision` is still the cheap "did anything change" signal; this is the precise "where".
+     */
+    private var damageFrom = -1
+    private var damageTo = -1
+    private var damageFull = true
+
+    private fun markDamageRow(row: Int) {
+        if (damageFull) return
+        if (damageFrom == -1) {
+            damageFrom = row
+            damageTo = row
+        } else {
+            if (row < damageFrom) damageFrom = row
+            if (row > damageTo) damageTo = row
+        }
+    }
+
+    private fun markDamageRange(from: Int, to: Int) {
+        if (damageFull) return
+        if (damageFrom == -1) {
+            damageFrom = from
+            damageTo = to
+        } else {
+            if (from < damageFrom) damageFrom = from
+            if (to > damageTo) damageTo = to
+        }
+    }
+
+    private fun markDamageAll() {
+        damageFull = true
+        damageFrom = -1
+        damageTo = -1
+    }
 
     /**
      * The cursor has printed in the last column and the *next* printable character wraps first.
@@ -547,6 +598,7 @@ class AnsiTerminalBuffer(
         cursorColumn = cursorColumn.coerceIn(0, columns - 1)
         wrapPending = false
         resetTabStops()
+        markDamageAll()
         revision++
     }
 
@@ -714,6 +766,14 @@ class AnsiTerminalBuffer(
         val forward = if (offset > 0) windowAt(anchor, offset - 1, budget, fitWidth) else here
         val stepRowsBack = rowsBetween(backFirst, first, fitWidth)
         val stepRowsForward = rowsBetween(first, windowFirst(forward), fitWidth)
+        // Hand the damage out with the window and reset it: the next frame then carries only what
+        // changed after this one, and a republished frame of an untouched buffer erases nothing.
+        val outDamageFrom = damageFrom
+        val outDamageTo = damageTo
+        val outDamageFull = damageFull
+        damageFrom = -1
+        damageTo = -1
+        damageFull = false
         return TerminalFrame(
             lines = window,
             firstLine = first,
@@ -754,6 +814,9 @@ class AnsiTerminalBuffer(
             marginBelow = marginBelow(end, stepRowsForward, fitWidth),
             stepRowsBack = stepRowsBack,
             stepRowsForward = stepRowsForward,
+            damageFrom = outDamageFrom,
+            damageTo = outDamageTo,
+            damageFull = outDamageFull,
         )
     }
 
@@ -1665,6 +1728,7 @@ class AnsiTerminalBuffer(
         primaryKeyboardFlags = keyboardFlags
         keyboardFlags = 0
         alternateKeyboardStack.clear()
+        markDamageAll()
     }
 
     private fun leaveAlternateScreen(withCursor: Boolean) {
@@ -1689,6 +1753,7 @@ class AnsiTerminalBuffer(
         mouseModes = emptySet()
         keyboardFlags = primaryKeyboardFlags
         if (withCursor) restoreCursor()
+        markDamageAll()
     }
 
     private fun setScrollRegion(params: List<Int>) {
@@ -2116,9 +2181,10 @@ class AnsiTerminalBuffer(
         clearUnit(line, cursorColumn)
         clearUnit(line, cursorColumn + 1)
         line[cursorColumn] = TerminalCell(glyph, style, wide = true)
-        if (cursorColumn + 1 < line.size) line[cursorColumn + 1] = TerminalCell(' ', style)
+        if (cursorColumn + 1 < line.size) line[cursorColumn + 1] = TerminalCell(' ', style.blanked)
         lastPrinted = glyph
         if (cursorColumn + 2 >= columns) wrapPending = true else cursorColumn += 2
+        markDamageRow(cursorRow)
         revision++
     }
 
@@ -2178,7 +2244,9 @@ class AnsiTerminalBuffer(
     private fun repairLine(line: MutableList<TerminalCell>) {
         for (index in line.indices) {
             if (!line[index].wide) continue
-            if (!hasRightHalf(line, index)) line[index] = TerminalCell()
+            // An orphaned half keeps the current background (BCE): a cut wide character on a status
+            // bar must leave a coloured blank, not a default one that reads as a pale speck.
+            if (!hasRightHalf(line, index)) line[index] = eraseBlank()
         }
     }
 
@@ -2224,6 +2292,7 @@ class AnsiTerminalBuffer(
         }
         lastPrinted = glyph
         if (cursorColumn >= columns - 1) wrapPending = true else cursorColumn++
+        markDamageRow(cursorRow)
         revision++
     }
 
@@ -2261,6 +2330,7 @@ class AnsiTerminalBuffer(
         val cell = line[column]
         if (cell.value == ' ') return
         line[column] = cell.copy(combining = cell.combining + String(Character.toChars(codePoint)))
+        markDamageRow(cursorRow)
         revision++
     }
 
@@ -2362,15 +2432,18 @@ class AnsiTerminalBuffer(
     private fun scrollRegionUp() {
         val fullScreen = topMargin == 0 && bottomMargin == rows - 1
         if (fullScreen && primary == null) {
-            lines += blankLine()
+            lines += MutableList(columns) { eraseBlank() }
             trimScrollback()
             cursorRow = lines.lastIndex
         } else {
             val top = screenTop() + topMargin
             val bottom = screenTop() + bottomMargin
             lines.removeAt(top)
-            lines.add(bottom, blankLine())
+            lines.add(bottom, MutableList(columns) { eraseBlank() })
         }
+        // A scroll moves every row of the region: erase them all end-to-end rather than trusting
+        // the global clear to hide the line each one replaced.
+        markDamageAll()
         revision++
     }
 
@@ -2378,7 +2451,8 @@ class AnsiTerminalBuffer(
         val top = screenTop() + topMargin
         val bottom = screenTop() + bottomMargin
         lines.removeAt(bottom)
-        lines.add(top, blankLine())
+        lines.add(top, MutableList(columns) { eraseBlank() })
+        markDamageAll()
         revision++
     }
 
@@ -2415,6 +2489,7 @@ class AnsiTerminalBuffer(
             }
         }
         wrapPending = false
+        markDamageAll()
         revision++
     }
 
@@ -2428,6 +2503,7 @@ class AnsiTerminalBuffer(
             else -> for (i in cursorColumn.coerceIn(0, columns - 1) until columns) clearUnit(line, i)
         }
         wrapPending = false
+        markDamageRow(cursorRow)
         revision++
     }
 
@@ -2437,20 +2513,23 @@ class AnsiTerminalBuffer(
         val end = (cursorColumn + count).coerceAtMost(columns)
         for (i in cursorColumn until end) clearUnit(line, i)
         wrapPending = false
+        markDamageRow(cursorRow)
         revision++
     }
 
     private fun insertAtCursor() {
-        lines[cursorRow].add(cursorColumn.coerceIn(0, columns - 1), TerminalCell())
+        lines[cursorRow].add(cursorColumn.coerceIn(0, columns - 1), eraseBlank())
         normalizeLine(lines[cursorRow])
         repairLine(lines[cursorRow])
+        markDamageRow(cursorRow)
     }
 
     private fun deleteAtCursor() {
         if (cursorColumn >= columns) return
         lines[cursorRow].removeAt(cursorColumn)
-        lines[cursorRow] += TerminalCell()
+        lines[cursorRow] += eraseBlank()
         repairLine(lines[cursorRow])
+        markDamageRow(cursorRow)
     }
 
     /**
@@ -2467,8 +2546,9 @@ class AnsiTerminalBuffer(
         if (cursorRow < top || cursorRow > bottom) return
         repeat(count) {
             lines.removeAt(bottom)
-            lines.add(cursorRow, blankLine())
+            lines.add(cursorRow, MutableList(columns) { eraseBlank() })
         }
+        markDamageRange(top, bottom)
     }
 
     private fun deleteLines(count: Int) {
@@ -2477,12 +2557,17 @@ class AnsiTerminalBuffer(
         if (cursorRow < top || cursorRow > bottom) return
         repeat(count) {
             lines.removeAt(cursorRow)
-            lines.add(bottom, blankLine())
+            lines.add(bottom, MutableList(columns) { eraseBlank() })
         }
+        markDamageRange(top, bottom)
     }
 
     private fun reset() {
         primary = null
+        // The style first: [blankLine] erases with the current background (BCE), and a reset is a
+        // return to the default one rather than a fill with whatever the last program left behind.
+        style = TerminalStyle()
+        savedStyle = TerminalStyle()
         lines = ArrayList(rows)
         repeat(rows) { lines += blankLine() }
         cursorRow = 0
@@ -2492,8 +2577,6 @@ class AnsiTerminalBuffer(
         // A soft reset ends any batch: the program that opened it is gone, and a latch left set would
         // hold the next program's output back forever.
         synchronizedOutput = false
-        style = TerminalStyle()
-        savedStyle = TerminalStyle()
         savedRow = 0
         savedColumn = 0
         savedGraphics = false
@@ -2522,10 +2605,11 @@ class AnsiTerminalBuffer(
         title = null
         lastPrinted = null
         resetTabStops()
+        markDamageAll()
         revision++
     }
 
-    private fun blankLine() = MutableList(columns) { TerminalCell() }
+    private fun blankLine() = MutableList(columns) { eraseBlank() }
 
     /**
      * Fits the *screen* to the current width, and deliberately does not touch the scrollback.
@@ -2548,7 +2632,7 @@ class AnsiTerminalBuffer(
     }
 
     private fun normalizeLine(line: MutableList<TerminalCell>) {
-        while (line.size < columns) line += TerminalCell()
+        while (line.size < columns) line += eraseBlank()
         while (line.size > columns) line.removeAt(line.lastIndex)
         // A truncation can take a wide character's right half off the end of the line, which leaves the
         // glyph drawn across the two cells of whatever comes after it in the renderer's run.

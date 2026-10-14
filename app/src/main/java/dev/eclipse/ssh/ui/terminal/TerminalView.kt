@@ -943,6 +943,26 @@ private fun DrawScope.drawFrame(
         // decided where a line too wide for the window breaks. Bounded by the line again because the
         // layout and the frame are read at slightly different moments while output is arriving.
         val lastColumn = visual.to.coerceAtMost(line.size)
+        // Damage erase in the spirit of libvterm's `damagerect`: a row the buffer reports as changed is
+        // repainted end-to-end with the default background before its runs go down, so a shorter line
+        // cannot keep the tail of the longer one it replaced even if the frame's global clear were ever
+        // skipped or clipped. Rows outside the damage keep the old path untouched.
+        val rowDirty = frame.damageFull || (frame.damageFrom != -1 && absoluteLine in frame.damageFrom..frame.damageTo)
+        if (rowDirty) {
+            drawRect(
+                background,
+                topLeft = Offset(0f, top),
+                size = Size((visual.to - visual.from) * cellWidth, cellHeight),
+            )
+        } else if (lastColumn < line.size) {
+            // Even without damage, the skipped trailing blanks must not show the previous frame's tail
+            // where this row is narrower than the grid it replaced.
+            drawRect(
+                background,
+                topLeft = Offset((lastColumn - visual.from) * cellWidth, top),
+                size = Size((line.size - lastColumn) * cellWidth, cellHeight),
+            )
+        }
         var column = visual.from
         while (column < lastColumn) {
             val cell = line[column]

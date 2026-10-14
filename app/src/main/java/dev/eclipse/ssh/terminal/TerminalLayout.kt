@@ -320,7 +320,9 @@ private fun rowIsBlank(frame: TerminalFrame, row: TerminalVisualRow): Boolean {
     val line = frame.lines.getOrNull(row.line) ?: return true
     for (column in row.from until row.to) {
         val cell = line.getOrNull(column) ?: continue
-        if (cell.value != ' ' || cell.combining.isNotEmpty()) return false
+        // BCE-aware like the buffer's own ink tests: a coloured blank is a status bar's padding or a
+        // highlighted row, and dropping it here is what let the tmux status line overwrite content.
+        if (cell.isPainted()) return false
     }
     return true
 }
