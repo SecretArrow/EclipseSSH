@@ -217,6 +217,19 @@ jvm_files="$(test_files app/src/test)"
 android_methods="$(test_methods app/src/androidTest)"
 android_files="$(test_files app/src/androidTest)"
 
+# `app/src/sharedTest` is compiled into BOTH source sets -- see the `sourceSets` block in
+# app/build.gradle.kts -- so each of its methods runs twice, once under `testDebugUnitTest` and once
+# on a device. It is therefore counted in both figures rather than in one: each figure answers "how
+# many methods does that task run", and a method in the shared directory is in both answers. It gets
+# a figure of its own as well, because "the two counts overlap by this much" is a thing the README
+# states and a reader can only check against a number.
+shared_methods="$(test_methods app/src/sharedTest)"
+shared_files="$(test_files app/src/sharedTest)"
+jvm_methods=$((jvm_methods + shared_methods))
+jvm_files=$((jvm_files + shared_files))
+android_methods=$((android_methods + shared_methods))
+android_files=$((android_files + shared_files))
+
 # A Kotlin source file that is not text: every line-oriented tool degrades on it, and the counts
 # above are only trustworthy because none of them is. One check for the whole tree rather than one per
 # file -- the claim is "the sources are text", and a per-file tally would drown the figure count.
@@ -249,6 +262,7 @@ count_before_files() { printf '%s\n' "$1" | grep -oE '[0-9][0-9,]*([[:space:]][a
 
 jvm_line="$(grep -F 'JVM/Robolectric test methods in' README.md | head -1)"
 android_line="$(grep -F 'holds the instrumentation tests' README.md | head -1)"
+shared_line="$(grep -F 'is compiled into both source sets' README.md | head -1)"
 
 # The README's own answer to "a file count is not a class count": it names one file and says how many
 # test classes that file declares, with the number spelled as a word. It is read out of the clause that
@@ -278,6 +292,8 @@ check_count "JVM test methods"              "$jvm_methods"     "$(first_number "
 check_count "JVM test files"                "$jvm_files"       "$(count_before_files "$jvm_line")"
 check_count "instrumentation test methods"  "$android_methods" "$(first_number "$android_line")"
 check_count "instrumentation test files"    "$android_files"   "$(count_before_files "$android_line")"
+check_count "shared test methods"           "$shared_methods"  "$(first_number "$shared_line")"
+check_count "shared test files"             "$shared_files"    "$(count_before_files "$shared_line")"
 
 # The classes-per-file claim. The file is located rather than hardcoded, so moving it is not a failure;
 # only deleting it is, and that is failed explicitly rather than left to grep, whose `-c` on an empty

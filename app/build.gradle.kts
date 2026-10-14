@@ -103,6 +103,32 @@ android {
         compose = true
     }
 
+    // Cases that must hold on the host and on a device, kept in one directory and compiled into both
+    // source sets rather than written twice. What earns a place here is a case whose answer depends on
+    // the platform: the width table exists so that a device whose Unicode is years older than the
+    // server's answers the same as one whose Unicode is current, and until this directory existed that
+    // claim was only ever checked against the JVM's Unicode. A case with the same answer everywhere -
+    // a mouse report's bytes, a UTF-8 decoder's - belongs in `test` alone, where it is cheaper.
+    //
+    // Both `java` and `kotlin` take the directory, because AGP keeps two lists and they are not the
+    // same list: `java` carries the source set's Java directories and `kotlin` the Kotlin ones, and a
+    // directory added to one does not appear in the other. This directory holds Kotlin, so it has to be
+    // in the Kotlin list; it is in the Java list too because that is the list the variant's own source
+    // model reports, and a directory present in both is one directory, not two.
+    //
+    // Nothing here may import a test framework the instrumentation classpath lacks: JUnit and Truth are
+    // the whole list, on both sides.
+    sourceSets {
+        getByName("test").apply {
+            java.srcDir("src/sharedTest/java")
+            kotlin.srcDir("src/sharedTest/java")
+        }
+        getByName("androidTest").apply {
+            java.srcDir("src/sharedTest/java")
+            kotlin.srcDir("src/sharedTest/java")
+        }
+    }
+
     androidResources {
         // Drops every locale except English and Indonesian from the AndroidX libraries, which
         // otherwise carry ~80 translations each. The app's own strings are English only (there

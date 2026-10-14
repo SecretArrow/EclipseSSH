@@ -232,21 +232,28 @@ machine: the SSH and SFTP integration tests start a real Apache MINA SSHD server
 inside the test JVM, and a second class dials a real OpenSSH `sshd` that the `test` job starts on
 loopback first (`tools/local-sshd.sh`, because interop bugs live in the gap an in-JVM server cannot
 reproduce). No public or shared SSH account is involved either way. That figure is the
-count of `@Test` methods in `app/src/test` — a few of them sit behind `assumeTrue` and report as
-skipped wherever their precondition cannot hold, which is why a green CI run reports a slightly
-smaller number than this. A file count is not a class count: one Kotlin file may declare several test
-classes, and `ChoiceActivitiesRobolectricTest.kt` declares seven test classes, so a run executes more
-classes than there are files here. `scripts/check-doc-figures.sh` recounts both, so neither can drift
-silently again: it read 1,731 across 151 until that check existed, because one test file carried a
-literal NUL byte inside a string and every `grep`-based count of the suite stopped counting that
-file's methods.
+count of `@Test` methods in `app/src/test` and `app/src/sharedTest` — a few of them sit behind
+`assumeTrue` and report as skipped wherever their precondition cannot hold, which is why a green CI
+run reports a slightly smaller number than this. A file count is not a class count: one Kotlin file
+may declare several test classes, and `ChoiceActivitiesRobolectricTest.kt` declares seven test classes,
+so a run executes more classes than there are files here.
+`scripts/check-doc-figures.sh` recounts both, so neither can drift silently again: it read 1,731
+across 151 until that check existed, because one test file carried a literal NUL byte inside a
+string and every `grep`-based count of the suite stopped counting that file's methods.
+
+`app/src/sharedTest/` is compiled into both source sets — 33 test methods in 3 files — and holds the
+cases whose answer depends on the platform rather than on this app: how wide a character is, where
+the boundary of a wide character falls in an erase or an insert, and the grid a real terminal ends
+on for a given byte sequence. Each is one file rather than two copies, so a case added for the JVM
+run cannot be forgotten on the device run, and the figure above and the one below both count them.
 
 `app/src/test/resources/keys/` holds throwaway Ed25519 fixtures (`plain_ed25519`,
 `encrypted_ed25519`) used only to exercise key parsing against that in-process server. They are test
 data, they authorise nothing anywhere, and they must never be reused as real credentials.
 
-`app/src/androidTest/` holds the instrumentation tests — 49 test methods in 7 files — which
-need a device or emulator.
+`app/src/androidTest/` holds the instrumentation tests — 82 test methods in 10 files — which run on
+a device or emulator. Thirty-three of those methods are the shared ones above, so the device runs the
+grid cases as well as the JVM does.
 
 ## Continuous integration
 
