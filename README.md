@@ -227,7 +227,7 @@ is 28).
 
 ## Tests
 
-The suite is 2,607 JVM/Robolectric test methods in 207 test files and contacts nothing off the
+The suite is 2,611 JVM/Robolectric test methods in 209 test files and contacts nothing off the
 machine: the SSH and SFTP integration tests start a real Apache MINA SSHD server on a loopback port
 inside the test JVM, and a second class dials a real OpenSSH `sshd` that the `test` job starts on
 loopback first (`tools/local-sshd.sh`, because interop bugs live in the gap an in-JVM server cannot

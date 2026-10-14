@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before it; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before it; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12002,3 +12002,53 @@ pane size before the recording starts, so `AlternateScreenSwitchTest` states it 
 foregrounds or for the colours themselves, as §109 says. And the switch's other state - mouse modes, the
 keyboard flags, `modifyOtherKeys` - is not touched by this pass, beyond the keyboard flags the code
 already put aside.
+
+## 111. Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently
+
+§109 pinned the wide-character boundaries and §110 the two fill rules, and both are arguments: a rule
+stated with the measurement that produced it, next to the case that made it worth stating. What neither
+is, is a sweep. A reader looking for "does an `ECH` of zero behave like an `ECH` of one" finds the
+answer only if the section happened to be written about that, and a family with a case nobody wrote
+down is a family with a case nobody has run. `TerminalConformanceTest` is that sweep, and it is written
+as a table: 34 cases, one line each, an input sequence and the screen tmux 3.5a ends on for it.
+
+**One line per case, and the fixture is what makes it measured.** The expectations are not asserted,
+they are read out of `capture-pane` for the same bytes, and the same bytes are committed as a recording:
+`reproductions/conformance.raw` holds the erase, insert, delete and parameter cases, one case per row of
+a shared 20x20 pane, and `reproductions/scroll-families.raw` holds the scroll cases, one per three-row
+band so each band's result survives into the final grid rather than being overwritten by the next.
+`replay.sh --attrs` diffs both against tmux, so a case that breaks the table breaks the harness in the
+same run. The row's text and its background pattern are the same vocabulary the harness's own dump
+prints - `.` for a cell with no background, a letter per distinct background in first-use order - which
+is what lets a case be read against its fixture row by eye, and why the table's `painted` column is a
+string of twenty characters rather than a list of colours.
+
+**The table is a gate, and the gate was seen to fail.** A case table that has only ever been run against
+the code it was written for is a claim. Stashing a one-line change to `eraseBlank` - returning a default
+cell where it returns the pen's - and rebuilding into a separate `GRIDDUMP_OUT` makes `conformance.raw`
+diverge on 20 rows of background and `scroll-families.raw` on 9: every cell an erase, a scroll, an
+insert or a delete vacated comes back unpainted, which is §108's defect exactly. Restore the line and
+both are IDENTICAL again. That is the same counterfactual §110 used for the screen fixtures, and it is
+the cheapest way to see a gate fail without writing a bug.
+
+**One case the table deliberately does not carry.** An insert whose count runs past the line's remaining
+columns is the one place this emulator and tmux 3.5a part company, and it is recorded rather than
+followed. Measured on a twenty-column line with the cursor on the third cell, `ESC [ 1 7 @` leaves tmux
+holding `AB DEFGHIJKLMNOPQRSC`: every cell whose destination is still on the line moved right by
+seventeen, every cell whose destination is not stayed where it was, and the one that did move landed on
+the last column over the top of what was there. `ESC [ 9 9 @` therefore leaves the line untouched,
+because tmux's scatter finds no destination left on the line. That is not an insert, it is a scatter, and
+no other emulator does it: an insert shifts the range `[cursor, margin)`, the cells past the margin fall
+off, and the gap takes blanks. This emulator takes the shift-and-blank reading, and the difference has
+its own file - `InsertWithACountPastTheLineTest`, three tests - for two reasons. A table whose premise is
+"the screen tmux ends on" cannot carry a case whose expectation is that it does not, and the difference
+is invisible to the differential harness anyway: a client is sent the cells tmux's grid holds, never the
+sequence that produced them, so nothing else in this repository would notice if the reading changed.
+
+**What this does not claim.** The cases are measurements of one oracle on one host, and the table's
+background patterns are not the fixtures' - a self-contained case starts on an unpainted screen where
+the fixture's later rows sit on the fill the earlier `ED` cases left, so a row reads the same text in
+both and a different pattern. Foregrounds and the text attributes are still not compared, and the
+colours are compared as a pattern rather than as values, as §109 says. And the counts that do fit are in
+the table because both sides agree on them; the one that does not fit is in its own file, argued rather
+than tabulated.
