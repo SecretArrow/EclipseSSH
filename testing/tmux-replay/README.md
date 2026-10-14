@@ -77,6 +77,16 @@ python3 mkframes.py --escapes reproductions/screen-fill.raw /tmp/fill.frames --c
 python3 mkframes.py --escapes reproductions/screen-switch.raw /tmp/switch.frames --chunk 7
 ./replay.sh /tmp/switch.frames --cols 20 --rows 8 --attrs
 
+# a link on a row, twelve ways: the separator that is not the first one, a sequence with no separator
+# at all, one that is never closed, an empty target, a target longer than any pane is wide, a wide
+# character inside one, a pen change and an erase and an insert under one, a BEL terminator, and a
+# parameters-only opener. Two things are asked here. The grid rules the other fixtures pin must still
+# hold with a link in the way - a link is not a cell, so a delete still shifts two columns for a wide
+# character and an insert still moves it. And the *reader* must survive a linked row: a URI is
+# routinely longer than the pane is wide, and it arrives inside `capture -e` as an OSC sequence.
+python3 mkframes.py --escapes reproductions/hyperlinks.raw /tmp/link.frames --chunk 7
+./replay.sh /tmp/link.frames --cols 20 --rows 12 --attrs
+
 # a synchronized-output batch tmux composed itself. Both halves are needed: `sync` in the terminal
 # features, because tmux 3.5a never asks its terminal about 2026, and `--answer`, so tmux is not on its
 # fallback path. A recording made without them contains no `2026 h`/`l` at all, and replaying it proves
@@ -116,8 +126,17 @@ PY
 ./griddiff.py --frames /tmp/keys.frames --cols 52 --rows 60 --bisect --step 1
 ```
 
-Exit 0 means every row matches tmux, and so does the cursor. The dump directory (`GRIDDUMP_OUT`, default `/tmp/griddump-out`) is
-reused between runs; set `GRIDDUMP_REBUILD=1` after changing app code.
+Exit 0 means every row matches tmux, and so does the cursor. The dump directory (`GRIDDUMP_OUT`, default
+`/tmp/griddump-out`) is reused between runs, and rebuilt when any source it was built from is newer than
+the class file - or unconditionally with `GRIDDUMP_REBUILD=1`. That rule is not a convenience: a cached
+class answers about the parser as it stood when it was built, so without it an edit to the terminal
+package is replayed against the *previous* emulator and the answer reads like a verdict on the current
+one.
+
+`GRIDDUMP_KC` names where the Kotlin jars are, and two shapes of that are accepted: a Gradle module
+cache, or a directory holding the jars themselves - which is what a Gradle distribution's own `lib/`
+is, and the shape left behind on a host whose module cache has been cleared. On such a host,
+`GRIDDUMP_KC=/path/to/gradle-8.11.1/lib` is enough, and there is no `kotlinc` needed.
 
 ## What it does not prove
 
@@ -171,12 +190,21 @@ implemented, which is what makes it a gate rather than a decoration. Both are re
 | `reproductions/scroll-families.raw`, 20x20, 58 reads | DIVERGES - 9 rows of background: the rows an insert and a scroll vacated, and the ones they pushed off the region, were left unpainted | IDENTICAL |
 | `reproductions/screen-fill.raw`, 20x8, 17 reads | DIVERGES - 8 rows of background and one ghost: the alternate screen was filled from the pen where tmux fills it with nothing, and the switch reset the cursor to 0,0 | IDENTICAL |
 | `reproductions/screen-switch.raw`, 20x8, 15 reads | DIVERGES - 2 rows and the cursor: 47 and 1047 put the primary's saved cursor back where tmux keeps the alternate screen's | IDENTICAL |
+| `reproductions/hyperlinks.raw`, 20x12, 100 reads | DIVERGES - the reader, not the emulator: it counted the URI in `capture -e`'s OSC sequence as columns and reported a 41-column row in a 20-column pane | IDENTICAL |
 
 The last two rows are the one place "before" is not an earlier emulator but a deliberate revert: the rule
 they pin was already in place when they were written, so their "before" is that recording against the
 same source with `eraseBlank` returning a default cell instead of the pen's - one line, and the row
 above is what it costs. A gate whose failure has not been seen is a claim rather than a gate, and this
 is the cheapest way to see one.
+
+The `hyperlinks` row is the other way round: the emulator was never the question, and what failed first
+was this harness's own reader, which could not read a row containing a link at all. That mattered beyond
+the fixture - a URI arrives the same way in any real recording from `git`, `ls` or `gh`, so a reader that
+counts it as columns turns a good recording into a width disagreement. What the row now proves is that
+the grid rules hold with a link in the way and that a linked row is readable. It does **not** compare the
+link: this harness compares text and background, and a link is neither. That is pinned where it can be -
+`TerminalHyperlinkTest` in the app's own suite.
 
 Real Claude Code in tmux, 52x60, every prefix checked with `--bisect --step 1`, rows and cursor both:
 

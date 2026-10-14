@@ -104,9 +104,20 @@ def oracle_attrs(text):
 # A CSI ending in `m` is the only sequence this reader acts on. tmux's capture also emits `SO`/`SI` when a
 # program used its own charset shift, and `ESC ( X` for a charset selection; both are stepped over, since
 # neither says anything about a cell's background.
+#
+# OSC is stepped over for a stronger reason: `capture -e` re-emits the hyperlinks a pane printed, as
+# `OSC 8 ; params ; URI ST` around the text they cover, and a URI is routinely longer than the pane is
+# wide. A reader that does not recognise the sequence takes its body for text and counts its characters
+# as columns, so any fixture - or any real recording from `git`, `ls` or `gh` - that contains a link
+# fails with a width disagreement that is the reader's, not the emulator's.
+#
+# The terminator is optional because a link still open at the end of a line arrives without one: the
+# body runs to the end of the row, or to the ESC that starts the next sequence, and either way it is
+# stepped over rather than counted.
 SGR = re.compile("\x1b\\[([0-9;]*)m")
 CSI = re.compile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
 CHARSET = re.compile("\x1b[()*+][ -~]")
+OSC = re.compile("\x1b\\][^\x07\x1b]*(?:\x07|\x1b\\\\)?")
 
 
 def apply_sgr(fg, bg, body):
@@ -174,7 +185,7 @@ def background_slots(raw, width, fg=None, bg=None):
                 fg, bg = apply_sgr(fg, bg, sgr.group(1))
                 index = sgr.end()
                 continue
-            other = CSI.match(raw, index) or CHARSET.match(raw, index)
+            other = CSI.match(raw, index) or CHARSET.match(raw, index) or OSC.match(raw, index)
             if other:
                 index = other.end()
                 continue
