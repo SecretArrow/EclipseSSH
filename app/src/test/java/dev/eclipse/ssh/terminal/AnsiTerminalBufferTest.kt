@@ -344,14 +344,23 @@ class AnsiTerminalBufferTest {
     }
 
     @Test
-    fun `a line scrolled in at the bottom keeps the default background`() {
+    fun `a line scrolled in at the bottom wears the current background`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("$E[41ma\nb\n")
 
-        // The deliberate edge of the erase fix: it is the *erase* sequences that fill with the current
-        // background, not the row the screen scrolls into view. A cell that was never cleared is not
-        // something a program asked to paint, and colouring it would tint the scrollback behind it.
-        assertThat(buffer.snapshot().lines.last().toSet()).containsExactly(TerminalCell())
+        // BCE reaches the row a scroll exposes, not only the cells an erase writes. Measured against
+        // tmux 3.5a on a 10x2 pane: `ESC[41m` then `a\r\nb\r\n` leaves the row the screen scrolled
+        // into wearing `ESC[41m`. A program that painted a background and then let the screen scroll
+        // has every right to see it there - dropping it leaves a pale seam under a coloured block the
+        // program never repaints, and tmux keeps sending the row because it believes it is coloured.
+        val row = buffer.snapshot().lines.last()
+        assertThat(row.all { it.value == ' ' && it.combining.isEmpty() }).isTrue()
+        // The pen the text itself was painted with, rather than a hard-coded palette entry. `snapshot`
+        // carries the scrollback too, so the scrolled-in row is the last line and `b` is the one
+        // coloured cell the scroll left on the screen above it.
+        val last = buffer.snapshot().lines.lastIndex
+        val pen = buffer.backgrounds(last - 1).first { it != TerminalColor() }
+        assertThat(buffer.backgrounds(last).toSet()).containsExactly(pen)
     }
 
     @Test
@@ -1168,43 +1177,47 @@ class AnsiTerminalBufferTest {
         assertThat(buffer.plainText().lineSequence().first()).isEqualTo("ab 中")
     }
 
+    /**
+     * A delete that would begin *inside* a wide character leaves it alone.
+     *
+     * Measured against tmux 3.5a on `0123中67`: a `DCH 1` on the wide character's right half changes
+     * nothing, a `DCH 2` there removes the one cell after it and a `DCH 3` removes two - the first of
+     * the count is spent leaving the half where it is. Cutting the half out instead slides a neighbour
+     * under a glyph still drawn across both columns, which is the overlap this is all for.
+     */
     @Test
-    fun `deleting a wide character's right half destroys it rather than leaving half a glyph`() {
+    fun `a delete on a wide character's right half leaves the row alone`() {
         val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
 
         buffer.feed("中文")
-        // Column 2 is the right half of 中. DCH takes that cell, the character after it slides into
-        // the gap, and 中 is left with a neighbour where its own right half used to be.
+        // Column 2 is the right half of 中.
         buffer.feed("$E[1;2H$E[1P")
 
         val line = buffer.snapshot().lines[0]
-        assertThat(line[0].wide).isFalse()
-        assertThat(line[1].wide).isTrue()
-        assertThat(buffer.plainText().lineSequence().first()).isEqualTo(" 文")
+        assertThat(line[0].wide).isTrue()
+        assertThat(line[1].wide).isFalse()
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("中文")
     }
 
     /**
-     * The case the rule has to catch rather than tolerate: a character slides into the column a wide
-     * character's right half came from.
+     * The other half of the same rule: past that first spent cell, the delete works normally.
      *
-     * 中 is drawn across two columns, so a letter standing in the second of them is drawn *under* the
-     * glyph - ink on top of ink, which is what a user reports as text overlapping text. The character
-     * has been cut in half by the delete, so it goes.
+     * The character that stood where the count begins is taken and the tail shifts up one, while the
+     * wide character the cursor was inside stays whole with its own right half.
      */
     @Test
-    fun `a character shifted into a wide character's right half destroys it`() {
+    fun `a delete starting inside a wide character spends its first cell on the half`() {
         val buffer = AnsiTerminalBuffer(columns = 24, rows = 3)
 
         buffer.feed("中X文")
-        buffer.feed("$E[1;2H$E[1P")
+        // Column 2 is the right half of 中, so a DCH 2 takes the cell after it rather than the half.
+        buffer.feed("$E[1;2H$E[2P")
 
         val line = buffer.snapshot().lines[0]
-        assertThat(line[0].wide).isFalse()
-        assertThat(line[1].value).isEqualTo('X')
-        // 中 has gone, X stands where its first column was, and 文 slid down one intact - its right
-        // half is the blank the delete left behind.
+        assertThat(line[0].wide).isTrue()
+        assertThat(line[1].wide).isFalse()
         assertThat(line[2].wide).isTrue()
-        assertThat(buffer.plainText().lineSequence().first()).isEqualTo(" X文")
+        assertThat(buffer.plainText().lineSequence().first()).isEqualTo("中文")
     }
 
     @Test

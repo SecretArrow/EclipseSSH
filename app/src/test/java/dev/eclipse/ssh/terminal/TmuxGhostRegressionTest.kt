@@ -126,7 +126,13 @@ class TmuxGhostRegressionTest {
         buffer.feed("$E[1;1H$E[P")
 
         val row = buffer.snapshot().lines[0]
-        assertThat(row.rowText()).isEqualTo(" \u6587test")
+        // The whole character goes and the tail shifts by two. Measured against tmux 3.5a: `ab\u4e2d\u6587test`
+        // with a DCH 1 on \u4e2d's left half reads `ab\u6587test` there. Removing the single cell instead leaves
+        // a blank the program never asked for - a gap in a row that has visibly shifted.
+        //
+        // The space before `test` is \u6587's own right half, which [rowText] counts because it walks cells:
+        // tmux's capture drops a continuation cell, so its reading of the same row has no space there.
+        assertThat(row.rowText()).isEqualTo("\u6587 test")
         // Invariant: every remaining wide cell still has its blank right half beside it.
         row.forEachIndexed { index, cell ->
             if (cell.wide) {

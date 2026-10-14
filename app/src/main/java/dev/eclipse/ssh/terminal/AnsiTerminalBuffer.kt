@@ -309,6 +309,8 @@ data class TerminalFrame(
      *
      * `damageFull` covers resize, scroll, alternate-screen switches and anything that moves every
      * row: the renderer then treats the whole window as dirty. Both reset on the next [frame].
+     *
+     * Deliberately not part of [equals]: this is the transition into the frame, not the frame.
      */
     val damageFrom: Int = -1,
     val damageTo: Int = -1,
@@ -326,6 +328,86 @@ data class TerminalFrame(
             cursorVisible = false,
             revision = 0L,
         )
+    }
+
+    /**
+     * Whether two frames describe the same screen.
+     *
+     * [damageFrom], [damageTo] and [damageFull] are deliberately left out. They describe the
+     * *transition into* this frame rather than the frame itself: the renderer reads them once, while
+     * drawing, and they say which rows changed on the way here. Two frames whose cells, cursor, window
+     * and modes are identical are the same screen whether or not one of them happened to be the one
+     * that erased a row, and the display has nothing to redraw for either.
+     *
+     * The pair is hand-written rather than generated for exactly that reason - the generated one would
+     * include all three fields, and a republished-but-unchanged buffer would then read as a new value,
+     * laying the view out again on every tick. **A new constructor property belongs in both functions
+     * below**; [TerminalFrameEqualityTest] guards the two directions this can fail in.
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is TerminalFrame) return false
+        return lines == other.lines &&
+            firstLine == other.firstLine &&
+            totalLines == other.totalLines &&
+            liveEnd == other.liveEnd &&
+            cursorRow == other.cursorRow &&
+            cursorColumn == other.cursorColumn &&
+            columns == other.columns &&
+            rows == other.rows &&
+            contentColumns == other.contentColumns &&
+            cursorVisible == other.cursorVisible &&
+            revision == other.revision &&
+            title == other.title &&
+            alternateScreen == other.alternateScreen &&
+            positionalScreen == other.positionalScreen &&
+            synchronizedOutput == other.synchronizedOutput &&
+            applicationCursorKeys == other.applicationCursorKeys &&
+            applicationKeypad == other.applicationKeypad &&
+            bracketedPaste == other.bracketedPaste &&
+            keyboardModes == other.keyboardModes &&
+            cursorBlink == other.cursorBlink &&
+            scrollOffset == other.scrollOffset &&
+            scrollCeiling == other.scrollCeiling &&
+            mouseMode == other.mouseMode &&
+            mouseSgr == other.mouseSgr &&
+            marginAbove == other.marginAbove &&
+            marginBelow == other.marginBelow &&
+            stepRowsBack == other.stepRowsBack &&
+            stepRowsForward == other.stepRowsForward
+    }
+
+    /** The same fields as [equals], in the same order - see there for why it is not generated. */
+    override fun hashCode(): Int {
+        var result = lines.hashCode()
+        result = 31 * result + firstLine
+        result = 31 * result + totalLines
+        result = 31 * result + liveEnd
+        result = 31 * result + cursorRow
+        result = 31 * result + cursorColumn
+        result = 31 * result + columns
+        result = 31 * result + rows
+        result = 31 * result + contentColumns
+        result = 31 * result + cursorVisible.hashCode()
+        result = 31 * result + revision.hashCode()
+        result = 31 * result + (title?.hashCode() ?: 0)
+        result = 31 * result + alternateScreen.hashCode()
+        result = 31 * result + positionalScreen.hashCode()
+        result = 31 * result + synchronizedOutput.hashCode()
+        result = 31 * result + applicationCursorKeys.hashCode()
+        result = 31 * result + applicationKeypad.hashCode()
+        result = 31 * result + bracketedPaste.hashCode()
+        result = 31 * result + keyboardModes.hashCode()
+        result = 31 * result + cursorBlink.hashCode()
+        result = 31 * result + scrollOffset
+        result = 31 * result + scrollCeiling
+        result = 31 * result + mouseMode.hashCode()
+        result = 31 * result + mouseSgr.hashCode()
+        result = 31 * result + marginAbove.hashCode()
+        result = 31 * result + marginBelow.hashCode()
+        result = 31 * result + stepRowsBack
+        result = 31 * result + stepRowsForward
+        return result
     }
 }
 
@@ -1490,7 +1572,7 @@ class AnsiTerminalBuffer(
             // is a no-op on the result but not on the clock: `ESC [ 999999999 P` spun a billion list
             // splices while holding this object's monitor, which stalled the session's output for
             // minutes and looked exactly like a dead connection.
-            'P' -> repeat(first.coerceAtMost(columns)) { deleteAtCursor() }
+            'P' -> deleteChars(first.coerceAtMost(columns))
             '@' -> repeat(first.coerceAtMost(columns)) { insertAtCursor() }
             'L' -> insertLines(first.coerceAtMost(rows))
             'M' -> deleteLines(first.coerceAtMost(rows))
@@ -2524,11 +2606,38 @@ class AnsiTerminalBuffer(
         markDamageRow(cursorRow)
     }
 
-    private fun deleteAtCursor() {
-        if (cursorColumn >= columns) return
-        lines[cursorRow].removeAt(cursorColumn)
-        lines[cursorRow] += eraseBlank()
-        repairLine(lines[cursorRow])
+    /**
+     * DCH: deletes [count] cells from the cursor and shifts the rest of the line left, with the range
+     * widened to whole characters.
+     *
+     * Two edges, both measured against tmux 3.5a on an eight-column `0123中67`:
+     *
+     * - A range that would end in the middle of a wide character takes that character's right half as
+     *   well, so it goes whole. `ESC [ P` on the left half removes both cells and shifts the tail by
+     *   two, and `ESC [ 3 P` there removes three cells rather than four - the count is cells, and the
+     *   widening is what keeps the glyph from being drawn across a cell the program no longer owns.
+     * - A cursor standing on a wide character's *right* half spends one of the count's cells leaving
+     *   that half alone, and deletes the rest from the next character on: `ESC [ P` there does
+     *   nothing, `ESC [ 2 P` removes one cell, `ESC [ 3 P` removes two.
+     *
+     * So this is one range, not [count] single-cell deletions: repeating a one-character delete would
+     * take four cells for `ESC [ 3 P` where tmux takes three.
+     */
+    private fun deleteChars(count: Int) {
+        val line = lines[cursorRow]
+        if (cursorColumn >= columns || count <= 0) return
+        var start = cursorColumn
+        var end = (start + count).coerceAtMost(columns)
+        if (start > 0 && line[start - 1].wide) {
+            start += 1
+            if (start >= end) return
+        }
+        if (line[end - 1].wide) end = (end + 1).coerceAtMost(columns)
+        repeat(end - start) {
+            line.removeAt(start)
+            line += eraseBlank()
+        }
+        repairLine(line)
         markDamageRow(cursorRow)
     }
 

@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §108, *A tmux pane's rewritten screen kept the ink the program had erased*; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before it; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -11831,3 +11831,62 @@ anyone with admin access to the repository, and that is the trust boundary the w
 not retire `export-signing-material.yml`, which remains the one workflow that can put the key in the clear - its
 own header says to remove it once the keystore has been downloaded, and it is kept only because the canonical
 keystore exists locally nowhere else.
+
+## 108. A tmux pane's rewritten screen kept the ink the program had erased
+
+With tmux in front of a full-screen program, text the program had erased stayed on the screen: a ghost
+under a line that had been rewritten shorter, a pale seam where a coloured block should have been, the
+status line overwriting content it should have sat above. It was not flicker and it did not clear - the
+same cells stayed wrong for as long as the screen lived, which is what made it worth a pass of its own.
+
+The cause is that the renderer trusted a global clear to hide the tail of a line that used to be longer.
+That is sound while the whole screen is repainted, and tmux is the case where it is not: tmux is an
+emulator in between, and it sends its client only the cells it believes changed. A row that got shorter,
+or a blank that should have carried the background the program was painting with, is therefore never
+re-sent, and nothing else comes along to overwrite it. Two more paths fed the same symptom: every erase
+filled with a *default* cell rather than the current background, and the layout's "is this row blank"
+test called a coloured blank blank, so the fit was free to drop a row that painted a background.
+
+Three changes, all in the terminal core and the view that draws it:
+
+- **Per-row damage.** A frame now carries the absolute buffer lines that changed since the previous one -
+  a single row range plus a full-screen flag, a damage-rect model in the spirit of libvterm's
+  `damagerect` - and `frame()` hands it out and resets it. The renderer erases exactly those rows
+  end-to-end before drawing them, instead of trusting one clear to hide every shorter line's tail.
+- **BCE-consistent blanks.** Every erase, scroll, insert and delete now fills with the current background
+  rather than a default cell. The app advertises `xterm-256color`, whose `bce` promises precisely that,
+  so a program that paints a background and then clears has every right to see it - and in tmux it stays,
+  because tmux keeps sending the row.
+- **A BCE-aware blank test.** A blank cell counts as painted when it carries a colour or a swap, so the
+  fit keeps a coloured padding row instead of dropping it and letting the row below slide up.
+
+**The pass landed red, and every red was a finding.** It was pushed while Actions was billing-blocked, so
+`testDebugUnitTest` never ran on it and three failures stood until this pass read them:
+
+- `AnsiTerminalBufferTest`'s scrolled-row case asserted the *default* background. Measured against tmux
+  3.5a on a 10x2 pane, `ESC[41m` followed by `a\r\nb\r\n` leaves the row the screen scrolled into wearing
+  `ESC[41m` - BCE reaches the row a scroll exposes, not only the cells an erase writes. The code was
+  right and the test was wrong; it is now inverted, and the pen it asserts is read off the text the
+  program itself painted rather than a palette entry.
+- Damage had been added as a constructor parameter of `TerminalFrame`, so it took part in the data
+  class's `equals`/`hashCode`. Two frames describing the same screen then compared unequal whenever one
+  of them happened to be the one that carried damage - which is every consecutive pair of frames on an
+  untouched screen, so the view would have been laid out again on each tick. Damage describes the
+  *transition into* a frame, not the frame: the pair is now hand-written to leave the three fields out,
+  the fields stay public so the renderer still reads them, and `TerminalFrameEqualityTest` pins both
+  directions - damage alone never separates two frames, and every other field still does.
+- The wide-character regression test expected a row that forgot the character's own right half is a
+  cell. Correcting it exposed the rule underneath, which is now measured rather than assumed: a delete
+  takes a whole wide character, extending its range right when it would otherwise cut one in half, and a
+  delete that begins *on* a wide character's right half leaves the row alone and spends the first of its
+  count on that half. tmux 3.5a is the oracle - on `0123中67` a `DCH 1` on the left half reads `012367`,
+  a `DCH 3` there reads `01237`, and a `DCH 1` on the right half reads `0123中67` unchanged. Two older
+  tests had encoded the previous rule for the right-half case and were rewritten with it.
+
+**What this does not claim.** The damage range is coarse - one row span, not a list of rects - so a frame
+that changed two distant rows repaints everything between them; that is a cost, not a correctness gap.
+And the replay harness that feeds tmux's own byte streams through this parser compares text, not
+attributes, so the BCE half of this fix rests on hand measurement and unit tests rather than on the
+differential run; widening that comparison to colour and attributes is the next pass. The wide-character
+rules above are likewise measured by hand for `DCH`; the erase, insert and display families
+(`ECH`, `EL`, `ED`, `ICH`) have not been pinned against the oracle yet, and are not claimed.
