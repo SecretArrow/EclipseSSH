@@ -1,4 +1,4 @@
-package dev.eclipse.ssh.feature.mouse
+package dev.eclipse.ssh.terminal
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
@@ -47,6 +47,19 @@ class MouseEncodingTest {
     fun `drag is encoded with the drag button code`() {
         val bytes = MouseEncoding.encode(MouseEncoding.Button.DRAG_LEFT, 1, 1)
         assertThat(String(bytes, Charsets.UTF_8)).isEqualTo("\u001B[<32;1;1M")
+    }
+
+    @Test
+    fun `a gesture of the primary button is its press, its release, and its drag`() {
+        // The release carries the button's own code with the lower-case terminator and not the motion
+        // bit: a drag that ends says where the button came up, and a program handed `32 ... m` would read
+        // a drag being released rather than a button.
+        assertThat(String(MouseEncoding.encodeGesture(MouseGesture.PRESS, 3, 4), Charsets.UTF_8))
+            .isEqualTo("\u001B[<0;3;4M")
+        assertThat(String(MouseEncoding.encodeGesture(MouseGesture.RELEASE, 3, 4), Charsets.UTF_8))
+            .isEqualTo("\u001B[<0;3;4m")
+        assertThat(String(MouseEncoding.encodeGesture(MouseGesture.MOTION, 3, 4), Charsets.UTF_8))
+            .isEqualTo("\u001B[<32;3;4M")
     }
 
     @Test

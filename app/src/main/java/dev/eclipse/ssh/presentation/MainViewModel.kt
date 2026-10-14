@@ -60,7 +60,6 @@ import dev.eclipse.ssh.data.model.TransferItem
 import dev.eclipse.ssh.data.model.TransferStatus
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.data.settings.SnippetRepository
-import dev.eclipse.ssh.feature.mouse.MouseEncoding
 import dev.eclipse.ssh.feature.vault.VaultUnlockGate
 import dev.eclipse.ssh.feature.wakeonlan.WakeOnLan
 import dev.eclipse.ssh.feature.wakeonlan.parseMac
@@ -110,6 +109,7 @@ import dev.eclipse.ssh.feature.terminallog.SilenceDetector
 import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.FrameSample
 import dev.eclipse.ssh.terminal.KeyboardModes
+import dev.eclipse.ssh.terminal.MouseEncoding
 import dev.eclipse.ssh.terminal.offsetToShowLine
 import dev.eclipse.ssh.terminal.paintedCells
 import dev.eclipse.ssh.terminal.RenderAudit

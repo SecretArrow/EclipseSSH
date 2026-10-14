@@ -1,4 +1,4 @@
-package dev.eclipse.ssh.feature.mouse
+package dev.eclipse.ssh.terminal
 
 /**
  * SGR mouse encoding for the terminal.
@@ -79,6 +79,25 @@ object MouseEncoding {
         val sequence = "\u001B[<${buttonCode};${cx};${cy}${terminator}"
         return sequence.toByteArray(Charsets.UTF_8)
     }
+
+    /**
+     * The report for one gesture of the primary button at a 1-based screen cell.
+     *
+     * The primary button, because a touchscreen has one pointer and the finger is the left button: there
+     * is no gesture here that could mean another, so there is nothing to ask the caller for.
+     *
+     * Movement carries the button's code with the motion bit set - that bit is the whole of what tells a
+     * program a button is *down* and being dragged rather than being pressed again at a new cell - while
+     * the release carries the button's own code and the lower-case terminator, so a drag that ends says
+     * where the button came up. A press and a release at the same cell are a click; a press, movement and
+     * a release are a drag; the two are the same three calls with the middle one present or absent.
+     */
+    fun encodeGesture(gesture: MouseGesture, column: Int, row: Int, modifiers: Int = 0): ByteArray =
+        when (gesture) {
+            MouseGesture.PRESS -> encode(Button.LEFT, column, row, modifiers, pressed = true)
+            MouseGesture.RELEASE -> encode(Button.LEFT, column, row, modifiers, pressed = false)
+            MouseGesture.MOTION -> encode(Button.DRAG_LEFT, column, row, modifiers, pressed = true)
+        }
 
     /**
      * Parses the prefix of an SGR mouse response to determine the

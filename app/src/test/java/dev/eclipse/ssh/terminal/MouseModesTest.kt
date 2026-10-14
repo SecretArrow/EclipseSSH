@@ -9,6 +9,10 @@ import org.junit.Test
  * The modes are kept as a set rather than as "the current one" because a program can enable more than
  * one at a time, and because a program that turns one off while another is still on must keep its
  * mouse - losing it there is a bug the user sees as the mouse working and then stopping.
+ *
+ * The mode is also the answer to a second question - which *gestures* the program wants - and the two
+ * are read off the same set, so the coverage table at the end of this file is what keeps the four
+ * tracking modes from collapsing into "the mouse is on".
  */
 class MouseModesTest {
 
@@ -98,6 +102,72 @@ class MouseModesTest {
             assertThat(on).containsExactly(mode)
 
             assertThat(MouseModes.withMode(on, mode, false)).isEmpty()
+        }
+    }
+
+    /**
+     * The whole table, written as the matrix rather than as a handful of examples.
+     *
+     * The failure this guards is a mode answering for a gesture it did not ask for, and that failure is
+     * invisible in the cases anyone would think to write down: `NORMAL` sending a drag, or `X10` sending
+     * a release, reads as correct until a program acts on a report it never asked for.
+     *
+     * The four rows are the gestures that exist. `PRESS` and `RELEASE` are each asked once, because the
+     * gesture is the button going down or up and a "held" flag alongside either is not a state the
+     * terminal can be in; [only movement cares whether a button is down] pins that they ignore it.
+     */
+    @Test
+    fun `each tracking mode covers exactly the gestures it names`() {
+        // mode -> press, release, movement with a button down, movement with none
+        val expected = mapOf(
+            MouseMode.OFF to listOf(false, false, false, false),
+            MouseMode.X10 to listOf(true, false, false, false),
+            MouseMode.NORMAL to listOf(true, true, false, false),
+            MouseMode.BUTTON to listOf(true, true, true, false),
+            MouseMode.ANY to listOf(true, true, true, true),
+        )
+        // Every mode is in the table, so a mode added later cannot pass this by being left out.
+        assertThat(expected.keys).containsExactlyElementsIn(MouseMode.entries)
+        // And no two answer alike: a mode that added nothing to the one below it would be a distinction
+        // the parser carries and the gesture never uses.
+        assertThat(expected.values.toSet()).hasSize(MouseMode.entries.size)
+
+        for ((mode, answers) in expected) {
+            val cases = listOf(
+                Triple(MouseGesture.PRESS, true, answers[0]),
+                Triple(MouseGesture.RELEASE, true, answers[1]),
+                Triple(MouseGesture.MOTION, true, answers[2]),
+                Triple(MouseGesture.MOTION, false, answers[3]),
+            )
+            for ((gesture, held, wanted) in cases) {
+                assertThat(MouseModes.reports(mode, sgr = true, gesture = gesture, buttonHeld = held))
+                    .isEqualTo(wanted)
+            }
+        }
+    }
+
+    @Test
+    fun `only movement cares whether a button is down`() {
+        for (mode in MouseMode.entries) {
+            for (gesture in listOf(MouseGesture.PRESS, MouseGesture.RELEASE)) {
+                assertThat(MouseModes.reports(mode, sgr = true, gesture = gesture, buttonHeld = true))
+                    .isEqualTo(MouseModes.reports(mode, sgr = true, gesture = gesture, buttonHeld = false))
+            }
+        }
+    }
+
+    @Test
+    fun `an encoding this terminal does not send leaves every gesture to the terminal`() {
+        // The same answer the whole gesture gets with no mouse mode at all: the finger still scrolls the
+        // history, selects text and follows a link. A program asking for coordinates in an encoding this
+        // terminal will not send is one it must not be reported to in *any* form.
+        for (mode in MouseMode.entries) {
+            for (gesture in MouseGesture.entries) {
+                for (held in listOf(true, false)) {
+                    assertThat(MouseModes.reports(mode, sgr = false, gesture = gesture, buttonHeld = held))
+                        .isFalse()
+                }
+            }
         }
     }
 }

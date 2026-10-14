@@ -5,7 +5,7 @@ The per-section figures below are snapshots of the pass that wrote them and are 
 Where those snapshots call `lintRelease` clean, read §16.2: the warnings were real, four of them are declined on purpose and explained there, and the rest are dependency-freshness advisories that only a networked lint run can see. §16.2's "0 errors and 51 warnings" is that pass's figure, not a current one, and no lint count is re-derivable from this repository or from a CI run: `lintReportRelease` prints only the paths of the two reports it writes into `app/build/reports/`, and the `lint` job uploads nothing. The current count is whatever `./gradlew lintRelease` writes into `app/build/reports/` today — which is the one figure this block does not carry, because it is the one figure nothing here can re-derive.
 Kotlin 2.4.20 · AGP 9.4.1 · Gradle 9.8.0 · JDK 17 (CI pins Temurin 17.0.13) · Compose BOM 2026.09.00 · Hilt 2.60.1 · KSP 2.3.12 · Room 2.8.5 · Apache MINA SSHD 2.20.0 · BouncyCastle 1.86
 Every figure in this block is re-derivable rather than remembered: the SDK levels and the two version names are `app/build.gradle.kts`, the rest of the toolchain is `gradle/libs.versions.toml`, and the Gradle version is `gradle/wrapper/gradle-wrapper.properties`. A line in this block that disagrees with those files is the line that is wrong. `scripts/check-doc-figures.sh` re-derives them — this block, the README's counts, the `AboutLicenses` list, the workflow names the documents cite — and runs as the `docs` job of `ci.yml`, so a disagreement fails CI instead of standing until someone reads it again.
-The numbered sections end at §121, *The review has a pane now, and the pane is what makes a session readable*; §120, *A session is cut into the commands a reader reads, and the question a mark answers depends on what you are holding*, is the change before it; §119, *The marks answer the three questions a reader has, and the arithmetic is out of the view model*, is the change before that; §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*, is the change before that; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before that; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
+The numbered sections end at §122, *A mouse report is a gesture now, and the tracking mode decides which gestures exist*; §121, *The review has a pane now, and the pane is what makes a session readable*, is the change before it; §120, *A session is cut into the commands a reader reads, and the question a mark answers depends on what you are holding*, is the change before it; §119, *The marks answer the three questions a reader has, and the arithmetic is out of the view model*, is the change before that; §118, *A shell can say which line its own prompt is on, and the marks now move with the lines they describe*, is the change before that; §117, *An erase under reverse video filled with the swap, and the harness could not have seen it before it compared styles*, is the change before that; §116, *The replay harness answered about the emulator it was built from, and could not read a row with a link in it*, is the change before that; §115, *A link a program printed is a link now, and the tap asks before it goes anywhere*, is the change before that; §114, *The cursor's shape is the program's to choose, and `vim`'s insert mode is now distinguishable from its command mode*, is the change before that; §113, *The damage range is now asked to cover every row it changed, and the question has been seen to catch a missing one*, is the change before that; §112, *The width tables are generated from the Unicode data now, and the check has been seen to fail*, is the change before that; §111, *Every erase, insert, delete and scroll case is a line in a table now, and one of them is a case tmux reads differently*, is the change before that; §110, *The alternate screen came up tinted, and the switch moved the cursor the program had parked*, is the change before that; §109, *The replay harness could not see a colour, and the erase families cut wide characters*, is the change before that; §108, *A tmux pane's rewritten screen kept the ink the program had erased*, is the change before that; §107, *The signing key stays in the CI secret, and the on-demand path checks it before it signs*, is the change before that; §106, *Releasing 1.23.0*, is the version this file's header names; §96, *Releasing 1.22.0*, is the release before it, §95, *Releasing 1.21.0*, is the release before that, §94, *Releasing 1.20.0*, is the release before that, §93, *Releasing 1.19.0*, is the release before that, §92, *Releasing 1.18.0*, is the release before that, §91, *The split verifier asked `file` what architecture a binary was*, is the tooling fix that release carries, §90, *Releasing 1.17.0*, is the release before it, §89, *The pty was given back twice — and nine more endings that went wrong the same way*, is the userspace-endings cluster that one carries, and §88, *Releasing 1.16.0*, is the release before that, whose own three changes are §87, *Exporting a working account meant re-entering its key on the other side, and one file could only ever hold one account*, §86, *Closing one session asked first and closing every session did not*, and §85, *The window was cut in buffer lines and drawn in wrapped rows*; §84 is *Releasing 1.15.0*, the release before it. §1–§36 are a record of the passes that wrote them, and the narrative was not carried forward through 1.1.5–1.1.17 — so a reader looking for 1.1.12's crash-on-open will not find it below, and should not read §36's figures as current; what happened in that gap is recorded by the git history, the GitHub release bodies and the suites themselves rather than by a section here. The same goes for the symbols and line numbers a section names: they are the ones that existed when it was written, and a composable or a test file that has since been renamed or deleted is a rename, not an error in the report. §31.2's `FilesSessionSwitcher` and `FileBrowserHostTest` are the worked example — both were real, and both were replaced by `SessionChip` in `app/src/main/java/dev/eclipse/ssh/ui/files/FilesExplorerUi.kt` when the explorer was rebuilt on the shared provider abstraction. Grep the tree before trusting a name from these sections; the figures in the header block are the part that is checked.
 
 ---
 
@@ -12723,3 +12723,82 @@ out automatically: the pane is a list a screen reader *can* walk, not a live reg
 command finishing. The grid itself still has no semantics of its own, by the argument above, and the pane
 refreshes on a half-second poll, so a command that finished a moment ago may take up to that long to
 appear.
+
+---
+
+## 122. A mouse report is a gesture now, and the tracking mode decides which gestures exist
+
+The pass that taught this terminal to *hear* a program's mouse request - §95's, which parsed `DECSET`
+9/1000/1002/1003/1006` into a set, carried the effective mode on every frame and answered the vertical drag
+with a wheel - left the request half-answered. A click was never reported. `vim` with `set mouse=a`, `tmux`
+with `mouse on` and `htop --mouse` asked the terminal for a mouse, were told yes, drew the affordances that
+go with one, and then heard nothing but the wheel: no press, no release, no drag. A program that is told it
+has a mouse and then never hears one is worse off than a program told nothing at all, because it has
+already committed to a screen it can no longer drive.
+
+**The mode was half an answer, and it is the whole of what the set derived.** `MouseModes` answered *which*
+mode was in force - the highest-numbered one enabled - and nothing else. It now answers what that mode is
+owed as well: `MouseModes.reports(mode, sgr, gesture, buttonHeld)`. Both answers come off the same set, so
+neither can go stale against the other, and the second is written as the modes' own definitions rather than
+as a convenience: `X10` (9) is the press and nothing else - not even the release, which is what makes it
+useless to anything that wants to know when a drag ended; `NORMAL` (1000) adds the release; `BUTTON` (1002)
+adds movement while a button is down; `ANY` (1003) adds movement with nothing down at all.
+
+**The four modes are told apart because collapsing them costs something specific.** A drag reported to
+`less` as movement tears through the file under a finger that only meant to scroll the screen; a release
+sent to a program that asked for X10 is a report it has no state for; and a program that asked for the drag
+and never gets it - `tmux`'s pane resize, `vim`'s visual selection - has a gesture that does nothing. Each
+of those is a mode answering for a gesture it did not name, and the table in `MouseModesTest` is written as
+the whole matrix - five modes by the four gestures that exist, with an assertion that every mode is in it
+and that no two answer alike - because that failure is invisible in the examples anyone would think to
+write down.
+
+**Three gestures, and no more, because that is what a touchscreen has.** One pointer, no buttons of its
+own, and therefore exactly three things it can do: go down, come up, move in between. `MouseGesture` is
+those three. A middle or a right button would be a fourth and a fifth, and the app has no gesture that
+could mean one - a two-finger tap is the usual place one goes, and that is where this enum would grow.
+Movement is the one gesture whose answer depends on the state of the button, and that is the whole of the
+difference between 1002 and 1003: on this hardware the two modes amount to the same thing, because movement
+with nothing down needs a pointer that hovers and there is none. The rule is written as the modes are
+anyway, so a device that grows one does not need it rewritten, and a test pins the flag as irrelevant to a
+press or a release - which is what a state the terminal cannot be in should be.
+
+**The encoder already knew the three forms.** `MouseEncoding` has carried the SGR codes since before this
+pass - `0` for the left button, `0` with the lower-case terminator for its release, `32` for its drag - and
+`encodeGesture` names the mapping rather than inventing anything. The one subtlety is the release, and it
+is worth stating because the obvious implementation gets it wrong: a drag that ends reports the button's
+*own* code with the `m` terminator and not the motion bit, so a program hears "the button came up here"
+rather than "a drag was released". A program tracking a selection depends on that distinction, since the
+motion bit is the whole of what tells it a button is down and moving rather than being pressed again at a
+new cell.
+
+**The encoder moved into the terminal core, and the reason is this host.** `MouseEncoding` and its tests
+were the one piece of the mouse's protocol living outside `app/src/main/java/dev/eclipse/ssh/terminal`, in
+a `feature/mouse` package of its own, with the view model as its only caller. It is pure, it imports
+nothing, and the terminal package is where this project keeps its protocol knowledge - the keys, the
+keyboard protocol, the prompt marks, the links, the width tables. Moving it there puts its nine tests into
+the one suite this host can actually run: the local harness compiles the terminal package and nothing else,
+so a test outside that package runs only while a CI window is open, which is a different thing from running
+on every change. That is not a tidiness argument; it is the difference between nine tests that execute and
+nine that do not.
+
+**The gate, and 98 tests that had never run on this host.** The local harness reports 766 methods, green,
+up from 655: four new ones - the coverage matrix, the button flag's irrelevance to a press and a release,
+every gesture left to the terminal when the encoding is one this terminal does not send, and the three
+forms of a gesture's bytes - the nine that moved in with the encoder, and ninety-eight that the harness
+could not reach before. Those ninety-eight test the view's arithmetic - the drag target and the scroll
+accumulator, the pan follow, the glyph runs, the blink - which lives in `ui/terminal` beside the
+composables that draw it. The files in question import nothing but the terminal package, so they are as
+pure as the package itself and the same harness carries them; the list is written out rather than globbed,
+so a file that starts importing a framework cannot slip in unnoticed. `TerminalScroll`'s fifty-nine are the
+ones that matter to the next pass, because the drag target is what it changes. The app's normalised
+type-check error multiset is byte-identical before and after the change at 1 803 errors, and
+`scripts/check-doc-figures.sh` reports all 201 claims agree.
+
+**What this does not claim.** Nothing calls `reports` yet. The gesture handler, the view model's send and
+the routing that decides whether a drag is a wheel or a drag are the next pass; until they land the terminal
+still answers the mouse with the wheel alone, and the coverage table is a table of decisions rather than of
+behaviour. 1003 is not made distinguishable from 1002, because the hardware does not distinguish them -
+that is recorded rather than faked with a gesture that has no meaning. And nothing here has been driven
+from this host: `vim`, `tmux` and `htop` are named because their requests are what the modes are for, not
+because any of them has been run against this terminal.
