@@ -251,9 +251,13 @@ run cannot be forgotten on the device run, and the figure above and the one belo
 `encrypted_ed25519`) used only to exercise key parsing against that in-process server. They are test
 data, they authorise nothing anywhere, and they must never be reused as real credentials.
 
-`app/src/androidTest/` holds the instrumentation tests — 82 test methods in 10 files — which run on
+`app/src/androidTest/` holds the instrumentation tests — 87 test methods in 11 files — which run on
 a device or emulator. Thirty-three of those methods are the shared ones above, so the device runs the
-grid cases as well as the JVM does.
+grid cases as well as the JVM does. Five more are in `TerminalRenderGoldenTest.kt`, which reads back
+the pixels the terminal view actually paints — which cell a background covers, which cell a glyph
+lands in, where a wrapped line continues and where the cursor is drawn — because the drawing layer
+between a frame and the screen is the one part of the terminal no JVM test can see, and
+`captureToImage` does not render under this project's Robolectric setup.
 
 ## Continuous integration
 
