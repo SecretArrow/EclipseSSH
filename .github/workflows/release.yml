@@ -40,12 +40,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29 + CMake
         run: |
