@@ -61,15 +61,13 @@ jobs:
 
       - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29 + CMake
         run: |
-          ANDROID_HOME="$HOME/android-sdk"
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          cd "$ANDROID_HOME/cmdline-tools"
-          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-*.zip
-          mv cmdline-tools latest
-          export ANDROID_HOME
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "JAVA_HOME=${{ env.JAVA_HOME }}" >> "$GITHUB_ENV"
+          # The runner image ships Android SDK at $ANDROID_HOME (typically
+          # /usr/local/lib/android/sdk); just install the missing packages.
+          # Do NOT install a second SDK at $HOME — AGP errors with
+          # "Several environment variables and/or system properties contain
+          # different paths to the SDK" if ANDROID_HOME points at a different
+          # tree than the runner's pre-installed one.
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
