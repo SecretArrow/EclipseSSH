@@ -26,8 +26,13 @@ vernacular-vnc = "f39cbe28538a94ee70113ce0909a2e40b1bfe8f1"
 # termux-app as a whole is GPL-3.0, but these two are derivatives of jackpal/Android-Terminal-Emulator
 # and retain its Apache-2.0 license — see terminal-emulator/LICENSE in the termux-app tree).
 # Used by the new TermuxTerminalView adapter to replace the legacy custom Compose renderer.
-termux-terminal-emulator = "0.114.1"
-termux-terminal-view = "0.114.1"
+#
+# JitPack coordinates. The termux-app repo publishes its submodules to JitPack as
+# `com.github.Termux.Termux-app:<submodule>:<git-tag>`. The git tag is the termux-app
+# release tag (e.g. v0.119.0-beta.3). Pinned to v0.118.3 — the latest stable release
+# as of Oct 2026, the same one F-Droid ships.
+termux-terminal-emulator = "v0.118.3"
+termux-terminal-view = "v0.118.3"
 # Spotless auto-fix: ktlint runs under Spotless so one task covers both style + format.
 # Pinned to ktlint_official 1.5.0 (matches the Kotlin 2.4.20 dialect used by AGP 9.4.1).
 spotless = "7.0.4"
@@ -128,8 +133,11 @@ robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
 # Both are pure Java/Kotlin — no JNI dependency on libtermux.so is required when only the
 # emulator+view are used (the JNI lib is needed by TerminalSession for local PTY, which we
 # don't use: EclipseSSH drives the emulator via the SSH channel bytes directly).
-termux-terminal-emulator = { module = "com.termux:terminal-emulator", version.ref = "termux-terminal-emulator" }
-termux-terminal-view = { module = "com.termux:terminal-view", version.ref = "termux-terminal-view" }
+#
+# JitPack coordinates: groupId `com.github.Termux.Termux-app`, artifactId is the submodule
+# name. See gradle/libs.versions.toml's `termux-terminal-emulator` version pin.
+termux-terminal-emulator = { module = "com.github.Termux.Termux-app:terminal-emulator", version.ref = "termux-terminal-emulator" }
+termux-terminal-view = { module = "com.github.Termux.Termux-app:terminal-view", version.ref = "termux-terminal-view" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
