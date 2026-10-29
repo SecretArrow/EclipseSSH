@@ -497,23 +497,17 @@ dependencies {
     implementation(libs.bouncycastle.prov)
 
     // === Terminal engine (Termux terminal-view, Apache-2.0) ===
-    // Replaces the legacy custom Compose renderer (dev.eclipse.ssh.terminal.* and
-    // dev.eclipse.ssh.ui.terminal.GlyphRuns/GlyphFaces) which had text-wrapping,
-    // alignment and realtime streaming issues — see terminal-text.txt for the
-    // original UX audit that prompted the swap.
-    //
-    // terminal-emulator provides TerminalEmulator (the VT100/ANSI/xterm parser
-    //   with true-color, CJK width tables, mouse modes, alternate screen).
-    // terminal-view provides TerminalView (the Android Canvas renderer with
-    //   realtime streaming, IME composition, gesture pan/zoom, accessibility).
-    //
-    // Both modules are Apache-2.0 (derivatives of jackpal/Android-Terminal-Emulator).
-    // They are pure Java/Kotlin — no dependency on libtermux.so or liblocal-socket.so,
-    // which only TerminalSession (the local-PTY entry point) needs. EclipseSSH
-    // drives the emulator directly from SSH channel bytes via TermuxEmulatorBridge,
-    // so those JNI libs must never be packaged.
-    implementation(libs.termux.terminal.emulator)
-    implementation(libs.termux.terminal.view)
+    // DISABLED in this release: the first integration attempt against Termux's
+    // API had several method-signature mismatches (TerminalOutput interface,
+    // TerminalEmulator/TerminalSession constructor params, TerminalViewClient
+    // abstract members). Rather than ship a broken build, the integration is
+    // reverted for v1.24.0 and the legacy renderer stays in place. A follow-up
+    // PR will land the Termux integration with the correct API surface — see
+    // docs/migration-to-secretarrow.md §Next steps.
+    // The deps stay declared (commented out) so the follow-up PR is a one-line
+    // uncomment per file rather than a version-catalog edit.
+    // implementation(libs.termux.terminal.emulator)
+    // implementation(libs.termux.terminal.view)
 
     // The RDP engine's JNI wrapper and native libraries.
     implementation(project(":freerdp"))
