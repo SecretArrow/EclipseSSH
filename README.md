@@ -264,7 +264,7 @@ between a frame and the screen is the one part of the terminal no JVM test can s
 Five GitHub Actions workflows in all; [`docs/ci.md`](docs/ci.md) holds the full table.
 
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — the gate that runs on every push to
-  `main` and every pull request. **Four jobs**, so a failure lands on the thing that is actually broken:
+  `main` and every pull request. Four jobs, so a failure lands on the thing that is actually broken:
   the documentation figure check, Spotless + Android lint, the Robolectric unit suite, and a debug-APK
   smoke build. The four run in parallel; wall clock is `max(docs, lint, unit, assemble)` rather than
   the serial sum, so the cheap jobs do not wait on the expensive ones. The expensive paths the old
