@@ -73,7 +73,7 @@ jobs:
       # is small and the C/C++ queries (which CodeQL also ships) would need
       # a separate job.
       - name: Build for CodeQL
-        run: ./gradlew assembleDebug --no-daemon -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild
+        run: ./gradlew assembleDebug --no-daemon -x :freerdp:buildFreerdpNative -x :linux:buildLinuxNative
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

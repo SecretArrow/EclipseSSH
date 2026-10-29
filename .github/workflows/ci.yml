@@ -178,7 +178,7 @@ jobs:
             "build-tools;${BUILD_TOOLS}" \
             "ndk;29.0.13113456" > /dev/null
       - name: Assemble debug APK
-        run: ./gradlew assembleDebug --no-daemon -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild
+        run: ./gradlew assembleDebug --no-daemon -x :freerdp:buildFreerdpNative -x :linux:buildLinuxNative
       - uses: actions/upload-artifact@v4
         with:
           name: debug-apk
