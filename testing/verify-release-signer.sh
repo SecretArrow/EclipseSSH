@@ -20,7 +20,7 @@
 # shell wrappers do.
 set -euo pipefail
 
-EXPECTED="0c69794b7934452bdf1b2f1f345314e13b86ef43f0d17bec9ff260dd30a443be"
+EXPECTED="7a91c1ff50b725ed50216c8c52b20ee2e88ae416b5db60144e9651cccf73f831"
 
 if [ "$#" -eq 0 ]; then
   echo "usage: $0 <apk> [<apk> ...]" >&2

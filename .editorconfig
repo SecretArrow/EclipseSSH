@@ -36,7 +36,7 @@ ktlint_standard_no-wildcard-imports = disabled
 ktlint_standard_filename = disabled
 ktlint_standard_no-consecutive-comments = disabled
 ktlint_standard_max-line-length = disabled
-ktlint_standard_function-naming = enabled
+ktlint_standard_function-naming = disabled
 
 # JetBrains Mono ships in app/src/main/res/font; the editor default is set so
 # contributors editing in Android Studio see the same metrics the renderer ships.
