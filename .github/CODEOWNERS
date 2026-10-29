@@ -7,10 +7,10 @@
 # Adding a new owner: append their GitHub handle to the relevant
 # lines, separated by spaces. The last owner on a line is the
 # fallback when a previous owner is unavailable.
-* @maragung
-/.github/ @maragung
-/gradle/ @maragung
-/app/build.gradle.kts @maragung
-/app/src/main/ @maragung
-/app/src/test/ @maragung
-/app/src/androidTest/ @maragung
+* @SecretArrow
+/.github/ @SecretArrow
+/gradle/ @SecretArrow
+/app/build.gradle.kts @SecretArrow
+/app/src/main/ @SecretArrow
+/app/src/test/ @SecretArrow
+/app/src/androidTest/ @SecretArrow

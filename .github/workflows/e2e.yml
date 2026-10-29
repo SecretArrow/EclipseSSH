@@ -1,0 +1,123 @@
+# End-to-end / instrumented tests on an Android emulator matrix.
+#
+# Runs the androidTest source set against API 28, 30, 33 and 35 in parallel.
+# Each API level boots an x86_64 emulator, runs the instrumentation, and
+# uploads the test reports. The whole job is the slowest thing in the pipeline
+# (~15 min per API level) so it only runs on main push and on PRs that carry
+# the `e2e` label — see the `if:` on the trigger. PRs without the label get
+# the cheap unit-test gate from ci.yml; the e2e gate runs on merge.
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [labeled, synchronize, opened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel an in-progress run when a follow-up push lands on the same ref.
+# PRs are not cancelled (branch protection).
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+  BUILD_TOOLS: '36.0.0'
+  COMPILE_SDK: 'android-37.0'
+
+jobs:
+  # Skip the e2e matrix on PRs unless the `e2e` label is present. The unit-test
+  # gate in ci.yml is enough for most PRs; the e2e gate is for changes that
+  # touch the terminal renderer, the SSH channel, or the Linux userspace.
+  #
+  # The skip condition is checked here (job-level) rather than at the workflow
+  # level so a `workflow_dispatch` from the Actions tab always runs the matrix
+  # regardless of labels.
+  matrix-prep:
+    name: Decide whether to run the matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+    steps:
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ contains(github.event.pull_request.labels.*.name, 'e2e') }}" = "true" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  instrumentation:
+    name: Instrumented tests (API ${{ matrix.api-level }})
+    needs: matrix-prep
+    if: needs.matrix-prep.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 28
+            target: default
+            arch: x86
+          - api-level: 30
+            target: google_apis
+            arch: x86_64
+          - api-level: 33
+            target: google_apis
+            arch: x86_64
+          - api-level: 35
+            target: google_apis
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+        with:
+          distribution: temurin
+          java-version: '17.0.13'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29
+        run: |
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;${COMPILE_SDK}" \
+            "build-tools;${BUILD_TOOLS}" \
+            "ndk;29.0.13113456" \
+            "system-images;android-${{ matrix.api-level }};${{ matrix.target }};${{ matrix.arch }}" > /dev/null
+      - name: AVD cache
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue
+      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+        if: always()
+        with:
+          name: instrumented-reports-api-${{ matrix.api-level }}
+          path: |
+            app/build/reports/androidTest/
+            app/build/outputs/androidTest-results/
+          retention-days: 7

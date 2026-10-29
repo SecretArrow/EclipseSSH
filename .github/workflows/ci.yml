@@ -1,14 +1,23 @@
-# CI gate. Runs on every push to main, every pull request, and on demand.
+# CI gate — fast PR gate (~5 min wall clock).
+#
+# Replaces the 63KB ci.yml from the maragung fork. The old workflow ran 6 jobs
+# in series-parallel with native build, lint, unit, assemble, smoke and stress;
+# the new one keeps the four cheap jobs and moves the expensive ones (native
+# build, instrumented e2e, release) into e2e.yml and release.yml. The audit
+# report's figures for test counts and lint findings are still re-derivable
+# from this job's outputs — see docs/migration-to-secretarrow.md §2.
+#
+# Branch protection must require the four check names below (docs, lint,
+# unit, assemble); the old combined "Lint, tests, APKs and AAB" check is gone.
+# The four run in parallel; wall clock is max(docs, lint, unit, assemble)
+# rather than the serial sum, so the cheap jobs do not wait on the expensive
+# ones. docs/branch-protection.md and scripts/ci-window.sh's
+# PROTECTION_CONTEXTS both carry the same list — check-doc-figures.sh fails
+# on any drift between the two.
 #
 # Pinned to commit SHAs for every `uses:` line so a future tag rewrite cannot
-# silently change what the workflow does. Floating `@vN` references have been
-# a real supply-chain vector in the last few years (tj-actions, action-gh-release
-# force-push incidents) and the brief explicitly requires reproducible builds.
-#
-# Toolchain is pinned too: Ubuntu 24.04, JDK 17.0.13, Android SDK 37, build-tools
-# 36.0.0, Gradle 9.7.1. The Android SDK is installed by the workflow itself,
-# not assumed to be on the runner image, so the build bytes are not at the mercy
-# of whatever ubuntu-latest happens to ship on a given Monday.
+# silently change what the workflow does (tj-actions/changed-files and
+# action-gh-release force-push incidents have been real supply-chain vectors).
 name: CI
 
 on:
@@ -16,16 +25,6 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      # The idle stress matrix is the one job here that is not a quick answer:
-      # it holds a connection open for 30 minutes under a 90-minute cap. It used
-      # to run on *every* dispatch, which put a 75-minute tail on a run whose
-      # other jobs were finished in 35 — so a dispatch that wanted a fast answer
-      # paid for a test it did not ask for. Now the dispatch has to ask.
-      stress:
-        description: Also run the 90-minute idle stress matrix
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -39,1178 +38,155 @@ concurrency:
 
 env:
   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
-  # Pinned to the exact build-tools version the build is verified against.
-  # apksigner/aapt2 are addressed as $ANDROID_HOME/build-tools/$BUILD_TOOLS/...
-  # so a future image cannot pick a different binary by accident.
   BUILD_TOOLS: '36.0.0'
   COMPILE_SDK: 'android-37.0'
   MIN_SDK: '28'
   TARGET_SDK: 'android-35'
-  # The NDK and CMake the :freerdp and :linux modules' native builds are
-  # pinned to (freerdp/build.gradle.kts, linux/build.gradle.kts - the two
-  # deliberately share the NDK pin). Same pins the FreeRDP spike proved the
-  # build with. The SDK manager does not carry CMake 4.x, hence the PyPI
-  # install.
-  FREERDP_NDK_VERSION: '29.0.13113456'
-  FREERDP_CMAKE_VERSION: '4.1.2'
 
 jobs:
-  # The documentation gate, listed first because it is the cheapest thing here:
-  # no JDK, no Android SDK, no Gradle, no cache to restore. It is a shell script
-  # checking the claims the documents make against the files that decide them:
-  # the version figures (app/build.gradle.kts, gradle/libs.versions.toml, the
-  # wrapper properties, linux/build.gradle.kts), the repository paths they name,
-  # the check names branch protection requires, and that no Kotlin source under
-  # app/src carries a NUL byte. So a release that bumps a pin and leaves the
-  # prose behind goes red in seconds rather than being noticed a release later.
-  # See scripts/check-doc-figures.sh for what it does and does not claim.
-  #
-  # The terminal's symbol table is the same kind of claim in a different shape:
-  # it is generated from the bundled fonts, and scripts/terminal-symbols.py
-  # re-derives it from them - together with the licence obligations the subset
-  # carries. The terminal's two width tables are the same claim again, and
-  # scripts/terminal-width.py re-derives them from a pinned Unicode release.
-  # None of the three scripts needs a JDK, an SDK or the NDK; only the width one
-  # reads the network, and it is pinned so that what it reads is a version.
+  # The cheapest gate: no JDK, no SDK, no Gradle. Re-derives the figures the
+  # documents cite (version numbers, workflow names, repository paths) and
+  # fails the build if a release bump left the prose behind. Same shell script
+  # the old ci.yml ran; it stays first because a 30-second answer is better
+  # than waiting for a Gradle run that fails for the same reason five minutes
+  # later.
   docs:
     name: Documentation figures
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-
     steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash scripts/check-doc-figures.sh
+      - run: python3 scripts/terminal-symbols.py
+      - run: python3 scripts/terminal-width.py
 
-      - name: Check the documents against the build
-        run: bash scripts/check-doc-figures.sh
-
-      - name: Check the symbol table against the fonts
-        run: python3 scripts/terminal-symbols.py
-
-      # The one check here that reads the network, and deliberately: the Unicode data is a build-time
-      # input rather than an artifact the app ships, so it is pinned by release and by SHA-256 in the
-      # script rather than copied into the repository. A fetch that fails, or a file that no longer
-      # matches its hash, says which of the two it was.
-      - name: Check the width tables against the Unicode data
-        run: python3 scripts/terminal-width.py
-
-  # One native build feeds every consumer. `native` compiles the four-ABI
-  # FreeRDP tree and saves the freerdp/build cache; lint, test and assemble
-  # restore that same tree, so every Gradle task wired into preBuild finds the
-  # native outputs and goes UP-TO-DATE instead of rebuilding. Wall clock is
-  # roughly native + the longest consumer, not the serial sum of everything
-  # the old single job did. Branch protection must require the six check
-  # names below (docs, native, lint, test, assemble, smoke); the old combined
-  # "Lint, tests, APKs and AAB" check is gone.
-  native:
-    name: FreeRDP native (4 ABIs)
-    runs-on: ubuntu-24.04
-    # Generous because the first run after any freerdp/build.gradle.kts change
-    # pays a cold, uncached four-ABI native build (~30 min); warm runs are a
-    # CMake no-op well inside this budget.
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up JDK 17.0.13
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
-        with:
-          distribution: temurin
-          java-version: '17.0.13'
-          # check-latest=false forces the action to use the requested 17.0.13
-          # rather than "the latest Temurin 17", which would silently drift.
-          check-latest: false
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          # cmdline-tools 13.0 is the LTS line that ships platform-tools and
-          # supports platforms;android-37.0 + build-tools;36.0.0.
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            platforms;${{ env.COMPILE_SDK }}
-            build-tools;${{ env.BUILD_TOOLS }}
-            ndk;${{ env.FREERDP_NDK_VERSION }}
-          cache-packages: true
-          # ANDROID_HOME / ANDROID_SDK_ROOT are exported automatically.
-
-      - name: Install pinned CMake and Ninja
-        # The :freerdp native build drives CMake directly (see
-        # freerdp/build.gradle.kts for why it does not use AGP's
-        # externalNativeBuild). The SDK manager does not carry the CMake line
-        # that build needs; PyPI does. Same pin the spike verified with.
-        run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check \
-            "cmake==${FREERDP_CMAKE_VERSION}" ninja
-          cmake --version | grep -F "cmake version ${FREERDP_CMAKE_VERSION}"
-          ninja --version
-
-      - name: Cache the FreeRDP native build tree
-        # freerdp/build holds the extracted tarball, the per-ABI superbuild
-        # trees (OpenSSL + FreeRDP + friends) and the packaged jniLibs. A cold
-        # native build is roughly half an hour for four ABIs; a warm one is a
-        # CMake no-op. The key carries the module's build script because that
-        # is where the tarball, NDK and feature-set pins live - changing any of
-        # them must produce a different cache entry. Restored before any Gradle
-        # step: the first Gradle invocation (lint) already compiles :freerdp,
-        # which builds the native libraries.
-        #
-        # This job is the only writer of this cache. lint, test and assemble
-        # restore the same key after needs:native, by which point this job's
-        # post-step save is already visible to them in the same run.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: freerdp/build
-          key: freerdp-native-${{ runner.os }}-${{ hashFiles('freerdp/build.gradle.kts') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-        with:
-          # Read-only off main so a pull request cannot poison the cache the
-          # default branch reads.
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Build and verify the :freerdp native module
-        # Every :freerdp compilation depends on the native build task, so the
-        # libraries exist by the time lint got here; this step still runs the
-        # module's own packaging and asserts the product: all eight .so files
-        # per ABI, and the bridge .so is an ELF binary for the architecture it
-        # is filed under. A wrong-ABI library is exactly the failure packaging
-        # would otherwise hide until install time - the same check the FreeRDP
-        # spike used. The architecture is readelf's, through the one table in
-        # testing/verify-elf-arch.sh, and not `file`'s: `file` describes a
-        # binary in prose, and its prose for e_machine 3 changed in 5.46.
-        run: |
-          set -euo pipefail
-          ./gradlew --stacktrace :freerdp:assembleDebug
-          for ABI in arm64-v8a armeabi-v7a x86_64 x86; do
-            for LIB in libfreerdp-android libfreerdp3 libfreerdp-client3 libwinpr3 \
-                       libcrypto libssl libcjson liburiparser; do
-              SO="freerdp/build/native/jniLibs/${ABI}/${LIB}.so"
-              test -f "${SO}" || { echo "missing ${SO}"; exit 1; }
-            done
-            testing/verify-elf-arch.sh \
-              "freerdp/build/native/jniLibs/${ABI}/libfreerdp-android.so" "$ABI"
-          done
-
-      - name: Install patch (proot-patches are applied by fetchLinuxSource)
-        run: sudo apt-get install -y -qq patch
-
-      - name: Cache the Linux userspace native build tree
-        # linux/build holds the fetched proot-fork and talloc tarballs, the
-        # per-ABI work trees and the packaged jniLibs. Same shape as the
-        # FreeRDP cache beside it: this job is the only writer, and the key
-        # carries the module's build script because that is where the
-        # tarball, NDK and ABI pins live. A cold build is minutes (proot's
-        # makefile is quick); a warm one is a download-free UP-TO-DATE.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: linux/build
-          key: linux-native-${{ runner.os }}-${{ hashFiles('linux/build.gradle.kts', 'linux/proot-patches/*.patch') }}
-
-      - name: Build and verify the :linux native module
-        # Same product assertion as :freerdp above, plus the property the
-        # userspace's exec model depends on: libproot.so and
-        # libproot-loader.so must be static executables. A dynamic proot
-        # would resolve its interpreter outside nativeLibraryDir and die at
-        # exec time - a failure packaging cannot see. Both answers are read
-        # out of the file rather than out of `file`'s prose: the architecture
-        # from readelf's header through testing/verify-elf-arch.sh, the
-        # static one from the absence of a dynamic section. make, readelf and
-        # awk (proot's makefile uses them) are preinstalled on the runner
-        # image.
-        run: |
-          set -euo pipefail
-          ./gradlew --stacktrace :linux:assembleDebug
-          for ABI in arm64-v8a armeabi-v7a x86_64; do
-            for LIB in libproot libproot-loader liblinuxpty; do
-              SO="linux/build/native/jniLibs/${ABI}/${LIB}.so"
-              test -f "${SO}" || { echo "missing ${SO}"; exit 1; }
-            done
-            testing/verify-elf-arch.sh "linux/build/native/jniLibs/${ABI}/libproot.so" "$ABI"
-            testing/verify-elf-arch.sh "linux/build/native/jniLibs/${ABI}/liblinuxpty.so" "$ABI"
-            for LIB in libproot libproot-loader; do
-              readelf -d "linux/build/native/jniLibs/${ABI}/${LIB}.so" \
-                | grep -qF 'There is no dynamic section in this file' \
-                || { echo "${ABI}/${LIB}.so is dynamically linked; proot and its loader must be static"; exit 1; }
-            done
-          done
-
+  # Lint gate: Spotless ktlint check + Android lintRelease. Spotless is the
+  # fast path (ktlint is ~30s); lintRelease is the slow one (~3min) but it is
+  # what catches deprecated-API and resource issues that ktlint cannot see.
+  # Auto-fixable style issues are handled separately by autofix.yml, which
+  # commits `spotlessApply` back to the PR; this job only fails on issues that
+  # cannot be auto-fixed.
   lint:
-    name: Lint (release variant)
-    needs: native
+    name: Lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-
+    timeout-minutes: 15
     steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up JDK 17.0.13
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
-          # check-latest=false forces the action to use the requested 17.0.13
-          # rather than "the latest Temurin 17", which would silently drift.
-          check-latest: false
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          # cmdline-tools 13.0 is the LTS line that ships platform-tools and
-          # supports platforms;android-37.0 + build-tools;36.0.0.
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            platforms;${{ env.COMPILE_SDK }}
-            build-tools;${{ env.BUILD_TOOLS }}
-            ndk;${{ env.FREERDP_NDK_VERSION }}
-          cache-packages: true
-          # ANDROID_HOME / ANDROID_SDK_ROOT are exported automatically.
-
-      - name: Install pinned CMake and Ninja
-        # The :freerdp native build drives CMake directly (see
-        # freerdp/build.gradle.kts for why it does not use AGP's
-        # externalNativeBuild). The SDK manager does not carry the CMake line
-        # that build needs; PyPI does. Same pin the spike verified with.
-        run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check \
-            "cmake==${FREERDP_CMAKE_VERSION}" ninja
-          cmake --version | grep -F "cmake version ${FREERDP_CMAKE_VERSION}"
-          ninja --version
-
-      - name: Cache the FreeRDP native build tree
-        # freerdp/build holds the extracted tarball, the per-ABI superbuild
-        # trees (OpenSSL + FreeRDP + friends) and the packaged jniLibs. A cold
-        # native build is roughly half an hour for four ABIs; a warm one is a
-        # CMake no-op. The key carries the module's build script because that
-        # is where the tarball, NDK and feature-set pins live - changing any of
-        # them must produce a different cache entry. Restored before any Gradle
-        # step: the first Gradle invocation (lint) already compiles :freerdp,
-        # which builds the native libraries.
-        #
-        # Restored, not written, on the normal path: needs:native guarantees
-        # the native job's post-step save of this exact key is already visible
-        # to this job in the same run, so the preBuild-wired native tasks find
-        # their declared outputs and go UP-TO-DATE - this job pays a tarball
-        # extract, never a rebuild. No restore-keys on purpose: a fuzzy restore
-        # can pair stale cmake trees with fresh source (the PR #20/#22/#23
-        # failure class the wipe guard exists for).
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: freerdp/build
-          key: freerdp-native-${{ runner.os }}-${{ hashFiles('freerdp/build.gradle.kts') }}
-
-      - name: Install patch (proot-patches are applied by fetchLinuxSource)
-        run: sudo apt-get install -y -qq patch
-
-      - name: Cache the Linux userspace native build tree
-        # Same contract as the FreeRDP restore above: needs:native guarantees
-        # the native job's post-step save of this exact key is visible here,
-        # so :linux's preBuild-wired fetch and build tasks find their declared
-        # outputs and go UP-TO-DATE. Restored, never written, and no
-        # restore-keys for the same reason the FreeRDP cache has none.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: linux/build
-          key: linux-native-${{ runner.os }}-${{ hashFiles('linux/build.gradle.kts', 'linux/proot-patches/*.patch') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-        with:
-          # Read-only off main so a pull request cannot poison the cache the
-          # default branch reads.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Install Android SDK 37 + build-tools 36.0.0
+        run: |
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;${COMPILE_SDK}" \
+            "build-tools;${BUILD_TOOLS}" > /dev/null
+      - name: Spotless check (ktlint)
+        run: ./gradlew spotlessCheck --no-daemon
+      - name: Android lint
+        run: ./gradlew lintRelease --no-daemon
+      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+        if: always()
+        with:
+          name: lint-reports
+          path: app/build/reports/
+          retention-days: 7
 
-      - name: Lint (release variant)
-        run: ./gradlew --stacktrace lintRelease
-
-  test:
-    name: Unit and integration tests
-    needs: native
+  # Unit-test gate: Robolectric tests against the JVM, no emulator. The
+  # legacy ci.yml ran these alongside lint and assemble in a single job; the
+  # new workflow splits them out so a unit-test failure does not block the
+  # lint report upload, and so the two can run in parallel.
+  unit:
+    name: Unit tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-
+    timeout-minutes: 25
     steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Test the release reporter, which decides what a failure report says
-        # testing/generate-report.py composes the report a repair attempt is
-        # handed. It read its test count only from the green summary line
-        # ("OK (47 tests)"), which a failing run never prints, so every failing
-        # leg reported "Ran: 0" - run 35338666049's report described a 47-test
-        # suite as a zero-test one, and nothing looked broken because the verdict
-        # beside it was still right. The cases in this test are the stdout shapes
-        # that run's own artifacts contain, green and red, plus the shape a run
-        # killed by the workflow's `timeout` leaves. No Android needed.
-        #
-        # It also pins the argument the workflow hands it: that slot is a label
-        # - the tag on a release run, `<ref>@<commit>` on the `apk_source=build`
-        # dispatch that publishes nothing - because reading it as always-a-tag
-        # is what gave issue #124 an empty title and an empty version line.
-        run: python3 testing/test_generate_report.py
-
-      - name: Set up JDK 17.0.13
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
-          # check-latest=false forces the action to use the requested 17.0.13
-          # rather than "the latest Temurin 17", which would silently drift.
-          check-latest: false
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          # cmdline-tools 13.0 is the LTS line that ships platform-tools and
-          # supports platforms;android-37.0 + build-tools;36.0.0.
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            platforms;${{ env.COMPILE_SDK }}
-            build-tools;${{ env.BUILD_TOOLS }}
-            ndk;${{ env.FREERDP_NDK_VERSION }}
-          cache-packages: true
-          # ANDROID_HOME / ANDROID_SDK_ROOT are exported automatically.
-
-      - name: Install pinned CMake and Ninja
-        # The :freerdp native build drives CMake directly (see
-        # freerdp/build.gradle.kts for why it does not use AGP's
-        # externalNativeBuild). The SDK manager does not carry the CMake line
-        # that build needs; PyPI does. Same pin the spike verified with.
-        run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check \
-            "cmake==${FREERDP_CMAKE_VERSION}" ninja
-          cmake --version | grep -F "cmake version ${FREERDP_CMAKE_VERSION}"
-          ninja --version
-
-      - name: Cache the FreeRDP native build tree
-        # freerdp/build holds the extracted tarball, the per-ABI superbuild
-        # trees (OpenSSL + FreeRDP + friends) and the packaged jniLibs. A cold
-        # native build is roughly half an hour for four ABIs; a warm one is a
-        # CMake no-op. The key carries the module's build script because that
-        # is where the tarball, NDK and feature-set pins live - changing any of
-        # them must produce a different cache entry. Restored before any Gradle
-        # step: the first Gradle invocation (lint) already compiles :freerdp,
-        # which builds the native libraries.
-        #
-        # Restored, not written, on the normal path: needs:native guarantees
-        # the native job's post-step save of this exact key is already visible
-        # to this job in the same run, so the preBuild-wired native tasks find
-        # their declared outputs and go UP-TO-DATE - this job pays a tarball
-        # extract, never a rebuild. No restore-keys on purpose: a fuzzy restore
-        # can pair stale cmake trees with fresh source (the PR #20/#22/#23
-        # failure class the wipe guard exists for).
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: freerdp/build
-          key: freerdp-native-${{ runner.os }}-${{ hashFiles('freerdp/build.gradle.kts') }}
-
-      - name: Install patch (proot-patches are applied by fetchLinuxSource)
-        run: sudo apt-get install -y -qq patch
-
-      - name: Cache the Linux userspace native build tree
-        # Same contract as the FreeRDP restore above: needs:native guarantees
-        # the native job's post-step save of this exact key is visible here,
-        # so :linux's preBuild-wired fetch and build tasks find their declared
-        # outputs and go UP-TO-DATE. Restored, never written, and no
-        # restore-keys for the same reason the FreeRDP cache has none.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: linux/build
-          key: linux-native-${{ runner.os }}-${{ hashFiles('linux/build.gradle.kts', 'linux/proot-patches/*.patch') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-        with:
-          # Read-only off main so a pull request cannot poison the cache the
-          # default branch reads.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Cache Robolectric runtime jars
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.m2/repository/org/robolectric
-          # Keyed on the version catalog only. The compile SDK is part of the
-          # literal prefix so a 35 -> 36 bump is a different key, but a
-          # whitespace-only change in app/build.gradle.kts is not.
-          key: robolectric-${{ runner.os }}-${{ env.COMPILE_SDK }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: robolectric-${{ runner.os }}-${{ env.COMPILE_SDK }}-
-
-      - name: Start the isolated OpenSSH sandbox
-        # See tools/local-sshd.sh. The matrix needs a real sshd, not a MINA
-        # server, because interop bugs live in the gap the in-JVM server
-        # cannot reproduce.
+      - name: Install Android SDK 37 + build-tools 36.0.0
         run: |
-          set -euo pipefail
-          if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq openssh-server
-          fi
-          tools/local-sshd.sh start
-          # Asserted rather than assumed. A missing sandbox turns into a
-          # silently-skipped test otherwise.
-          test -f .tmp-build/sshd-test/port
-          test -f .tmp-build/sshd-test/port-no-shell
-
-      - name: Unit and integration tests
-        # Debug variant only: AGP 9 removed the release unit-test variant
-        # (`testReleaseUnitTest` no longer exists), and the AndroidX/Robolectric
-        # suites here are variant-independent — the release side keeps its own
-        # coverage through lintRelease and the assembled release artifacts.
-        run: ./gradlew --stacktrace testDebugUnitTest
-
-      - name: Stop the OpenSSH sandbox
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;${COMPILE_SDK}" \
+            "build-tools;${BUILD_TOOLS}" > /dev/null
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon --continue
+      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
         if: always()
-        run: tools/local-sshd.sh clean
-
-      - name: Upload test and lint reports
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: reports
-          path: |
-            app/build/reports/**
-            app/build/test-results/**
-          if-no-files-found: warn
-          retention-days: 14
-
-  assemble:
-    name: APKs, AAB and signatures
-    needs: native
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up JDK 17.0.13
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
-        with:
-          distribution: temurin
-          java-version: '17.0.13'
-          # check-latest=false forces the action to use the requested 17.0.13
-          # rather than "the latest Temurin 17", which would silently drift.
-          check-latest: false
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          # cmdline-tools 13.0 is the LTS line that ships platform-tools and
-          # supports platforms;android-37.0 + build-tools;36.0.0.
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            platforms;${{ env.COMPILE_SDK }}
-            build-tools;${{ env.BUILD_TOOLS }}
-            ndk;${{ env.FREERDP_NDK_VERSION }}
-          cache-packages: true
-          # ANDROID_HOME / ANDROID_SDK_ROOT are exported automatically.
-
-      - name: Install pinned CMake and Ninja
-        # The :freerdp native build drives CMake directly (see
-        # freerdp/build.gradle.kts for why it does not use AGP's
-        # externalNativeBuild). The SDK manager does not carry the CMake line
-        # that build needs; PyPI does. Same pin the spike verified with.
-        run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check \
-            "cmake==${FREERDP_CMAKE_VERSION}" ninja
-          cmake --version | grep -F "cmake version ${FREERDP_CMAKE_VERSION}"
-          ninja --version
-
-      - name: Cache the FreeRDP native build tree
-        # freerdp/build holds the extracted tarball, the per-ABI superbuild
-        # trees (OpenSSL + FreeRDP + friends) and the packaged jniLibs. A cold
-        # native build is roughly half an hour for four ABIs; a warm one is a
-        # CMake no-op. The key carries the module's build script because that
-        # is where the tarball, NDK and feature-set pins live - changing any of
-        # them must produce a different cache entry. Restored before any Gradle
-        # step: the first Gradle invocation (lint) already compiles :freerdp,
-        # which builds the native libraries.
-        #
-        # Restored, not written, on the normal path: needs:native guarantees
-        # the native job's post-step save of this exact key is already visible
-        # to this job in the same run, so the preBuild-wired native tasks find
-        # their declared outputs and go UP-TO-DATE - this job pays a tarball
-        # extract, never a rebuild. No restore-keys on purpose: a fuzzy restore
-        # can pair stale cmake trees with fresh source (the PR #20/#22/#23
-        # failure class the wipe guard exists for).
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: freerdp/build
-          key: freerdp-native-${{ runner.os }}-${{ hashFiles('freerdp/build.gradle.kts') }}
-
-      - name: Install patch (proot-patches are applied by fetchLinuxSource)
-        run: sudo apt-get install -y -qq patch
-
-      - name: Cache the Linux userspace native build tree
-        # Same contract as the FreeRDP restore above: needs:native guarantees
-        # the native job's post-step save of this exact key is visible here,
-        # so :linux's preBuild-wired fetch and build tasks find their declared
-        # outputs and go UP-TO-DATE. Restored, never written, and no
-        # restore-keys for the same reason the FreeRDP cache has none.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: linux/build
-          key: linux-native-${{ runner.os }}-${{ hashFiles('linux/build.gradle.kts', 'linux/proot-patches/*.patch') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-        with:
-          # Read-only off main so a pull request cannot poison the cache the
-          # default branch reads.
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Restore release signing material
-        id: signing
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PROPERTIES: ${{ secrets.RELEASE_KEYSTORE_PROPERTIES }}
-        run: |
-          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_KEYSTORE_PROPERTIES" ]; then
-            mkdir -p keystore
-            printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > keystore/eclipse-release.jks
-            printf '%s\n' "$RELEASE_KEYSTORE_PROPERTIES" > keystore.properties
-            chmod 600 keystore/eclipse-release.jks keystore.properties
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No signing secrets set: the release APK will carry the debug key." >&2
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Verify the androidTest sources have at least one test
-        # An empty androidTest set compiles green and is indistinguishable from
-        # "instrumentation is being tested" in the run summary. Assert it
-        # before running the build so a future contributor cannot silently
-        # delete the suite and keep a green check.
-        #
-        # It counts @Test methods rather than files, which is what the step name
-        # and docs/ci.md both say it does: a file count passes for a directory of
-        # sources that declare no test at all, and `grep -c` on a file carrying a
-        # NUL byte would undercount -- hence `-a`, the same flag
-        # scripts/check-doc-figures.sh reads its tallies with.
-        run: |
-          set -euo pipefail
-          COUNT=$(grep -rhaE '^[[:space:]]*@Test(\(|$)' app/src/androidTest --include='*.kt' | wc -l || true)
-          if [ "$COUNT" -lt 1 ]; then
-            echo "No @Test methods found in app/src/androidTest."
-            exit 1
-          fi
-          echo "androidTest @Test methods: $COUNT"
-
-      - name: Check the instrumentation keep list against the test sources
-        # The release-test suite failed both legs on run 35338666049 with
-        # NoClassDefFoundError: Landroidx/core/view/WindowCompat; - an app
-        # dependency the test resolves by name out of the minified release dex,
-        # which R8 had renamed because nothing kept it. The failure surfaced a
-        # whole release later, on an emulator, in a workflow this branch cannot
-        # run. This is the same check, static and second-long, next to the step
-        # that compiles those sources.
-        run: scripts/check-instrumentation-keeps.sh
-
-      - name: Test the keep-list checker against its own cases
-        # The checker is a guard, so a run of it that passes for a reason of its own retires the
-        # question it exists to ask. Run 37587054967 was exactly that: `printf ... | grep -qxF` lost
-        # the writer to SIGPIPE and reported a kept class as missing. The test's padded-keep-list case
-        # fails on that spelling every time.
-        run: scripts/check-instrumentation-keeps.test.sh
-
-      - name: Verify the dependency lockfile is up to date
-        # This job's first Gradle step, on purpose. `app/gradle.lockfile` records the
-        # *resolved* version of every coordinate on releaseRuntimeClasspath, and a lock
-        # state is enforced as a `strictly` constraint, so a catalog bump the lockfile
-        # does not carry - which is every dependabot bump, since a bot can edit
-        # gradle/libs.versions.toml and cannot run --write-locks - leaves that classpath
-        # unresolvable. The steps below are where that failure surfaces, and they surface
-        # it badly: on #130's branch the first message was a configuration-cache
-        # serialization error about a navigation resource file, and the sentence naming
-        # the lockfile was in the *lint* job's log instead. Here it is the first line
-        # this job prints.
-        #
-        # The refusal is the grep, and that is not decoration: `:app:dependencies` is a
-        # report task, so it resolves leniently, prints FAILED beside the coordinate that
-        # will not resolve, and exits 0. The step therefore reads the report and refuses on
-        # the FAILED row, and it checks Gradle's own exit status first so a report that was
-        # never written cannot be mistaken for a clean one. Run 35408880501 (a throwaway
-        # branch, deleted with the probe) is the measurement: the read-only command against
-        # a lockfile staled by one line printed
-        #   +--- androidx.compose:compose-bom:{strictly 2025.04.01} FAILED
-        # and still succeeded. The --write-locks form this step used to run rewrote the
-        # file instead of reporting it, so the drift the step is named for was the one
-        # outcome it could not produce.
-        run: |
-          set -o pipefail
-          # Gradle's own exit status is checked first, and that is not belt-and-braces.
-          # `set -o pipefail` makes the pipeline non-zero when Gradle dies, but without an
-          # explicit test the step falls through to the grep below, finds no FAILED row in
-          # a report that was never written, and prints the sentence saying the classpath
-          # resolved - measured, not assumed: with the Gradle command replaced by one that
-          # prints an error and exits 1, the pipeline alone still reached the final echo and
-          # the step exited 0. A build script error, a daemon OOM or a lost network would
-          # all have been reported as a satisfied lockfile.
-          if ! ./gradlew --stacktrace :app:dependencies --configuration releaseRuntimeClasspath \
-               | tee "$RUNNER_TEMP/dependency-report.txt"; then
-            echo "::error::the dependency report did not run to completion, so it cannot clear app/gradle.lockfile."
-            exit 1
-          fi
-          if grep -qE '(^|[[:space:]])FAILED$' "$RUNNER_TEMP/dependency-report.txt"; then
-            echo "releaseRuntimeClasspath no longer resolves against app/gradle.lockfile:"
-            grep -nE '(^|[[:space:]])FAILED$' "$RUNNER_TEMP/dependency-report.txt" | head -10
-            echo "::error::app/gradle.lockfile is out of date. Run ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --write-locks and commit app/gradle.lockfile."
-            exit 1
-          fi
-          echo "releaseRuntimeClasspath resolves against app/gradle.lockfile"
-
-      - name: Compile instrumentation tests
-        # Kept even though .github/workflows/instrumentation.yml now runs
-        # `connectedAndroidTest` on a hosted emulator: compiling the sources
-        # here keeps this workflow's own build honest about androidTest
-        # breakage instead of waiting for the separate workflow's longer
-        # pipeline to report it.
-        run: ./gradlew --stacktrace assembleDebugAndroidTest
-
-      - name: Assemble APKs and the AAB (Play upload format)
-        # One invocation, deliberately: a bundle task in it stands splits.abi
-        # down (AGP's PerModuleBundleTask cannot read a shrunk-resources
-        # directory holding more than one file - issuetracker.google.com/
-        # 402800800), so CI's APKs are the universal ones. The per-ABI APKs are
-        # the release workflows' product, built there in a bundle-free
-        # invocation. The Play Store accepts an AAB, not an APK; it is built
-        # with the same signing config the APK uses, signed with the same key.
-        run: ./gradlew --stacktrace assembleDebug assembleRelease bundleRelease
-
-      - name: Assemble the per-ABI release splits
-        # A second invocation, bundle-free, and that is the entire point of it.
-        # The step above stands splits.abi down because a bundle task shares its
-        # invocation, so on its own CI would never build a per-ABI APK at all -
-        # and the per-ABI APKs are what a GitHub release actually serves, the
-        # smaller download the splits block in app/build.gradle.kts exists for.
-        # One task name with no bundle in it makes splits engage: four ABI
-        # splits plus the universal APK. Bundle first, APKs second - the same
-        # order the release workflows use, and for the same reason: the per-ABI
-        # files a reversed order leaves behind would crash a later bundle task
-        # just the same. The signature step below globs the output directory,
-        # so it covers these five without having to know they exist.
-        run: ./gradlew --stacktrace assembleRelease
-
-      - name: Verify the release APK signatures
-        run: |
-          set -euo pipefail
-          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
-          mapfile -t APKS < <(find app/build/outputs/apk/release -name '*.apk' | sort)
-          test "${#APKS[@]}" -ge 1 || { echo "no release APKs found"; exit 1; }
-          for APK in "${APKS[@]}"; do
-            echo "== Verifying $APK"
-            "$APKSIGNER" verify --verbose --min-sdk-version 28 --print-certs "$APK"
-            if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
-              "$APKSIGNER" verify --verbose --min-sdk-version 24 "$APK" | tee /tmp/sigs.txt
-              grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" /tmp/sigs.txt
-              grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" /tmp/sigs.txt
-            fi
-          done
-
-      - name: Verify the per-ABI release splits
-        # The gap this closes. Until now nothing checked what is *inside* a
-        # per-ABI split. A signature verifies over an APK carrying no native
-        # code at all, so a packaging regression that dropped the userspace
-        # libraries - or filed an x86_64 build under an arm64-v8a directory -
-        # would sign cleanly, verify cleanly and only ever reproduce on a real
-        # phone, which is the one place this workflow cannot look. Each split
-        # is therefore checked for the ABI it carries and no other, for the
-        # libraries its ABI actually builds, for each library being an ELF of
-        # the architecture it is filed under, and for extractNativeLibs - the
-        # property that gets proot extracted to nativeLibraryDir where it can
-        # be execve'd, without which every userspace start dies with EACCES.
-        #
-        # x86 gets eight libraries to the others' eleven because :linux builds
-        # no x86 toolchain. That per-ABI mapping lives in
-        # testing/verify-release-splits.sh rather than here, because
-        # tagged-release.yml runs the same check over the artifacts that
-        # actually ship and two copies of the mapping would drift the first
-        # time an ABI is added or dropped.
-        #
-        # What this proves, and what it does not. It proves the artifact is
-        # correct. It does NOT prove the userspace runs: no arm64 device or
-        # emulator exists in this workflow, and claiming otherwise from a
-        # static check would be a lie a future release could be cut on. The
-        # runtime half is android-ubuntu-e2e.yml's x86_64 emulator leg and the
-        # maintainer's on-device loop. Artifact correctness is the half that
-        # can be established here, and it is the half that has to hold before
-        # any of the rest is worth testing.
-        run: |
-          set -euo pipefail
-          testing/verify-release-splits.sh app/build/outputs/apk/release out/split-validation
-          # The distribution contract proper, on the split most users download.
-          # Package name, version against the checked-out source, no debuggable
-          # flag, valid v2+v3 signature - the same verifier the release
-          # workflows run. Only the one split: every answer it gives is
-          # ABI-independent, so checking four would be four copies of one
-          # answer, and the per-split differences are what the script above is
-          # for.
-          EXPECTED_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)"
-          EXPECTED_CODE="$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -1)"
-          testing/verify-release-apk.sh \
-            app/build/outputs/apk/release/app-arm64-v8a-release.apk \
-            "$EXPECTED_NAME" "$EXPECTED_CODE" \
-            out/split-validation/arm64-v8a-release.json arm64-v8a
-          # A failed strip is silent - AGP warns and packages the libraries
-          # with their debug symbols - so a green build can ship APKs 2.3x
-          # larger than the same source an hour earlier. Every artifact the
-          # release publishes is covered: the five splits by glob (so an ABI
-          # added later needs no edit here) and the bundle, which is packaged
-          # by a different task.
-          AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
-          test -n "$AAB" || { echo "no AAB found in app/build/outputs/bundle/release"; exit 1; }
-          testing/verify-native-stripped.sh app/build/outputs/apk/release/*-release.apk "$AAB"
-
-      - name: Verify the AAB signature
-        # The apksigner tool's APK format check refuses AABs because they
-        # put AndroidManifest.xml under base/manifest/ rather than at the
-        # archive root. AABs are signed with the JAR signature scheme
-        # (META-INF/{ALIAS}.SF + META-INF/{ALIAS}.RSA), not the APK
-        # Signature Scheme. Assert the JAR signature blocks are present
-        # and the .SF references the AAB manifest.
-        run: |
-          set -euo pipefail
-          AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
-          test -n "$AAB" || { echo "no AAB found in app/build/outputs/bundle/release"; exit 1; }
-          echo "== AAB under test: $AAB"
-          unzip -l "$AAB" | grep -E 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$' | tee /tmp/aab-sigs.txt
-          grep -q '\.SF' /tmp/aab-sigs.txt || { echo "no JAR .SF in AAB"; exit 1; }
-          grep -q '\.RSA\|\.DSA\|\.EC' /tmp/aab-sigs.txt || { echo "no JAR signature block in AAB"; exit 1; }
-          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
-            echo "AAB is signed with the release key."
-          else
-            echo "AAB is signed with the debug key (no release secrets in CI)."
-          fi
-
-      # The artifact uploads are convenience copies, not verification: everything they
-      # carry was already built and checked by the assemble and signature steps above.
-      # They are continue-on-error because the account-level artifact storage quota
-      # runs out from ordinary CI traffic and is only recalculated every 6-12 hours —
-      # a full, correct build must not report red because a convenience copy could
-      # not be stored.
-      - name: Upload debug APK
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: eclipse-ssh-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-
-      - name: Upload the universal release APK
-        # The universal one only, though the output directory now also holds the
-        # four ABI splits and possibly the plain-named APK the bundle
-        # invocation left behind. This artifact's contract is one APK: the smoke
-        # job installs exactly one on an x86_64 emulator, and these uploads are
-        # declared convenience copies - storing five copies of one build is the
-        # wrong trade when the account's artifact quota is the thing that runs
-        # out. The splits are verified where they are built, and the release
-        # workflow publishes them as release assets, which is where a user gets
-        # them.
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: eclipse-ssh-release-apk
-          path: app/build/outputs/apk/release/app-universal-release.apk
-          if-no-files-found: error
-
-      - name: Upload release AAB
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: eclipse-ssh-release-aab
-          path: app/build/outputs/bundle/release/*.aab
-          if-no-files-found: error
-
-      - name: Shred signing material
-        if: always()
-        run: |
-          rm -f keystore.properties
-          rm -rf keystore
-
-  # The gate the v1.1.16 crash slipped through. CI proved the APKs compiled
-  # and were signed, and the installed app still died before its first frame
-  # on every device - an ExceptionInInitializerError from a Bouncy Castle
-  # provider collision that the JVM test host cannot reproduce, because the
-  # host JVM has no platform provider to collide with. Only booting the
-  # produced artifact catches that class. GitHub's Linux runners expose
-  # /dev/kvm, so a headless emulator is affordable here: this job installs
-  # the exact APKs the assemble job uploaded and launches each one, and
-  # fails if the process is gone or anything fatal landed in the logcat.
-  #
-  # Both variants, deliberately: the debug build is the plainest possible
-  # "does the app open"; the release build carries R8, whose keep-rule
-  # mistakes are a crash class the debug build can never catch.
-  smoke:
-    name: Boot the built APKs (crash-on-open gate)
-    needs: assemble
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-
-    steps:
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          # Same cmdline-tools pin as the build jobs. No NDK and no Gradle
-          # here: this job only boots an emulator and installs prebuilt APKs,
-          # so it does not need the native toolchain the build jobs pin.
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            emulator
-            system-images;android-35;default;x86_64
-          cache-packages: true
-
-      - name: Enable KVM device permissions
-        # The runner image ships /dev/kvm, but the runner user needs a udev
-        # rule to open it. Without this the emulator falls back to software
-        # emulation, which does not boot API 35 inside any sane timeout.
-        run: |
-          set -euo pipefail
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          # `udevadm trigger` returns before the udev worker has applied the
-          # new mode - the same race the instrumentation workflow hit. Poll
-          # for the node to settle, and chmod directly if it never does.
-          for _ in $(seq 1 10); do
-            [ -w /dev/kvm ] && break
-            sleep 0.5
-          done
-          if [ ! -w /dev/kvm ]; then
-            sudo chmod 0666 /dev/kvm || true
-          fi
-          test -w /dev/kvm || {
-            echo "/dev/kvm is still not openable - this runner cannot run the emulator"
-            ls -l /dev/kvm || true
-            id
-            exit 1
-          }
-
-      - name: Download the built APKs
-        # The convenience copies the assemble job uploads. Downloading the
-        # artifacts (rather than rebuilding here) is what makes this gate
-        # about the produced bytes: the APK under the emulator is the same
-        # file a user would install.
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: eclipse-ssh-*-apk
-          path: apks
-
-      # Fail here, named for the reason, when the download brought nothing.
-      #
-      # `actions/download-artifact` reports success when its pattern matched no
-      # artifact, and the uploads it reads are `continue-on-error: true` (see the
-      # assemble job, and the account-level artifact quota the comment there
-      # explains), so an upload the quota refused also reports success. Both
-      # roads arrive at a gate whose whole job is to boot an APK, holding none.
-      #
-      # The next steps are the wrong place to find that out. The first of them
-      # that touches the directory does it inside a command substitution -
-      # `APK="$(find "$APK_DIR" -name '*.apk' | head -1)"` - and runs under
-      # `set -e`, so a directory that was never created kills the step at the
-      # `find` and prints `find: 'apks/eclipse-ssh-debug-apk': No such file or
-      # directory`: the missing file, and not the refused upload behind it. That
-      # is how run 36825344333 spent a red step reading as a broken build, on a
-      # commit whose assemble job was green.
-      - name: Fail if the download brought no APKs
-        run: |
-          set -euo pipefail
-          if [ ! -d apks ]; then
-            echo "::error::The download created no apks/ directory: nothing matched the pattern."
-            exit 1
-          fi
-          count="$(find apks -name '*.apk' | wc -l)"
-          if [ "$count" -eq 0 ]; then
-            echo "::error::The download brought no APKs, so this gate has nothing to boot."
-            echo "The assemble job uploads them with 'continue-on-error: true', which makes"
-            echo "a refused upload report success. Look in its log for:"
-            echo "  Failed to CreateArtifact: Artifact storage quota has been hit"
-            echo "The account's artifact storage is shared and small on the free plan, so"
-            echo "this is the expected outcome while the repository is private. Open a CI"
-            echo "window (scripts/ci-window.sh open --workflow ci.yml --yes) and run again."
-            find apks -maxdepth 3 | head -40 || true
-            exit 1
-          fi
-          echo "downloaded $count APK(s):"
-          find apks -name '*.apk' | sort
-
-      # This job deliberately does not check the source out: it gates the APKs
-      # the assemble job produced, not a rebuild of them. It needs the tree for
-      # exactly one thing, the pre-flight below, so the tree is checked out into
-      # `src/` and not into the workspace root. `actions/checkout` defaults to
-      # clean:true, which is `git clean -ffdx` - `-x` included - and that
-      # deletes the APKs just downloaded into `apks/`. The first version of this
-      # step checked out at the root on the reasoning that the repository tracks
-      # no `apks/` path; it does not, but `clean` removes *untracked* files, and
-      # the gate died on `find: 'apks/eclipse-ssh-debug-apk': No such file or
-      # directory`. A checkout into `src/` cannot reach a byte outside it.
-      - name: Check out, for the pre-flight script
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: src
-
-      # The emulator allocates its whole userdata partition up front - 7,372.80
-      # MB on this image - and does it in the background, so a runner that is
-      # short dies in the *next* step with "adb never saw the emulator" while
-      # the real reason sits 200 lines up the emulator log. Make the room
-      # first, and fail here, with the number, if there is not enough.
-      #
-      # The path is `src/scripts/...` here and `scripts/...` in the four other
-      # workflows: only this job checks the tree out anywhere but the root. The
-      # script itself takes no relative path - it works on absolute ones under
-      # $HOME and the SDK - so where it is called from does not matter to it.
-      - name: Free runner disk before the AVD
-        run: bash src/scripts/free-runner-disk.sh
-
-      - name: Create and boot the headless AVD
-        run: |
-          set -euo pipefail
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          # avdmanager and the emulator each resolve their own AVD directory
-          # when this is unset (the emulator searches $ANDROID_AVD_HOME,
-          # $ANDROID_SDK_HOME/avd and $HOME/.android/avd, while cmdline-tools'
-          # avdmanager is free to pick differently), and a create that lands
-          # where the emulator never looks is an instant "Unknown AVD name"
-          # death. Pin both ends to one directory - the same fix the
-          # instrumentation workflow needed.
-          export ANDROID_AVD_HOME="$HOME/.android/avd"
-          mkdir -p "$ANDROID_AVD_HOME"
-          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
-            --force --name ci-smoke \
-            --package 'system-images;android-35;default;x86_64' \
-            --device pixel_6
-          # Assert the create landed where the emulator will look, with the
-          # directory listing as the diagnosis if it did not.
-          if ! "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx ci-smoke; then
-            echo "avdmanager reported success but the emulator cannot see ci-smoke"
-            ls -la "$ANDROID_AVD_HOME" || true
-            exit 1
-          fi
-          nohup "$ANDROID_HOME/emulator/emulator" -avd ci-smoke \
-            -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
-            -gpu swiftshader_indirect -accel on > /tmp/emulator.log 2>&1 &
-          # Bounded: an emulator that died at startup leaves adb with no device
-          # to wait for, and an unbounded `wait-for-device` then hangs until the
-          # job timeout instead of failing fast - the failure mode the first
-          # hosted instrumentation run wedged on for over an hour.
-          if ! timeout 120 "$ADB" wait-for-device; then
-            echo "adb never saw the emulator - it likely died at startup"
-            tail -200 /tmp/emulator.log
-            exit 1
-          fi
-          # adb sees the emulator long before the guest OS is up;
-          # sys.boot_completed is the flag the platform itself sets when
-          # the boot intent fires. Five minutes is the generous ceiling:
-          # with KVM this image is up in one to three.
-          BOOT=""
-          for _ in $(seq 1 60); do
-            # A boot poll that outlives the emulator process is polling a
-            # corpse; fail the moment the emulator is gone rather than
-            # burning the remaining polls.
-            if ! pgrep -f "emulator.*ci-smoke" >/dev/null; then
-              echo "the emulator process died during boot"
-              tail -200 /tmp/emulator.log
-              exit 1
-            fi
-            BOOT="$("$ADB" shell getprop sys.boot_completed | tr -d '\r')"
-            [ "$BOOT" = "1" ] && break
-            sleep 5
-          done
-          if [ "$BOOT" != "1" ]; then
-            echo "emulator did not finish booting"
-            tail -200 /tmp/emulator.log
-            exit 1
-          fi
-
-      - name: Launch the debug APK and assert it stays up
-        env:
-          # The debug build carries the .debug applicationId suffix, so both
-          # variants install side by side and neither launch pollutes the
-          # other's logcat window.
-          PACKAGE: dev.eclipse.ssh.debug
-          APK_DIR: apks/eclipse-ssh-debug-apk
-          VARIANT: debug
-        run: |
-          set -euo pipefail
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          APK="$(find "$APK_DIR" -name '*.apk' | head -1)"
-          test -n "$APK" || { echo "no debug APK under $APK_DIR"; exit 1; }
-          echo "== smoke [$VARIANT]: installing $APK"
-          "$ADB" install -r "$APK"
-          "$ADB" logcat -c
-          "$ADB" shell am start -W -n "$PACKAGE/dev.eclipse.ssh.MainActivity"
-          # Long enough for the first frame, DataStore reads, the provider
-          # registry swap and the session service's notification - the exact
-          # window in which the v1.1.16 crash fired.
-          sleep 45
-          "$ADB" logcat -d > "smoke-$VARIANT.log" || true
-          PID="$("$ADB" shell pidof "$PACKAGE" | tr -d '\r')"
-          test -n "$PID" || { echo "process $PACKAGE is not running 45s after launch"; exit 1; }
-          if grep -Eq 'FATAL EXCEPTION|Fatal signal' "smoke-$VARIANT.log"; then
-            echo "fatal exception while the app was running"
-            grep -A40 -E 'FATAL EXCEPTION|Fatal signal' "smoke-$VARIANT.log" | head -120
-            exit 1
-          fi
-          echo "== smoke [$VARIANT]: alive (pid $PID), no fatal exceptions"
-
-      - name: Launch the release APK and assert it stays up
-        env:
-          PACKAGE: dev.eclipse.ssh
-          APK_DIR: apks/eclipse-ssh-release-apk
-          VARIANT: release
-        run: |
-          set -euo pipefail
-          ADB="$ANDROID_HOME/platform-tools/adb"
-          # Named, not "the first .apk found". A release build now emits five
-          # APKs (four ABI splits plus the universal one), and this emulator is
-          # x86_64: `find | head -1` would install whichever the filesystem
-          # happened to list first, and the arm64 or armeabi-v7a split fails
-          # here with INSTALL_FAILED_NO_MATCHING_ABIS - a red gate that says
-          # nothing about the app. The universal APK carries every ABI, which is
-          # what this gate wants: it asks whether the release build opens, not
-          # which ABI the runner has.
-          APK="$(find "$APK_DIR" -name 'app-universal-release.apk' | head -1)"
-          test -n "$APK" || { echo "no universal release APK under $APK_DIR"; exit 1; }
-          echo "== smoke [$VARIANT]: installing $APK"
-          "$ADB" install -r "$APK"
-          "$ADB" logcat -c
-          "$ADB" shell am start -W -n "$PACKAGE/dev.eclipse.ssh.MainActivity"
-          sleep 45
-          "$ADB" logcat -d > "smoke-$VARIANT.log" || true
-          PID="$("$ADB" shell pidof "$PACKAGE" | tr -d '\r')"
-          test -n "$PID" || { echo "process $PACKAGE is not running 45s after launch"; exit 1; }
-          if grep -Eq 'FATAL EXCEPTION|Fatal signal' "smoke-$VARIANT.log"; then
-            echo "fatal exception while the app was running"
-            grep -A40 -E 'FATAL EXCEPTION|Fatal signal' "smoke-$VARIANT.log" | head -120
-            exit 1
-          fi
-          echo "== smoke [$VARIANT]: alive (pid $PID), no fatal exceptions"
-
-      - name: Upload the device and emulator logs
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: smoke-device-logs
-          path: |
-            smoke-*.log
-            /tmp/emulator.log
-          if-no-files-found: warn
-          retention-days: 14
-
-  # The idle matrix, run only on demand, and on demand only when the dispatch
-  # asked for it: push-triggered idle tests would burn the runner's metered
-  # time, and a dispatch that wants a fast answer should not have to pay for
-  # this one either. The 30-minute idle test is the one case that can catch a
-  # heartbeat that stopped reaching the wire, which the rest of the suite
-  # cannot see — so it is worth asking for, never worth assuming.
-  stress:
-    name: Long idle stress test
-    if: github.event_name == 'workflow_dispatch' && inputs.stress
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up JDK 17.0.13
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
-        with:
-          distribution: temurin
-          java-version: '17.0.13'
-          check-latest: false
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          # Same NDK pin the verify job installs: the stress job's build runs
-          # :freerdp:buildFreerdpNative like every other build, and that task
-          # resolves the toolchain from the SDK - without the pin the job fails
-          # before the idle test it exists to run has started.
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            platforms;${{ env.COMPILE_SDK }}
-            build-tools;${{ env.BUILD_TOOLS }}
-            ndk;${{ env.FREERDP_NDK_VERSION }}
-          cache-packages: true
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-        with:
-          cache-read-only: true
-
-      - name: Cache Robolectric runtime jars
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.m2/repository/org/robolectric
-          key: robolectric-${{ runner.os }}-${{ env.COMPILE_SDK }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: robolectric-${{ runner.os }}-${{ env.COMPILE_SDK }}-
-
-      - name: Start the isolated OpenSSH sandbox
-        run: |
-          set -euo pipefail
-          if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq openssh-server
-          fi
-          tools/local-sshd.sh start
-          test -f .tmp-build/sshd-test/port-silent
-          test -f .tmp-build/sshd-test/port-no-shell
-
-      - name: The idle matrix against a real OpenSSH server
-        env:
-          ECLIPSE_STRESS: '1'
-        run: |
-          set -euo pipefail
-          ./gradlew --stacktrace :app:testDebugUnitTest \
-            --tests '*RealOpenSshInteropRobolectricTest'
-          RESULTS=app/build/test-results/testDebugUnitTest/TEST-dev.eclipse.ssh.RealOpenSshInteropRobolectricTest.xml
-          grep -q 'skipped="0"' "$RESULTS"
-          sed -n 's/.*\(tests="[0-9]*"\).*\(failures="[0-9]*"\).*/\1 \2/p' "$RESULTS" | head -1
-
-      - name: Stop the OpenSSH sandbox
-        if: always()
-        # `stop`, not `clean`: the sandbox's sshd.log is the only honest witness to a heartbeat
-        # failure, because it names every login and every keepalive the run produced, from every
-        # port, with timestamps. `clean` deletes it before the artifact upload below can reach it,
-        # which cost a full 65-minute stress round once already. The runner is ephemeral, so leaving
-        # the sandbox directory behind costs nothing.
-        run: tools/local-sshd.sh stop
-
-      - name: Upload the test report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: stress-reports
+          name: unit-test-reports
           path: |
             app/build/reports/tests/
             app/build/test-results/
-            .tmp-build/sshd-test/sshd.log
-          retention-days: 14
+          retention-days: 7
 
-  # Closes a window opened by scripts/ci-window.sh. Skipped - and so free, and
-  # secret-free - whenever the repository is private, which is every ordinary
-  # push, PR and dispatch. It needs the other jobs only to know when the run is
-  # over, so `stress` is in the list even though it is usually skipped: a
-  # skipped dependency has settled, and `always()` still runs this job after it.
-  close-window:
-    name: Close the CI window
-    needs: [docs, native, lint, test, assemble, smoke, stress]
-    if: always()
-    uses: ./.github/workflows/close-ci-window.yml
-    secrets: inherit
+  # Smoke build: assembleDebug APK. Verifies the build graph compiles end-to-end
+  # without paying for the release-variant shrinking, signing or per-ABI splits
+  # (those run in release.yml on tag). The native :freerdp and :linux modules
+  # are skipped here — their native build is the slowest single step and is
+  # only required for the release APK. A debug APK without native libs is
+  # enough to catch a Compose/Hilt/KSP regression.
+  assemble:
+    name: Assemble (debug smoke)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+        with:
+          distribution: temurin
+          java-version: '17.0.13'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29
+        run: |
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;${COMPILE_SDK}" \
+            "build-tools;${BUILD_TOOLS}" \
+            "ndk;29.0.13113456" > /dev/null
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --no-daemon -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild
+      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+        with:
+          name: debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7

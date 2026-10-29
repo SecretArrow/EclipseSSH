@@ -1,0 +1,36 @@
+# EclipseSSH Spotless / ktlint config — used by both local `./gradlew spotlessApply`
+# and the autofix.yml GitHub Action so the two never disagree.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 140
+
+[*.{kt,kts}]
+# ktlint_official ruleset. Disabled rules below are intentional and explained
+# in build.gradle.kts; the autofix workflow reads the same ktlint version pin
+# from gradle/libs.versions.toml, so this section must not pin a different one.
+ktlint_standard_no-wildcard-imports = disabled
+ktlint_standard_filename = enabled
+ktlint_standard_function-naming = enabled
+
+# JetBrains Mono ships in app/src/main/res/font; the editor default is set so
+# contributors editing in Android Studio see the same metrics the renderer ships.
+ij_java_class_count_to_use_import_on_demand = 999
+ij_kotlin_name_count_to_use_import_on_demand = 999
+
+[*.{yml,yaml}]
+indent_size = 2
+max_line_length = 200
+
+[*.md]
+max_line_length = off
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

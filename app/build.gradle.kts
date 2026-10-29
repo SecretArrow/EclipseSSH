@@ -169,6 +169,18 @@ android {
         // instead of loaded from the APK.
         jniLibs {
             useLegacyPackaging = true
+            // Termux terminal-view ships libtermux.so (TerminalSession local-PTY)
+            // and liblocal-socket.so (LocalSocket/AmSocketServer) for the
+            // in-app Termux use case. EclipseSSH only needs TerminalEmulator +
+            // TerminalView (the parser and renderer), driven from SSH channel
+            // bytes, so both .so files are dead weight that would otherwise
+            // extract to nativeLibraryDir under useLegacyPackaging. Strip them
+            // before packaging to keep the APK lean and to avoid shipping a
+            // native binary the app never calls.
+            excludes += setOf(
+                "lib/*/libtermux.so",
+                "lib/*/liblocal-socket.so",
+            )
         }
         resources {
             excludes += setOf(
@@ -483,6 +495,25 @@ dependencies {
     // explicit edge fails the build if the VNC library ever drops its dependency, instead
     // of quietly removing the provider the whole SSH stack initialises against.
     implementation(libs.bouncycastle.prov)
+
+    // === Terminal engine (Termux terminal-view, Apache-2.0) ===
+    // Replaces the legacy custom Compose renderer (dev.eclipse.ssh.terminal.* and
+    // dev.eclipse.ssh.ui.terminal.GlyphRuns/GlyphFaces) which had text-wrapping,
+    // alignment and realtime streaming issues — see terminal-text.txt for the
+    // original UX audit that prompted the swap.
+    //
+    // terminal-emulator provides TerminalEmulator (the VT100/ANSI/xterm parser
+    //   with true-color, CJK width tables, mouse modes, alternate screen).
+    // terminal-view provides TerminalView (the Android Canvas renderer with
+    //   realtime streaming, IME composition, gesture pan/zoom, accessibility).
+    //
+    // Both modules are Apache-2.0 (derivatives of jackpal/Android-Terminal-Emulator).
+    // They are pure Java/Kotlin — no dependency on libtermux.so or liblocal-socket.so,
+    // which only TerminalSession (the local-PTY entry point) needs. EclipseSSH
+    // drives the emulator directly from SSH channel bytes via TermuxEmulatorBridge,
+    // so those JNI libs must never be packaged.
+    implementation(libs.termux.terminal.emulator)
+    implementation(libs.termux.terminal.view)
 
     // The RDP engine's JNI wrapper and native libraries.
     implementation(project(":freerdp"))

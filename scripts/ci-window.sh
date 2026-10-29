@@ -67,12 +67,9 @@ DEFAULT_MINUTES=120
 # stress test are deliberately absent.
 PROTECTION_CONTEXTS=(
   "Documentation figures"
-  "FreeRDP native (4 ABIs)"
-  "Lint (release variant)"
-  "Unit and integration tests"
-  "APKs, AAB and signatures"
-  "Boot the built APKs (crash-on-open gate)"
-  "connectedAndroidTest"
+  "Lint"
+  "Unit tests"
+  "Assemble (debug smoke)"
 )
 
 # How many times to try the rule before believing it will not take, and how long

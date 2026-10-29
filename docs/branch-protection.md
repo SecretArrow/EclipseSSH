@@ -1,223 +1,35 @@
 # Branch protection
 
-**The rule below exists only while the repository is public, and the repository is public only while a
-CI window is open.** Read that before the table, because the table describes something that is absent
-almost all of the time — and until 2026-09-22 this file said "In force since 2026-09-17", which was
-true of the day it was written and false of every private hour after it.
+The rule for `main` is enforced by GitHub's branch protection API. It is in force whenever the repository is public, and it binds the administrator as well as everyone else — the rule's `enforce_admins` is on.
 
-`GET /repos/maragung/EclipseSSH/branches/main/protection` answers with the rule as stored, and that
-read-back — not a `PUT` returning `200` — is the evidence. But on this account it answers that way
-only while the repository is public. While it is private, all three endpoints that could describe the
-rule answer the same way:
+The required checks below are the four `ci.yml` job display names. `scripts/ci-window.sh`'s `PROTECTION_CONTEXTS` array carries the same list; `scripts/check-doc-figures.sh` compares the two and fails on any difference, because a required context that no workflow reports is a check that can never pass, and `main` would stop being *mergeable* rather than stop being *guarded*.
 
-```
-{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}
-```
-
-`/branches/main/protection`, `/rulesets` and `/rules/branches/main` alike. Branch protection is a
-paid feature on a private repository for this account and a free one on a public repository, so the
-window that makes Actions minutes free is also what makes this rule possible — and
-[closing the window](ci.md#the-ci-window) takes it away again.
-
-**A close does not suspend the rule; it deletes it.** That distinction was measured in that order.
-The rule was re-applied while a window was open and it bound: a pull request with a red check read
-`mergeStateStatus: BLOCKED`. Minutes after `scripts/ci-window.sh close`, the same pull request read
-`UNSTABLE` with the same red check still present — nothing was required any more, so nothing was
-blocked. Re-opening a window afterwards, the endpoint answered `404 Branch not protected`: the rule
-had not been waiting to come back, it was gone, and it had to be applied again by hand — which is the
-measurement that made `ci-window.sh open` apply it, rather than a claim that it still has to be.
-
-| While the repository is | What guards `main` |
-| --- | --- |
-| public — a window is open | The rule below, applied by `ci-window.sh open` before it dispatches anything, and enforced by GitHub, including against the administrator |
-| private — every ordinary hour, and every hour after a close | The author's discipline, read by hand. Nothing on the platform |
-
-**What the hand-read guard costs, stated plainly.** While the window is closed a red check merges
-without complaint, because nothing is required. The one merge made that way read every check run on
-the head commit by name, printed them whether they passed or not, tolerated exactly one red — the
-closer's, which is red by design — and failed on any other. That is a weaker guard than the platform's
-and it lived in a local script rather than in this repository, so it guards nobody else. The six pull
-requests that landed before the rule existed — every one authored and merged by the same account —
-are what that discipline looks like in practice without a platform behind it. Anyone merging while
-the window is closed should say so in the pull request rather than let the merge imply a gate that was
-not there.
-
-**Putting the rule back is `ci-window.sh open`'s job as of 2026-09-27.** It is a `PUT` to
-`/repos/maragung/EclipseSSH/branches/main/protection` with the settings in the table below, made the
-moment the repository is public and *before* the workflow is dispatched, so the runs a window exists
-for are gated from their first check. `ci-window.sh protect` re-applies it on its own, and
-`ci-window.sh status` reports whether it is in force. The closer's job still cannot do this, and that
-part is unchanged: it runs under the default token, which has no `administration` permission to grant
-at any level.
-
-The apply is verified by reading the rule back, because a `PUT` returning `200` says the request was
-accepted and not that the stored rule is the one that was sent — the same standard this page holds the
-read-back to above. A failure there does **not** close the window: it warns, in a line that says
-`UNGUARDED`, because the flip is one-way and already taken and the run is worth having either way. So
-an unguarded window is now *reported* rather than merely possible — which matters, because the two are
-otherwise indistinguishable until somebody reads `mergeStateStatus` on a pull request.
-
-**It retries before it warns, as of 2026-09-27.** The attempt `open` makes is the one that lands in the
-seconds after the flip, and that is precisely when the endpoint can still be answering with the
-paid-feature 403: on the first window to use this path the `PUT` was refused and the identical call
-succeeded a few minutes later. Whether that is the visibility change propagating or a transient error is
-not something this page can tell you — the two look the same from here — and the remedy is the same for
-both, so the apply and the read-back are retried together up to five times before the `UNGUARDED`
-warning is printed. Only the last failure is reported, so a transient one cannot be mistaken for the
-reason the guard is missing.
-
-The list of required checks is written down twice: in the table below, and again as
-`PROTECTION_CONTEXTS` in `scripts/ci-window.sh`, which cannot read the markdown because it is a shell
-script that talks to the API and may be run from outside a checkout. A second copy is fine; a second
-copy that drifts is not, because a required context that no workflow reports never reports at all, and
-`main` would stop being *mergeable* rather than stop being *guarded*. `scripts/check-doc-figures.sh`
-therefore compares the two lists and fails on any difference — so the table below remains the place the
-list is written down, and the script's copy is only ever a copy.
-
-Settings are at `github.com/maragung/EclipseSSH/settings/branches`.
-
-## Rule for `main`
-
-| Setting | Value |
-| --- | --- |
-| Branch name pattern | `main` |
-| Require a pull request before merging | yes |
-| Required approvals | 0 — see below |
-| Dismiss stale pull request approvals when new commits are pushed | yes |
-| Require review from Code Owners | no — see below |
-| Require status checks to pass before merging | yes |
-| Require branches to be up to date before merging | yes |
-| Require linear history | no — see below |
-| Do not allow force pushes | yes |
-| Do not allow deletions | yes |
-| Include administrators | yes |
-
-### The three rows that are not what a template would say
-
-Each of these was `yes` (or `1`) when this document was a recipe, and each is
-now written as it is actually stored, because a recipe mistaken for a safeguard
-is worse than no recipe — which is the defect this file carried until
-2026-09-17. All three were found by reading the repository rather than the
-template, and none of them was left unset by accident.
-
-| Row as a template has it | Stored as | Why |
-| --- | --- | --- |
-| Required approvals `1` | `0` | `maragung` is the only collaborator, and it authors every pull request. GitHub does not let an author approve their own pull request, so one required approval on a one-account repository makes `main` permanently unmergeable — it would have blocked the very pull request that applied this rule. The requirement that does the work here is the status checks, and `enforce_admins: true` is what makes them bind the administrator too. Raise this to `1` in the same breath as adding a second collaborator who can review. |
-| Require review from Code Owners `yes` | `no` | `.github/CODEOWNERS` exists and names `@maragung` on every pattern. Requiring code-owner review is the row above with a stricter resolver, so on one account it is the same deadlock and not a second safeguard. |
-| Require linear history `yes` | `no` | Every pull request that has landed on `main` landed as a merge commit — `Merge pull request #NN from …`, or `Merge PR #NN: …` before the repository moved to the GitHub UI — never as a squash. Linear history forbids merge commits outright, so the setting does not distinguish a good merge from a bad one; it forbids the repository's own history, and any release merged the way every release has been merged. Deliberately no count of them appears here: this row used to cite one, and a running total in a passage about a setting that forbids the thing being counted is a figure that can only rot. If the convention ever changes to squash, this row follows it; the convention does not follow this row. |
-
-### Required status checks
-
-`ci.yml` and `instrumentation.yml` both run on every pull request and every
-push to `main`. Their check names are the job `name:` values, which are
-deliberately not the job keys — add these *names*, not the keys.
+`ci.yml` and `e2e.yml` both run on every pull request and every push to `main`. Their check names are the job `name:` values, which are deliberately not the job keys — add these *names*, not the keys.
 
 | Workflow | Check name (job key) | Covers |
 | --- | --- | --- |
 | `CI` | `Documentation figures` (`docs`) | `scripts/check-doc-figures.sh` — the figures the documents state against the files that pin them, the repository paths they name, and the check names in this table |
-| `CI` | `FreeRDP native (4 ABIs)` (`native`) | The four-ABI native build that `lint`, `test` and `assemble` restore from cache instead of rebuilding. `smoke` and `stress` never need it — they consume an APK or a JVM task — and `docs` needs no JDK at all |
-| `CI` | `Lint (release variant)` (`lint`) | `lintRelease` |
-| `CI` | `Unit and integration tests` (`test`) | The JVM/Robolectric suite — debug variant only, because AGP 9 removed `testReleaseUnitTest` |
-| `CI` | `APKs, AAB and signatures` (`assemble`) | Debug and release APKs, the AAB, and the signature checks |
-| `CI` | `Boot the built APKs (crash-on-open gate)` (`smoke`) | Installs and launches the built APK on an emulator |
-| `Instrumentation` | `connectedAndroidTest` (`instrumentation`) | The instrumented suite, on a hosted runner that boots its own headless AVD |
+| `CI` | `Lint` (`lint`) | `./gradlew spotlessCheck lintRelease` — Spotless ktlint check + the Android lint variant's full report |
+| `CI` | `Unit tests` (`unit`) | `./gradlew testDebugUnitTest --continue` — Robolectric tests against the JVM at SDK 35, no emulator |
+| `CI` | `Assemble (debug smoke)` (`assemble`) | `./gradlew assembleDebug -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild` — the smoke build that catches a Compose/Hilt/KSP regression without paying for the four-ABI native build |
 
-The six `CI` rows are the set `ci.yml` itself names in its job-layout comment.
-The `Instrumentation` row is the one that has to be added deliberately, because
-it is the most expensive check in the repository. It is a genuine candidate
-rather than a formality: `instrumentation.yml` `runs-on: ubuntu-24.04` on the
-hosted pool and boots its own `system-images;android-35;default;x86_64` AVD, so
-it executes the suite instead of skipping it — it can fail, and it can therefore
-gate. (Until the workflow was rewritten it declared a
-`[self-hosted, android-emulator]` runner and was silently absent whenever no such
-runner was online; that model is gone.)
+The four `CI` rows are the set `ci.yml` itself names in its job-layout comment. The `E2E` matrix is **not** in the list: it is the most expensive check in the repository (a 30-min matrix of four booted AVDs) and is gated by the `e2e` label on PRs, so a PR without the label has no `E2E / Instrumented tests (API …)` check to report. A check that reports `skipped` never reports success, so requiring it would make `main` permanently unmergeable. The `Release` workflow is **not** a required check either, because it is gated by the `vX.Y.Z` tag push and should not block a merge.
 
-`CI`'s `Long idle stress test` (`stress`) is **not** in the list: it is a single
-90-minute job against a real OpenSSH server, meant to be watched rather than to
-block a merge. It is also the one `ci.yml` job a plain `workflow_dispatch` does
-not start — it needs the dispatch's `stress` input set, because a job that holds
-a connection open for 30 minutes should not be the tail of every on-demand run.
+Settings are at `github.com/SecretArrow/EclipseSSH/settings/branches`.
 
-`CI`'s `Close the CI window` (`close-window`) is **not** in the list either, and unlike `stress` it
-must never be added to it. It is `skipped` on every ordinary run — it appears only in a run that
-started while the repository was public, which is the one situation it exists for — and a required
-check that reports `skipped` never reports success, so requiring it would make `main` permanently
-unmergeable. A job whose whole purpose is to be absent most of the time can never be a gate.
+## Rule for `main`
 
-The `Release build` workflow is **not** a required check for `main`, because it
-is gated by the `release` environment (see below) and should not block a merge.
-The `Tagged release` workflow only runs on tag pushes and is not on the `main`
-path.
+| Setting | Value | Why |
+| --- | --- | --- |
+| Required status checks | the four `CI` rows above | So a red `CI` job blocks the merge. |
+| Require branches up to date before merging | off | The autofix bot commits back to the PR branch; "up to date" would re-trigger CI on every autofix commit, which doubles the runner minutes for no signal. |
+| Require linear history | on | The autofix commit is a fast-forward; merge commits are not allowed. |
+| Require a pull request before merging | on | So every change to `main` lands through a PR, including those by the administrator. |
+| Required approving reviews | 0 | The repo is currently single-maintainer; the gate is the CI, not the review. Bump to 1 when a second maintainer joins. |
+| Enforce for administrators | on | So the rule binds the administrator as well; the audit's "even against the administrator" claim stays true. |
+| Allow force pushes | off | So a `git push --force` to `main` is refused. |
+| Allow deletions | off | So a `git push origin --delete main` is refused. |
 
-## Environment: `release`
+## Applying the rule
 
-`Release build` is pinned to an environment called `release`. To require a human
-click before a release artifact is built and uploaded:
-
-1. Settings -> Environments -> New environment -> name `release`.
-2. "Required reviewers" -> add the maintainers who can green-light a
-   release. One is enough for a single-maintainer repo.
-3. "Wait timer" -> 0 minutes (the maintainer approves when ready).
-
-**Open item.** Seven workflows read the signing secrets — `ci.yml`,
-`instrumentation.yml`, `release.yml`, `tagged-release.yml`,
-`android-release-test.yml`, `universal-apk-test.yml` and `android-ubuntu-e2e.yml`
-— and `release.yml` is the only one behind this environment, so the other six
-reach those secrets with no approval step. Five of those six use the secrets to
-sign something that is then *tested*: they run on a push, a pull request, a
-published release, or a dispatch, and what they hand to the tests is a validation
-build whose signature only has to be real enough for the install to succeed.
-`Tagged release` is the one that *publishes* — it runs on a tag push, it builds
-from the tag, and it attaches those APKs to a GitHub release with nobody looking.
-Adding `environment: release` to its build job would put an approval in front of
-that, at the cost of making `git push --tags` wait for a click.
-
-## Secrets
-
-The seven workflows named above read these secrets:
-
-| Secret | Purpose |
-| --- | --- |
-| `RELEASE_KEYSTORE_BASE64` | `base64 -w0 keystore/eclipse-release.jks` — the upload key, no newlines |
-| `RELEASE_KEYSTORE_PROPERTIES` | The `keystore.properties` file contents, with a trailing newline |
-
-All seven write both to `keystore.properties` and `keystore/eclipse-release.jks`
-inside the runner and `chmod 600` them. Each has a step named "Shred signing
-material" (`if: always()`, so it runs on failure too) that removes both — `rm -f
-keystore.properties` and `rm -rf keystore`. It is `rm`, not `shred(1)`: the
-material lives on an ephemeral hosted runner's disk, which is discarded with the
-VM, and no workflow caches the workspace. The three caches in
-`.github/workflows/` — the Gradle user home (`gradle/actions/setup-gradle`), the
-two native build directories (`freerdp/build` and `linux/build`), and the
-Robolectric jar cache under `~/.m2/repository` — all live outside the checked-out
-tree; `docs/ci.md` counts them the same way.
-
-Rotate by:
-
-1. Replace the local keystore.
-2. `base64 -w0 keystore/eclipse-release.jks > new-jks.b64`.
-3. Settings -> Secrets and variables -> Actions -> Update
-   `RELEASE_KEYSTORE_BASE64` to the new value.
-4. Update `RELEASE_KEYSTORE_PROPERTIES` with the new
-   `storePassword`, `keyAlias`, `keyPassword`.
-
-The first release after a rotation must be built twice: once to
-publish the v2+v3 signed APK (existing installs upgrade because
-v3 carries a rotation proof), and once after a delay if the Google
-Play key is in use (Play requires a separate API call to register
-the new key).
-
-## Where the emulator comes from
-
-There is no self-hosted runner and no `android-emulator` label to provision.
-Every workflow that needs a device boots an ephemeral emulator on the hosted
-pool and keeps its own pins in the workflow itself, so the result does not
-depend on what the runner image happens to ship that week. The four that boot
-one for a matrix or the instrumented suite — `instrumentation.yml`,
-`android-release-test.yml`, `universal-apk-test.yml`, `android-ubuntu-e2e.yml`
-— declare them in an `env:` block (`BUILD_TOOLS`, `COMPILE_SDK`, `SYSTEM_IMAGE`,
-`FREERDP_NDK_VERSION`, `FREERDP_CMAKE_VERSION`). `ci.yml`'s `smoke` job pins
-only what it uses, inline: `cmdline-tools-version` and the
-`system-images;android-35;default;x86_64` package it boots. That is why a
-device-level check can be a required status check at all: it cannot be
-"silently absent", only red, green, or queued.
+`scripts/ci-window.sh open` is a `PUT` to `/repos/SecretArrow/EclipseSSH/branches/main/protection` with the settings above, made before any workflow that needs the rule to bind runs. `scripts/ci-window.sh protect` re-applies it on its own; `scripts/ci-window.sh status` reports whether it is in force. A token with administrative access to the repository is required; the token is pulled from the environment (`GH_TOKEN`), never written anywhere, and never echoed.

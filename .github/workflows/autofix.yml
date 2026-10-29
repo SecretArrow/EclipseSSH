@@ -1,0 +1,93 @@
+# Auto-fix: Spotless + ktlint format, committed back to the PR branch.
+#
+# On PR open and synchronize, runs `./gradlew spotlessApply` and commits the
+# diff back to the PR branch under the github-actions[bot] identity. The
+# commit is a fast-forward, so branch protection's "require linear history"
+# stays satisfied. The bot only touches files Spotless rewrites — it never
+# makes a code change, so a review is not blocked on a re-read.
+#
+# The workflow uses GITHUB_TOKEN (not the user's GH_PAT) for the push, because
+# GITHUB_TOKEN is scoped to the repo it runs in and is automatically revoked
+# when the PR is closed. The token's contents:write permission is granted
+# explicitly below; without it the push would fail with `403`.
+name: Auto-fix
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  # One autofix run per PR at a time; a follow-up push cancels the in-flight
+  # one because the diff it would commit is already stale.
+  group: autofix-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+  BUILD_TOOLS: '36.0.0'
+  COMPILE_SDK: 'android-37.0'
+
+jobs:
+  spotless-apply:
+    name: Apply Spotless + ktlint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Don't run on PRs from forks — the GITHUB_TOKEN cannot push back to a
+    # fork's branch, and the autofix would either fail or push to the wrong
+    # repo. Forked PRs need to run `./gradlew spotlessApply` locally.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+        with:
+          distribution: temurin
+          java-version: '17.0.13'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Install Android SDK 37 + build-tools 36.0.0
+        run: |
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;${COMPILE_SDK}" \
+            "build-tools;${BUILD_TOOLS}" > /dev/null
+
+      - name: Run Spotless apply
+        run: ./gradlew spotlessApply --no-daemon
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -m "Auto-fix: apply Spotless + ktlint formatting"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}

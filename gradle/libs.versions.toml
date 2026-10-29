@@ -22,6 +22,16 @@ bouncycastle = "1.86"
 # f39cbe2 is the revision whose RFB handshake, pixel format and thread model the
 # VNC engine in dev.eclipse.ssh.vnc was written and tested against.
 vernacular-vnc = "f39cbe28538a94ee70113ce0909a2e40b1bfe8f1"
+# Apache-2.0 (terminal-emulator + terminal-view are the only Termux submodules under Apache;
+# termux-app as a whole is GPL-3.0, but these two are derivatives of jackpal/Android-Terminal-Emulator
+# and retain its Apache-2.0 license — see terminal-emulator/LICENSE in the termux-app tree).
+# Used by the new TermuxTerminalView adapter to replace the legacy custom Compose renderer.
+termux-terminal-emulator = "0.114.1"
+termux-terminal-view = "0.114.1"
+# Spotless auto-fix: ktlint runs under Spotless so one task covers both style + format.
+# Pinned to ktlint_official 1.5.0 (matches the Kotlin 2.4.20 dialect used by AGP 9.4.1).
+spotless = "7.0.4"
+ktlint = "1.5.0"
 slf4j = "2.0.20"
 eddsa = "0.3.0"
 biometric = "1.1.0"
@@ -112,6 +122,15 @@ androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "andro
 androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
 
+# --- Terminal engine (Termux terminal-view, Apache-2.0) ---
+# terminal-emulator provides TerminalEmulator + TerminalBuffer (the VT100/ANSI parser).
+# terminal-view provides TerminalView (the Canvas renderer with realtime streaming,IME,mouse).
+# Both are pure Java/Kotlin — no JNI dependency on libtermux.so is required when only the
+# emulator+view are used (the JNI lib is needed by TerminalSession for local PTY, which we
+# don't use: EclipseSSH drives the emulator via the SSH channel bytes directly).
+termux-terminal-emulator = { module = "com.termux:terminal-emulator", version.ref = "termux-terminal-emulator" }
+termux-terminal-view = { module = "com.termux:terminal-view", version.ref = "termux-terminal-view" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 # The :freerdp module is pure Java (the JNI wrapper), so it needs the library
@@ -125,3 +144,4 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

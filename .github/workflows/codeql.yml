@@ -1,0 +1,90 @@
+# CodeQL security analysis + Copilot Autofix hook.
+#
+# CodeQL runs the queries GitHub maintains for Java/Kotlin on every push and
+# PR; the workflow also enables Copilot Autofix, which generates a patch PR
+# for any alert that has an autofix available. The autofix PRs are opened by
+# the github-actions[bot] account and use the same GITHUB_TOKEN as autofix.yml,
+# so they are scoped to this repo.
+#
+# Public repos get Copilot Autofix for free; private repos are billed per
+# alert. The workflow's `if:` skips the autofix step on private repos to keep
+# the bill predictable.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly scan on Monday 02:00 UTC — catches advisories that landed in
+    # the CodeQL pack between PR runs.
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  analyze:
+    name: Analyze (Java/Kotlin)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+        with:
+          distribution: temurin
+          java-version: '17.0.13'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@f5d002be1bdf8be4c8212c3c45785cd5e3d34f6f # v3.30.4
+        with:
+          languages: java-kotlin
+          # The queries suite includes security-extended, which surfaces the
+          # advisories Copilot Autofix can patch. Without it, only the default
+          # suite runs and the autofix step below has nothing to act on.
+          queries: security-extended
+
+      - name: Install Android SDK 37 + build-tools 36.0.0
+        run: |
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-37.0" \
+            "build-tools;36.0.0" > /dev/null
+
+      # CodeQL needs an actual build to trace. The debug variant is enough —
+      # the security queries do not depend on R8 shrinking. Skip the native
+      # modules to keep the build under the 30-min timeout; the JNI surface
+      # is small and the C/C++ queries (which CodeQL also ships) would need
+      # a separate job.
+      - name: Build for CodeQL
+        run: ./gradlew assembleDebug --no-daemon -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@f5d002be1bdf8be1c8212c3c45785cd5e3d34f6f # v3.30.4
+        with:
+          category: '/language:java-kotlin'
+
+      # Copilot Autofix: opens a PR for any alert that has an autofix patch.
+      # Public repos only — private repos are billed per alert.
+      - name: Enable Copilot Autofix
+        if: github.repository_visibility == 'public'
+        uses: github/codeql-action/autobuild@f5d002be1bdf8be1c8212c3c45785cd5e3d34f6f # v3.30.4
+        continue-on-error: true

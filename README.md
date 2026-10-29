@@ -261,41 +261,36 @@ between a frame and the screen is the one part of the terminal no JVM test can s
 
 ## Continuous integration
 
-Eleven GitHub Actions workflows in all; [`docs/ci.md`](docs/ci.md) holds the full table. Three of them
-are what a release passes through:
+Five GitHub Actions workflows in all; [`docs/ci.md`](docs/ci.md) holds the full table.
 
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — the gate that runs on every push to
-  `main` and every pull request. Eight jobs, so a failure lands on the thing that is actually broken:
-  a documentation figure check, both native modules, release lint, the unit and integration suite
-  (the debug variant only, since AGP 9 removed `testReleaseUnitTest`), the instrumentation and AAB
-  builds with their signature checks, an emulator crash-on-open smoke, and the job that closes the
-  CI window — with the idle stress matrix as a job that runs only when a `workflow_dispatch` sets
-  its `stress` input. A
-  push-triggered idle test would burn the runner's metered time for a regression the rest of the
-  suite cannot see anyway, and a 30-minute idle test behind every on-demand run would put a
-  75-minute tail on checks that otherwise answer in 35. The
-  debug and release APKs are uploaded as build artifacts, and the test reports are uploaded even when
-  a step fails.
+  `main` and every pull request. **Four jobs**, so a failure lands on the thing that is actually broken:
+  the documentation figure check, Spotless + Android lint, the Robolectric unit suite, and a debug-APK
+  smoke build. The four run in parallel; wall clock is `max(docs, lint, unit, assemble)` rather than
+  the serial sum, so the cheap jobs do not wait on the expensive ones. The expensive paths the old
+  `ci.yml` carried — the four-ABI FreeRDP native build, the emulator crash-on-open, and the 90-minute
+  idle stress matrix — moved to `e2e.yml` and `release.yml`. The debug APK and the test reports are
+  uploaded as artifacts even when a step fails.
+- [`.github/workflows/e2e.yml`](.github/workflows/e2e.yml) — `connectedDebugAndroidTest` on a
+  matrix of booted AVDs (API 28, 30, 33, 35), each under a hard 30-min timeout. PRs without the `e2e`
+  label get only the cheap unit-test gate from `ci.yml`; the matrix is the most expensive check in
+  the repository and should not block every merge.
 - [`.github/workflows/release.yml`](.github/workflows/release.yml) — the release build, run on
-  demand or on every push to `main`. `bundleRelease` first and then `assembleRelease` (that order,
-  because per-ABI splits left behind by the first crash a later bundle), the APK signature and the
-  AAB signature each verified — the AAB is not an APK and `apksigner` cannot read it as one — and the
-  APKs, the AAB and their SHA-256 sums uploaded as a single artifact.
-- [`.github/workflows/tagged-release.yml`](.github/workflows/tagged-release.yml) — the
-  publication path. A `git tag vX.Y.Z && git push --tags` triggers a clean `assembleRelease`
-  from the tag, asserts the source matches the tag (`git describe --exact-match`), verifies the
-  signature, computes checksums, and creates a GitHub release with every APK, the AAB and the
-  `SHA256SUMS.txt` attached — as a **draft**, so publishing stays a deliberate second step.
+  a `vX.Y.Z` tag push. Builds the four-ABI FreeRDP native tree, the release AAB and per-ABI release
+  APKs, both signed with the keystore restored from the CI secret, and attaches every artifact to a
+  GitHub Release. The native build runs only here, so a PR does not pay for it.
+- [`.github/workflows/autofix.yml`](.github/workflows/autofix.yml) — runs `./gradlew spotlessApply`
+  on PR open/synchronize and commits the diff back to the PR branch under the `github-actions[bot]`
+  identity. The commit is a fast-forward, so branch protection's "require linear history" stays
+  satisfied.
+- [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml) — CodeQL security analysis for
+  Java/Kotlin on every push, PR, and a weekly cron. The workflow also enables Copilot Autofix, which
+  opens a patch PR for any alert with an autofix available.
 
-Two more are worth knowing from here: `instrumentation.yml` runs `connectedAndroidTest` on a hosted
-runner that boots its own headless AVD, so the emulator suite is executed rather than only compiled;
-and `fast-test.yml` is the lint-and-suite gate a work-in-progress branch uses without pushing to
-`main` first.
-
-Signing in CI is optional. Set the repository secrets `RELEASE_KEYSTORE_BASE64` and
-`RELEASE_KEYSTORE_PROPERTIES` to sign for real; without them the release APK is built with the
-debug key and says so. [`docs/ci.md`](docs/ci.md) covers the workflows step by step, including how
-to read the signature output.
+Signing in CI is optional. Set the repository secrets `RELEASE_KEYSTORE_BASE64`,
+`RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD` to sign for real; without
+them the release APK is built with the debug key and says so. [`docs/ci.md`](docs/ci.md) covers the
+workflows step by step, including how to read the signature output.
 
 ## Report
 

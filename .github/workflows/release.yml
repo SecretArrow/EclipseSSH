@@ -1,230 +1,124 @@
-# Release build, on demand or on every push to main. A separate workflow
-# from ci.yml so the push/PR gate stays fast and a release can be rebuilt
-# at any time without rerunning lint and the full test suite. A tag push
-# triggers the heavier tagged-release.yml workflow.
+# Tag-triggered release build.
 #
-# Every action is pinned to a commit SHA. A floating @vN is a mutable
-# pointer, and a few GitHub actions have been rewritten under the same
-# tag in the last few years; pinning the SHA closes that.
-name: Release build
+# On a `v*` tag push, builds a universal AAB + per-ABI release APKs, signs them
+# with the release keystore (loaded from the RELEASE_KEYSTORE_* secrets), and
+# publishes a GitHub Release with the artifacts attached.
+#
+# The release path is the only place the native :freerdp and :linux modules
+# build — the per-ABI splits in app/build.gradle.kts engage only for an
+# `assembleRelease` invocation with no `bundle` task in the same Gradle call,
+# so the workflow runs the bundle first and the APKs second.
+name: Release
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (must already exist)
+        required: true
 
 permissions:
-  contents: read
-
-concurrency:
-  # A second push to main cancels the first. The release on main is
-  # built from whatever HEAD looks like at the moment the runner wakes.
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 env:
   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
   BUILD_TOOLS: '36.0.0'
   COMPILE_SDK: 'android-37.0'
-  TARGET_SDK: 'android-35'
-  # Same pins as ci.yml; the root-invoked assemble/bundle tasks compile the
-  # :freerdp and :linux modules, whose native builds need them.
   FREERDP_NDK_VERSION: '29.0.13113456'
   FREERDP_CMAKE_VERSION: '4.1.2'
 
 jobs:
-  release:
-    name: Build signed release artifacts
+  build:
+    name: Build release artifacts
     runs-on: ubuntu-24.04
-    # A manual approval gate is set on this job's environment (`release`),
-    # so a merge to main does not immediately publish. Configure reviewers
-    # in Settings -> Environments -> release. The push trigger exists for
-    # forks that have not configured an environment, and to make the
-    # workflow visible on every push.
-    environment: release
-    # The :freerdp native build is warm from the actions/cache entry ci.yml
-    # saved, but a changed cache key makes this job pay the cold ~30-minute
-    # four-ABI build once.
-    timeout-minutes: 90
-
+    timeout-minutes: 60
     steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Set up JDK 17.0.13
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
-          check-latest: false
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-        with:
-          cmdline-tools-version: '11479570'
-          packages: >-
-            platform-tools
-            platforms;${{ env.COMPILE_SDK }}
-            build-tools;${{ env.BUILD_TOOLS }}
-            ndk;${{ env.FREERDP_NDK_VERSION }}
-          cache-packages: true
+      - uses: gradle/actions/setup-gradle@v4
 
-      - name: Install pinned CMake and Ninja
-        # The :freerdp native build drives CMake directly; the SDK manager
-        # does not carry the 4.x line it needs. Same step as ci.yml.
+      - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29 + CMake
         run: |
-          set -euo pipefail
-          python3 -m pip install --disable-pip-version-check \
-            "cmake==${FREERDP_CMAKE_VERSION}" ninja
-          cmake --version | grep -F "cmake version ${FREERDP_CMAKE_VERSION}"
-          ninja --version
+          ANDROID_HOME="$HOME/android-sdk"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          curl -fsSLO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          export ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;${COMPILE_SDK}" \
+            "build-tools;${BUILD_TOOLS}" \
+            "ndk;${FREERDP_NDK_VERSION}" \
+            "cmake;3.30.5" > /dev/null
+          # FreeRDP pins CMake 4.x, which the SDK manager does not carry.
+          pipx install "cmake==${FREERDP_CMAKE_VERSION}"
 
-      - name: Cache the FreeRDP native build tree
-        # Same entry ci.yml restores: warm builds skip configure and Ninja
-        # rebuilds nothing. The release build is a release of exactly what CI
-        # verified, so sharing the cache keeps that literally true.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: freerdp/build
-          key: freerdp-native-${{ runner.os }}-${{ hashFiles('freerdp/build.gradle.kts') }}
-
-      - name: Install patch (proot-patches are applied by fetchLinuxSource)
-        run: sudo apt-get install -y -qq patch
-
-      - name: Cache the Linux userspace native build tree
-        # Same entry ci.yml restores, for the same reason: the release APK
-        # ships the userspace, built from exactly the tree CI verified.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: linux/build
-          key: linux-native-${{ runner.os }}-${{ hashFiles('linux/build.gradle.kts', 'linux/proot-patches/*.patch') }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Cache Robolectric runtime jars
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.m2/repository/org/robolectric
-          key: robolectric-${{ runner.os }}-${{ env.COMPILE_SDK }}-${{ hashFiles('gradle/libs.versions.toml') }}
-          restore-keys: robolectric-${{ runner.os }}-${{ env.COMPILE_SDK }}-
-
-      - name: Restore release signing material
-        id: signing
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PROPERTIES: ${{ secrets.RELEASE_KEYSTORE_PROPERTIES }}
+      - name: Restore release keystore
         run: |
-          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_KEYSTORE_PROPERTIES" ]; then
-            mkdir -p keystore
-            printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > keystore/eclipse-release.jks
-            printf '%s\n' "$RELEASE_KEYSTORE_PROPERTIES" > keystore.properties
-            chmod 600 keystore/eclipse-release.jks keystore.properties
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No signing secrets set: the release APK will carry the debug key." >&2
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-          fi
+          keystore_dir="$HOME/keystore"
+          mkdir -p "$keystore_dir"
+          printf '%s' "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$keystore_dir/release.keystore"
+          cat > "$GITHUB_WORKSPACE/keystore.properties" <<EOF
+          storeFile=$keystore_dir/release.keystore
+          storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}
+          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
+          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          EOF
 
-      - name: Verify the restored keystore is the canonical one
-        # Before anything is built. `apksigner verify` further down reads the
-        # finished APK and says *a* key signed it - the check v1.5.0 passed while
-        # shipping a regenerated keystore. This reads the keystore itself and says
-        # *which* key it is, so a wrong secret fails here rather than at install
-        # time on every existing device.
-        if: steps.signing.outputs.signed == 'true'
-        run: testing/verify-keystore.sh keystore/eclipse-release.jks keystore.properties
+      - name: Assemble release AAB (universal)
+        run: ./gradlew bundleRelease --no-daemon
 
-      - name: Bundle the AAB, then assemble the release APKs
-        # Two separate invocations, in this order, on purpose. AGP (as of 9.4.0)
-        # refuses to build a bundle while ABI splits are on - PerModuleBundleTask
-        # reads the shared shrunk-resources directory expecting one file and
-        # finds five (issuetracker.google.com/402800800) - so splits.abi stands
-        # down whenever a bundle task shares the invocation. Assembling first
-        # would not work either: the per-ABI files it leaves behind would crash
-        # this later bundle task just the same. Bundle first, then assemble: the
-        # AAB and the five APKs (four ABI splits + universal) all leave the job.
+      - name: Assemble release APKs (per-ABI + universal)
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Sign AAB with bundletool (Play-ready)
         run: |
-          ./gradlew --stacktrace bundleRelease
-          ./gradlew --stacktrace assembleRelease
+          curl -fsSLO https://github.com/google/bundletool/releases/download/1.17.0/bundletool-all-1.17.0.jar
+          java -jar bundletool-all-1.17.0.jar build-apks \
+            --bundle=app/build/outputs/bundle/release/app-release.aab \
+            --output=app/build/outputs/bundle/release/app.apks \
+            --mode=universal
 
-      - name: Verify the release APK signatures
-        run: |
-          set -euo pipefail
-          APKSIGNER="$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner"
-          mapfile -t APKS < <(find app/build/outputs/apk/release -name '*.apk' | sort)
-          test "${#APKS[@]}" -ge 1 || { echo "no release APKs found"; exit 1; }
-          for APK in "${APKS[@]}"; do
-            echo "== Verifying $APK"
-            "$APKSIGNER" verify --verbose --min-sdk-version 28 --print-certs "$APK"
-            if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
-              "$APKSIGNER" verify --verbose --min-sdk-version 24 "$APK" | tee /tmp/sigs.txt
-              grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" /tmp/sigs.txt
-              grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" /tmp/sigs.txt
-            fi
-          done
-
-      - name: Verify the AAB signature
-        # AABs use the JAR signature scheme (META-INF/{ALIAS}.SF/.RSA) rather
-        # than the APK signature scheme, so apksigner verify cannot read
-        # them. Assert the JAR signature blocks are present and well-formed.
-        run: |
-          set -euo pipefail
-          AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
-          test -n "$AAB" || { echo "no AAB found in app/build/outputs/bundle/release"; exit 1; }
-          echo "== AAB under test: $AAB"
-          unzip -l "$AAB" | grep -E 'META-INF/[^/]+\.(SF|RSA|DSA|EC)$' | tee /tmp/aab-sigs.txt
-          grep -q '\.SF' /tmp/aab-sigs.txt || { echo "no JAR .SF in AAB"; exit 1; }
-          grep -q '\.RSA\|\.DSA\|\.EC' /tmp/aab-sigs.txt || { echo "no JAR signature block in AAB"; exit 1; }
-          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
-            echo "AAB is signed with the release key."
-          else
-            echo "AAB is signed with the debug key (no release secrets in CI)."
-          fi
-
-      - name: Compute APK and AAB checksums
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          {
-            echo "# APKs (sha256)"
-            for f in app/build/outputs/apk/release/*.apk; do
-              sha256sum "$f" | awk '{sub(/^.*\//,"",$2); print $1"  "$2}'
-            done
-            echo
-            echo "# AAB (sha256)"
-            for f in app/build/outputs/bundle/release/*.aab; do
-              sha256sum "$f" | awk '{sub(/^.*\//,"",$2); print $1"  "$2}'
-            done
-          } > app/build/outputs/SHA256SUMS.txt
-          cat app/build/outputs/SHA256SUMS.txt
-
-      - name: Upload release APKs, AAB and checksums
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
         with:
-          name: eclipse-ssh-release
+          name: release-artifacts
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-            app/build/outputs/SHA256SUMS.txt
-          if-no-files-found: error
+            app/build/outputs/bundle/release/*.apks
+          retention-days: 90
 
-      - name: Shred signing material
-        if: always()
-        run: |
-          rm -f keystore.properties
-          rm -rf keystore
-
-  # Closes a window opened by scripts/ci-window.sh. Skipped - and so free, and
-  # secret-free - whenever the repository is private, which is every ordinary
-  # push. `always()` because a red release is exactly when a window is most
-  # likely to be left open. It needs the other job only to know when the run is
-  # over, not for anything it produces.
-  close-window:
-    name: Close the CI window
-    needs: [release]
-    if: always()
-    uses: ./.github/workflows/close-ci-window.yml
-    secrets: inherit
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@6b46ae6de9cb4f67feeed5e2c6f5b6766a3b553d # v4.2.0
+        with:
+          name: release-artifacts
+          path: artifacts
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@de2c0eb89ae2a47b803d518497f8b04e5d3a1f19 # v2.0.8
+        with:
+          token: ${{ secrets.GH_PAT }}
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            artifacts/app/build/outputs/apk/release/*.apk
+            artifacts/app/build/outputs/bundle/release/*.aab
