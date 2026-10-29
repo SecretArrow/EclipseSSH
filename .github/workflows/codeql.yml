@@ -45,7 +45,7 @@ jobs:
           java-version: '17.0.13'
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@f5d002be1bdf8be4c8212c3c45785cd5e3d34f6f # v3.30.4
+        uses: github/codeql-action/init@v3
         with:
           languages: java-kotlin
           # The queries suite includes security-extended, which surfaces the
@@ -78,13 +78,13 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@f5d002be1bdf8be1c8212c3c45785cd5e3d34f6f # v3.30.4
+        uses: github/codeql-action/analyze@v3
         with:
           category: '/language:java-kotlin'
 
-      # Copilot Autofix: opens a PR for any alert that has an autofix patch.
-      # Public repos only — private repos are billed per alert.
-      - name: Enable Copilot Autofix
-        if: github.repository_visibility == 'public'
-        uses: github/codeql-action/autobuild@f5d002be1bdf8be1c8212c3c45785cd5e3d34f6f # v3.30.4
-        continue-on-error: true
+      # Copilot Autofix is enabled automatically for public repositories when
+      # CodeQL is enabled — no separate workflow step is needed. The autofix
+      # suggestions appear as PR comments on the alert's PR, and any patch PRs
+      # are opened by the github-actions[bot] account. See
+      # https://docs.github.com/en/code-security/code-scanning/managing-code-scanning-alerts/about-autofix
+      # for the full flow.

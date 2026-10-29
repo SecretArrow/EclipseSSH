@@ -113,7 +113,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --no-daemon --continue
-      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: instrumented-reports-api-${{ matrix.api-level }}

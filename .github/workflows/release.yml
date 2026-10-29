@@ -184,7 +184,7 @@ jobs:
           echo "Checksums:"
           cat "$GITHUB_WORKSPACE/SHA256SUMS.txt"
 
-      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: |
@@ -200,12 +200,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@6b46ae6de9cb4f67feeed5e2c6f5b6766a3b553d # v4.2.0
+      - uses: actions/download-artifact@v4
         with:
           name: release-artifacts
           path: artifacts
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@de2c0eb89ae2a47b803d518497f8b04e5d3a1f19 # v2.0.8
+        uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GH_PAT }}
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}

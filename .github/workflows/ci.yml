@@ -98,7 +98,7 @@ jobs:
         run: ./gradlew spotlessCheck --no-daemon
       - name: Android lint
         run: ./gradlew lintRelease --no-daemon
-      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: lint-reports
@@ -139,7 +139,7 @@ jobs:
             "build-tools;${BUILD_TOOLS}" > /dev/null
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --continue
-      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: unit-test-reports
@@ -185,7 +185,7 @@ jobs:
             "ndk;29.0.13113456" > /dev/null
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon -x :freerdp:externalNativeBuild -x :linux:externalNativeBuild
-      - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
+      - uses: actions/upload-artifact@v4
         with:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
