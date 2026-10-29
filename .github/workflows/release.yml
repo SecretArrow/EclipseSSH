@@ -1,13 +1,25 @@
-# Tag-triggered release build.
+# Tag-triggered release build with per-ABI APK splits + universal AAB.
 #
-# On a `v*` tag push, builds a universal AAB + per-ABI release APKs, signs them
-# with the release keystore (loaded from the RELEASE_KEYSTORE_* secrets), and
-# publishes a GitHub Release with the artifacts attached.
+# On a `v*` tag push, this workflow:
+#   1. Restores the release keystore from the RELEASE_KEYSTORE_BASE64 secret.
+#   2. Verifies the keystore holds the canonical EclipseSSH release key
+#      (testing/verify-keystore.sh — the canonical SHA-256 is in
+#      testing/verify-release-signer.sh).
+#   3. Builds the four-ABI FreeRDP native tree (only here, not in ci.yml).
+#   4. Runs `bundleRelease` first (universal AAB) then `assembleRelease`
+#      (per-ABI APK splits + universal APK). The order matters: per-ABI
+#      splits left behind by `assembleRelease` crash a later `bundleRelease`,
+#      and the app/build.gradle.kts splits block engages only for an
+#      `assembleRelease` invocation with no `bundle` task in the same call.
+#   5. Verifies every APK's signature with `apksigner`.
+#   6. Computes SHA-256 checksums of every APK + the AAB into SHA256SUMS.txt.
+#   7. Publishes a GitHub Release with every artifact attached, including
+#      SHA256SUMS.txt so a downloader can verify integrity.
 #
-# The release path is the only place the native :freerdp and :linux modules
-# build — the per-ABI splits in app/build.gradle.kts engage only for an
-# `assembleRelease` invocation with no `bundle` task in the same Gradle call,
-# so the workflow runs the bundle first and the APKs second.
+# The release signing key is NEVER committed to the repo. See
+# docs/keystore-setup.md for the secure delivery path. The workflow reads
+# the keystore from the four RELEASE_* Actions secrets; the secrets are
+# encrypted at rest and only decrypted into the runner's $HOME at runtime.
 name: Release
 
 on:
@@ -32,7 +44,7 @@ env:
 
 jobs:
   build:
-    name: Build release artifacts
+    name: Build release artifacts (per-ABI splits + AAB)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -57,6 +69,7 @@ jobs:
           mv cmdline-tools latest
           export ANDROID_HOME
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=${{ env.JAVA_HOME }}" >> "$GITHUB_ENV"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
@@ -67,31 +80,109 @@ jobs:
           # FreeRDP pins CMake 4.x, which the SDK manager does not carry.
           pipx install "cmake==${FREERDP_CMAKE_VERSION}"
 
-      - name: Restore release keystore
+      # The keystore is restored from the RELEASE_KEYSTORE_BASE64 secret into
+      # $HOME/keystore/release.keystore. The runner's $HOME is outside the
+      # checked-out repo, so the keystore never lands in git's working tree
+      # and never ends up in any artifact upload. The keystore.properties
+      # file IS written into the workspace (AGP's signingConfig reads it
+      # from rootProject.file("keystore.properties")), but it is gitignored
+      # and the actions/upload-artifact step below never includes it.
+      - name: Restore release keystore from secret
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "RELEASE_KEYSTORE_BASE64 secret is not set. Set it per docs/keystore-setup.md" >&2
+            exit 2
+          fi
           keystore_dir="$HOME/keystore"
           mkdir -p "$keystore_dir"
-          printf '%s' "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > "$keystore_dir/release.keystore"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$keystore_dir/release.keystore"
+          # Write keystore.properties into the workspace (gitignored, never
+          # uploaded as an artifact). AGP's release signingConfig reads it
+          # from rootProject.file("keystore.properties").
           cat > "$GITHUB_WORKSPACE/keystore.properties" <<EOF
           storeFile=$keystore_dir/release.keystore
-          storePassword=${{ secrets.RELEASE_STORE_PASSWORD }}
-          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
-          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          storePassword=$RELEASE_STORE_PASSWORD
+          keyAlias=$RELEASE_KEY_ALIAS
+          keyPassword=$RELEASE_KEY_PASSWORD
           EOF
+          chmod 600 "$GITHUB_WORKSPACE/keystore.properties"
+          echo "Keystore restored to $keystore_dir/release.keystore"
+          ls -l "$keystore_dir/release.keystore"
 
+      # Verify the keystore holds the canonical EclipseSSH release key BEFORE
+      # signing anything. testing/verify-keystore.sh reads the canonical
+      # SHA-256 from testing/verify-release-signer.sh and fails if the
+      # keystore's certificate does not match. This catches:
+      #   - A stolen/different keystore that someone substituted into the
+      #     RELEASE_KEYSTORE_BASE64 secret.
+      #   - A regenerated keystore (the v1.5.0 incident in AUDIT-REPORT.md §56
+      #     shipped with the wrong key because no such check existed).
+      # The script reads storePassword from keystore.properties and never
+      # echoes it; the only thing it prints is the certificate's SHA-256,
+      # which every published APK carries anyway.
+      - name: Verify keystore is the canonical release key
+        run: bash testing/verify-keystore.sh "$HOME/keystore/release.keystore" "$GITHUB_WORKSPACE/keystore.properties"
+
+      # AAB first. Per app/build.gradle.kts's splits block, the per-ABI
+      # splits engage only for an `assembleRelease` invocation with no
+      # `bundle` task in the same Gradle call. Running bundleRelease first
+      # means the splits are not yet on disk when the bundle is built, and
+      # running assembleRelease second leaves the splits on disk after the
+      # build finishes — which is fine because no later bundle task runs.
       - name: Assemble release AAB (universal)
         run: ./gradlew bundleRelease --no-daemon
 
-      - name: Assemble release APKs (per-ABI + universal)
+      # Per-ABI release APKs + universal APK. The splits block in
+      # app/build.gradle.kts produces:
+      #   app-armeabi-v7a-release.apk
+      #   app-arm64-v8a-release.apk
+      #   app-x86-release.apk
+      #   app-x86_64-release.apk
+      #   app-universal-release.apk
+      # Each is signed by AGP's release signingConfig (which reads
+      # keystore.properties), so no separate apksigner step is needed for
+      # the APKs themselves — but the verify step below re-runs apksigner
+      # in --verify mode so a misconfigured signingConfig fails the build
+      # rather than shipping an unsigned APK.
+      - name: Assemble release APKs (per-ABI splits + universal)
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Sign AAB with bundletool (Play-ready)
+      # Verify every APK's signature. apksigner --verify returns non-zero
+      # if the APK is unsigned or signed with a different certificate than
+      # the one apksigner reads from the keystore. This is the post-sign
+      # equivalent of verify-keystore.sh's pre-sign check; both run because
+      # a misconfigured signingConfig can leave the keystore present but
+      # unused, and the post-sign check is what catches that.
+      - name: Verify APK signatures
         run: |
-          curl -fsSLO https://github.com/google/bundletool/releases/download/1.17.0/bundletool-all-1.17.0.jar
-          java -jar bundletool-all-1.17.0.jar build-apks \
-            --bundle=app/build/outputs/bundle/release/app-release.aab \
-            --output=app/build/outputs/bundle/release/app.apks \
-            --mode=universal
+          BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            [ -f "$apk" ] || continue
+            echo "Verifying $apk ..."
+            if ! "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$apk" > /dev/null 2>&1; then
+              echo "FAIL: $apk is not signed or its signature does not verify." >&2
+              exit 1
+            fi
+          done
+
+      # Compute SHA-256 checksums of every APK + the AAB into SHA256SUMS.txt.
+      # The release publish step attaches SHA256SUMS.txt alongside the
+      # artifacts so a downloader can `sha256sum -c SHA256SUMS.txt` against
+      # the file they fetched.
+      - name: Compute SHA-256 checksums
+        run: |
+          cd app/build/outputs
+          {
+            cd apk/release && sha256sum *.apk && cd -
+            cd bundle/release && sha256sum *.aab && cd -
+          } > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          echo "Checksums:"
+          cat "$GITHUB_WORKSPACE/SHA256SUMS.txt"
 
       - uses: actions/upload-artifact@b4b15b8c5c86ac68c5c25ad6f2fdff7d0d8f5c3b # v4.6.2
         with:
@@ -99,8 +190,9 @@ jobs:
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-            app/build/outputs/bundle/release/*.apks
+            SHA256SUMS.txt
           retention-days: 90
+          if-no-files-found: error
 
   publish:
     name: Publish GitHub Release
@@ -122,3 +214,4 @@ jobs:
           files: |
             artifacts/app/build/outputs/apk/release/*.apk
             artifacts/app/build/outputs/bundle/release/*.aab
+            artifacts/SHA256SUMS.txt

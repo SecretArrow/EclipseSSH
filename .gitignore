@@ -33,3 +33,8 @@ keystore/
 # Python bytecode from the E2E and audit harnesses
 __pycache__/
 *.pyc
+
+# The release keystore zip — never commit. See docs/keystore-setup.md.
+key-sign-apk*.zip
+key-sign-apk.zip
+*.keystore.zip
