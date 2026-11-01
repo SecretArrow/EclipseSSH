@@ -1,56 +1,98 @@
 package dev.eclipse.ssh.ui.terminal.termux
 
-import android.util.Log
 import com.termux.terminal.TerminalEmulator
-import com.termux.terminal.TerminalSession
+import com.termux.terminal.TerminalOutput
 import com.termux.terminal.TerminalSessionClient
-import java.lang.reflect.Field
 
 /**
- * A [TerminalSession] that owns its emulator without ever forking a local PTY.
+ * A [TerminalOutput] that drives a [TerminalEmulator] from SSH channel bytes — the half of the
+ * Termux integration the parent class does not provide.
  *
- * Termux's [TerminalSession] is built for the case Termux itself is in: it exec's a local shell
- * (bash, sh, …) under a PTY, then pipes that PTY's stdin/stdout through a pair of background
- * threads into the [TerminalEmulator]. The constructor stores its arguments; the work happens in
- * [initializeEmulator], which in the parent does three things in one breath —
+ * Why this is not a [com.termux.terminal.TerminalSession] subclass: `TerminalSession` is
+ * declared `final` in the termux-app source (`public final class TerminalSession extends
+ * TerminalOutput`), and its job is to fork a local shell under a PTY, then pump that PTY's
+ * stdin/stdout through a pair of background threads into the emulator. EclipseSSH already has a
+ * remote PTY — the SSH channel — and there is no local shell to fork. So we extend
+ * [TerminalOutput] directly (which *is* abstract, with `write(byte[], int, int)` and four other
+ * abstract methods), hold the emulator ourselves, and let the [TermuxTerminalView] attach this
+ * instance to a [com.termux.view.TerminalView] via reflection on its public `mTermSession` and
+ * `mEmulator` fields (the View's `attachSession` accepts only a `TerminalSession`, which we cannot
+ * subclass, so the public-field route is the only path).
  *
- *  1. constructs the [TerminalEmulator],
- *  2. calls `JNI.createSubprocess(...)` to fork the local PTY, and
- *  3. starts three reader/writer/waiter threads against the resulting file descriptors.
+ * Bytes flow:
  *
- * EclipseSSH already *has* a remote PTY — the SSH channel — whose bytes arrive through
- * [dev.eclipse.ssh.ssh.TerminalChannel.output] as a [kotlinx.coroutines.flow.SharedFlow]. Feeding
- * them through a second, local PTY would be both pointless and broken: there is no local shell to
- * read the queue, and the only process the JNI call could fork is the user's *own* app process.
+ *  - **SSH → screen**: [feedBytes] calls [TerminalEmulator.append] directly, on whatever thread
+ *    the SSH collector runs on. The emulator then calls [TerminalSessionClient.onTextChanged] on
+ *    the same thread, which our client invalidates the View from.
  *
- * So this subclass overrides [initializeEmulator] to do step 1 only — construct the emulator and
- * stash it in the parent's private `mEmulator` field via reflection — and exposes [feedBytes] so
- * the SSH collector can drive the emulator directly. Output written *by* the emulator (cursor-
- * position queries, mode replies, the user's keystrokes translated to escape sequences) goes the
- * other way: the parent's [write] would push to the local PTY's stdin queue, but the override
- * forwards to the SSH channel via the sink installed by [setSshByteSink].
+ *  - **screen → SSH**: the View translates keystrokes into escape sequences via the emulator's
+ *    `processCodePoint` etc., which call back into [write] (the abstract method we implement here).
+ *    The override forwards to the SSH channel via the sink installed by [setSshByteSink].
  *
- * The reflection is unavoidable: [mEmulator][`mEmulator`] is private, the parent's
- * [initializeEmulator] sets it inside the same method that calls `JNI.createSubprocess`, and the
- * field is read by [getEmulator] (public) and by every method on this class that needs the screen.
- * We can neither call `super` (which would exec) nor leave the field null.
+ * The emulator is created lazily — the Termux View's `updateSize()` runs after the first layout,
+ * computes columns/rows from its renderer's cell metrics, and the View's body then calls back
+ * into [TermuxTerminalView]'s update block, which calls [ensureEmulator] here. Mirrors the lazy
+ * init Termux's own `TerminalSession` does.
+ *
+ * The [dummySession] field is a [TerminalSession] constructed purely so the
+ * [TerminalSessionClient] callbacks (which all take a non-null `TerminalSession` parameter) have
+ * something to receive. `TerminalSession`'s constructor only stores its arguments — it does not
+ * fork the subprocess until `initializeEmulator` is called, and we never call that, so the
+ * dummy session is inert. The client implementations in this package ignore the session parameter
+ * anyway (they read state from the emulator or from their own fields).
  */
 class EclipseSshTerminalSession(
-    private val sessionClient: TerminalSessionClient,
-    private val transcriptRowsOverride: Int = DEFAULT_TRANSCRIPT_ROWS,
-) : TerminalSession(
-    // shellPath / cwd / args / env are dead weight here — see the class kdoc for why
-    // initializeEmulator is overridden to never call JNI.createSubprocess — but the parent
-    // constructor stores them. Pass values that make that storage harmless: "/bin/true" is a
-    // real binary on every Termux-supported device, exits immediately if anything ever did exec
-    // it, and reads as intent-obvious in a stack trace ("this session is not a shell host").
-    shellPath = "/bin/true",
-    cwd = "/",
-    args = emptyArray(),
-    env = emptyArray(),
-    transcriptRows = transcriptRowsOverride,
-    client = sessionClient,
-) {
+    private val transcriptRows: Int = DEFAULT_TRANSCRIPT_ROWS,
+) : TerminalOutput() {
+
+    /**
+     * The session client, set once via [attachClient] before the first byte flows. Held as a `var`
+     * rather than a constructor parameter because of a forward-reference cycle: the client's
+     * `titleProvider` lambda closes over `this` [EclipseSshTerminalSession] (to read
+     * [currentTitle]), so the client cannot be constructed before this object exists. The pattern
+     * is construct-then-attach, both happening inside the same `remember(channel)` block in
+     * [TermuxTerminalView].
+     *
+     * `@Volatile` because the SSH collector reads it (via [feedBytes] → emulator → callback →
+     * this client) on its thread while the main thread writes it (via [attachClient]).
+     */
+    @Volatile
+    private var sessionClient: TerminalSessionClient? = null
+
+    /**
+     * Install the session client. Must be called exactly once, before any byte flows through
+     * [feedBytes] or any keystroke arrives through [write]. Constructed in
+     * [TermuxTerminalView]'s `remember(channel)` block immediately after this session.
+     */
+    fun attachClient(client: TerminalSessionClient) {
+        sessionClient = client
+    }
+
+    /**
+     * A [TerminalSession] constructed purely so the [TerminalSessionClient] callbacks (which all
+     * take a non-null `TerminalSession` parameter) have something to receive.
+     *
+     * `TerminalSession` is `final` and its constructor requires a `shellPath`, but the body only
+     * stores the arguments — it does not fork the subprocess until `initializeEmulator` is
+     * called, and we never call that. The path passed here is `/bin/true`, a real binary on every
+     * Termux-supported device that exits immediately if anything ever did exec it; chosen so a
+     * stack trace reads as intent-obvious rather than as a leftover from copy-paste.
+     *
+     * Constructed lazily because the client must be attached first (see [attachClient]) — the
+     * `TerminalSession` constructor stores the client, and that client is the same one our
+     * [attachClient] holds. Without lazy, we'd need to pass the client to two constructors.
+     */
+    private val dummySession: com.termux.terminal.TerminalSession by lazy {
+        com.termux.terminal.TerminalSession(
+            "/bin/true",
+            "/",
+            emptyArray(),
+            emptyArray(),
+            transcriptRows,
+            sessionClient ?: error("attachClient must be called before any terminal callback fires"),
+        )
+    }
+
     /**
      * Where bytes the emulator *produces* (user keystrokes, escape-sequence replies) should go.
      *
@@ -66,6 +108,55 @@ class EclipseSshTerminalSession(
     }
 
     /**
+     * The emulator, lazily constructed. Held as a plain `var` because [TerminalEmulator] does
+     * not survive a resize (its [TerminalEmulator.resize] mutates in place, so the same instance
+     * is kept across resizes); only [ensureEmulator] writes the field, only [emulator] reads it.
+     *
+     * `@Volatile` because the SSH collector reads it on its thread (via [feedBytes]) while the
+     * main thread writes it (via [ensureEmulator]); the worst case without volatile is the
+     * collector seeing a half-published reference, which would NPE in `append` — recoverable but
+     * not worth the risk.
+     */
+    @Volatile
+    private var emulatorField: TerminalEmulator? = null
+
+    /** The emulator, or null before the first [ensureEmulator] call. */
+    val emulator: TerminalEmulator? get() = emulatorField
+
+    /**
+     * Construct the emulator if it does not exist, then return it. Called from
+     * [TermuxTerminalView]'s update block on the main thread, the first time the View has non-zero
+     * dimensions; subsequent calls return the existing instance.
+     */
+    fun ensureEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int): TerminalEmulator {
+        emulatorField?.let { return it }
+        val client = sessionClient
+            ?: error("attachClient must be called before ensureEmulator (called from TermuxTerminalView's update block)")
+        val emulator = TerminalEmulator(
+            this,
+            columns,
+            rows,
+            cellWidthPixels,
+            cellHeightPixels,
+            transcriptRows,
+            client,
+        )
+        emulatorField = emulator
+        return emulator
+    }
+
+    /**
+     * Resize the emulator. Called from [TermuxTerminalView]'s update block when the View's
+     * dimensions change. The remote PTY's resize is driven separately by the Compose side via
+     * [dev.eclipse.ssh.ssh.TerminalChannel.resize] — Termux's own session does both in one call
+     * because it owns the local PTY; we split the responsibilities for the same reason the
+     * legacy code did.
+     */
+    fun resizeEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int) {
+        emulatorField?.resize(columns, rows, cellWidthPixels, cellHeightPixels)
+    }
+
+    /**
      * Feed bytes received from the SSH channel into the emulator.
      *
      * Called on whatever dispatcher the SSH collector runs on. [TerminalEmulator.append] is
@@ -74,95 +165,66 @@ class EclipseSshTerminalSession(
      * collector satisfies.
      *
      * The redraw is not driven from here — the emulator calls back into the [TerminalSessionClient]
-     * (onTextChanged) on every screen update, and the client invalidates the view. Mirrors the
-     * path Termux's own main-thread handler takes after a `MSG_NEW_INPUT`.
+     * (onTextChanged) on every screen update, and the client invalidates the view.
      */
     fun feedBytes(data: ByteArray, length: Int) {
-        val emulator = emulator ?: return
-        emulator.append(data, length)
+        emulatorField?.append(data, length)
     }
 
     /**
-     * Construct the emulator without starting a local subprocess.
+     * The current window title, set by [titleChanged] when the emulator processes an xterm title
+     * escape (`\033]0;...\007`). Read by the [EclipseSshTerminalSessionClient]'s titleProvider so
+     * the Compose tab strip updates — the client cannot read it from [dummySession] because the
+     * emulator calls back into *this* object's [titleChanged], not the dummy session's.
      *
-     * Override-only: the parent's body is bypassed entirely. We build the [TerminalEmulator]
-     * against `this` (TerminalOutput) and [sessionClient] (TerminalSessionClient), then write it
-     * into the parent's private `mEmulator` field so every other method on this class —
-     * [getEmulator], [updateSize], [isRunning] — sees a non-null emulator as they expect.
-     *
-     * Called the first time [TerminalView.updateSize] runs with non-zero view dimensions: the
-     * parent's `updateSize` body checks `mEmulator == null` and, on the null branch, calls this
-     * method to lazily construct it. Every later call goes to the resize branch in [updateSize]
-     * below.
+     * `@Volatile` because the SSH collector thread writes it (via the emulator's call into
+     * [titleChanged]) while the main thread reads it (via the client's titleProvider callback).
      */
-    override fun initializeEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int) {
-        val emulator = TerminalEmulator(
-            /* session = */ this,
-            /* columns = */ columns,
-            /* rows = */ rows,
-            /* cellWidthPixels = */ cellWidthPixels,
-            /* cellHeightPixels = */ cellHeightPixels,
-            /* transcriptRows = */ transcriptRowsOverride,
-            /* client = */ sessionClient,
-        )
-        emulatorField.set(this, emulator)
-    }
+    @Volatile
+    private var currentTitle: String = ""
 
-    /**
-     * Resize without touching a local PTY.
-     *
-     * The parent's body, on the non-null branch, calls `JNI.setPtyWindowSize(mTerminalFileDescriptor, …)`
-     * before resizing the emulator. We never set `mTerminalFileDescriptor` (no subprocess was
-     * forked), so the JNI call would either crash on a 0 file descriptor or silently no-op
-     * depending on the device — neither is acceptable. Override to skip the JNI call entirely
-     * and resize the emulator only.
-     *
-     * The remote PTY *is* still told about the new size: the SSH-channel side of the resize is
-     * driven from [TermuxTerminalView], which calls [dev.eclipse.ssh.ssh.TerminalChannel.resize]
-     * alongside this method. The split mirrors the legacy code's two-step `onResizeTerminal` —
-     * local buffer resize, then remote PTY resize.
-     *
-     * The `super.initializeEmulator` call on the null branch is what makes this a drop-in for the
-     * parent: the same lazy-init contract holds.
-     */
-    override fun updateSize(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int) {
-        if (emulator == null) {
-            initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels)
-        } else {
-            emulator?.resize(columns, rows, cellWidthPixels, cellHeightPixels)
-        }
-    }
+    /** The current window title, or empty string if the shell has not set one. */
+    fun currentTitle(): String = currentTitle
 
     /**
      * The emulator's escape-sequence replies and the user's keystrokes, written back through the
      * SSH channel rather than to a local PTY that does not exist.
      *
-     * The parent's body checks `mShellPid > 0` before queueing; ours has no shell and no queue,
-     * so the guard is replaced by a null check on the sink (which is installed before the first
-     * keystroke can arrive — see [TermuxTerminalView]).
+     * [TerminalOutput.write] is the abstract method Termux's emulator calls when it produces
+     * output (cursor-position replies, mode replies, the user's keystrokes translated to escape
+     * sequences). The Termux `TerminalSession` implementation forwards these to the local PTY's
+     * stdin; we forward to the SSH channel.
      */
     override fun write(data: ByteArray, offset: Int, count: Int) {
         sshByteSink?.invoke(data, offset, count)
     }
 
+    override fun titleChanged(oldTitle: String, newTitle: String) {
+        // Store the new title so the client's titleProvider (which reads via [currentTitle]) sees
+        // it. The client's onTitleChanged ignores the dummy session parameter and calls the
+        // titleProvider, which returns this field.
+        currentTitle = newTitle
+        sessionClient?.onTitleChanged(dummySession)
+    }
+
+    override fun onCopyTextToClipboard(text: String) {
+        sessionClient?.onCopyTextToClipboard(dummySession, text)
+    }
+
+    override fun onPasteTextFromClipboard() {
+        sessionClient?.onPasteTextFromClipboard(dummySession)
+    }
+
+    override fun onBell() {
+        sessionClient?.onBell(dummySession)
+    }
+
+    override fun onColorsChanged() {
+        sessionClient?.onColorsChanged(dummySession)
+    }
+
     companion object {
         private const val TAG = "EclipseSshTerminalSession"
         private const val DEFAULT_TRANSCRIPT_ROWS = 2000
-
-        /**
-         * Cached after first lookup; [Class.getDeclaredField] is slow enough to matter on a hot path
-         * if it were re-read per session, and `by lazy` makes the lookup thread-safe without a lock.
-         */
-        private val emulatorField: Field by lazy {
-            try {
-                TerminalSession::class.java.getDeclaredField("mEmulator").apply { isAccessible = true }
-            } catch (e: NoSuchFieldException) {
-                // The field name is part of termux-app's stable ABI for v0.118.3 (verified against
-                // source at that tag). A failure here means a Termux version bump renamed it; fail
-                // loud at first use rather than silently dropping the emulator.
-                Log.e(TAG, "TerminalSession.mEmulator field not found — Termux version mismatch", e)
-                throw e
-            }
-        }
     }
 }

@@ -2,7 +2,9 @@ package dev.eclipse.ssh.ui.terminal.termux
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Paint
 import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -91,6 +93,7 @@ fun TermuxTerminalView(
     // so a tab switch (new channel) produces a new session.
     val session = remember(channel) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val sshSession = EclipseSshTerminalSession()
         val sessionClient = EclipseSshTerminalSessionClient(
             onTitleChange = onTitleChange,
             onSessionFinished = onSessionFinished,
@@ -98,8 +101,13 @@ fun TermuxTerminalView(
             pasteSink = { bytes -> runCatching { channel.writeBytes(bytes) } },
             onBell = { /* bell audible: a tone is too disruptive without a setting; rely on the cursor flash */ },
             cursorStyle = { cursorShapeToTermuxInt(cursorShape) },
+            titleProvider = { sshSession.currentTitle() },
         )
-        val sshSession = EclipseSshTerminalSession(sessionClient = sessionClient)
+        // The session constructor takes the client; we cannot pass it both ways without a forward
+        // reference, so reconstruct: the client reads from sshSession, and sshSession writes back
+        // to the client. Constructed in this order so the titleProvider lambda closes over a
+        // non-null sshSession.
+        sshSession.attachClient(sessionClient)
         sshSession.setSshByteSink { data, offset, count ->
             if (count <= 0) return@setSshByteSink
             // Most writes are full slices; only copy when the emulator hands us a sub-range.
@@ -142,6 +150,7 @@ fun TermuxTerminalView(
                             onLongPress = onLongPress,
                             onScale = onScale,
                             onCopyModeChanged = onCopyModeChanged,
+                            emulatorProvider = { session.sshSession.emulator },
                         ),
                     )
                     // Termux's default text size is 8sp; the user's setting is in sp already.
@@ -151,7 +160,14 @@ fun TermuxTerminalView(
                     // constructed before the View exists, so the client starts with a null ref;
                     // every redraw callback no-ops until this point.
                     session.sessionClient.updateViewRef(this)
-                    attachSession(session.sshSession)
+                    // Note: we deliberately do NOT call attachSession(...). The View's
+                    // attachSession calls updateSize(), which calls mTermSession.updateSize(),
+                    // which in TerminalSession's body calls initializeEmulator() — and that
+                    // calls JNI.createSubprocess. libtermux.so is excluded from packaging, so
+                    // the JNI call would UnsatisfiedLinkError. We bypass attachSession entirely
+                    // and let the update block below drive mEmulator directly (set the public
+                    // field ourselves). The View's updateSize() early-returns when mTermSession
+                    // is null, so the View's own size-change handler also no-ops.
                     requestFocus()
                 }
             },
@@ -162,27 +178,40 @@ fun TermuxTerminalView(
                 // (configuration change, theme flip) and the session client is still pointing at
                 // the old, disposed one.
                 session.sessionClient.updateViewRef(view)
-                // Let Termux's own updateSize() drive the local-emulator resize: it computes
-                // columns/rows from the renderer's cell metrics (which it derives from the font
-                // size and typeface set above), then calls session.updateSize(), which our
-                // EclipseSshTerminalSession override routes to emulator.resize() without touching
-                // the (non-existent) local PTY.
-                view.updateSize()
-                // The remote PTY resize is driven from the Compose side rather than the Termux
-                // View, because the SSH channel's resize call is coroutine-aware and Termux's
-                // updateSize() runs on the View's thread. Re-derive columns/rows the same way the
-                // Termux renderer does — view.mRenderer is package-private, so reach it through
-                // the public getColumnAndRow of a synthetic tap at origin. The simpler path used
-                // here is to ask the emulator itself, which has the columns/rows it was last
-                // resized to.
-                val emulator = session.sshSession.emulator
-                if (emulator != null) {
+                // Drive the emulator directly. The Termux View's updateSize() early-returns when
+                // mTermSession is null (we never call attachSession), so we compute cell metrics
+                // ourselves — same 'M'-advance trick the legacy TerminalView uses — and either
+                // construct the emulator lazily or resize it.
+                val width = view.width
+                val height = view.height
+                if (width > 0 && height > 0) {
+                    val paint = Paint().apply {
+                        textSize = TypedValue.applyDimension(
+                            TypedValue.COMPLEX_UNIT_SP,
+                            fontSizeSp.toFloat(),
+                            view.resources.displayMetrics,
+                        )
+                        typeface = Typeface.MONOSPACE
+                    }
+                    val cellWidth = paint.measureText("M").toInt().coerceAtLeast(1)
+                    val fm = paint.fontMetrics
+                    val cellHeight = (fm.descent - fm.ascent).toInt().coerceAtLeast(1)
+                    val columns = (width / cellWidth).coerceAtLeast(1)
+                    val rows = (height / cellHeight).coerceAtLeast(1)
+                    val existing = view.mEmulator
+                    if (existing == null) {
+                        val emulator = session.sshSession.ensureEmulator(columns, rows, cellWidth, cellHeight)
+                        view.mEmulator = emulator
+                        view.mClient?.onEmulatorSet()
+                    } else if (existing.mColumns != columns || existing.mRows != rows) {
+                        session.sshSession.resizeEmulator(columns, rows, cellWidth, cellHeight)
+                    }
                     onViewportChange(
                         TerminalViewport(
-                            columns = emulator.mColumns,
-                            ptyRows = emulator.mRows,
-                            bufferRows = emulator.mRows,
-                            visibleRows = emulator.mRows,
+                            columns = columns,
+                            ptyRows = rows,
+                            bufferRows = rows,
+                            visibleRows = rows,
                             visibleColumns = 0,
                         ),
                     )

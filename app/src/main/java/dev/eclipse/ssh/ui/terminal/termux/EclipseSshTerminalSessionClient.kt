@@ -37,6 +37,7 @@ class EclipseSshTerminalSessionClient(
     private val pasteSink: (ByteArray) -> Unit,
     private val onBell: () -> Unit,
     private val cursorStyle: () -> Int,
+    private val titleProvider: () -> String,
 ) : TerminalSessionClient {
 
     /**
@@ -80,9 +81,14 @@ class EclipseSshTerminalSessionClient(
     /**
      * The shell set its window title (xterm's `\033]0;...\007` escape). EclipseSSH already shows
      * the title in the tab strip; the callback updates it the same way the legacy path does.
+     *
+     * The session parameter is ignored because we cannot subclass Termux's `final`
+     * `TerminalSession` — see [EclipseSshTerminalSession]'s kdoc — so the dummy session passed in
+     * has no title set on it. The actual title lives on the [com.termux.terminal.TerminalEmulator]
+     * and is read through [titleProvider] instead.
      */
     override fun onTitleChanged(changedSession: TerminalSession) {
-        onTitleChange(changedSession.title)
+        onTitleChange(titleProvider())
     }
 
     /**

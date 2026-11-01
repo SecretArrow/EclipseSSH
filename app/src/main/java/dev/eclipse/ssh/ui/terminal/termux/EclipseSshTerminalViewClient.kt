@@ -41,6 +41,7 @@ class EclipseSshTerminalViewClient(
     private val onLongPress: () -> Unit,
     private val onScale: (Float) -> Float,
     private val onCopyModeChanged: (Boolean) -> Unit,
+    private val emulatorProvider: () -> com.termux.terminal.TerminalEmulator?,
 ) : TerminalViewClient {
 
     /**
@@ -105,14 +106,37 @@ class EclipseSshTerminalViewClient(
     }
 
     /**
-     * Hardware-key down. Returning false tells Termux "I didn't handle it, you continue with the
-     * default translation" — which is what we want, since the default translation handles every
-     * key EclipseSSH supports (arrows, function keys, ctrl+letter, etc.). The session parameter is
-     * available for cases where a key's meaning depends on the active emulator mode (e.g. the
-     * cursor-keys-application flag); the default translation already consults that, so we don't
-     * need to here.
+     * Hardware-key down. Returns `true` (handled) for the keys whose meaning depends on emulator
+     * state — arrow keys (which send different escape sequences in application-cursor-keys mode),
+     * function keys, the modifier-bearing letters — so the View does not also call
+     * `mTermSession.writeCodePoint`, which would silently drop them (our [dummySession] has
+     * `mShellPid == 0`, so `write` is a no-op). Translates each to the right escape sequence via
+     * the emulator's [processCodePoint], which produces output through [TerminalOutput.write] —
+     * our SSH-channel sink.
+     *
+     * For keys with no terminal meaning (volume, back when not on the alternate screen), returns
+     * `false` so the View passes them up to the Activity.
      */
-    override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean = false
+    override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean {
+        val emulator = emulatorProvider() ?: return false
+        // Ctrl+letter: produce the control character (e.g. Ctrl+C → ETX, 0x03).
+        if (e.isCtrlPressed && keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {
+            val codePoint = keyCode - KeyEvent.KEYCODE_A + 1
+            emulator.processCodePoint(codePoint)
+            return true
+        }
+        // Arrow keys: pick the right sequence for the emulator's current cursor-keys mode.
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { emulator.processCodePoint('C'.code); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { emulator.processCodePoint('D'.code); return true }
+            KeyEvent.KEYCODE_DPAD_UP -> { emulator.processCodePoint('A'.code); return true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { emulator.processCodePoint('B'.code); return true }
+            KeyEvent.KEYCODE_ENTER -> { emulator.processCodePoint('\r'.code); return true }
+            KeyEvent.KEYCODE_TAB -> { emulator.processCodePoint('\t'.code); return true }
+            KeyEvent.KEYCODE_DEL -> { emulator.processCodePoint(0x7f); return true } // DEL
+        }
+        return false
+    }
 
     /**
      * Hardware-key up. Same as [onKeyDown]: defer to Termux's default, which is a no-op for keys
@@ -139,12 +163,19 @@ class EclipseSshTerminalViewClient(
     override fun readFnKey(): Boolean = isFnDown()
 
     /**
-     * A code point typed by the IME. Returning false hands it back to Termux's default handling,
-     * which writes the code point to the session (with ctrl if [readControlKey] is true). We do
-     * not need to intercept because the default path writes via [TerminalSession.writeCodePoint],
-     * which our [EclipseSshTerminalSession.write] override forwards to the SSH channel.
+     * A code point typed by the IME. We return `true` and process the code point ourselves rather
+     * than deferring to Termux's default path (which would call `session.writeCodePoint`, a
+     * no-op against our [dummySession] — see [EclipseSshTerminalSession]'s kdoc).
+     *
+     * Ctrl handling mirrors Termux's own default: when [readControlKey] is true, an alphabetic
+     * code point is converted to its control-character equivalent (A → 0x01, B → 0x02, …).
      */
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
+    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
+        val emulator = emulatorProvider() ?: return false
+        val effective = if (ctrlDown && codePoint in 'A'.code..'Z'.code) codePoint - 'A'.code + 1 else codePoint
+        emulator.processCodePoint(effective)
+        return true
+    }
 
     /**
      * The View finished attaching to its emulator. EclipseSSH does not need to do anything here;
