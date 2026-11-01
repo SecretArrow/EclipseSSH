@@ -298,6 +298,7 @@ import dev.eclipse.ssh.ui.statusColor
 import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
 import dev.eclipse.ssh.ssh.PERMISSION_PRESETS
 import dev.eclipse.ssh.ssh.SshKeyProbe
+import dev.eclipse.ssh.ssh.TerminalChannel
 import dev.eclipse.ssh.ssh.probeSshKey
 import dev.eclipse.ssh.ssh.symbolicPermissions
 import dev.eclipse.ssh.data.credentials.HostCredentialUpdate
@@ -309,6 +310,7 @@ import dev.eclipse.ssh.data.saf.LocalFile
 import androidx.compose.ui.focus.FocusRequester
 import dev.eclipse.ssh.terminal.MouseGesture
 import dev.eclipse.ssh.terminal.ReviewedCommand
+import dev.eclipse.ssh.terminal.TerminalCursorShape
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalSelection
@@ -321,6 +323,7 @@ import dev.eclipse.ssh.ui.terminal.TerminalInputBridge
 import dev.eclipse.ssh.ui.terminal.TerminalKeyRow
 import dev.eclipse.ssh.ui.terminal.TerminalReviewPane
 import dev.eclipse.ssh.ui.terminal.TerminalView
+import dev.eclipse.ssh.ui.terminal.termux.TermuxTerminalView
 import dev.eclipse.ssh.ui.terminal.minTerminalColumns
 import dev.eclipse.ssh.ui.terminal.rememberTerminalCellMetrics
 import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
@@ -1371,6 +1374,7 @@ private fun EclipseWorkspace(
                     destination = destination,
                     state = state,
                     frames = viewModel.frames,
+                    channelProvider = viewModel::terminalChannelFor,
                     filesExplorer = viewModel.filesExplorer,
                     linuxUserspace = viewModel.linuxUserspace,
                     localLinuxCard = viewModel.localLinuxCard,
@@ -1584,6 +1588,7 @@ private fun EclipseWorkspace(
                     destination = destination,
                     state = state,
                     frames = viewModel.frames,
+                    channelProvider = viewModel::terminalChannelFor,
                     filesExplorer = viewModel.filesExplorer,
                     linuxUserspace = viewModel.linuxUserspace,
                     localLinuxCard = viewModel.localLinuxCard,
@@ -2497,6 +2502,13 @@ private fun WorkspaceScaffold(
     // never into the scaffold's own parameter list, so all three references failed to resolve.
     onTerminalKeepSystemBars: (Boolean) -> Unit = {},
     /**
+     * Look up the live [TerminalChannel] for a session, so the Termux renderer can drive the
+     * emulator from the channel's byte stream. Returns null when the session has no channel
+     * (closed, or a local-runtime session the Termux path is not yet wired for) — the legacy
+     * renderer is used as the fallback in that case.
+     */
+    channelProvider: (String) -> TerminalChannel? = { null },
+    /**
      * The scrolled-back badge's count, from Settings. Wired into all four sites at once - this
      * scaffold, both of its call sites and [SettingsScreen] - because a parameter missing from one
      * of them fails to resolve three screens away from the omission.
@@ -2523,6 +2535,7 @@ private fun WorkspaceScaffold(
         TerminalScreen(
             state = state,
             frames = frames,
+            channelProvider = channelProvider,
             pendingAction = pendingAction,
             onActionHandled = onActionHandled,
             onCloseTab = onCloseTab,
@@ -2975,6 +2988,7 @@ private fun HostCard(
 private fun TerminalScreen(
     state: MainUiState,
     frames: StateFlow<Map<String, TerminalFrame>>,
+    channelProvider: (String) -> TerminalChannel? = { null },
     onCloseTab: (SessionTab) -> Unit,
     onDisconnectAll: () -> Unit,
     /** Re-dials one session - the key is a tab id, never a host id. */
@@ -3348,6 +3362,35 @@ private fun TerminalScreen(
                     modifier = Modifier.padding(textInset),
                 )
             } else {
+                // The Termux renderer is opt-in (see [AppSettings.useTermuxRenderer]). It drives
+                // the com.termux TerminalEmulator directly from the SSH channel's byte stream and
+                // forwards the user's keystrokes back through the channel — fixing the legacy
+                // renderer's text-stacking and realtime-streaming issues by using the same engine
+                // Termux itself ships. Falls back to the legacy [TerminalView] when no channel is
+                // available for this session (closed, or a local-runtime session the Termux path is
+                // not yet wired for).
+                val channel = channelProvider(activeTab.id)
+                if (state.settings.useTermuxRenderer && channel != null) {
+                    TermuxTerminalView(
+                        channel = channel,
+                        backgroundColor = termBg,
+                        fontSizeSp = liveFontSize,
+                        cursorShape = parseCursorShape(state.settings.terminalCursorStyle),
+                        modifier = Modifier.fillMaxSize().padding(textInset),
+                        onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
+                        onScale = { scale ->
+                            // Pinch-to-zoom on the Termux renderer: same coercion as the legacy
+                            // path below, but written once per gesture end (the Compose side owns
+                            // the gesture here, not Termux's own touch handler).
+                            val base = if (pinchBase > 0) pinchBase else fontSize.also { pinchBase = it }
+                            val next = (base * scale).roundToInt()
+                                .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
+                            pinchSize = next
+                            if (next != fontSize) onFontSize(next)
+                            pinchBase = 0
+                        },
+                    )
+                } else {
                 TerminalView(
                     frame = frame,
                     style = textStyle,
@@ -3443,6 +3486,7 @@ private fun TerminalScreen(
                         modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
                     )
                 }
+                } // end legacy TerminalView branch
             }
         }
         // Offered rather than followed: the tap opens this, and nothing leaves the app until the reader
@@ -5783,6 +5827,20 @@ private fun SettingsScreen(
  *
  * Exhaustive over [LinuxUserspaceState] deliberately. A `when` with a fallback line would quietly
  * stop reporting a state added later, which is the silence the section's one-state-object rule
+/**
+ * Parse the user's cursor-style setting (a string from DataStore) into the
+ * [dev.eclipse.ssh.terminal.TerminalCursorShape] enum the Termux renderer takes.
+ *
+ * Falls back to [TerminalCursorShape.BLOCK] for unknown values — the same default
+ * [dev.eclipse.ssh.data.settings.SettingsRepository] writes when the setting is absent.
+ */
+private fun parseCursorShape(setting: String): TerminalCursorShape = when (setting.lowercase()) {
+    "underline" -> TerminalCursorShape.UNDERLINE
+    "bar", "beam" -> TerminalCursorShape.BAR
+    else -> TerminalCursorShape.BLOCK
+}
+
+/**
  * existed to prevent.
  */
 private fun linuxUserspaceSummary(ui: LinuxUserspaceUiState): String {

@@ -461,6 +461,24 @@ class MainViewModel @Inject constructor(
     private val sessions: ConcurrentHashMap<String, ClientSession> get() = sessionStore.sessions
 
     /**
+     * Public read-only access to the [TerminalChannel] for one session, used by the Termux
+     * renderer integration in [dev.eclipse.ssh.MainActivity]'s [dev.eclipse.ssh.ui.terminal.TerminalView]
+     * alternative call site.
+     *
+     * The legacy renderer is driven entirely by the [TerminalFrame] state flow passed into the
+     * composable; the Termux renderer needs the channel itself, because the channel's
+     * `output` SharedFlow is what feeds bytes into the Termux emulator and the channel's
+     * `writeBytes` is where the emulator's escape-sequence replies go. There is no
+     * frame-shaped intermediary the Termux path can sit behind.
+     *
+     * Returns null for a session that has no channel — either the session is closed, or it is a
+     * [dev.eclipse.ssh.linux.LocalTerminalChannel] that the Termux path is not yet wired for
+     * (the local-runtime branch feeds the same [TerminalChannel.output] stream, so the same code
+     * path will work once the local channel's `writeBytes` is confirmed to match the SSH one).
+     */
+    fun terminalChannelFor(sessionKey: String): TerminalChannel? = channels[sessionKey]
+
+    /**
      * This view model's theme, read when a program asks rather than copied into a buffer.
      *
      * One instance per view model, so [onCleared] can tell its own from a successor's.
