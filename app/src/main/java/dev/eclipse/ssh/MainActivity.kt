@@ -5817,17 +5817,6 @@ private fun SettingsScreen(
 }
 
 /**
- * The one line the Settings list keeps about the userspace, for every state it can be in.
- *
- * This replaced a section of up to six rows and a progress bar, and that is now the window's own
- * business: [UbuntuActivity] shows the same facts with the room to act on them, which the section
- * never had - the install log alone was a capped dialog body. What the list still needs is the
- * question that decides whether the row is worth tapping: is there an environment, and what is it
- * doing.
- *
- * Exhaustive over [LinuxUserspaceState] deliberately. A `when` with a fallback line would quietly
- * stop reporting a state added later, which is the silence the section's one-state-object rule
-/**
  * Parse the user's cursor-style setting (a string from DataStore) into the
  * [dev.eclipse.ssh.terminal.TerminalCursorShape] enum the Termux renderer takes.
  *
