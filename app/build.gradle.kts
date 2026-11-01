@@ -497,17 +497,17 @@ dependencies {
     implementation(libs.bouncycastle.prov)
 
     // === Terminal engine (Termux terminal-view, Apache-2.0) ===
-    // DISABLED in this release: the first integration attempt against Termux's
-    // API had several method-signature mismatches (TerminalOutput interface,
-    // TerminalEmulator/TerminalSession constructor params, TerminalViewClient
-    // abstract members). Rather than ship a broken build, the integration is
-    // reverted for v1.24.0 and the legacy renderer stays in place. A follow-up
-    // PR will land the Termux integration with the correct API surface — see
-    // docs/migration-to-secretarrow.md §Next steps.
-    // The deps stay declared (commented out) so the follow-up PR is a one-line
-    // uncomment per file rather than a version-catalog edit.
-    // implementation(libs.termux.terminal.emulator)
-    // implementation(libs.termux.terminal.view)
+    // Re-enabled for the Termux renderer integration (v1.25.0-beta1). The
+    // API surface is now verified against termux-app v0.118.3 source:
+    //   - TerminalSession(String, String, String[], String[], Integer, TerminalSessionClient)
+    //   - TerminalEmulator(TerminalOutput, int, int, int, int, Integer, TerminalSessionClient)
+    //   - TerminalViewClient: 19 abstract methods
+    //   - TerminalSessionClient: 16 abstract methods
+    // The .so files in terminal-view's AAR (libtermux.so for local-PTY exec, liblocal-socket.so
+    // for IPC) are excluded via jniLibs.excludes above — EclipseSshTerminalSession overrides
+    // initializeEmulator() to skip JNI.createSubprocess, so neither .so is ever loaded.
+    implementation(libs.termux.terminal.emulator)
+    implementation(libs.termux.terminal.view)
 
     // The RDP engine's JNI wrapper and native libraries.
     implementation(project(":freerdp"))
