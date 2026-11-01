@@ -39,7 +39,7 @@ class EclipseSshTerminalViewClient(
     private val isFnDown: () -> Boolean,
     private val onSingleTapUp: () -> Unit,
     private val onLongPress: () -> Unit,
-    private val onScale: (Float) -> Float,
+    private val onScale: (Float) -> Unit,
     private val onCopyModeChanged: (Boolean) -> Unit,
     private val emulatorProvider: () -> com.termux.terminal.TerminalEmulator?,
 ) : TerminalViewClient {

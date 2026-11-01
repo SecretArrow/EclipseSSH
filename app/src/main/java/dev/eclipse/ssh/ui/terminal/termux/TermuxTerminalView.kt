@@ -80,7 +80,7 @@ fun TermuxTerminalView(
     onTitleChange: (String) -> Unit = {},
     onSessionFinished: () -> Unit = {},
     onViewportChange: (TerminalViewport) -> Unit = {},
-    onScale: (Float) -> Float = { it },
+    onScale: (Float) -> Unit = {},
     onSingleTapUp: () -> Unit = {},
     onLongPress: () -> Unit = {},
     onCopyModeChanged: (Boolean) -> Unit = {},

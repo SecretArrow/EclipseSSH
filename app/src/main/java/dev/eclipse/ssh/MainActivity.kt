@@ -5841,6 +5841,10 @@ private fun parseCursorShape(setting: String): TerminalCursorShape = when (setti
 }
 
 /**
+ * A one-line summary of the Ubuntu userspace state, for the row on the Linux screen.
+ *
+ * Exhaustive over [LinuxUserspaceState] deliberately. A `when` with a fallback line would quietly
+ * stop reporting a state added later, which is the silence the section's one-state-object rule
  * existed to prevent.
  */
 private fun linuxUserspaceSummary(ui: LinuxUserspaceUiState): String {
