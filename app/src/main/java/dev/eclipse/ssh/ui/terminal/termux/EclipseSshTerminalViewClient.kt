@@ -144,7 +144,7 @@ class EclipseSshTerminalViewClient(
             ),
             applicationCursorKeys = ssh.isCursorKeysApplicationMode(),
         )
-        ssh.write(bytes)
+        ssh.write(bytes, 0, bytes.size)
         return true
     }
 
@@ -203,7 +203,7 @@ class EclipseSshTerminalViewClient(
             String(Character.toChars(effective)).toByteArray(Charsets.UTF_8)
         }
         val withAlt = if (alt) byteArrayOf(0x1B.toByte()) + bytes else bytes
-        ssh.write(withAlt)
+        ssh.write(withAlt, 0, withAlt.size)
         return true
     }
 
