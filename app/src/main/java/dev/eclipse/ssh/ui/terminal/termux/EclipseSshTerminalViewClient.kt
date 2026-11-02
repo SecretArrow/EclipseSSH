@@ -45,7 +45,6 @@ class EclipseSshTerminalViewClient(
     private val onCopyModeChanged: (Boolean) -> Unit,
     private val sessionProvider: () -> EclipseSshTerminalSession?,
 ) : TerminalViewClient {
-
     /**
      * Pinch-to-zoom on the terminal text. Termux drives the [com.termux.view.TerminalView.setTextSize]
      * directly from this; here we hand the factor back to the Compose side so the same setting the
@@ -78,9 +77,10 @@ class EclipseSshTerminalViewClient(
      * so the View's `mTermSession` is the no-op [EclipseSshTerminalSession.dummySession], whose
      * own `mEmulator` is `null`.
      */
-    override fun shouldBackButtonBeMappedToEscape(): Boolean = sessionProvider()?.let { session ->
-        session.emulator?.isAlternateBufferActive ?: false
-    } ?: false
+    override fun shouldBackButtonBeMappedToEscape(): Boolean =
+        sessionProvider()?.let { session ->
+            session.emulator?.isAlternateBufferActive ?: false
+        } ?: false
 
     /**
      * Char-based input rather than per-key. Termux itself returns false on phones and true on
@@ -132,18 +132,24 @@ class EclipseSshTerminalViewClient(
      * `false` so the View passes them up to the Activity — those keys have no path through
      * `handleKeyCode`, so the NPE risk does not apply to them.
      */
-    override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean {
+    override fun onKeyDown(
+        keyCode: Int,
+        e: KeyEvent,
+        session: TerminalSession,
+    ): Boolean {
         val ssh = sessionProvider() ?: return false
         val terminalKey = keyCodeToTerminalKey(keyCode) ?: return false
-        val bytes = TerminalKeys.encode(
-            key = terminalKey,
-            modifiers = TerminalModifiers(
-                ctrl = e.isCtrlPressed || isCtrlDown(),
-                alt = e.isAltPressed || isAltDown(),
-                shift = e.isShiftPressed,
-            ),
-            applicationCursorKeys = ssh.isCursorKeysApplicationMode(),
-        )
+        val bytes =
+            TerminalKeys.encode(
+                key = terminalKey,
+                modifiers =
+                    TerminalModifiers(
+                        ctrl = e.isCtrlPressed || isCtrlDown(),
+                        alt = e.isAltPressed || isAltDown(),
+                        shift = e.isShiftPressed,
+                    ),
+                applicationCursorKeys = ssh.isCursorKeysApplicationMode(),
+            )
         ssh.write(bytes, 0, bytes.size)
         return true
     }
@@ -152,7 +158,10 @@ class EclipseSshTerminalViewClient(
      * Hardware-key up. Same as [onKeyDown]: defer to Termux's default, which is a no-op for keys
      * it does not track and a clean release for keys it does.
      */
-    override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean = false
+    override fun onKeyUp(
+        keyCode: Int,
+        e: KeyEvent,
+    ): Boolean = false
 
     /**
      * Long press. Termux shows its own selection toolbar on long press; we suppress that here
@@ -187,21 +196,26 @@ class EclipseSshTerminalViewClient(
      * the time a character reaches here the keyboard has already produced the shifted one, and
      * re-applying it would send `A` as `Ctrl-Shift` plus `A` rather than as itself.
      */
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
+    override fun onCodePoint(
+        codePoint: Int,
+        ctrlDown: Boolean,
+        session: TerminalSession,
+    ): Boolean {
         val ssh = sessionProvider() ?: return false
         val alt = isAltDown()
         // Ctrl+A..Z → 0x01..0x1A. Ctrl with anything else is left to the encoded form; the IME has
         // already produced the code point it means, and Termux's own default does the same.
         val effective = if (ctrlDown && codePoint in 'A'.code..'Z'.code) codePoint - 'A'.code + 1 else codePoint
-        val bytes = if (effective < 0x80) {
-            // Single-byte: avoid the UTF-8 encoder for ASCII so the Alt-ESC prefix can sit in front
-            // of the byte rather than being swallowed into a multibyte sequence.
-            byteArrayOf(effective.toByte())
-        } else {
-            // Printable non-ASCII (an accented letter, a CJK character): UTF-8 encode, the only
-            // encoding a pty in UTF-8 mode understands.
-            String(Character.toChars(effective)).toByteArray(Charsets.UTF_8)
-        }
+        val bytes =
+            if (effective < 0x80) {
+                // Single-byte: avoid the UTF-8 encoder for ASCII so the Alt-ESC prefix can sit in front
+                // of the byte rather than being swallowed into a multibyte sequence.
+                byteArrayOf(effective.toByte())
+            } else {
+                // Printable non-ASCII (an accented letter, a CJK character): UTF-8 encode, the only
+                // encoding a pty in UTF-8 mode understands.
+                String(Character.toChars(effective)).toByteArray(Charsets.UTF_8)
+            }
         val withAlt = if (alt) byteArrayOf(0x1B.toByte()) + bytes else bytes
         ssh.write(withAlt, 0, withAlt.size)
         return true
@@ -215,31 +229,53 @@ class EclipseSshTerminalViewClient(
         // No-op — the View's own setup is sufficient.
     }
 
-    override fun logError(tag: String, message: String) {
+    override fun logError(
+        tag: String,
+        message: String,
+    ) {
         android.util.Log.e(tag, message)
     }
 
-    override fun logWarn(tag: String, message: String) {
+    override fun logWarn(
+        tag: String,
+        message: String,
+    ) {
         android.util.Log.w(tag, message)
     }
 
-    override fun logInfo(tag: String, message: String) {
+    override fun logInfo(
+        tag: String,
+        message: String,
+    ) {
         android.util.Log.i(tag, message)
     }
 
-    override fun logDebug(tag: String, message: String) {
+    override fun logDebug(
+        tag: String,
+        message: String,
+    ) {
         android.util.Log.d(tag, message)
     }
 
-    override fun logVerbose(tag: String, message: String) {
+    override fun logVerbose(
+        tag: String,
+        message: String,
+    ) {
         android.util.Log.v(tag, message)
     }
 
-    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
+    override fun logStackTraceWithMessage(
+        tag: String,
+        message: String,
+        e: Exception,
+    ) {
         android.util.Log.e(tag, message, e)
     }
 
-    override fun logStackTrace(tag: String, e: Exception) {
+    override fun logStackTrace(
+        tag: String,
+        e: Exception,
+    ) {
         android.util.Log.e(tag, e.message, e)
     }
 }
@@ -257,32 +293,33 @@ class EclipseSshTerminalViewClient(
  * Comprehensive on purpose: the legacy renderer handles this same set, and parity is what makes the
  * Termux renderer a drop-in rather than a regression for users who switch.
  */
-private fun keyCodeToTerminalKey(keyCode: Int): TerminalKey? = when (keyCode) {
-    KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> TerminalKey.ENTER
-    KeyEvent.KEYCODE_TAB -> TerminalKey.TAB
-    KeyEvent.KEYCODE_DEL -> TerminalKey.BACKSPACE
-    KeyEvent.KEYCODE_ESCAPE -> TerminalKey.ESCAPE
-    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_NUMPAD_8 -> TerminalKey.ARROW_UP
-    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_NUMPAD_2 -> TerminalKey.ARROW_DOWN
-    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_NUMPAD_4 -> TerminalKey.ARROW_LEFT
-    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_NUMPAD_6 -> TerminalKey.ARROW_RIGHT
-    KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_NUMPAD_7 -> TerminalKey.HOME
-    KeyEvent.KEYCODE_MOVE_END, KeyEvent.KEYCODE_NUMPAD_1 -> TerminalKey.END
-    KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_NUMPAD_9 -> TerminalKey.PAGE_UP
-    KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_NUMPAD_3 -> TerminalKey.PAGE_DOWN
-    KeyEvent.KEYCODE_INSERT, KeyEvent.KEYCODE_NUMPAD_0 -> TerminalKey.INSERT
-    KeyEvent.KEYCODE_FORWARD_DEL -> TerminalKey.DELETE
-    KeyEvent.KEYCODE_F1 -> TerminalKey.F1
-    KeyEvent.KEYCODE_F2 -> TerminalKey.F2
-    KeyEvent.KEYCODE_F3 -> TerminalKey.F3
-    KeyEvent.KEYCODE_F4 -> TerminalKey.F4
-    KeyEvent.KEYCODE_F5 -> TerminalKey.F5
-    KeyEvent.KEYCODE_F6 -> TerminalKey.F6
-    KeyEvent.KEYCODE_F7 -> TerminalKey.F7
-    KeyEvent.KEYCODE_F8 -> TerminalKey.F8
-    KeyEvent.KEYCODE_F9 -> TerminalKey.F9
-    KeyEvent.KEYCODE_F10 -> TerminalKey.F10
-    KeyEvent.KEYCODE_F11 -> TerminalKey.F11
-    KeyEvent.KEYCODE_F12 -> TerminalKey.F12
-    else -> null
-}
+private fun keyCodeToTerminalKey(keyCode: Int): TerminalKey? =
+    when (keyCode) {
+        KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> TerminalKey.ENTER
+        KeyEvent.KEYCODE_TAB -> TerminalKey.TAB
+        KeyEvent.KEYCODE_DEL -> TerminalKey.BACKSPACE
+        KeyEvent.KEYCODE_ESCAPE -> TerminalKey.ESCAPE
+        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_NUMPAD_8 -> TerminalKey.ARROW_UP
+        KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_NUMPAD_2 -> TerminalKey.ARROW_DOWN
+        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_NUMPAD_4 -> TerminalKey.ARROW_LEFT
+        KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_NUMPAD_6 -> TerminalKey.ARROW_RIGHT
+        KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_NUMPAD_7 -> TerminalKey.HOME
+        KeyEvent.KEYCODE_MOVE_END, KeyEvent.KEYCODE_NUMPAD_1 -> TerminalKey.END
+        KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_NUMPAD_9 -> TerminalKey.PAGE_UP
+        KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_NUMPAD_3 -> TerminalKey.PAGE_DOWN
+        KeyEvent.KEYCODE_INSERT, KeyEvent.KEYCODE_NUMPAD_0 -> TerminalKey.INSERT
+        KeyEvent.KEYCODE_FORWARD_DEL -> TerminalKey.DELETE
+        KeyEvent.KEYCODE_F1 -> TerminalKey.F1
+        KeyEvent.KEYCODE_F2 -> TerminalKey.F2
+        KeyEvent.KEYCODE_F3 -> TerminalKey.F3
+        KeyEvent.KEYCODE_F4 -> TerminalKey.F4
+        KeyEvent.KEYCODE_F5 -> TerminalKey.F5
+        KeyEvent.KEYCODE_F6 -> TerminalKey.F6
+        KeyEvent.KEYCODE_F7 -> TerminalKey.F7
+        KeyEvent.KEYCODE_F8 -> TerminalKey.F8
+        KeyEvent.KEYCODE_F9 -> TerminalKey.F9
+        KeyEvent.KEYCODE_F10 -> TerminalKey.F10
+        KeyEvent.KEYCODE_F11 -> TerminalKey.F11
+        KeyEvent.KEYCODE_F12 -> TerminalKey.F12
+        else -> null
+    }

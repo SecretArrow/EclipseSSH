@@ -45,7 +45,6 @@ import java.io.ByteArrayOutputStream
 class EclipseSshTerminalSession(
     private val transcriptRows: Int = DEFAULT_TRANSCRIPT_ROWS,
 ) : TerminalOutput() {
-
     /**
      * The session client, set once via [attachClient] before the first byte flows. Held as a `var`
      * rather than a constructor parameter because of a forward-reference cycle: the client's
@@ -167,19 +166,26 @@ class EclipseSshTerminalSession(
      * [TermuxTerminalView]'s update block on the main thread, the first time the View has non-zero
      * dimensions; subsequent calls return the existing instance.
      */
-    fun ensureEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int): TerminalEmulator {
+    fun ensureEmulator(
+        columns: Int,
+        rows: Int,
+        cellWidthPixels: Int,
+        cellHeightPixels: Int,
+    ): TerminalEmulator {
         emulatorField?.let { return it }
-        val client = sessionClient
-            ?: error("attachClient must be called before ensureEmulator (called from TermuxTerminalView's update block)")
-        val emulator = TerminalEmulator(
-            this,
-            columns,
-            rows,
-            cellWidthPixels,
-            cellHeightPixels,
-            transcriptRows,
-            client,
-        )
+        val client =
+            sessionClient
+                ?: error("attachClient must be called before ensureEmulator (called from TermuxTerminalView's update block)")
+        val emulator =
+            TerminalEmulator(
+                this,
+                columns,
+                rows,
+                cellWidthPixels,
+                cellHeightPixels,
+                transcriptRows,
+                client,
+            )
         emulatorField = emulator
         drainPending(emulator)
         return emulator
@@ -192,7 +198,12 @@ class EclipseSshTerminalSession(
      * because it owns the local PTY; we split the responsibilities for the same reason the
      * legacy code did.
      */
-    fun resizeEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int) {
+    fun resizeEmulator(
+        columns: Int,
+        rows: Int,
+        cellWidthPixels: Int,
+        cellHeightPixels: Int,
+    ) {
         emulatorField?.resize(columns, rows, cellWidthPixels, cellHeightPixels)
     }
 
@@ -213,7 +224,10 @@ class EclipseSshTerminalSession(
      * The redraw is not driven from here — the emulator calls back into the [TerminalSessionClient]
      * (onTextChanged) on every screen update, and the client invalidates the view.
      */
-    fun feedBytes(data: ByteArray, length: Int) {
+    fun feedBytes(
+        data: ByteArray,
+        length: Int,
+    ) {
         val emulator = emulatorField
         if (emulator == null) {
             // Copy the slice: the SharedFlow's replay buffer may reuse this array, and we hold it
@@ -272,11 +286,18 @@ class EclipseSshTerminalSession(
      * sequences). The Termux `TerminalSession` implementation forwards these to the local PTY's
      * stdin; we forward to the SSH channel.
      */
-    override fun write(data: ByteArray, offset: Int, count: Int) {
+    override fun write(
+        data: ByteArray,
+        offset: Int,
+        count: Int,
+    ) {
         sshByteSink?.invoke(data, offset, count)
     }
 
-    override fun titleChanged(oldTitle: String, newTitle: String) {
+    override fun titleChanged(
+        oldTitle: String,
+        newTitle: String,
+    ) {
         // Store the new title so the client's titleProvider (which reads via [currentTitle]) sees
         // it. The client's onTitleChanged ignores the dummy session parameter and calls the
         // titleProvider, which returns this field.
@@ -303,6 +324,7 @@ class EclipseSshTerminalSession(
     companion object {
         private const val TAG = "EclipseSshTerminalSession"
         private const val DEFAULT_TRANSCRIPT_ROWS = 2000
+
         // Enough for a long login banner plus the first prompt; the emulator arrives within a
         // frame or two of the channel opening, so in practice only a few KB ever collect here.
         private const val MAX_PENDING_BYTES = 64 * 1024

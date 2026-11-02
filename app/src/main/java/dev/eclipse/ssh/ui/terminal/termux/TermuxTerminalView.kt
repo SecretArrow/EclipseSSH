@@ -91,31 +91,33 @@ fun TermuxTerminalView(
     // recreated by Compose (e.g. on a dark/light theme flip) reattaches to the same session
     // rather than restarting the SSH channel's stream. The remember-key is the channel identity
     // so a tab switch (new channel) produces a new session.
-    val session = remember(channel) {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val sshSession = EclipseSshTerminalSession()
-        val sessionClient = EclipseSshTerminalSessionClient(
-            onTitleChange = onTitleChange,
-            onSessionFinished = onSessionFinished,
-            clipboard = clipboard,
-            pasteSink = { bytes -> runCatching { channel.writeBytes(bytes) } },
-            onBell = { /* bell audible: a tone is too disruptive without a setting; rely on the cursor flash */ },
-            cursorStyle = { cursorShapeToTermuxInt(cursorShape) },
-            titleProvider = { sshSession.currentTitle() },
-        )
-        // The session constructor takes the client; we cannot pass it both ways without a forward
-        // reference, so reconstruct: the client reads from sshSession, and sshSession writes back
-        // to the client. Constructed in this order so the titleProvider lambda closes over a
-        // non-null sshSession.
-        sshSession.attachClient(sessionClient)
-        sshSession.setSshByteSink { data, offset, count ->
-            if (count <= 0) return@setSshByteSink
-            // Most writes are full slices; only copy when the emulator hands us a sub-range.
-            val bytes = if (offset == 0 && count == data.size) data else data.copyOfRange(offset, offset + count)
-            runCatching { channel.writeBytes(bytes) }
+    val session =
+        remember(channel) {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val sshSession = EclipseSshTerminalSession()
+            val sessionClient =
+                EclipseSshTerminalSessionClient(
+                    onTitleChange = onTitleChange,
+                    onSessionFinished = onSessionFinished,
+                    clipboard = clipboard,
+                    pasteSink = { bytes -> runCatching { channel.writeBytes(bytes) } },
+                    onBell = { /* bell audible: a tone is too disruptive without a setting; rely on the cursor flash */ },
+                    cursorStyle = { cursorShapeToTermuxInt(cursorShape) },
+                    titleProvider = { sshSession.currentTitle() },
+                )
+            // The session constructor takes the client; we cannot pass it both ways without a forward
+            // reference, so reconstruct: the client reads from sshSession, and sshSession writes back
+            // to the client. Constructed in this order so the titleProvider lambda closes over a
+            // non-null sshSession.
+            sshSession.attachClient(sessionClient)
+            sshSession.setSshByteSink { data, offset, count ->
+                if (count <= 0) return@setSshByteSink
+                // Most writes are full slices; only copy when the emulator hands us a sub-range.
+                val bytes = if (offset == 0 && count == data.size) data else data.copyOfRange(offset, offset + count)
+                runCatching { channel.writeBytes(bytes) }
+            }
+            SshSessionHandle(sshSession, sessionClient)
         }
-        SshSessionHandle(sshSession, sessionClient)
-    }
 
     // Pump SSH bytes into the emulator. Launched once per channel and cancelled when the
     // Composable leaves the tree (or the channel changes).
@@ -213,14 +215,16 @@ fun TermuxTerminalView(
                 val width = view.width
                 val height = view.height
                 if (width > 0 && height > 0) {
-                    val paint = Paint().apply {
-                        textSize = TypedValue.applyDimension(
-                            TypedValue.COMPLEX_UNIT_SP,
-                            fontSizeSp.toFloat(),
-                            view.resources.displayMetrics,
-                        )
-                        typeface = Typeface.MONOSPACE
-                    }
+                    val paint =
+                        Paint().apply {
+                            textSize =
+                                TypedValue.applyDimension(
+                                    TypedValue.COMPLEX_UNIT_SP,
+                                    fontSizeSp.toFloat(),
+                                    view.resources.displayMetrics,
+                                )
+                            typeface = Typeface.MONOSPACE
+                        }
                     val cellWidth = paint.measureText("M").toInt().coerceAtLeast(1)
                     val fm = paint.fontMetrics
                     val cellHeight = (fm.descent - fm.ascent).toInt().coerceAtLeast(1)
@@ -236,9 +240,12 @@ fun TermuxTerminalView(
                         geometryState[2] = cellWidth
                         geometryState[3] = cellHeight
                     } else if (
-                        existing.mColumns != columns || existing.mRows != rows ||
-                        geometryState[0] != columns || geometryState[1] != rows ||
-                        geometryState[2] != cellWidth || geometryState[3] != cellHeight
+                        existing.mColumns != columns ||
+                        existing.mRows != rows ||
+                        geometryState[0] != columns ||
+                        geometryState[1] != rows ||
+                        geometryState[2] != cellWidth ||
+                        geometryState[3] != cellHeight
                     ) {
                         session.sshSession.resizeEmulator(columns, rows, cellWidth, cellHeight)
                         geometryState[0] = columns
@@ -290,11 +297,12 @@ fun TermuxTerminalView(
  * [com.termux.terminal.TerminalEmulator] (CURSOR_STYLE_BLOCK = 0, _UNDERLINE = 1, _BAR = 2). The
  * values are stable across v0.118.x and have been since the constants were introduced.
  */
-private fun cursorShapeToTermuxInt(shape: TerminalCursorShape): Int = when (shape) {
-    TerminalCursorShape.BLOCK -> 0
-    TerminalCursorShape.UNDERLINE -> 1
-    TerminalCursorShape.BAR -> 2
-}
+private fun cursorShapeToTermuxInt(shape: TerminalCursorShape): Int =
+    when (shape) {
+        TerminalCursorShape.BLOCK -> 0
+        TerminalCursorShape.UNDERLINE -> 1
+        TerminalCursorShape.BAR -> 2
+    }
 
 /**
  * The session plus the client that talks back to it, kept together so a recreated View can find

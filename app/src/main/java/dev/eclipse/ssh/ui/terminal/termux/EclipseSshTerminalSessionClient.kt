@@ -39,7 +39,6 @@ class EclipseSshTerminalSessionClient(
     private val cursorStyle: () -> Int,
     private val titleProvider: () -> String,
 ) : TerminalSessionClient {
-
     /**
      * The view, set once the [com.termux.view.TerminalView] is created by Compose's `AndroidView`.
      *
@@ -53,7 +52,8 @@ class EclipseSshTerminalSessionClient(
      * before its view is laid out.
      */
     private val viewRef: java.util.concurrent.atomic.AtomicReference<WeakReference<com.termux.view.TerminalView>> =
-        java.util.concurrent.atomic.AtomicReference(WeakReference(null))
+        java.util.concurrent.atomic
+            .AtomicReference(WeakReference(null))
 
     /**
      * Install the view reference once the [com.termux.view.TerminalView] has been created by
@@ -101,7 +101,10 @@ class EclipseSshTerminalSessionClient(
         onSessionFinished()
     }
 
-    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+    override fun onCopyTextToClipboard(
+        session: TerminalSession,
+        text: String,
+    ) {
         clipboard.setPrimaryClip(ClipData.newPlainText("EclipseSSH terminal", text))
     }
 
@@ -146,31 +149,53 @@ class EclipseSshTerminalSessionClient(
      */
     override fun getTerminalCursorStyle(): Int = cursorStyle()
 
-    override fun logError(tag: String, message: String) {
+    override fun logError(
+        tag: String,
+        message: String,
+    ) {
         Log.e(tag, message)
     }
 
-    override fun logWarn(tag: String, message: String) {
+    override fun logWarn(
+        tag: String,
+        message: String,
+    ) {
         Log.w(tag, message)
     }
 
-    override fun logInfo(tag: String, message: String) {
+    override fun logInfo(
+        tag: String,
+        message: String,
+    ) {
         Log.i(tag, message)
     }
 
-    override fun logDebug(tag: String, message: String) {
+    override fun logDebug(
+        tag: String,
+        message: String,
+    ) {
         Log.d(tag, message)
     }
 
-    override fun logVerbose(tag: String, message: String) {
+    override fun logVerbose(
+        tag: String,
+        message: String,
+    ) {
         Log.v(tag, message)
     }
 
-    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
+    override fun logStackTraceWithMessage(
+        tag: String,
+        message: String,
+        e: Exception,
+    ) {
         Log.e(tag, message, e)
     }
 
-    override fun logStackTrace(tag: String, e: Exception) {
+    override fun logStackTrace(
+        tag: String,
+        e: Exception,
+    ) {
         Log.e(tag, e.message, e)
     }
 }
