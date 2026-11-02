@@ -3,6 +3,7 @@ package dev.eclipse.ssh.ui.terminal.termux
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalOutput
 import com.termux.terminal.TerminalSessionClient
+import java.io.ByteArrayOutputStream
 
 /**
  * A [TerminalOutput] that drives a [TerminalEmulator] from SSH channel bytes — the half of the
@@ -81,8 +82,16 @@ class EclipseSshTerminalSession(
      * Constructed lazily because the client must be attached first (see [attachClient]) — the
      * `TerminalSession` constructor stores the client, and that client is the same one our
      * [attachClient] holds. Without lazy, we'd need to pass the client to two constructors.
+     *
+     * Exposed (rather than private) so [TermuxTerminalView] can install it on the View's public
+     * `mTermSession` field. Termux's [TerminalView] dereferences `mTermSession` in a couple of
+     * paths it does not null-guard (notably `handleKeyCode`, reached from `onKeyDown` when the
+     * client returns `false` for a key it does not own); without a session on the view, those paths
+     * NPE. The dummy session is inert — `mShellPid` stays `0`, so `write` is a no-op and `getEmulator`
+     * returns the field we never set — which is exactly what those unguarded paths need: a non-null
+     * reference that fails safe.
      */
-    private val dummySession: com.termux.terminal.TerminalSession by lazy {
+    internal val dummySession: com.termux.terminal.TerminalSession by lazy {
         com.termux.terminal.TerminalSession(
             "/bin/true",
             "/",
@@ -124,6 +133,36 @@ class EclipseSshTerminalSession(
     val emulator: TerminalEmulator? get() = emulatorField
 
     /**
+     * Whether the remote program has enabled DECCKM (application cursor keys), read from the
+     * emulator. [TerminalKeys.encode] needs this so the arrow keys and Home/End arrive as `SS3`
+     * sequences — which `bash` with `vi` bindings, `less`, and most curses programs expect — rather
+     * than the `CSI` form, which those programs ignore.
+     *
+     * Returns `false` before the emulator exists, matching Termux's own pre-emulator behaviour.
+     */
+    fun isCursorKeysApplicationMode(): Boolean = emulatorField?.isCursorKeysApplicationMode() ?: false
+
+    /**
+     * Whether the remote program has enabled DECPAM (application keypad). Same role as
+     * [isCursorKeysApplicationMode] but for the keypad keys; rarely enabled by shells but common in
+     * `tmux` and full-screen TUIs.
+     */
+    fun isKeypadApplicationMode(): Boolean = emulatorField?.isKeypadApplicationMode() ?: false
+
+    /**
+     * Bytes that arrived from the SSH channel before the emulator was constructed.
+     *
+     * The emulator is created lazily on the first View layout; the SSH channel can begin streaming
+     * the moment it opens, which is before the first frame. Without this buffer the login banner and
+     * the first prompt are dropped — [feedBytes] no-ops while [emulatorField] is null — and the user
+     * sees a blank screen for the first second of every session.
+     *
+     * Drained into the emulator by [ensureEmulator] the moment one exists. Bounded by
+     * [MAX_PENDING_BYTES] so a torn-down view cannot pin unbounded memory.
+     */
+    private val pendingBytes = ByteArrayOutputStream()
+
+    /**
      * Construct the emulator if it does not exist, then return it. Called from
      * [TermuxTerminalView]'s update block on the main thread, the first time the View has non-zero
      * dimensions; subsequent calls return the existing instance.
@@ -142,6 +181,7 @@ class EclipseSshTerminalSession(
             client,
         )
         emulatorField = emulator
+        drainPending(emulator)
         return emulator
     }
 
@@ -164,11 +204,48 @@ class EclipseSshTerminalSession(
      * callers is that no two threads call it with overlapping buffers, which a single SSH
      * collector satisfies.
      *
+     * Before the emulator exists, bytes are buffered into [pendingBytes] rather than dropped. The
+     * login banner and the first prompt arrive within milliseconds of the SSH channel opening, and
+     * the emulator is not constructed until the View's first layout (a frame or two later) — without
+     * buffering, those bytes were lost and the user saw a blank screen for the first second of the
+     * session. [ensureEmulator] drains the buffer into the emulator as soon as one exists.
+     *
      * The redraw is not driven from here — the emulator calls back into the [TerminalSessionClient]
      * (onTextChanged) on every screen update, and the client invalidates the view.
      */
     fun feedBytes(data: ByteArray, length: Int) {
-        emulatorField?.append(data, length)
+        val emulator = emulatorField
+        if (emulator == null) {
+            // Copy the slice: the SharedFlow's replay buffer may reuse this array, and we hold it
+            // across the gap until the emulator arrives.
+            synchronized(pendingBytes) {
+                pendingBytes.write(data, 0, length)
+                // Cap so a session whose emulator never materialises (a view torn down before its
+                // first layout) does not pin unbounded memory. The head is dropped because the
+                // most recent bytes — the prompt — are what the user actually wants to see.
+                if (pendingBytes.size() > MAX_PENDING_BYTES) {
+                    val all = pendingBytes.toByteArray()
+                    pendingBytes.reset()
+                    pendingBytes.write(all, all.size - MAX_PENDING_BYTES, MAX_PENDING_BYTES)
+                }
+            }
+            return
+        }
+        emulator.append(data, length)
+    }
+
+    /**
+     * Drain the bytes that arrived before the emulator existed. Called once from [ensureEmulator]
+     * on the main thread, the moment the emulator is constructed; the buffer is then retired.
+     */
+    private fun drainPending(emulator: TerminalEmulator) {
+        val pending: ByteArray
+        synchronized(pendingBytes) {
+            if (pendingBytes.size() == 0) return
+            pending = pendingBytes.toByteArray()
+            pendingBytes.reset()
+        }
+        emulator.append(pending, pending.size)
     }
 
     /**
@@ -226,5 +303,8 @@ class EclipseSshTerminalSession(
     companion object {
         private const val TAG = "EclipseSshTerminalSession"
         private const val DEFAULT_TRANSCRIPT_ROWS = 2000
+        // Enough for a long login banner plus the first prompt; the emulator arrives within a
+        // frame or two of the channel opening, so in practice only a few KB ever collect here.
+        private const val MAX_PENDING_BYTES = 64 * 1024
     }
 }

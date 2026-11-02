@@ -2,10 +2,12 @@ package dev.eclipse.ssh.ui.terminal.termux
 
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.ScaleGestureDetector
 import android.view.inputmethod.InputMethodManager
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalViewClient
+import dev.eclipse.ssh.terminal.TerminalKey
+import dev.eclipse.ssh.terminal.TerminalKeys
+import dev.eclipse.ssh.terminal.TerminalModifiers
 import java.lang.ref.WeakReference
 
 /**
@@ -41,7 +43,7 @@ class EclipseSshTerminalViewClient(
     private val onLongPress: () -> Unit,
     private val onScale: (Float) -> Unit,
     private val onCopyModeChanged: (Boolean) -> Unit,
-    private val emulatorProvider: () -> com.termux.terminal.TerminalEmulator?,
+    private val sessionProvider: () -> EclipseSshTerminalSession?,
 ) : TerminalViewClient {
 
     /**
@@ -69,11 +71,16 @@ class EclipseSshTerminalViewClient(
      * Map the system back button to Escape when a full-screen program is running (the same
      * "alternate screen + application cursor keys" condition Termux itself checks). With no
      * alternate screen, returning false lets the Activity's back handler run and leave the session.
+     *
+     * Reads the cursor state from our own [EclipseSshTerminalSession] rather than
+     * `view.mTermSession.getEmulator()` because we never attach a real [TerminalSession] to the
+     * View (it is `final` and would fork a local shell — see [EclipseSshTerminalSession]'s kdoc),
+     * so the View's `mTermSession` is the no-op [EclipseSshTerminalSession.dummySession], whose
+     * own `mEmulator` is `null`.
      */
-    override fun shouldBackButtonBeMappedToEscape(): Boolean {
-        val emulator = viewRef.get()?.mTermSession?.emulator ?: return false
-        return emulator.isAlternateBufferActive
-    }
+    override fun shouldBackButtonBeMappedToEscape(): Boolean = sessionProvider()?.let { session ->
+        session.emulator?.isAlternateBufferActive ?: false
+    } ?: false
 
     /**
      * Char-based input rather than per-key. Termux itself returns false on phones and true on
@@ -106,36 +113,39 @@ class EclipseSshTerminalViewClient(
     }
 
     /**
-     * Hardware-key down. Returns `true` (handled) for the keys whose meaning depends on emulator
-     * state — arrow keys (which send different escape sequences in application-cursor-keys mode),
-     * function keys, the modifier-bearing letters — so the View does not also call
-     * `mTermSession.writeCodePoint`, which would silently drop them (our [dummySession] has
-     * `mShellPid == 0`, so `write` is a no-op). Translates each to the right escape sequence via
-     * the emulator's [processCodePoint], which produces output through [TerminalOutput.write] —
-     * our SSH-channel sink.
+     * Hardware-key down.
      *
-     * For keys with no terminal meaning (volume, back when not on the alternate screen), returns
-     * `false` so the View passes them up to the Activity.
+     * We translate the key to its terminal byte sequence ourselves via [TerminalKeys.encode] — the
+     * same table the legacy renderer uses — and write it through [EclipseSshTerminalSession.write],
+     * which forwards to the SSH channel. We must NOT defer to Termux's own `mTermSession.write`,
+     * for two reasons:
+     *
+     *  1. `TerminalSession.write` is guarded by `if (mShellPid > 0)` and drops bytes when no local
+     *     shell has been forked — and our [dummySession] never forks one (see
+     *     [EclipseSshTerminalSession]'s kdoc), so the write would be a silent no-op.
+     *  2. If we returned `false` for any key Termux's [TerminalView.handleKeyCode] also handles,
+     *     that path would dereference `mTermSession` (which is the dummy session whose own
+     *     `mEmulator` is `null`) and NPE on `mTermSession.getEmulator().isCursorKeysApplicationMode()`.
+     *     Returning `true` for every key we recognise keeps Termux out of that path.
+     *
+     * For keys with no terminal meaning (volume, back when not on the alternate screen) we return
+     * `false` so the View passes them up to the Activity — those keys have no path through
+     * `handleKeyCode`, so the NPE risk does not apply to them.
      */
     override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean {
-        val emulator = emulatorProvider() ?: return false
-        // Ctrl+letter: produce the control character (e.g. Ctrl+C → ETX, 0x03).
-        if (e.isCtrlPressed && keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {
-            val codePoint = keyCode - KeyEvent.KEYCODE_A + 1
-            emulator.processCodePoint(codePoint)
-            return true
-        }
-        // Arrow keys: pick the right sequence for the emulator's current cursor-keys mode.
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> { emulator.processCodePoint('C'.code); return true }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { emulator.processCodePoint('D'.code); return true }
-            KeyEvent.KEYCODE_DPAD_UP -> { emulator.processCodePoint('A'.code); return true }
-            KeyEvent.KEYCODE_DPAD_DOWN -> { emulator.processCodePoint('B'.code); return true }
-            KeyEvent.KEYCODE_ENTER -> { emulator.processCodePoint('\r'.code); return true }
-            KeyEvent.KEYCODE_TAB -> { emulator.processCodePoint('\t'.code); return true }
-            KeyEvent.KEYCODE_DEL -> { emulator.processCodePoint(0x7f); return true } // DEL
-        }
-        return false
+        val ssh = sessionProvider() ?: return false
+        val terminalKey = keyCodeToTerminalKey(keyCode) ?: return false
+        val bytes = TerminalKeys.encode(
+            key = terminalKey,
+            modifiers = TerminalModifiers(
+                ctrl = e.isCtrlPressed || isCtrlDown(),
+                alt = e.isAltPressed || isAltDown(),
+                shift = e.isShiftPressed,
+            ),
+            applicationCursorKeys = ssh.isCursorKeysApplicationMode(),
+        )
+        ssh.write(bytes)
+        return true
     }
 
     /**
@@ -163,17 +173,37 @@ class EclipseSshTerminalViewClient(
     override fun readFnKey(): Boolean = isFnDown()
 
     /**
-     * A code point typed by the IME. We return `true` and process the code point ourselves rather
-     * than deferring to Termux's default path (which would call `session.writeCodePoint`, a
-     * no-op against our [dummySession] — see [EclipseSshTerminalSession]'s kdoc).
+     * A code point typed by the IME (a printable character, or one the soft keyboard produces
+     * directly — the arrow keys and other non-printables arrive via [onKeyDown] instead).
      *
-     * Ctrl handling mirrors Termux's own default: when [readControlKey] is true, an alphabetic
-     * code point is converted to its control-character equivalent (A → 0x01, B → 0x02, …).
+     * We encode and write the byte ourselves rather than deferring to Termux's default path, which
+     * would call `session.writeCodePoint` — a no-op against our [dummySession] (see
+     * [EclipseSshTerminalSession]'s kdoc).
+     *
+     * The modifier translation mirrors what real terminals do: Ctrl with an alphabetic code point
+     * produces the corresponding C0 control (Ctrl+A → 0x01, …, Ctrl+Z → 0x1A); Alt prefixes the
+     * encoded bytes with ESC, the long-standing xterm convention that lets shells bind Alt-key
+     * chords as `M-` sequences. Shift is intentionally not applied to printable code points — by
+     * the time a character reaches here the keyboard has already produced the shifted one, and
+     * re-applying it would send `A` as `Ctrl-Shift` plus `A` rather than as itself.
      */
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
-        val emulator = emulatorProvider() ?: return false
+        val ssh = sessionProvider() ?: return false
+        val alt = isAltDown()
+        // Ctrl+A..Z → 0x01..0x1A. Ctrl with anything else is left to the encoded form; the IME has
+        // already produced the code point it means, and Termux's own default does the same.
         val effective = if (ctrlDown && codePoint in 'A'.code..'Z'.code) codePoint - 'A'.code + 1 else codePoint
-        emulator.processCodePoint(effective)
+        val bytes = if (effective < 0x80) {
+            // Single-byte: avoid the UTF-8 encoder for ASCII so the Alt-ESC prefix can sit in front
+            // of the byte rather than being swallowed into a multibyte sequence.
+            byteArrayOf(effective.toByte())
+        } else {
+            // Printable non-ASCII (an accented letter, a CJK character): UTF-8 encode, the only
+            // encoding a pty in UTF-8 mode understands.
+            String(Character.toChars(effective)).toByteArray(Charsets.UTF_8)
+        }
+        val withAlt = if (alt) byteArrayOf(0x1B.toByte()) + bytes else bytes
+        ssh.write(withAlt)
         return true
     }
 
@@ -212,4 +242,47 @@ class EclipseSshTerminalViewClient(
     override fun logStackTrace(tag: String, e: Exception) {
         android.util.Log.e(tag, e.message, e)
     }
+}
+
+/**
+ * Map a hardware [KeyEvent.KEYCODE_*] to the [TerminalKey] the encoder expects.
+ *
+ * Returns `null` for keys with no terminal meaning — volume, back (handled separately via
+ * [shouldBackButtonBeMappedToEscape]), menu, the soft keys — so [onKeyDown] returns `false` and
+ * the View passes them up to the Activity. Every key that returns non-null is one the View's own
+ * `handleKeyCode` would also handle, and since that path dereferences `mTermSession` (which for us
+ * is the inert [dummySession]) returning `true` for it is what keeps Termux out of the NPE risk
+ * described in [onKeyDown].
+ *
+ * Comprehensive on purpose: the legacy renderer handles this same set, and parity is what makes the
+ * Termux renderer a drop-in rather than a regression for users who switch.
+ */
+private fun keyCodeToTerminalKey(keyCode: Int): TerminalKey? = when (keyCode) {
+    KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> TerminalKey.ENTER
+    KeyEvent.KEYCODE_TAB -> TerminalKey.TAB
+    KeyEvent.KEYCODE_DEL -> TerminalKey.BACKSPACE
+    KeyEvent.KEYCODE_ESCAPE -> TerminalKey.ESCAPE
+    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_NUMPAD_8 -> TerminalKey.ARROW_UP
+    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_NUMPAD_2 -> TerminalKey.ARROW_DOWN
+    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_NUMPAD_4 -> TerminalKey.ARROW_LEFT
+    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_NUMPAD_6 -> TerminalKey.ARROW_RIGHT
+    KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_NUMPAD_7 -> TerminalKey.HOME
+    KeyEvent.KEYCODE_MOVE_END, KeyEvent.KEYCODE_NUMPAD_1 -> TerminalKey.END
+    KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_NUMPAD_9 -> TerminalKey.PAGE_UP
+    KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_NUMPAD_3 -> TerminalKey.PAGE_DOWN
+    KeyEvent.KEYCODE_INSERT, KeyEvent.KEYCODE_NUMPAD_0 -> TerminalKey.INSERT
+    KeyEvent.KEYCODE_FORWARD_DEL -> TerminalKey.DELETE
+    KeyEvent.KEYCODE_F1 -> TerminalKey.F1
+    KeyEvent.KEYCODE_F2 -> TerminalKey.F2
+    KeyEvent.KEYCODE_F3 -> TerminalKey.F3
+    KeyEvent.KEYCODE_F4 -> TerminalKey.F4
+    KeyEvent.KEYCODE_F5 -> TerminalKey.F5
+    KeyEvent.KEYCODE_F6 -> TerminalKey.F6
+    KeyEvent.KEYCODE_F7 -> TerminalKey.F7
+    KeyEvent.KEYCODE_F8 -> TerminalKey.F8
+    KeyEvent.KEYCODE_F9 -> TerminalKey.F9
+    KeyEvent.KEYCODE_F10 -> TerminalKey.F10
+    KeyEvent.KEYCODE_F11 -> TerminalKey.F11
+    KeyEvent.KEYCODE_F12 -> TerminalKey.F12
+    else -> null
 }

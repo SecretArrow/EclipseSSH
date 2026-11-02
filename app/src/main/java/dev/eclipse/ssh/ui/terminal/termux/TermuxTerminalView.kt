@@ -128,6 +128,16 @@ fun TermuxTerminalView(
         }
     }
 
+    // Cache of the values the update block last pushed into the View and into the PTY, so a
+    // recomposition that changes nothing does no work. Compose calls `update` on *every*
+    // recomposition of this Composable, regardless of whether any of its inputs changed — so
+    // without these guards a still terminal would have `setTextSize`, `onScreenUpdated`, an
+    // emulator resize, and a PTY window-change fired at it on every frame the rest of the screen
+    // invalidates. Each guard compares against the value last applied; only the diff path runs.
+    val textSizeState = remember { intArrayOf(-1) }
+    val geometryState = remember { intArrayOf(-1, -1, -1, -1) } // columns, rows, cellWidth, cellHeight
+    val viewportState = remember { intArrayOf(-1, -1) } // columns, rows
+
     // The View itself. Created once per Composable entry, configured via update on every
     // recomposition so settings (font size, theme, cursor style) flow in without a session restart.
     Box(modifier.background(backgroundColor).fillMaxSize()) {
@@ -150,38 +160,56 @@ fun TermuxTerminalView(
                             onLongPress = onLongPress,
                             onScale = onScale,
                             onCopyModeChanged = onCopyModeChanged,
-                            emulatorProvider = { session.sshSession.emulator },
+                            sessionProvider = { session.sshSession },
                         ),
                     )
                     // Termux's default text size is 8sp; the user's setting is in sp already.
                     setTextSize(fontSizeSp)
                     setTypeface(Typeface.MONOSPACE)
+                    // Install the inert dummy session on the View's public `mTermSession` field.
+                    // We never call attachSession(...) — the View's attachSession calls updateSize(),
+                    // which calls mTermSession.updateSize(), which in TerminalSession's body calls
+                    // initializeEmulator() and that calls JNI.createSubprocess. libtermux.so is
+                    // excluded from packaging, so the JNI call would UnsatisfiedLinkError. We bypass
+                    // attachSession entirely and let the update block below drive mEmulator directly
+                    // (set the public field ourselves).
+                    //
+                    // But the View's mTermSession must still be non-null: a handful of paths inside
+                    // TerminalView — notably handleKeyCode, reached from onKeyDown when the client
+                    // returns false for a key — dereference mTermSession without a null check and would
+                    // NPE without a session here. The dummy session is inert (mShellPid stays 0, so
+                    // write is a no-op; its own mEmulator is null, which its getEmulator() returns),
+                    // which is exactly the safe failure those unguarded paths need.
+                    mTermSession = session.sshSession.dummySession
                     // Hand the session client its first valid view reference. The session is
                     // constructed before the View exists, so the client starts with a null ref;
                     // every redraw callback no-ops until this point.
                     session.sessionClient.updateViewRef(this)
-                    // Note: we deliberately do NOT call attachSession(...). The View's
-                    // attachSession calls updateSize(), which calls mTermSession.updateSize(),
-                    // which in TerminalSession's body calls initializeEmulator() — and that
-                    // calls JNI.createSubprocess. libtermux.so is excluded from packaging, so
-                    // the JNI call would UnsatisfiedLinkError. We bypass attachSession entirely
-                    // and let the update block below drive mEmulator directly (set the public
-                    // field ourselves). The View's updateSize() early-returns when mTermSession
-                    // is null, so the View's own size-change handler also no-ops.
                     requestFocus()
                 }
             },
             update = { view ->
-                view.setTextSize(fontSizeSp)
-                view.setTypeface(Typeface.MONOSPACE)
                 // Re-publish the view reference in case the AndroidView factory rebuilt the view
                 // (configuration change, theme flip) and the session client is still pointing at
-                // the old, disposed one.
+                // the old, disposed one. Cheap, so unconditional.
                 session.sessionClient.updateViewRef(view)
+                // Font size: only re-apply and re-measure cells when it actually changed, otherwise
+                // every recomposition re-runs the Paint/FontMetrics dance and queues a redundant
+                // setTextSize that itself triggers an onSizeChanged inside the View.
+                if (textSizeState[0] != fontSizeSp) {
+                    textSizeState[0] = fontSizeSp
+                    view.setTextSize(fontSizeSp)
+                    view.setTypeface(Typeface.MONOSPACE)
+                    // Invalidate the cached geometry so the block below re-measures cells against
+                    // the new text size rather than trusting stale dimensions.
+                    geometryState[0] = -1
+                }
                 // Drive the emulator directly. The Termux View's updateSize() early-returns when
-                // mTermSession is null (we never call attachSession), so we compute cell metrics
-                // ourselves — same 'M'-advance trick the legacy TerminalView uses — and either
-                // construct the emulator lazily or resize it.
+                // mTermSession is null, but ours is the dummy session (non-null), so we must NOT
+                // call view.updateSize() — that path runs mTermSession.updateSize(), which calls
+                // JNI.setPtyWindowSize against the dummy's invalid file descriptor. We compute cell
+                // metrics ourselves — same 'M'-advance trick the legacy TerminalView uses — and
+                // either construct the emulator lazily or resize it.
                 val width = view.width
                 val height = view.height
                 if (width > 0 && height > 0) {
@@ -203,18 +231,39 @@ fun TermuxTerminalView(
                         val emulator = session.sshSession.ensureEmulator(columns, rows, cellWidth, cellHeight)
                         view.mEmulator = emulator
                         view.mClient?.onEmulatorSet()
-                    } else if (existing.mColumns != columns || existing.mRows != rows) {
+                        geometryState[0] = columns
+                        geometryState[1] = rows
+                        geometryState[2] = cellWidth
+                        geometryState[3] = cellHeight
+                    } else if (
+                        existing.mColumns != columns || existing.mRows != rows ||
+                        geometryState[0] != columns || geometryState[1] != rows ||
+                        geometryState[2] != cellWidth || geometryState[3] != cellHeight
+                    ) {
                         session.sshSession.resizeEmulator(columns, rows, cellWidth, cellHeight)
+                        geometryState[0] = columns
+                        geometryState[1] = rows
+                        geometryState[2] = cellWidth
+                        geometryState[3] = cellHeight
                     }
-                    onViewportChange(
-                        TerminalViewport(
-                            columns = columns,
-                            ptyRows = rows,
-                            bufferRows = rows,
-                            visibleRows = rows,
-                            visibleColumns = 0,
-                        ),
-                    )
+                    // Report the viewport upstream only when it actually changed: this callback
+                    // drives a PTY window-change on the SSH channel, and the View's onScreenUpdated
+                    // below is enough to redraw against the same geometry. Without this guard every
+                    // recomposition re-sends the window-change — which a strict server logs as a
+                    // flood, and which races the very resize it reports.
+                    if (viewportState[0] != columns || viewportState[1] != rows) {
+                        viewportState[0] = columns
+                        viewportState[1] = rows
+                        onViewportChange(
+                            TerminalViewport(
+                                columns = columns,
+                                ptyRows = rows,
+                                bufferRows = rows,
+                                visibleRows = rows,
+                                visibleColumns = 0,
+                            ),
+                        )
+                    }
                 }
                 view.onScreenUpdated()
             },
