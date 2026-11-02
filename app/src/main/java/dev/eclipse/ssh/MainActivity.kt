@@ -7,67 +7,57 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.documentfile.provider.DocumentFile
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DesktopWindows
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
@@ -76,7 +66,6 @@ import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
@@ -87,20 +76,16 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -109,7 +94,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -129,18 +113,22 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -148,117 +136,146 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.fragment.app.FragmentActivity
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
-import dev.eclipse.ssh.data.model.AuthMethod
-import dev.eclipse.ssh.data.model.CONNECT_TIMEOUT_RANGE
-import dev.eclipse.ssh.data.model.DEFAULT_CONNECT_TIMEOUT_SECONDS
+import dev.eclipse.ssh.archive.ArchiveBrowserState
+import dev.eclipse.ssh.archive.ArchiveEntry
+import dev.eclipse.ssh.archive.ArchiveExtractor
+import dev.eclipse.ssh.archive.ArchiveReader
+import dev.eclipse.ssh.archive.ArchiveTarget
+import dev.eclipse.ssh.archive.ArchiveUiState
+import dev.eclipse.ssh.background.EclipseSessionService
+import dev.eclipse.ssh.data.MAX_TRANSFER_RETRIES
+import dev.eclipse.ssh.data.credentials.HostCredentialUpdate
+import dev.eclipse.ssh.data.credentials.KeyEdit
+import dev.eclipse.ssh.data.credentials.SecretEdit
+import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
+import dev.eclipse.ssh.data.fs.SingleDocumentProvider
 import dev.eclipse.ssh.data.model.DEFAULT_FORWARD_LISTEN_HOST
-import dev.eclipse.ssh.data.model.DEFAULT_SOCKS_PORT
-import dev.eclipse.ssh.data.model.DEFAULT_SSH_PORT
-import dev.eclipse.ssh.data.model.KEEP_ALIVE_RANGE
-import dev.eclipse.ssh.data.model.PORT_RANGE
-import dev.eclipse.ssh.data.model.ForwardEntry
 import dev.eclipse.ssh.data.model.ForwardType
-import dev.eclipse.ssh.data.model.decodeForwardRules
 import dev.eclipse.ssh.data.model.HostKeyChallenge
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.model.RemoteDesktopTarget
-import dev.eclipse.ssh.data.model.decodeRemoteDesktop
 import dev.eclipse.ssh.data.model.SessionConnectionState
-import dev.eclipse.ssh.data.model.isEnded
-import dev.eclipse.ssh.data.model.isLive
 import dev.eclipse.ssh.data.model.SessionTab
 import dev.eclipse.ssh.data.model.SftpSessionState
+import dev.eclipse.ssh.data.model.SyncDirection
+import dev.eclipse.ssh.data.model.TerminalTheme
 import dev.eclipse.ssh.data.model.TransferDirection
-import dev.eclipse.ssh.data.MAX_TRANSFER_RETRIES
-import dev.eclipse.ssh.data.settings.SettingsRepository
-import dev.eclipse.ssh.data.fs.FsEntry
-import dev.eclipse.ssh.data.fs.FileSystemProvider
-import dev.eclipse.ssh.data.fs.SingleDocumentProvider
 import dev.eclipse.ssh.data.model.TransferItem
 import dev.eclipse.ssh.data.model.TransferStatus
-import dev.eclipse.ssh.data.model.TerminalTheme
-import dev.eclipse.ssh.data.model.SyncDirection
-import dev.eclipse.ssh.background.EclipseSessionService
+import dev.eclipse.ssh.data.model.decodeForwardRules
+import dev.eclipse.ssh.data.model.decodeRemoteDesktop
+import dev.eclipse.ssh.data.model.isEnded
+import dev.eclipse.ssh.data.model.isLive
+import dev.eclipse.ssh.data.saf.LocalFile
+import dev.eclipse.ssh.data.saf.readPickedKeyFile
+import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.feature.quickconnect.QuickConnectContract
 import dev.eclipse.ssh.feature.vault.shouldRelockVault
-import dev.eclipse.ssh.presentation.AdvancedHostOptions
-import dev.eclipse.ssh.presentation.HostFormDraft
-import dev.eclipse.ssh.presentation.MAX_LISTED_ENTRIES
-import dev.eclipse.ssh.presentation.files.FilesExplorerController
-import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
-import dev.eclipse.ssh.presentation.linux.LinuxUserspaceUiState
 import dev.eclipse.ssh.linux.LinuxInstallStep
 import dev.eclipse.ssh.linux.LinuxUserspaceState
 import dev.eclipse.ssh.linux.LocalLinuxHost
 import dev.eclipse.ssh.linux.SetupStep
 import dev.eclipse.ssh.linux.percent
-import dev.eclipse.ssh.presentation.files.LOCAL_SESSION_ID
-import dev.eclipse.ssh.presentation.files.ellipsizeCrumbs
-import dev.eclipse.ssh.presentation.transfersForDisplay
 import dev.eclipse.ssh.presentation.AuthFailurePrompt
-import dev.eclipse.ssh.presentation.ReconnectPrompt
+import dev.eclipse.ssh.presentation.MAX_LISTED_ENTRIES
 import dev.eclipse.ssh.presentation.MainUiState
 import dev.eclipse.ssh.presentation.MainViewModel
-import dev.eclipse.ssh.archive.ArchiveBrowserState
-import dev.eclipse.ssh.archive.ArchiveEntry
-import dev.eclipse.ssh.archive.ArchiveExtractor
-import dev.eclipse.ssh.archive.ArchiveTarget
-import dev.eclipse.ssh.archive.ArchiveReader
-import dev.eclipse.ssh.archive.ArchiveUiState
+import dev.eclipse.ssh.presentation.ReconnectPrompt
+import dev.eclipse.ssh.presentation.files.FilesExplorerController
+import dev.eclipse.ssh.presentation.files.LOCAL_SESSION_ID
+import dev.eclipse.ssh.presentation.files.ellipsizeCrumbs
+import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
+import dev.eclipse.ssh.presentation.linux.LinuxUserspaceUiState
+import dev.eclipse.ssh.presentation.transfersForDisplay
+import dev.eclipse.ssh.security.BiometricUnlocker
+import dev.eclipse.ssh.security.SecureClipboard
+import dev.eclipse.ssh.ssh.PERMISSION_PRESETS
+import dev.eclipse.ssh.ssh.RemoteFile
+import dev.eclipse.ssh.ssh.SshKeyProbe
+import dev.eclipse.ssh.ssh.TerminalChannel
+import dev.eclipse.ssh.ssh.probeSshKey
+import dev.eclipse.ssh.ssh.symbolicPermissions
+import dev.eclipse.ssh.terminal.MouseGesture
+import dev.eclipse.ssh.terminal.ReviewedCommand
+import dev.eclipse.ssh.terminal.TerminalCursorShape
+import dev.eclipse.ssh.terminal.TerminalExportRenderer
+import dev.eclipse.ssh.terminal.TerminalFrame
+import dev.eclipse.ssh.terminal.TerminalKey
+import dev.eclipse.ssh.terminal.TerminalSelection
+import dev.eclipse.ssh.terminal.TerminalViewport
+import dev.eclipse.ssh.terminal.hyperlinkAt
+import dev.eclipse.ssh.terminal.linesBelow
+import dev.eclipse.ssh.terminal.terminalCellText
+import dev.eclipse.ssh.ui.EclipseSuccess
+import dev.eclipse.ssh.ui.EclipseTheme
+import dev.eclipse.ssh.ui.EclipseWarning
+import dev.eclipse.ssh.ui.SecretFieldKeyboard
+import dev.eclipse.ssh.ui.SecretPasteButton
 import dev.eclipse.ssh.ui.about.AboutActivity
+import dev.eclipse.ssh.ui.actions.ActionAnswer
+import dev.eclipse.ssh.ui.actions.ActionRequests
+import dev.eclipse.ssh.ui.actions.ArchiveEntryActionKind
+import dev.eclipse.ssh.ui.actions.FileActionKind
+import dev.eclipse.ssh.ui.actions.ForwardRuleKind
+import dev.eclipse.ssh.ui.actions.HostDetailsKind
+import dev.eclipse.ssh.ui.actions.SnippetActionKind
+import dev.eclipse.ssh.ui.actions.TransferActionKind
+import dev.eclipse.ssh.ui.archive.ArchiveActions
+import dev.eclipse.ssh.ui.archive.ArchiveBrowserScreen
 import dev.eclipse.ssh.ui.archive.ArchiveEntryActionsActivity
 import dev.eclipse.ssh.ui.archive.ArchiveEntryPreviewActivity
 import dev.eclipse.ssh.ui.archive.ArchiveEntryPropertiesDialog
 import dev.eclipse.ssh.ui.archive.ArchivePropertiesDialog
-import dev.eclipse.ssh.ui.archive.ArchiveActions
-import dev.eclipse.ssh.ui.archive.ArchiveBrowserScreen
 import dev.eclipse.ssh.ui.archive.SafArchiveDestination
 import dev.eclipse.ssh.ui.editor.EditorRequest
 import dev.eclipse.ssh.ui.editor.EditorRequests
 import dev.eclipse.ssh.ui.editor.TextEditorActivity
-import dev.eclipse.ssh.ui.files.FileActionsActivity
 import dev.eclipse.ssh.ui.files.ExplorerList
 import dev.eclipse.ssh.ui.files.ExplorerPropertiesDialog
 import dev.eclipse.ssh.ui.files.ExplorerSelectionBar
 import dev.eclipse.ssh.ui.files.ExplorerTopBar
+import dev.eclipse.ssh.ui.files.FileActionsActivity
+import dev.eclipse.ssh.ui.forward.ForwardFormActivity
+import dev.eclipse.ssh.ui.forward.ForwardRequests
+import dev.eclipse.ssh.ui.forward.PortForwardManagerActivity
+import dev.eclipse.ssh.ui.hosts.HostDetailsActivity
 import dev.eclipse.ssh.ui.preview.FilePreviewActivity
+import dev.eclipse.ssh.ui.remotedesktop.RdpConfigDialog
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopActivity
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopConfigDialog
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopRequest
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopRequests
-import dev.eclipse.ssh.ui.remotedesktop.RdpConfigDialog
+import dev.eclipse.ssh.ui.sessions.SessionWhyActivity
 import dev.eclipse.ssh.ui.settings.ClipboardClearActivity
 import dev.eclipse.ssh.ui.settings.DiagnosticsActivity
 import dev.eclipse.ssh.ui.settings.ExportBackupActivity
 import dev.eclipse.ssh.ui.settings.ExportProfilesActivity
-import dev.eclipse.ssh.ui.hosts.HostDetailsActivity
 import dev.eclipse.ssh.ui.settings.HostFormActivity
 import dev.eclipse.ssh.ui.settings.KeepAliveActivity
 import dev.eclipse.ssh.ui.settings.KeyGenActivity
@@ -275,75 +292,32 @@ import dev.eclipse.ssh.ui.settings.TerminalHeightActivity
 import dev.eclipse.ssh.ui.settings.TerminalWidthActivity
 import dev.eclipse.ssh.ui.settings.UbuntuActivity
 import dev.eclipse.ssh.ui.settings.VaultAutoLockActivity
-import dev.eclipse.ssh.ui.AdvancedHostSection
-import dev.eclipse.ssh.ui.EclipseSuccess
-import dev.eclipse.ssh.ui.EclipseTheme
-import dev.eclipse.ssh.ui.EclipseWarning
-import dev.eclipse.ssh.ui.forward.ForwardFormActivity
-import dev.eclipse.ssh.ui.forward.ForwardRequests
-import dev.eclipse.ssh.ui.forward.PortForwardManagerActivity
-import dev.eclipse.ssh.ui.SecretFieldKeyboard
-import dev.eclipse.ssh.ui.SecretPasteButton
-import dev.eclipse.ssh.ui.actions.ActionAnswer
-import dev.eclipse.ssh.ui.actions.ActionRequests
-import dev.eclipse.ssh.ui.actions.ArchiveEntryActionKind
-import dev.eclipse.ssh.ui.actions.FileActionKind
-import dev.eclipse.ssh.ui.actions.ForwardRuleKind
-import dev.eclipse.ssh.ui.actions.HostDetailsKind
-import dev.eclipse.ssh.ui.actions.SnippetActionKind
-import dev.eclipse.ssh.ui.actions.TransferActionKind
-import dev.eclipse.ssh.ui.sessions.SessionWhyActivity
 import dev.eclipse.ssh.ui.snippets.SnippetsActivity
 import dev.eclipse.ssh.ui.statusColor
-import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
-import dev.eclipse.ssh.ssh.PERMISSION_PRESETS
-import dev.eclipse.ssh.ssh.SshKeyProbe
-import dev.eclipse.ssh.ssh.TerminalChannel
-import dev.eclipse.ssh.ssh.probeSshKey
-import dev.eclipse.ssh.ssh.symbolicPermissions
-import dev.eclipse.ssh.data.credentials.HostCredentialUpdate
-import dev.eclipse.ssh.data.credentials.KeyEdit
-import dev.eclipse.ssh.data.credentials.SecretEdit
-import dev.eclipse.ssh.data.saf.readPickedKeyFile
-import dev.eclipse.ssh.ssh.RemoteFile
-import dev.eclipse.ssh.data.saf.LocalFile
-import androidx.compose.ui.focus.FocusRequester
-import dev.eclipse.ssh.terminal.MouseGesture
-import dev.eclipse.ssh.terminal.ReviewedCommand
-import dev.eclipse.ssh.terminal.TerminalCursorShape
-import dev.eclipse.ssh.terminal.TerminalFrame
-import dev.eclipse.ssh.terminal.TerminalKey
-import dev.eclipse.ssh.terminal.TerminalSelection
-import dev.eclipse.ssh.terminal.TerminalViewport
-import dev.eclipse.ssh.terminal.hyperlinkAt
-import dev.eclipse.ssh.terminal.linesBelow
-import dev.eclipse.ssh.terminal.terminalCellText
 import dev.eclipse.ssh.ui.terminal.KeyBarPrefsCodec
 import dev.eclipse.ssh.ui.terminal.TerminalInputBridge
 import dev.eclipse.ssh.ui.terminal.TerminalKeyRow
+import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
 import dev.eclipse.ssh.ui.terminal.TerminalReviewPane
 import dev.eclipse.ssh.ui.terminal.TerminalView
-import dev.eclipse.ssh.ui.terminal.termux.TermuxTerminalView
 import dev.eclipse.ssh.ui.terminal.minTerminalColumns
 import dev.eclipse.ssh.ui.terminal.rememberTerminalCellMetrics
-import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
 import dev.eclipse.ssh.ui.terminal.rememberTerminalLatches
 import dev.eclipse.ssh.ui.terminal.terminalTextInset
-import dev.eclipse.ssh.terminal.TerminalExportRenderer
-import dev.eclipse.ssh.security.BiometricUnlocker
-import dev.eclipse.ssh.security.SecureClipboard
-import kotlin.math.roundToInt
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import dev.eclipse.ssh.ui.terminal.termux.TermuxTerminalView
+import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
-import javax.inject.Inject
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import javax.inject.Inject
+import kotlin.math.roundToInt
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
@@ -464,26 +438,30 @@ class MainActivity : FragmentActivity() {
      */
     private fun openConfirmedForward() {
         val request = ForwardRequests.takeConfirmed() ?: return
-        val host = viewModel.uiState.value.hosts.firstOrNull { it.id == request.hostId }
+        val host =
+            viewModel.uiState.value.hosts
+                .firstOrNull { it.id == request.hostId }
         if (host == null) {
             viewModel.reportUiMessage("That host is no longer configured, so no forward was opened")
             return
         }
         when (request.type) {
-            ForwardType.LOCAL -> viewModel.startLocalForward(
-                host,
-                request.localPort,
-                // Unreachable by construction - the form will not confirm a Local forward without a
-                // destination - and kept as the dialog's own fallbacks so that a request built by
-                // anything else still opens a tunnel rather than throwing on the way to one.
-                request.remoteHost ?: DEFAULT_FORWARD_LISTEN_HOST,
-                request.remotePort ?: request.localPort,
-            )
-            ForwardType.REMOTE -> viewModel.startRemoteForward(
-                host,
-                request.remotePort ?: request.localPort,
-                request.localPort,
-            )
+            ForwardType.LOCAL ->
+                viewModel.startLocalForward(
+                    host,
+                    request.localPort,
+                    // Unreachable by construction - the form will not confirm a Local forward without a
+                    // destination - and kept as the dialog's own fallbacks so that a request built by
+                    // anything else still opens a tunnel rather than throwing on the way to one.
+                    request.remoteHost ?: DEFAULT_FORWARD_LISTEN_HOST,
+                    request.remotePort ?: request.localPort,
+                )
+            ForwardType.REMOTE ->
+                viewModel.startRemoteForward(
+                    host,
+                    request.remotePort ?: request.localPort,
+                    request.localPort,
+                )
             ForwardType.DYNAMIC -> viewModel.startDynamicForward(host, request.localPort)
         }
     }
@@ -551,7 +529,10 @@ internal fun parseSshDeepLink(uri: Uri?): HostProfile? {
     )
 }
 
-private enum class Destination(val label: String, val icon: ImageVector) {
+private enum class Destination(
+    val label: String,
+    val icon: ImageVector,
+) {
     HOSTS("Hosts", Icons.Default.Computer),
     TERMINAL("Terminal", Icons.Default.Terminal),
     FILES("Files", Icons.Default.FolderOpen),
@@ -568,11 +549,16 @@ private enum class Destination(val label: String, val icon: ImageVector) {
  * enough to ANR at worst, and a revoked grant or a full volume would have thrown straight out of
  * the callback and taken the process down. The [Result] lets the caller report the failure.
  */
-private suspend fun writeDocument(context: Context, uri: Uri, bytes: ByteArray): Result<Unit> =
+private suspend fun writeDocument(
+    context: Context,
+    uri: Uri,
+    bytes: ByteArray,
+): Result<Unit> =
     withContext(Dispatchers.IO) {
         runCatching {
-            val stream = context.contentResolver.openOutputStream(uri, "w")
-                ?: throw IOException("The selected location could not be opened for writing")
+            val stream =
+                context.contentResolver.openOutputStream(uri, "w")
+                    ?: throw IOException("The selected location could not be opened for writing")
             stream.use { it.write(bytes) }
         }
     }
@@ -595,6 +581,7 @@ private fun EclipseWorkspace(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activeHost = state.hosts.firstOrNull { it.id == state.selectedHostId } ?: state.hosts.firstOrNull()
+
     /**
      * The host a Files-tab transfer is addressed to: the one the explorer is browsing when it is
      * browsing one, and otherwise the host selected elsewhere in the app.
@@ -612,6 +599,7 @@ private fun EclipseWorkspace(
         val hostId = explorer.activeSessionId.takeIf { explorer.isSftp }?.removePrefix("sftp:")
         state.hosts.firstOrNull { it.id == hostId } ?: activeHost
     }
+
     /**
      * The directory the explorer is browsing, when it is browsing a server's - the destination a
      * picked upload should land in. Null while the local session is active, so the pickers fall
@@ -627,9 +615,10 @@ private fun EclipseWorkspace(
     // that does not exist there.
     var notificationsRequested by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        val needed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
+        val needed =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
         if (needed && !notificationsRequested) {
             notificationsRequested = true
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -647,6 +636,7 @@ private fun EclipseWorkspace(
     val scope = rememberCoroutineScope()
     var pickerActive by remember { mutableStateOf(false) }
     var destination by rememberSaveable { mutableStateOf(Destination.HOSTS) }
+
     /**
      * The session whose shell is on screen, or null while the Terminal destination is showing its list
      * of sessions.
@@ -658,6 +648,7 @@ private fun EclipseWorkspace(
      * user was in rather than dropping them into the list.
      */
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+
     /**
      * Follows the sessions: a new one takes the screen, and the one being watched gives it back when it
      * ends.
@@ -701,6 +692,7 @@ private fun EclipseWorkspace(
     }
     var selectedKeyBytes by remember { mutableStateOf<ByteArray?>(null) }
     var selectedKeyName by remember { mutableStateOf<String?>(null) }
+
     /**
      * The one-off key for the connect prompt.
      *
@@ -710,20 +702,23 @@ private fun EclipseWorkspace(
      * than a message. It also took the name from `uri.lastPathSegment`, which on a `content://`
      * document is a provider-internal id, not a filename.
      */
-    val keyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        pickerActive = false
-        if (uri != null) scope.launch {
-            readPickedKeyFile(context, uri)
-                .onSuccess { picked ->
-                    selectedKeyBytes = picked.bytes
-                    selectedKeyName = picked.name
+    val keyPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            pickerActive = false
+            if (uri != null) {
+                scope.launch {
+                    readPickedKeyFile(context, uri)
+                        .onSuccess { picked ->
+                            selectedKeyBytes = picked.bytes
+                            selectedKeyName = picked.name
+                        }.onFailure { error ->
+                            viewModel.reportUiMessage(error.message ?: "That key file could not be read")
+                        }
                 }
-                .onFailure { error ->
-                    viewModel.reportUiMessage(error.message ?: "That key file could not be read")
-                }
+            }
         }
-    }
     var pendingDownload by remember { mutableStateOf<RemoteFile?>(null) }
+
     /**
      * The userspace rows a "Copy to this device" is copying, held while its picker is up.
      *
@@ -734,96 +729,100 @@ private fun EclipseWorkspace(
      * land here: one row offered a name, a selection offered a folder.
      */
     var pendingUbuntuCopyOut by remember { mutableStateOf<List<FsEntry>>(emptyList()) }
-    val downloadPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
-        pickerActive = false
-        // Read and cleared before anything else can look at them: a second resume must not re-run
-        // this copy, and the explorer may have moved on by the time the picker answered.
-        val ubuntuEntry = pendingUbuntuCopyOut.firstOrNull()
-        val remote = pendingDownload
-        pendingUbuntuCopyOut = emptyList()
-        pendingDownload = null
-        if (uri == null) return@rememberLauncherForActivityResult
-        // The explorer's session, not the app's selected host: the file being downloaded was
-        // picked in whichever server the Files tab was browsing - see [transferHost].
-        val host = transferHost()
-        if (ubuntuEntry != null && viewModel.filesExplorer.state.value.isUbuntu) {
-            // The userspace is this device, so the document the picker just made *is* the copy: a
-            // direct stream from the rootfs into it, with no host and no queue to file it under.
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            viewModel.filesExplorer.copyOutOfUbuntu(ubuntuEntry, uri)
-            return@rememberLauncherForActivityResult
-        }
-        if (host != null && remote != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            viewModel.startDownload(host, remote, uri)
-        }
-    }
-    val ubuntuCopyOutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        pickerActive = false
-        val entries = pendingUbuntuCopyOut
-        pendingUbuntuCopyOut = emptyList()
-        if (uri != null && entries.isNotEmpty()) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            viewModel.filesExplorer.copySelectionOutOfUbuntu(entries, uri)
-        }
-    }
-    val uploadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
-        pickerActive = false
-        val host = transferHost()
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        if (viewModel.filesExplorer.state.value.isUbuntu) {
-            // Uploading *into* the userspace: the destination is the guest folder on screen, and the
-            // copy is a local stream rather than a queued transfer - see [UbuntuTransfers].
-            uris.forEach { uri ->
+    val downloadPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+            pickerActive = false
+            // Read and cleared before anything else can look at them: a second resume must not re-run
+            // this copy, and the explorer may have moved on by the time the picker answered.
+            val ubuntuEntry = pendingUbuntuCopyOut.firstOrNull()
+            val remote = pendingDownload
+            pendingUbuntuCopyOut = emptyList()
+            pendingDownload = null
+            if (uri == null) return@rememberLauncherForActivityResult
+            // The explorer's session, not the app's selected host: the file being downloaded was
+            // picked in whichever server the Files tab was browsing - see [transferHost].
+            val host = transferHost()
+            if (ubuntuEntry != null && viewModel.filesExplorer.state.value.isUbuntu) {
+                // The userspace is this device, so the document the picker just made *is* the copy: a
+                // direct stream from the rootfs into it, with no host and no queue to file it under.
                 runCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+                viewModel.filesExplorer.copyOutOfUbuntu(ubuntuEntry, uri)
+                return@rememberLauncherForActivityResult
+            }
+            if (host != null && remote != null) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+                viewModel.startDownload(host, remote, uri)
+            }
+        }
+    val ubuntuCopyOutPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+            pickerActive = false
+            val entries = pendingUbuntuCopyOut
+            pendingUbuntuCopyOut = emptyList()
+            if (uri != null && entries.isNotEmpty()) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+                viewModel.filesExplorer.copySelectionOutOfUbuntu(entries, uri)
+            }
+        }
+    val uploadPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+            pickerActive = false
+            val host = transferHost()
+            if (uris.isEmpty()) return@rememberLauncherForActivityResult
+            if (viewModel.filesExplorer.state.value.isUbuntu) {
+                // Uploading *into* the userspace: the destination is the guest folder on screen, and the
+                // copy is a local stream rather than a queued transfer - see [UbuntuTransfers].
+                uris.forEach { uri ->
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                }
+                viewModel.filesExplorer.copyIntoUbuntu(uris)
+                return@rememberLauncherForActivityResult
+            }
+            if (host != null) {
+                uris.forEach { uri ->
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    // Where the explorer is browsing, so the file lands in the folder on screen; the
+                    // ViewModel's own path only as a fallback, for uploads started outside the tab.
+                    val directory = explorerRemoteDirectory() ?: state.remotePath ?: viewModel.remoteDirectory(host)
+                    viewModel.startUpload(host, uri, directory)
                 }
             }
-            viewModel.filesExplorer.copyIntoUbuntu(uris)
-            return@rememberLauncherForActivityResult
         }
-        if (host != null) {
-            uris.forEach { uri ->
+    val localFolderPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+            pickerActive = false
+            if (uri != null) {
                 runCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
                 }
-                // Where the explorer is browsing, so the file lands in the folder on screen; the
-                // ViewModel's own path only as a fallback, for uploads started outside the tab.
-                val directory = explorerRemoteDirectory() ?: state.remotePath ?: viewModel.remoteDirectory(host)
-                viewModel.startUpload(host, uri, directory)
+                viewModel.setLocalRoot(uri)
+                // The explorer keeps its own root (persisted, so it survives restarts) and its own
+                // listing of it; the ViewModel's copy above is what downloads and syncs read.
+                viewModel.filesExplorer.setLocalRoot(uri)
             }
         }
-    }
-    val localFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        pickerActive = false
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
-            }
-            viewModel.setLocalRoot(uri)
-            // The explorer keeps its own root (persisted, so it survives restarts) and its own
-            // listing of it; the ViewModel's copy above is what downloads and syncs read.
-            viewModel.filesExplorer.setLocalRoot(uri)
-        }
-    }
     // The Files explorer's full-window surfaces, all three of them now. The preview used to be a
     // sheet at this root, on the theory that looking at a file was part of the workspace; reading is
     // not, and a sheet letterboxes what it shows, so it opens in a window of its own like the editor
@@ -834,6 +833,7 @@ private fun EclipseWorkspace(
     // browser is one archive at a time by design - opening a second archive closes the first,
     // because each one holds an SFTP channel for as long as it is open.
     var archiveTarget by remember { mutableStateOf<ArchiveTarget?>(null) }
+
     /**
      * Opens one remote archive in the View Archive browser — the Files sheet's View Archive row.
      *
@@ -843,26 +843,36 @@ private fun EclipseWorkspace(
      * only, before anything is read: it costs nothing and a name that suggests no browsable
      * container means the row was offered in error — reported, not guessed around.
      */
-    fun openArchive(entry: FsEntry, provider: FileSystemProvider) {
-        val format = ArchiveReader.formatFor(entry.name)
-            ?: return viewModel.reportUiMessage("\"${entry.name}\" is not an archive View Archive can browse")
+    fun openArchive(
+        entry: FsEntry,
+        provider: FileSystemProvider,
+    ) {
+        val format =
+            ArchiveReader.formatFor(entry.name)
+                ?: return viewModel.reportUiMessage("\"${entry.name}\" is not an archive View Archive can browse")
         val explorer = viewModel.filesExplorer.state.value
         val sessionId = explorer.activeSessionId
-        val size = entry.size
-            ?: return viewModel.reportUiMessage("\"${entry.name}\" has no size to read by range")
-        val source = viewModel.filesExplorer.archiveSourceFor(sessionId, entry.path, size)
-            ?: return viewModel.reportUiMessage("View Archive needs a connected server session")
+        val size =
+            entry.size
+                ?: return viewModel.reportUiMessage("\"${entry.name}\" has no size to read by range")
+        val source =
+            viewModel.filesExplorer.archiveSourceFor(sessionId, entry.path, size)
+                ?: return viewModel.reportUiMessage("View Archive needs a connected server session")
         // Opening a second archive closes the first: each browser holds an SFTP channel for as
         // long as it is open, and two of them is a leak the user never asked for.
         archiveTarget?.browser?.close()
-        archiveTarget = ArchiveTarget(entry, ArchiveBrowserState(
-            archiveName = entry.name,
-            format = format,
-            source = source,
-            provider = provider,
-            remotePath = entry.path,
-            scope = scope,
-        ))
+        archiveTarget =
+            ArchiveTarget(
+                entry,
+                ArchiveBrowserState(
+                    archiveName = entry.name,
+                    format = format,
+                    source = source,
+                    provider = provider,
+                    remotePath = entry.path,
+                    scope = scope,
+                ),
+            )
     }
 
     /**
@@ -870,7 +880,10 @@ private fun EclipseWorkspace(
      * a stack trace in sight. The honest summary is tiered: all good says how many and how much;
      * anything refused or failed says so, because a silent skip is how a hostile member hides.
      */
-    fun reportExtractOutcome(archiveName: String, outcomes: List<ArchiveExtractor.Outcome>) {
+    fun reportExtractOutcome(
+        archiveName: String,
+        outcomes: List<ArchiveExtractor.Outcome>,
+    ) {
         val extracted = outcomes.filterIsInstance<ArchiveExtractor.Outcome.Extracted>()
         if (outcomes.size == extracted.size) {
             val total = extracted.sumOf { it.bytes }
@@ -880,12 +893,13 @@ private fun EclipseWorkspace(
         val refused = outcomes.count { it is ArchiveExtractor.Outcome.Refused }
         val destinationRefused = outcomes.count { it is ArchiveExtractor.Outcome.DestinationRefused }
         val failed = outcomes.filterIsInstance<ArchiveExtractor.Outcome.Failed>()
-        val parts = buildList {
-            if (extracted.isNotEmpty()) add("${extracted.size} extracted")
-            if (refused > 0) add("$refused skipped for safety")
-            if (destinationRefused > 0) add("$destinationRefused could not be created")
-            failed.firstOrNull()?.let { add("first failure: ${it.reason}") }
-        }
+        val parts =
+            buildList {
+                if (extracted.isNotEmpty()) add("${extracted.size} extracted")
+                if (refused > 0) add("$refused skipped for safety")
+                if (destinationRefused > 0) add("$destinationRefused could not be created")
+                failed.firstOrNull()?.let { add("first failure: ${it.reason}") }
+            }
         viewModel.reportUiMessage("Extract from \"$archiveName\": ${parts.joinToString("; ")}")
     }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
@@ -896,46 +910,67 @@ private fun EclipseWorkspace(
     var pendingAccountImportUri by remember { mutableStateOf<Uri?>(null) }
     var showAccountExportDialog by remember { mutableStateOf(false) }
     var showAccountImportDialog by remember { mutableStateOf(false) }
-    val configImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        pickerActive = false
-        if (uri != null) viewModel.importOpenSshConfig(uri)
-    }
-    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        pickerActive = false
-        if (uri != null) { pendingImportUri = uri; showImportDialog = true }
-    }
-    val textExportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
-        pickerActive = false
-        val bytes = pendingTextExport
-        pendingTextExport = null
-        if (uri != null && bytes != null) scope.launch {
-            writeDocument(context, uri, bytes)
-                .onFailure { viewModel.reportUiFailure("Could not export terminal text", it) }
+    val configImportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            pickerActive = false
+            if (uri != null) viewModel.importOpenSshConfig(uri)
         }
-    }
-    val screenExportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri: Uri? ->
-        pickerActive = false
-        val bytes = pendingScreenExport
-        pendingScreenExport = null
-        if (uri != null && bytes != null) scope.launch {
-            writeDocument(context, uri, bytes)
-                .onFailure { viewModel.reportUiFailure("Could not export screenshot", it) }
+    val importPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            pickerActive = false
+            if (uri != null) {
+                pendingImportUri = uri
+                showImportDialog = true
+            }
         }
-    }
+    val textExportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
+            pickerActive = false
+            val bytes = pendingTextExport
+            pendingTextExport = null
+            if (uri != null && bytes != null) {
+                scope.launch {
+                    writeDocument(context, uri, bytes)
+                        .onFailure { viewModel.reportUiFailure("Could not export terminal text", it) }
+                }
+            }
+        }
+    val screenExportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri: Uri? ->
+            pickerActive = false
+            val bytes = pendingScreenExport
+            pendingScreenExport = null
+            if (uri != null && bytes != null) {
+                scope.launch {
+                    writeDocument(context, uri, bytes)
+                        .onFailure { viewModel.reportUiFailure("Could not export screenshot", it) }
+                }
+            }
+        }
     var pendingAccountExportPassphrase by remember { mutableStateOf<String?>(null) }
-    val accountExportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
-        pickerActive = false
-        val host = pendingAccountExportHost
-        val pass = pendingAccountExportPassphrase
-        pendingAccountExportHost = null
-        pendingAccountExportPassphrase = null
-        if (uri != null && host != null && pass != null) viewModel.exportProfiles(listOf(host), pass, uri)
-    }
-    val accountImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        pickerActive = false
-        if (uri != null) { pendingAccountImportUri = uri; showAccountImportDialog = true }
-    }
-    fun connectAndStart(host: HostProfile, password: String?, passphrase: String?) {
+    val accountExportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+            pickerActive = false
+            val host = pendingAccountExportHost
+            val pass = pendingAccountExportPassphrase
+            pendingAccountExportHost = null
+            pendingAccountExportPassphrase = null
+            if (uri != null && host != null && pass != null) viewModel.exportProfiles(listOf(host), pass, uri)
+        }
+    val accountImportPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            pickerActive = false
+            if (uri != null) {
+                pendingAccountImportUri = uri
+                showAccountImportDialog = true
+            }
+        }
+
+    fun connectAndStart(
+        host: HostProfile,
+        password: String?,
+        passphrase: String?,
+    ) {
         // The key material is handed over unparsed. `SshKeyLoader.load` used to run right here, inside
         // the Connect button's onClick: an encrypted OpenSSH key derives its wrapping key with
         // bcrypt-pbkdf, deliberately slow, and on a 16-round key that is seconds of work on the main
@@ -972,6 +1007,7 @@ private fun EclipseWorkspace(
         openSessionId = state.tabs.firstOrNull { it.hostId == host.id }?.id ?: host.id
         destination = Destination.TERMINAL
     }
+
     /**
      * A tab's own Reconnect action. The dial speaks for that tab's session - see
      * [MainViewModel.reconnectSession] - and the tab it was asked from is the one opened, where a
@@ -982,6 +1018,7 @@ private fun EclipseWorkspace(
         openSessionId = sessionKey
         destination = Destination.TERMINAL
     }
+
     /**
      * Saves what the refused-login dialog collected, so the next connect is one tap again.
      *
@@ -991,24 +1028,29 @@ private fun EclipseWorkspace(
      * dial takes the typed credentials directly (caller-supplied beats stored in
      * `resolveCredentials`), so the two proceed in parallel.
      */
-    fun saveAnsweredCredentials(host: HostProfile, password: String?, passphrase: String?) {
+    fun saveAnsweredCredentials(
+        host: HostProfile,
+        password: String?,
+        passphrase: String?,
+    ) {
         val typedPassword = password?.takeIf(String::isNotBlank)
         val typedPassphrase = passphrase?.takeIf(String::isNotBlank)
         val keyBytes = selectedKeyBytes
         val keyName = selectedKeyName
         scope.launch {
-            val keyEdit = if (keyBytes == null || keyName == null) {
-                KeyEdit.Keep
-            } else {
-                // Only a key that parses is stored — the Add Host form holds the same line, for the
-                // same reason: a saved key that cannot authenticate is indistinguishable from a
-                // server refusing the account at the next connect. The retry itself still goes out
-                // with the picked bytes and reports a parse failure in its own words.
-                when (val probe = probeSshKey(keyBytes, keyName, typedPassphrase)) {
-                    is SshKeyProbe.Ready -> KeyEdit.Replace(keyBytes, keyName, probe.type)
-                    else -> KeyEdit.Keep
+            val keyEdit =
+                if (keyBytes == null || keyName == null) {
+                    KeyEdit.Keep
+                } else {
+                    // Only a key that parses is stored — the Add Host form holds the same line, for the
+                    // same reason: a saved key that cannot authenticate is indistinguishable from a
+                    // server refusing the account at the next connect. The retry itself still goes out
+                    // with the picked bytes and reports a parse failure in its own words.
+                    when (val probe = probeSshKey(keyBytes, keyName, typedPassphrase)) {
+                        is SshKeyProbe.Ready -> KeyEdit.Replace(keyBytes, keyName, probe.type)
+                        else -> KeyEdit.Keep
+                    }
                 }
-            }
             viewModel.saveHost(
                 host,
                 HostCredentialUpdate(
@@ -1036,6 +1078,7 @@ private fun EclipseWorkspace(
         onDispose { }
     }
     val unlocker = remember { BiometricUnlocker() }
+
     /**
      * Whether this device can actually satisfy a biometric prompt.
      *
@@ -1052,9 +1095,10 @@ private fun EclipseWorkspace(
             biometricUsable = (context as? FragmentActivity)?.let(unlocker::canAuthenticate) == true
         }
         refresh()
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refresh()
-        }
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) refresh()
+            }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -1066,12 +1110,14 @@ private fun EclipseWorkspace(
     // checks whether the thing they just did took effect. Cheap enough to do unconditionally: one
     // copy of a map that holds a host key per trusted host.
     DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshKnownHosts()
-        }
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshKnownHosts()
+            }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
     // Turning the switch on requires a successful prompt, so the setting can never claim a
     // protection the device will not actually give. Failure has to be *reported*, though: with the
     // error callback dropped, a device with nothing enrolled showed a switch that flicked back with
@@ -1237,35 +1283,38 @@ private fun EclipseWorkspace(
     val vaultAutoLockMinutes by rememberUpdatedState(state.settings.vaultAutoLockMinutes)
     var backgroundedAtMs by remember { mutableStateOf<Long?>(null) }
     DisposableEffect(Unit) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_STOP ->
-                    // Two populations of picker hold the countdown off, and both have to be asked.
-                    // `pickerActive` is this composition's own flag, set by the launchers in this
-                    // file. The gate is the process-wide one, held by the windows that own their
-                    // pickers now - a generated key pair, an exported backup, a saved install log -
-                    // and a window cannot reach a `remember` owned here, which is exactly why the
-                    // gate exists. A picker either of them opened reports the process as
-                    // backgrounded just the same, so either one alone is a reason not to start.
-                    if (!pickerActive && !viewModel.vaultUnlockGate.pickerActive) {
-                        backgroundedAtMs = System.currentTimeMillis()
+        val observer =
+            LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_STOP ->
+                        // Two populations of picker hold the countdown off, and both have to be asked.
+                        // `pickerActive` is this composition's own flag, set by the launchers in this
+                        // file. The gate is the process-wide one, held by the windows that own their
+                        // pickers now - a generated key pair, an exported backup, a saved install log -
+                        // and a window cannot reach a `remember` owned here, which is exactly why the
+                        // gate exists. A picker either of them opened reports the process as
+                        // backgrounded just the same, so either one alone is a reason not to start.
+                        if (!pickerActive && !viewModel.vaultUnlockGate.pickerActive) {
+                            backgroundedAtMs = System.currentTimeMillis()
+                        }
+                    Lifecycle.Event.ON_START -> {
+                        val wentAwayAtMs = backgroundedAtMs
+                        backgroundedAtMs = null
+                        if (
+                            wentAwayAtMs != null &&
+                            shouldRelockVault(
+                                autoLockMinutes = vaultAutoLockMinutes,
+                                lockConfigured = pinEnabled,
+                                backgroundedAtMs = wentAwayAtMs,
+                                nowMs = System.currentTimeMillis(),
+                            )
+                        ) {
+                            unlocked = false
+                        }
                     }
-                Lifecycle.Event.ON_START -> {
-                    val wentAwayAtMs = backgroundedAtMs
-                    backgroundedAtMs = null
-                    if (
-                        wentAwayAtMs != null &&
-                        shouldRelockVault(
-                            autoLockMinutes = vaultAutoLockMinutes,
-                            lockConfigured = pinEnabled,
-                            backgroundedAtMs = wentAwayAtMs,
-                            nowMs = System.currentTimeMillis(),
-                        )
-                    ) unlocked = false
+                    else -> Unit
                 }
-                else -> Unit
             }
-        }
         ProcessLifecycleOwner.get().lifecycle.addObserver(observer)
         onDispose { ProcessLifecycleOwner.get().lifecycle.removeObserver(observer) }
     }
@@ -1285,9 +1334,11 @@ private fun EclipseWorkspace(
      * session that is not there - a saved id whose process died takes the user to the list, not to a
      * chrome-less screen with nothing in it.
      */
-    val terminalSessionOpen = destination == Destination.TERMINAL &&
-        !(state.settings.pinEnabled && !unlocked) &&
-        openSessionId?.let { id -> state.tabs.any { it.id == id } } == true
+    val terminalSessionOpen =
+        destination == Destination.TERMINAL &&
+            !(state.settings.pinEnabled && !unlocked) &&
+            openSessionId?.let { id -> state.tabs.any { it.id == id } } == true
+
     /**
      * The same moment, minus the system bars, when the user chose to keep them.
      *
@@ -1319,924 +1370,1058 @@ private fun EclipseWorkspace(
     DisposableEffect(terminalImmersive) {
         val window = (localView.context as? android.app.Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, localView) }
-        if (terminalImmersive && controller != null) runCatching {
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+        if (terminalImmersive && controller != null) {
+            runCatching {
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            }
         }
         onDispose {
-            if (terminalImmersive && controller != null) runCatching {
-                controller.show(WindowInsetsCompat.Type.systemBars())
+            if (terminalImmersive && controller != null) {
+                runCatching {
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                }
             }
         }
     }
 
     EclipseTheme(darkTheme = state.settings.darkTheme) {
-    if (state.settings.pinEnabled && !unlocked) {
-        LockScreen(
-            biometricEnabled = state.settings.biometricUnlock && biometricUsable,
-            verifyPin = viewModel::verifyPin,
-            onUnlocked = { unlocked = true },
-            // Reported into the lock screen's own error slot rather than through
-            // `statusMessage`: the snackbar host lives inside the workspace scaffold, which is the
-            // branch *not* composed while the app is locked, so a snackbar raised from here would
-            // never be seen. Before this, "Use biometric" on a device with nothing enrolled did
-            // nothing whatsoever.
-            onBiometricUnlock = { onFailure ->
-                val activity = context as? FragmentActivity
-                if (activity == null) onFailure("Biometric unlock is unavailable here")
-                else unlocker.authenticate(activity, { unlocked = true }, onFailure)
-            },
-        )
-    } else {
-    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val isWide = maxWidth >= 700.dp
-        if (isWide) {
-            Row(Modifier.fillMaxSize()) {
-                // Gone while a shell owns the window - see [terminalSessionOpen]. Back, or the
-                // strip's own button, brings it straight back.
-                if (!terminalSessionOpen) NavigationRail(
-                    modifier = Modifier.fillMaxHeight().padding(start = 12.dp, top = 18.dp, bottom = 18.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ) {
-                    Text("E", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(18.dp))
-                    Spacer(Modifier.height(20.dp))
-                    Destination.entries.forEach { item ->
-                        NavigationRailItem(
-                            selected = destination == item,
-                            onClick = { destination = item },
-                            icon = { Icon(item.icon, item.label) },
-                            label = { Text(item.label, maxLines = 1) },
-                        )
-                    }
-                }
-                WorkspaceScaffold(
-                    destination = destination,
-                    state = state,
-                    frames = viewModel.frames,
-                    channelProvider = viewModel::terminalChannelFor,
-                    filesExplorer = viewModel.filesExplorer,
-                    linuxUserspace = viewModel.linuxUserspace,
-                    localLinuxCard = viewModel.localLinuxCard,
-                    pendingAction = pendingAction,
-                    onActionHandled = onActionHandled,
-                    onPreviewFile = { entry, provider ->
-                        context.startActivity(FilePreviewActivity.intent(context, entry, provider))
-                    },
-                    onEditFile = { entry, provider -> editorRequest = EditorRequest(entry, provider) },
-                    onOpenArchive = ::openArchive,
-                    onDestination = { destination = it },
-                    onSearch = viewModel::setQuery,
-                    onAddHost = { openHostForm(context) },
-                    onConnect = { host ->
-                        // The local Ubuntu card never opens the login: there is nothing to
-                        // authenticate (the session is the app's own uid), so the tap goes straight
-                        // to the terminal. Every other host gets the auth dialog as before.
-                        if (LocalLinuxHost.isLocalHost(host.id)) viewModel.connect(host) else showAuthHost = host
-                    },
-                    onReconnectSession = { reconnectAndOpen(it) },
-                    onShowDetails = {
-                        context.startActivity(
-                            HostDetailsActivity.intent(context, it, state.serverStats[it.id]),
-                        )
-                    },
-                    onEditHost = { openHostForm(context, it) },
-                    onRemoveHost = { pendingDeleteHost = it },
-                    onToggleFavoriteHost = { viewModel.saveHost(it.copy(isFavorite = !it.isFavorite)) },
-                    onExportAccount = { pendingAccountExportHost = it; showAccountExportDialog = true },
-                    onDuplicateHost = requestDuplicateHost,
-                    // A window, and handed the runtime half of its own subject here: the state
-                    // of every rule and the forwards actually bound are this workspace's, which is
-                    // what the manager window cannot read for itself. See ActionSubject.ForwardManager.
-                    onManageForwards = {
-                        context.startActivity(
-                            PortForwardManagerActivity.intent(context, it, state.forwardStatuses, state.forwardings),
-                        )
-                    },
-                    onRemoteDesktop = requestRemoteDesktop,
-                    onWakeOnLan = viewModel::wakeHost,
-                    onRdpDesktop = requestRdpDesktop,
-                    onCloseTab = viewModel::closeTab,
-                    onDuplicateSession = viewModel::duplicateSession,
-                    onDisconnectAll = viewModel::disconnectAll,
-                    openSessionId = openSessionId,
-                    onOpenSession = { openSessionId = it },
-                    // The session owns the window whatever the bars do; the immersive flag is only
-                    // the system-bars half of full screen.
-                    immersive = terminalSessionOpen,
-                    onSendInput = viewModel::sendInput,
-                    onSendText = viewModel::sendText,
-                    onSendKey = viewModel::sendKey,
-                    onSendChar = viewModel::sendChar,
-                    onResizeTerminal = viewModel::resizeTerminal,
-                    onScrollTerminal = viewModel::scrollTerminalBy,
-                    onScrollTerminalTo = viewModel::scrollTerminal,
-                    onSessionReview = viewModel::sessionReview,
-                    onScrollToLine = viewModel::scrollTerminalToLine,
-                    onMouseWheel = viewModel::sendMouseWheel,
-                    onArrowKeys = viewModel::sendArrowKeys,
-                    onMouseGesture = viewModel::sendMouseGesture,
-                    onCopySelection = { hostId, sel ->
-                        val range = sel.toTextRange()
-                        val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
-                        if (text.isNotEmpty()) viewModel.copyToClipboard(text)
-                    },
-                    onCopyTerminalText = viewModel::copyToClipboard,
-                    onPasteTerminal = viewModel::pasteFromClipboard,
-                    onSaveSnippet = viewModel::saveSnippet,
-                    onSaveLogs = { hostId, text ->
-                        pendingTextExport = ("Eclipse SSH session log\nHost: $hostId\nSaved: ${System.currentTimeMillis()}\n\n$text").toByteArray()
-                        pickerActive = true
-                        textExportPicker.launch("eclipse-$hostId.log")
-                    },
-                    // The raw log comes straight from the view model's per-session transcript -
-                    // keyed by session, so the shell on screen is the one saved - and rides the
-                    // same SAF launcher and pending-bytes slot the diagnostics save uses. Nothing
-                    // is written unless a log exists, which the menu item already ensured.
-                    onSaveSessionLog = { sessionKey, hostName ->
-                        val text = viewModel.sessionLogText(sessionKey)
-                        if (text.isNullOrEmpty()) {
-                            viewModel.reportUiMessage("This session has no output to save yet")
-                        } else {
-                            pendingTextExport = text.toByteArray()
-                            pickerActive = true
-                            textExportPicker.launch("$hostName-session.log")
-                        }
-                    },
-                    // The other half of the same incident. The log above is what the session sent;
-                    // this is what the app drew from it, and a rendering bug is only ever the two
-                    // read together.
-                    onSaveRenderAudit = { sessionKey, hostName ->
-                        val text = viewModel.renderAuditText(sessionKey)
-                        if (text.isNullOrEmpty()) {
-                            viewModel.reportUiMessage("This session has not drawn anything yet")
-                        } else {
-                            pendingTextExport = text.toByteArray()
-                            pickerActive = true
-                            textExportPicker.launch("$hostName-render-audit.txt")
-                        }
-                    },
-                    onNotifyWhenDone = viewModel::notifyWhenDone,
-                    onSaveText = { hostId, text ->
-                        pendingTextExport = text.toByteArray()
-                        pickerActive = true
-                        textExportPicker.launch("eclipse-$hostId.txt")
-                    },
-                    onSaveScreen = { hostId, text ->
-                        // Rendered off the main thread. The bitmap is clamped to 2048x4096, so this
-                        // allocates up to ~33 MB and then PNG-compresses it — far too much to run in a
-                        // click handler, where it janked and risked an ANR on a long scrollback.
-                        // The picker is launched from inside the coroutine, after the bytes exist, so
-                        // the result callback can never observe pendingScreenExport still null.
-                        pickerActive = true
-                        scope.launch {
-                            pendingScreenExport = withContext(Dispatchers.Default) {
-                                TerminalExportRenderer.renderScreenPng("Eclipse SSH · $hostId", text)
-                            }
-                            screenExportPicker.launch("eclipse-$hostId.png")
-                        }
-                    },
-                    onClearCompleted = viewModel::clearCompletedTransfers,
-                    onUpload = { pickerActive = true; uploadPicker.launch(arrayOf("*/*")) },
-                    onDownloadFile = { remote ->
-                        // The explorer's session, not merely the selected host - see [transferHost].
-                        val host = transferHost()
-                        if (host != null) {
-                            if (state.localDirUri != null) viewModel.downloadToLocal(host, remote)
-                            else { pendingDownload = remote; pickerActive = true; downloadPicker.launch(remote.name) }
-                        }
-                    },
-                    onCopyToDevice = { entries ->
-                        // The explorer's session again, because a copy out of the userspace is only a
-                        // copy while the userspace is what is on screen. One file is offered a name -
-                        // the same `CreateDocument` answer a server's download gets - and a selection
-                        // is offered a folder, the one destination that serves any number of them,
-                        // since `CreateDocument` can only answer with a single document.
-                        pendingUbuntuCopyOut = entries
-                        pickerActive = true
-                        if (entries.size == 1) downloadPicker.launch(entries.first().name)
-                        else ubuntuCopyOutPicker.launch(null)
-                    },
-                    onPickLocalFolder = { pickerActive = true; localFolderPicker.launch(null) },
-                    onUploadLocal = { file -> transferHost()?.let { viewModel.uploadLocal(it, file) } },
-                    onScheduleDownload = { files, scheduledAt, repeatMinutes -> transferHost()?.let { host -> files.forEach { viewModel.scheduleDownload(host, it, scheduledAt, repeatMinutes) } } },
-                    onScheduleUpload = { files, scheduledAt, repeatMinutes -> transferHost()?.let { host -> files.forEach { viewModel.scheduleUpload(host, it, scheduledAt, repeatMinutes) } } },
-                    onSync = { direction -> transferHost()?.let { host -> if (direction == SyncDirection.LOCAL_TO_REMOTE) viewModel.syncToRemote(host) else viewModel.syncFromRemote(host) } },
-                    onSendToHost = { file, destHost, destPath -> transferHost()?.let { viewModel.sendRemoteTo(it, file, destHost, destPath) } },
-                    onPauseTransfer = viewModel::pauseTransfer,
-                    onResumeTransfer = viewModel::resumeTransfer,
-                    onCancelTransfer = viewModel::cancelTransfer,
-                    onPauseAllTransfers = viewModel::pauseAllTransfers,
-                    onResumeAllTransfers = viewModel::resumeAllTransfers,
-                    onCancelAllTransfers = viewModel::cancelAllTransfers,
-                    onRunTransferNow = viewModel::runTransferNow,
-                    onOpenTransferActions = { transfer ->
-                        // A window of its own rather than a sheet over the card it acts on: the card
-                        // is a live progress row, and covering it to offer Pause is backwards. See
-                        // [TransferActionsActivity].
-                        context.startActivity(TransferActionsActivity.intent(context, transfer))
-                    },
-                    // The host the Add-forward form will name at launch. It used to be reached for at
-                    // *confirmation* time by the `onAddForward` lambda that stood here, which is how a
-                    // forward ended up on whichever server the user had switched to while the form was
-                    // open — see [openConfirmedForward].
-                    activeHost = activeHost,
-                    onStopForward = viewModel::stopForwarding,
-                    onImportVault = { pickerActive = true; importPicker.launch(arrayOf("*/*")) },
-                    onImportProfiles = { pickerActive = true; accountImportPicker.launch(arrayOf("*/*")) },
-                    onImportSshConfig = { pickerActive = true; configImportPicker.launch(arrayOf("text/plain", "*/*")) },
-                    onBiometric = ::setBiometric,
-                    onDarkTheme = viewModel::setDarkTheme,
-                    onTerminalKeyRow = viewModel::setTerminalKeyRowVisible,
-                    onTerminalFontSize = viewModel::setTerminalFontSize,
-                    onLegacyAlgorithms = viewModel::setLegacyAlgorithms,
-                    onBlockScreenshots = viewModel::setBlockScreenshots,
-                    onReconnectAskFirst = viewModel::setReconnectAskFirst,
-                    onTerminalTheme = viewModel::setTerminalTheme,
-                    onTerminalKeepSystemBars = viewModel::setTerminalKeepSystemBars,
-                    onTerminalScrollbackCount = viewModel::setTerminalScrollbackCountVisible,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        } else {
-            Scaffold(
-                // Placed by the Scaffold rather than overlaid on the whole window, which is what the
-                // single host at the bottom of the outer Box used to do: the snackbar covered the
-                // navigation bar, so for as long as one was showing — four seconds, and every status
-                // and error message raises one — the five tabs were untappable, and a tap during that
-                // window was swallowed with no visible effect. The Scaffold offsets its snackbar above
-                // bottomBar and the system insets, which is what Material 3 specifies. The wide
-                // layout keeps the overlay: its navigation is a rail down the left side, so nothing
-                // is underneath.
-                snackbarHost = { SnackbarHost(snackbarHostState) },
-                bottomBar = {
-                    // Gone while a shell owns the window - see [terminalSessionOpen].
-                    if (!terminalSessionOpen) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        Destination.entries.forEach { item ->
-                            NavigationBarItem(
-                                selected = destination == item,
-                                onClick = { destination = item },
-                                icon = { Icon(item.icon, item.label) },
-                                label = { Text(item.label) },
-                            )
-                        }
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.background,
-            ) { padding ->
-                WorkspaceScaffold(
-                    destination = destination,
-                    state = state,
-                    frames = viewModel.frames,
-                    channelProvider = viewModel::terminalChannelFor,
-                    filesExplorer = viewModel.filesExplorer,
-                    linuxUserspace = viewModel.linuxUserspace,
-                    localLinuxCard = viewModel.localLinuxCard,
-                    pendingAction = pendingAction,
-                    onActionHandled = onActionHandled,
-                    onPreviewFile = { entry, provider ->
-                        context.startActivity(FilePreviewActivity.intent(context, entry, provider))
-                    },
-                    onEditFile = { entry, provider -> editorRequest = EditorRequest(entry, provider) },
-                    onOpenArchive = ::openArchive,
-                    onDestination = { destination = it },
-                    onSearch = viewModel::setQuery,
-                    onAddHost = { openHostForm(context) },
-                    onConnect = { host ->
-                        // The local Ubuntu card never opens the login: there is nothing to
-                        // authenticate (the session is the app's own uid), so the tap goes straight
-                        // to the terminal. Every other host gets the auth dialog as before.
-                        if (LocalLinuxHost.isLocalHost(host.id)) viewModel.connect(host) else showAuthHost = host
-                    },
-                    onReconnectSession = { reconnectAndOpen(it) },
-                    onShowDetails = {
-                        context.startActivity(
-                            HostDetailsActivity.intent(context, it, state.serverStats[it.id]),
-                        )
-                    },
-                    onEditHost = { openHostForm(context, it) },
-                    onRemoveHost = { pendingDeleteHost = it },
-                    onToggleFavoriteHost = { viewModel.saveHost(it.copy(isFavorite = !it.isFavorite)) },
-                    onExportAccount = { pendingAccountExportHost = it; showAccountExportDialog = true },
-                    onDuplicateHost = requestDuplicateHost,
-                    // A window, and handed the runtime half of its own subject here: the state
-                    // of every rule and the forwards actually bound are this workspace's, which is
-                    // what the manager window cannot read for itself. See ActionSubject.ForwardManager.
-                    onManageForwards = {
-                        context.startActivity(
-                            PortForwardManagerActivity.intent(context, it, state.forwardStatuses, state.forwardings),
-                        )
-                    },
-                    onRemoteDesktop = requestRemoteDesktop,
-                    onWakeOnLan = viewModel::wakeHost,
-                    onRdpDesktop = requestRdpDesktop,
-                    onCloseTab = viewModel::closeTab,
-                    onDuplicateSession = viewModel::duplicateSession,
-                    onDisconnectAll = viewModel::disconnectAll,
-                    openSessionId = openSessionId,
-                    onOpenSession = { openSessionId = it },
-                    // The session owns the window whatever the bars do; the immersive flag is only
-                    // the system-bars half of full screen.
-                    immersive = terminalSessionOpen,
-                    onSendInput = viewModel::sendInput,
-                    onSendText = viewModel::sendText,
-                    onSendKey = viewModel::sendKey,
-                    onSendChar = viewModel::sendChar,
-                    onResizeTerminal = viewModel::resizeTerminal,
-                    onScrollTerminal = viewModel::scrollTerminalBy,
-                    onScrollTerminalTo = viewModel::scrollTerminal,
-                    onSessionReview = viewModel::sessionReview,
-                    onScrollToLine = viewModel::scrollTerminalToLine,
-                    onMouseWheel = viewModel::sendMouseWheel,
-                    onArrowKeys = viewModel::sendArrowKeys,
-                    onMouseGesture = viewModel::sendMouseGesture,
-                    onCopySelection = { hostId, sel ->
-                        val range = sel.toTextRange()
-                        val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
-                        if (text.isNotEmpty()) viewModel.copyToClipboard(text)
-                    },
-                    onCopyTerminalText = viewModel::copyToClipboard,
-                    onPasteTerminal = viewModel::pasteFromClipboard,
-                    onSaveSnippet = viewModel::saveSnippet,
-                    onSaveLogs = { hostId, text ->
-                        pendingTextExport = ("Eclipse SSH session log\nHost: $hostId\nSaved: ${System.currentTimeMillis()}\n\n$text").toByteArray()
-                        pickerActive = true
-                        textExportPicker.launch("eclipse-$hostId.log")
-                    },
-                    // The raw log comes straight from the view model's per-session transcript -
-                    // keyed by session, so the shell on screen is the one saved - and rides the
-                    // same SAF launcher and pending-bytes slot the diagnostics save uses. Nothing
-                    // is written unless a log exists, which the menu item already ensured.
-                    onSaveSessionLog = { sessionKey, hostName ->
-                        val text = viewModel.sessionLogText(sessionKey)
-                        if (text.isNullOrEmpty()) {
-                            viewModel.reportUiMessage("This session has no output to save yet")
-                        } else {
-                            pendingTextExport = text.toByteArray()
-                            pickerActive = true
-                            textExportPicker.launch("$hostName-session.log")
-                        }
-                    },
-                    // The other half of the same incident. The log above is what the session sent;
-                    // this is what the app drew from it, and a rendering bug is only ever the two
-                    // read together.
-                    onSaveRenderAudit = { sessionKey, hostName ->
-                        val text = viewModel.renderAuditText(sessionKey)
-                        if (text.isNullOrEmpty()) {
-                            viewModel.reportUiMessage("This session has not drawn anything yet")
-                        } else {
-                            pendingTextExport = text.toByteArray()
-                            pickerActive = true
-                            textExportPicker.launch("$hostName-render-audit.txt")
-                        }
-                    },
-                    onNotifyWhenDone = viewModel::notifyWhenDone,
-                    onSaveText = { hostId, text ->
-                        pendingTextExport = text.toByteArray()
-                        pickerActive = true
-                        textExportPicker.launch("eclipse-$hostId.txt")
-                    },
-                    onSaveScreen = { hostId, text ->
-                        // Rendered off the main thread. The bitmap is clamped to 2048x4096, so this
-                        // allocates up to ~33 MB and then PNG-compresses it — far too much to run in a
-                        // click handler, where it janked and risked an ANR on a long scrollback.
-                        // The picker is launched from inside the coroutine, after the bytes exist, so
-                        // the result callback can never observe pendingScreenExport still null.
-                        pickerActive = true
-                        scope.launch {
-                            pendingScreenExport = withContext(Dispatchers.Default) {
-                                TerminalExportRenderer.renderScreenPng("Eclipse SSH · $hostId", text)
-                            }
-                            screenExportPicker.launch("eclipse-$hostId.png")
-                        }
-                    },
-                    onClearCompleted = viewModel::clearCompletedTransfers,
-                    onUpload = { pickerActive = true; uploadPicker.launch(arrayOf("*/*")) },
-                    onDownloadFile = { remote ->
-                        // The explorer's session, not merely the selected host - see [transferHost].
-                        val host = transferHost()
-                        if (host != null) {
-                            if (state.localDirUri != null) viewModel.downloadToLocal(host, remote)
-                            else { pendingDownload = remote; pickerActive = true; downloadPicker.launch(remote.name) }
-                        }
-                    },
-                    onCopyToDevice = { entries ->
-                        // The explorer's session again, because a copy out of the userspace is only a
-                        // copy while the userspace is what is on screen. One file is offered a name -
-                        // the same `CreateDocument` answer a server's download gets - and a selection
-                        // is offered a folder, the one destination that serves any number of them,
-                        // since `CreateDocument` can only answer with a single document.
-                        pendingUbuntuCopyOut = entries
-                        pickerActive = true
-                        if (entries.size == 1) downloadPicker.launch(entries.first().name)
-                        else ubuntuCopyOutPicker.launch(null)
-                    },
-                    onPickLocalFolder = { pickerActive = true; localFolderPicker.launch(null) },
-                    onUploadLocal = { file -> transferHost()?.let { viewModel.uploadLocal(it, file) } },
-                    onScheduleDownload = { files, scheduledAt, repeatMinutes -> transferHost()?.let { host -> files.forEach { viewModel.scheduleDownload(host, it, scheduledAt, repeatMinutes) } } },
-                    onScheduleUpload = { files, scheduledAt, repeatMinutes -> transferHost()?.let { host -> files.forEach { viewModel.scheduleUpload(host, it, scheduledAt, repeatMinutes) } } },
-                    onSync = { direction -> transferHost()?.let { host -> if (direction == SyncDirection.LOCAL_TO_REMOTE) viewModel.syncToRemote(host) else viewModel.syncFromRemote(host) } },
-                    onSendToHost = { file, destHost, destPath -> transferHost()?.let { viewModel.sendRemoteTo(it, file, destHost, destPath) } },
-                    onPauseTransfer = viewModel::pauseTransfer,
-                    onResumeTransfer = viewModel::resumeTransfer,
-                    onCancelTransfer = viewModel::cancelTransfer,
-                    onPauseAllTransfers = viewModel::pauseAllTransfers,
-                    onResumeAllTransfers = viewModel::resumeAllTransfers,
-                    onCancelAllTransfers = viewModel::cancelAllTransfers,
-                    onRunTransferNow = viewModel::runTransferNow,
-                    onOpenTransferActions = { transfer ->
-                        // A window of its own rather than a sheet over the card it acts on: the card
-                        // is a live progress row, and covering it to offer Pause is backwards. See
-                        // [TransferActionsActivity].
-                        context.startActivity(TransferActionsActivity.intent(context, transfer))
-                    },
-                    // The host the Add-forward form will name at launch. It used to be reached for at
-                    // *confirmation* time by the `onAddForward` lambda that stood here, which is how a
-                    // forward ended up on whichever server the user had switched to while the form was
-                    // open — see [openConfirmedForward].
-                    activeHost = activeHost,
-                    onStopForward = viewModel::stopForwarding,
-                    onImportVault = { pickerActive = true; importPicker.launch(arrayOf("*/*")) },
-                    onImportProfiles = { pickerActive = true; accountImportPicker.launch(arrayOf("*/*")) },
-                    onImportSshConfig = { pickerActive = true; configImportPicker.launch(arrayOf("text/plain", "*/*")) },
-                    onBiometric = ::setBiometric,
-                    onDarkTheme = viewModel::setDarkTheme,
-                    onTerminalKeyRow = viewModel::setTerminalKeyRowVisible,
-                    onTerminalFontSize = viewModel::setTerminalFontSize,
-                    onLegacyAlgorithms = viewModel::setLegacyAlgorithms,
-                    onBlockScreenshots = viewModel::setBlockScreenshots,
-                    onReconnectAskFirst = viewModel::setReconnectAskFirst,
-                    onTerminalTheme = viewModel::setTerminalTheme,
-                    onTerminalKeepSystemBars = viewModel::setTerminalKeepSystemBars,
-                    onTerminalScrollbackCount = viewModel::setTerminalScrollbackCountVisible,
-                    // The shell is the one screen that must not be inset by this Scaffold. Its own
-                    // padding comes from `safeDrawingPadding` inside the terminal, and applying both
-                    // would inset the grid twice - once for a navigation bar that is not there and
-                    // again for the window - costing rows the pty was told it had.
-                    modifier = if (terminalSessionOpen) Modifier else Modifier.padding(padding),
-                )
-            }
-        }
-        if (isWide) {
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-            )
-        }
-    }
-
-    // The host details sheet and the port-forwarding manager that stood here are windows of their
-    // own now ([HostDetailsActivity] and [PortForwardManagerActivity]), and what they answer comes
-    // back through [ActionRequests] on the workspace's next resume rather than through this
-    // composition - see [onResume]. Both subjects carry a snapshot of the half of themselves the
-    // workspace owns, which is why they are opened with a token rather than an id.
-    remoteDesktopHostId?.let { hostId ->
-        // Resolved from the live hosts flow, like the forwarding manager above: the dialog's own
-        // saves rewrite this profile, and a host removed while the dialog was open closes it
-        // rather than offering to save a profile that no longer exists.
-        state.hosts.firstOrNull { it.id == hostId }?.let { host ->
-            RemoteDesktopConfigDialog(
-                host = host,
-                onSave = { viewModel.saveRemoteDesktopTarget(hostId, it) },
-                onOpen = { target ->
-                    remoteDesktopHostId = null
-                    openRemoteDesktop(host, target)
-                },
-                onDismiss = { remoteDesktopHostId = null },
-            )
-        }
-    }
-    rdpDesktopHostId?.let { hostId ->
-        // Same live-profile resolution as the VNC dialog above, for the same reasons. Connect is
-        // the VNC dialog's Connect exactly: the save through the view model, then the jump into
-        // the viewer window through the same token handoff every RDP desktop opens by.
-        state.hosts.firstOrNull { it.id == hostId }?.let { host ->
-            RdpConfigDialog(
-                host = host,
-                onSave = { viewModel.saveRdpTarget(hostId, it) },
-                onOpen = { target ->
-                    rdpDesktopHostId = null
-                    openRdpDesktop(host, target)
-                },
-                onDismiss = { rdpDesktopHostId = null },
-            )
-        }
-    }
-    pendingDeleteHost?.let { host ->
-        AlertDialog(
-            onDismissRequest = { pendingDeleteHost = null },
-            title = { Text("Remove ${host.name}?") },
-            text = { Text("This removes the saved connection profile and its stored credentials. Active sessions are not affected until disconnected.") },
-            confirmButton = {
-                TextButton(onClick = { viewModel.deleteHost(host); pendingDeleteHost = null }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { pendingDeleteHost = null }) { Text("Cancel") } },
-        )
-    }
-    duplicateAskHost?.let { host ->
-        // Counted here rather than carried in from the kebab click: the count in the sentence has to
-        // match the rules this dialog will actually copy, and decoding the same column twice is what
-        // the engine itself does to keep its ids honest.
-        val ruleCount = remember(host) { decodeForwardRules(host.savedForwards, host.id).size }
-        AlertDialog(
-            onDismissRequest = { duplicateAskHost = null },
-            title = { Text("Duplicate ${host.name}?") },
-            text = {
-                Column {
-                    Text("A copy with the same settings and saved credentials, under a name of its own.")
-                    // A row-wide toggle, not just the checkbox: the label is the sentence the user is
-                    // agreeing to, so tapping it anywhere is agreeing to it.
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp)
-                            .toggleable(
-                                value = duplicateForwards,
-                                role = Role.Checkbox,
-                                onValueChange = { duplicateForwards = it },
-                            ),
-                    ) {
-                        Checkbox(checked = duplicateForwards, onCheckedChange = null)
-                        Text(
-                            if (ruleCount == 1) "Also duplicate its 1 port forwarding rule"
-                            else "Also duplicate its $ruleCount port forwarding rules",
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.duplicateHost(host, duplicateForwards); duplicateAskHost = null }) {
-                    Text("Duplicate")
-                }
-            },
-            dismissButton = { TextButton(onClick = { duplicateAskHost = null }) { Text("Cancel") } },
-        )
-    }
-    showAuthHost?.let { host ->
-        AuthenticationDialog(
-            host = host,
-            onDismiss = { showAuthHost = null },
-            onPickKey = { pickerActive = true; keyPicker.launch(KEY_FILE_MIME_TYPES) },
-            selectedKeyName = selectedKeyName,
-            onConnect = { password, passphrase ->
-                showAuthHost = null
-                connectAndStart(host, password, passphrase)
-            },
-            onPasteSecret = viewModel::pasteSecret,
-        )
-    }
-    state.hostKeyChallenge?.let { challenge ->
-        HostKeyDialog(
-            challenge = challenge,
-            onAccept = viewModel::acceptHostKey,
-            onReject = viewModel::rejectHostKey,
-        )
-    }
-    // Looked up rather than carried on the prompt so a host deleted while the dialog was open cannot
-    // be resurrected by its own Retry button — see [AuthFailurePrompt].
-    state.authFailure?.let { prompt ->
-        val failedHost = state.hosts.firstOrNull { it.id == prompt.hostId }
-        if (failedHost != null) {
-            AuthFailureDialog(
-                prompt = prompt,
-                host = failedHost,
-                onDismiss = viewModel::consumeAuthFailure,
-                onPickKey = { pickerActive = true; keyPicker.launch(KEY_FILE_MIME_TYPES) },
-                selectedKeyName = selectedKeyName,
-                onEditHost = {
-                    viewModel.consumeAuthFailure()
-                    openHostForm(context, failedHost)
-                },
-                onRetry = { password, passphrase, save ->
-                    viewModel.consumeAuthFailure()
-                    if (save) saveAnsweredCredentials(failedHost, password, passphrase)
-                    connectAndStart(failedHost, password, passphrase)
-                },
-                onPasteSecret = viewModel::pasteSecret,
-            )
-        }
-    }
-    // Ask-first reconnect: the tab is already parked at Disconnected with the reason, and this is
-    // the question. Looked up like the auth-failure prompt above so a host deleted while the dialog
-    // was open simply takes its question with it.
-    state.reconnectPrompt?.let { prompt ->
-        ReconnectDialog(prompt = prompt, onReconnect = viewModel::answerReconnectPrompt)
-    }
-    if (showImportDialog) {
-        PassphraseDialog(
-            title = "Import backup",
-            confirmLabel = "Import",
-            onDismiss = { showImportDialog = false; pendingImportUri = null },
-            onConfirm = { pass -> showImportDialog = false; pendingImportUri?.let { viewModel.importVault(pass, it) }; pendingImportUri = null },
-            onPasteSecret = viewModel::pasteSecret,
-        )
-    }
-    if (showAccountExportDialog) {
-        PassphraseDialog(
-            title = "Export profile",
-            confirmLabel = "Choose file",
-            onDismiss = { showAccountExportDialog = false; pendingAccountExportHost = null },
-            onConfirm = { pass ->
-                showAccountExportDialog = false
-                pendingAccountExportPassphrase = pass
-                pickerActive = true
-                accountExportPicker.launch("${safeFileName(pendingAccountExportHost?.name ?: "account")}.eclipse-profile")
-            },
-            onPasteSecret = viewModel::pasteSecret,
-        )
-    }
-    if (showAccountImportDialog) {
-        PassphraseDialog(
-            // "profiles", not "account": one file may carry a whole selection of them, and the same
-            // door imports both. The row that opens it says the same thing.
-            title = "Import profiles",
-            confirmLabel = "Import",
-            onDismiss = { showAccountImportDialog = false; pendingAccountImportUri = null },
-            onConfirm = { pass ->
-                showAccountImportDialog = false
-                pendingAccountImportUri?.let { viewModel.importProfiles(pass, it) }
-                pendingAccountImportUri = null
-            },
-            onPasteSecret = viewModel::pasteSecret,
-        )
-    }
-    // The key-generation dialog stood here, and with it the two chained pickers that wrote the pair
-    // out. All of it is [KeyGenActivity]'s now: the algorithm chooser, the off-main-thread generation
-    // the comment used to justify, and the hold across the private-key write that kept the PIN lock
-    // from re-arming in the gap before the public-key picker opened. The two pickers went with the
-    // dialog rather than staying behind, because nothing else ever launched them - the private-key
-    // picker was the dialog's only caller and the public-key one only ran from inside its callback.
-    //
-    // The editor request below is a different flow and stays: it travels through the process-wide
-    // handoff for reasons of its own.
-    // The editor opens in its own window (see [TextEditorActivity]) so it sits fully on top of the
-    // workspace instead of floating over it; the request itself travels through the process-wide
-    // [EditorRequests] handoff because it carries a live provider an intent cannot parcel. Cleared
-    // as soon as the launch is issued, so every place that sets `editorRequest` — the explorer, the
-    // preview sheet, the New File dialog — keeps working unchanged.
-    LaunchedEffect(editorRequest) {
-        val request = editorRequest ?: return@LaunchedEffect
-        editorRequest = null
-        val token = EditorRequests.put(request)
-        context.startActivity(
-            Intent(context, TextEditorActivity::class.java).putExtra(TextEditorActivity.EXTRA_REQUEST_TOKEN, token),
-        )
-    }
-    // The file preview's sheet stood here, and its Edit button with it. Both are the preview
-    // window's now: it is opened where the file was, and its Edit hands the editor the same entry
-    // and provider through the same one-shot handoff this workspace uses. Nothing is reported back
-    // either way — a file the editor saves is read again by whoever lists it.
-    // The View Archive browser, a full-window layer above the workspace for the same reason the
-    // editor is one: browsing an archive is a task of its own, and a sheet over the explorer would
-    // both fight the explorer's own bottom sheets and show one folder's worth of a 1M-entry tree in
-    // a window measured for a file list. The layer reads the browser's state; dismissal is the
-    // close above, which cancels the scan/watcher and releases the channel.
-    // The per-entry window was a sheet held here, above the browser, because it acts on this
-    // workspace's clipboard and extract destination rather than on anything the browser knows. It
-    // is a window of its own now (see [ArchiveEntryActionsActivity]) and the window holds nothing;
-    // what stays is the *target* - which row it was opened on - because the answer carries no entry
-    // (see [ActionAnswer]) and this is the only place that knows which row the user pressed.
-    var archiveEntryAction by remember { mutableStateOf<ArchiveEntry?>(null) }
-    var archiveEntryProperties by remember { mutableStateOf<ArchiveEntry?>(null) }
-    var showArchiveProperties by remember { mutableStateOf(false) }
-    // The extract that is waiting on the user to pick a destination folder. The entries are held
-    // here - outside the browser, like every other per-entry action target - because the picker
-    // is an activity result that lands in this workspace's scope, not the browser's; when it
-    // returns, the extract runs against the browser's byte source, which is why the target holds
-    // both. Null entry list = nothing pending.
-    var pendingExtract by remember { mutableStateOf<Pair<ArchiveTarget, List<ArchiveEntry>>?>(null) }
-    // The SAF folder picker for extraction. Unlike the explorer's Local root picker, this one
-    // takes no persistable grant and changes no setting: the destination is a one-shot answer to
-    // "where should these files land", and remembering it silently would make the second extract
-    // write somewhere the user forgot they picked weeks ago.
-    val archiveExtractPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        val pending = pendingExtract
-        pendingExtract = null
-        if (uri == null) return@rememberLauncherForActivityResult
-        val (target, entries) = pending ?: return@rememberLauncherForActivityResult
-        val browser = target.browser
-        scope.launch {
-            val destination = runCatching { SafArchiveDestination(context, uri) }
-                .getOrElse {
-                    viewModel.reportUiMessage("The picked folder cannot be written")
-                    return@launch
-                }
-            viewModel.reportUiMessage("Extracting ${entries.size} item(s) from \"${browser.archiveName}\"…")
-            val outcomes = ArchiveExtractor.extract(
-                browser.format,
-                browser.sourceForReading(),
-                entries,
-                destination,
-            )
-            reportExtractOutcome(browser.archiveName, outcomes)
-        }
-    }
-    archiveTarget?.let { target ->
-        val browser = target.browser
-        // The preview used to be a sheet in this layer, held as a target like the sheets that act on
-        // an entry. It is a window of its own now (see [ArchiveEntryPreviewActivity]), so opening
-        // one is a launch rather than a state change — and the reader it is launched with closes
-        // over *this* browser, so the bytes still come from the archive the user has open.
-        val openEntryPreview: (ArchiveEntry) -> Unit = { entry ->
-            context.startActivity(
-                ArchiveEntryPreviewActivity.intent(
-                    context = context,
-                    entry = entry,
-                    // Only ZIP can fetch one entry's bytes by range; a TAR entry gets no reader,
-                    // and the window says so rather than streaming the whole archive to show it.
-                    readEntry = if (ArchiveReader.supportsRandomAccess(browser.format)) {
-                        { ArchiveReader.readEntry(browser.format, browser.sourceForReading(), entry) }
-                    } else null,
-                ),
-            )
-        }
-        ArchiveBrowserScreen(
-            archiveName = browser.archiveName,
-            state = browser.state,
-            actions = ArchiveActions(
-                onClose = { browser.close(); archiveTarget = null },
-                onCancelScan = browser::cancelScan,
-                onRetry = browser::retry,
-                onUnlock = browser::unlock,
-                // Opening a file is the preview; only the ZIP format can fetch one entry's bytes
-                // by range, so a TAR entry falls to the action window's honest Extract verb rather
-                // than a preview that would secretly stream the whole archive.
-                onOpenEntry = { entry ->
-                    if (ArchiveReader.supportsRandomAccess(browser.format)) {
-                        openEntryPreview(entry)
+        if (state.settings.pinEnabled && !unlocked) {
+            LockScreen(
+                biometricEnabled = state.settings.biometricUnlock && biometricUsable,
+                verifyPin = viewModel::verifyPin,
+                onUnlocked = { unlocked = true },
+                // Reported into the lock screen's own error slot rather than through
+                // `statusMessage`: the snackbar host lives inside the workspace scaffold, which is the
+                // branch *not* composed while the app is locked, so a snackbar raised from here would
+                // never be seen. Before this, "Use biometric" on a device with nothing enrolled did
+                // nothing whatsoever.
+                onBiometricUnlock = { onFailure ->
+                    val activity = context as? FragmentActivity
+                    if (activity == null) {
+                        onFailure("Biometric unlock is unavailable here")
                     } else {
-                        archiveEntryAction = entry
-                        context.startActivity(
-                            ArchiveEntryActionsActivity.intent(context, entry, canReadEntry = false),
-                        )
+                        unlocker.authenticate(activity, { unlocked = true }, onFailure)
                     }
                 },
-                onEntryActions = { entry ->
-                    // The same verdict the sheet was given, and the same one the preview row above
-                    // was decided by: a range read exists only for ZIP, and only for a file.
-                    archiveEntryAction = entry
+            )
+        } else {
+            BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                val isWide = maxWidth >= 700.dp
+                if (isWide) {
+                    Row(Modifier.fillMaxSize()) {
+                        // Gone while a shell owns the window - see [terminalSessionOpen]. Back, or the
+                        // strip's own button, brings it straight back.
+                        if (!terminalSessionOpen) {
+                            NavigationRail(
+                                modifier = Modifier.fillMaxHeight().padding(start = 12.dp, top = 18.dp, bottom = 18.dp),
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            ) {
+                                Text("E", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(18.dp))
+                                Spacer(Modifier.height(20.dp))
+                                Destination.entries.forEach { item ->
+                                    NavigationRailItem(
+                                        selected = destination == item,
+                                        onClick = { destination = item },
+                                        icon = { Icon(item.icon, item.label) },
+                                        label = { Text(item.label, maxLines = 1) },
+                                    )
+                                }
+                            }
+                        }
+                        WorkspaceScaffold(
+                            destination = destination,
+                            state = state,
+                            frames = viewModel.frames,
+                            channelProvider = viewModel::terminalChannelFor,
+                            filesExplorer = viewModel.filesExplorer,
+                            linuxUserspace = viewModel.linuxUserspace,
+                            localLinuxCard = viewModel.localLinuxCard,
+                            pendingAction = pendingAction,
+                            onActionHandled = onActionHandled,
+                            onPreviewFile = { entry, provider ->
+                                context.startActivity(FilePreviewActivity.intent(context, entry, provider))
+                            },
+                            onEditFile = { entry, provider -> editorRequest = EditorRequest(entry, provider) },
+                            onOpenArchive = ::openArchive,
+                            onDestination = { destination = it },
+                            onSearch = viewModel::setQuery,
+                            onAddHost = { openHostForm(context) },
+                            onConnect = { host ->
+                                // The local Ubuntu card never opens the login: there is nothing to
+                                // authenticate (the session is the app's own uid), so the tap goes straight
+                                // to the terminal. Every other host gets the auth dialog as before.
+                                if (LocalLinuxHost.isLocalHost(host.id)) viewModel.connect(host) else showAuthHost = host
+                            },
+                            onReconnectSession = { reconnectAndOpen(it) },
+                            onShowDetails = {
+                                context.startActivity(
+                                    HostDetailsActivity.intent(context, it, state.serverStats[it.id]),
+                                )
+                            },
+                            onEditHost = { openHostForm(context, it) },
+                            onRemoveHost = { pendingDeleteHost = it },
+                            onToggleFavoriteHost = { viewModel.saveHost(it.copy(isFavorite = !it.isFavorite)) },
+                            onExportAccount = {
+                                pendingAccountExportHost = it
+                                showAccountExportDialog = true
+                            },
+                            onDuplicateHost = requestDuplicateHost,
+                            // A window, and handed the runtime half of its own subject here: the state
+                            // of every rule and the forwards actually bound are this workspace's, which is
+                            // what the manager window cannot read for itself. See ActionSubject.ForwardManager.
+                            onManageForwards = {
+                                context.startActivity(
+                                    PortForwardManagerActivity.intent(context, it, state.forwardStatuses, state.forwardings),
+                                )
+                            },
+                            onRemoteDesktop = requestRemoteDesktop,
+                            onWakeOnLan = viewModel::wakeHost,
+                            onRdpDesktop = requestRdpDesktop,
+                            onCloseTab = viewModel::closeTab,
+                            onDuplicateSession = viewModel::duplicateSession,
+                            onDisconnectAll = viewModel::disconnectAll,
+                            openSessionId = openSessionId,
+                            onOpenSession = { openSessionId = it },
+                            // The session owns the window whatever the bars do; the immersive flag is only
+                            // the system-bars half of full screen.
+                            immersive = terminalSessionOpen,
+                            onSendInput = viewModel::sendInput,
+                            onSendText = viewModel::sendText,
+                            onSendKey = viewModel::sendKey,
+                            onSendChar = viewModel::sendChar,
+                            onResizeTerminal = viewModel::resizeTerminal,
+                            onScrollTerminal = viewModel::scrollTerminalBy,
+                            onScrollTerminalTo = viewModel::scrollTerminal,
+                            onSessionReview = viewModel::sessionReview,
+                            onScrollToLine = viewModel::scrollTerminalToLine,
+                            onMouseWheel = viewModel::sendMouseWheel,
+                            onArrowKeys = viewModel::sendArrowKeys,
+                            onMouseGesture = viewModel::sendMouseGesture,
+                            onCopySelection = { hostId, sel ->
+                                val range = sel.toTextRange()
+                                val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
+                                if (text.isNotEmpty()) viewModel.copyToClipboard(text)
+                            },
+                            onCopyTerminalText = viewModel::copyToClipboard,
+                            onPasteTerminal = viewModel::pasteFromClipboard,
+                            onSaveSnippet = viewModel::saveSnippet,
+                            onSaveLogs = { hostId, text ->
+                                pendingTextExport = ("Eclipse SSH session log\nHost: $hostId\nSaved: ${System.currentTimeMillis()}\n\n$text").toByteArray()
+                                pickerActive = true
+                                textExportPicker.launch("eclipse-$hostId.log")
+                            },
+                            // The raw log comes straight from the view model's per-session transcript -
+                            // keyed by session, so the shell on screen is the one saved - and rides the
+                            // same SAF launcher and pending-bytes slot the diagnostics save uses. Nothing
+                            // is written unless a log exists, which the menu item already ensured.
+                            onSaveSessionLog = { sessionKey, hostName ->
+                                val text = viewModel.sessionLogText(sessionKey)
+                                if (text.isNullOrEmpty()) {
+                                    viewModel.reportUiMessage("This session has no output to save yet")
+                                } else {
+                                    pendingTextExport = text.toByteArray()
+                                    pickerActive = true
+                                    textExportPicker.launch("$hostName-session.log")
+                                }
+                            },
+                            // The other half of the same incident. The log above is what the session sent;
+                            // this is what the app drew from it, and a rendering bug is only ever the two
+                            // read together.
+                            onSaveRenderAudit = { sessionKey, hostName ->
+                                val text = viewModel.renderAuditText(sessionKey)
+                                if (text.isNullOrEmpty()) {
+                                    viewModel.reportUiMessage("This session has not drawn anything yet")
+                                } else {
+                                    pendingTextExport = text.toByteArray()
+                                    pickerActive = true
+                                    textExportPicker.launch("$hostName-render-audit.txt")
+                                }
+                            },
+                            onNotifyWhenDone = viewModel::notifyWhenDone,
+                            onSaveText = { hostId, text ->
+                                pendingTextExport = text.toByteArray()
+                                pickerActive = true
+                                textExportPicker.launch("eclipse-$hostId.txt")
+                            },
+                            onSaveScreen = { hostId, text ->
+                                // Rendered off the main thread. The bitmap is clamped to 2048x4096, so this
+                                // allocates up to ~33 MB and then PNG-compresses it — far too much to run in a
+                                // click handler, where it janked and risked an ANR on a long scrollback.
+                                // The picker is launched from inside the coroutine, after the bytes exist, so
+                                // the result callback can never observe pendingScreenExport still null.
+                                pickerActive = true
+                                scope.launch {
+                                    pendingScreenExport =
+                                        withContext(Dispatchers.Default) {
+                                            TerminalExportRenderer.renderScreenPng("Eclipse SSH · $hostId", text)
+                                        }
+                                    screenExportPicker.launch("eclipse-$hostId.png")
+                                }
+                            },
+                            onClearCompleted = viewModel::clearCompletedTransfers,
+                            onUpload = {
+                                pickerActive = true
+                                uploadPicker.launch(arrayOf("*/*"))
+                            },
+                            onDownloadFile = { remote ->
+                                // The explorer's session, not merely the selected host - see [transferHost].
+                                val host = transferHost()
+                                if (host != null) {
+                                    if (state.localDirUri != null) {
+                                        viewModel.downloadToLocal(host, remote)
+                                    } else {
+                                        pendingDownload = remote
+                                        pickerActive = true
+                                        downloadPicker.launch(remote.name)
+                                    }
+                                }
+                            },
+                            onCopyToDevice = { entries ->
+                                // The explorer's session again, because a copy out of the userspace is only a
+                                // copy while the userspace is what is on screen. One file is offered a name -
+                                // the same `CreateDocument` answer a server's download gets - and a selection
+                                // is offered a folder, the one destination that serves any number of them,
+                                // since `CreateDocument` can only answer with a single document.
+                                pendingUbuntuCopyOut = entries
+                                pickerActive = true
+                                if (entries.size == 1) {
+                                    downloadPicker.launch(entries.first().name)
+                                } else {
+                                    ubuntuCopyOutPicker.launch(null)
+                                }
+                            },
+                            onPickLocalFolder = {
+                                pickerActive = true
+                                localFolderPicker.launch(null)
+                            },
+                            onUploadLocal = { file -> transferHost()?.let { viewModel.uploadLocal(it, file) } },
+                            onScheduleDownload = {
+                                    files,
+                                    scheduledAt,
+                                    repeatMinutes,
+                                ->
+                                transferHost()?.let { host -> files.forEach { viewModel.scheduleDownload(host, it, scheduledAt, repeatMinutes) } }
+                            },
+                            onScheduleUpload = {
+                                    files,
+                                    scheduledAt,
+                                    repeatMinutes,
+                                ->
+                                transferHost()?.let { host -> files.forEach { viewModel.scheduleUpload(host, it, scheduledAt, repeatMinutes) } }
+                            },
+                            onSync = { direction -> transferHost()?.let { host -> if (direction == SyncDirection.LOCAL_TO_REMOTE) viewModel.syncToRemote(host) else viewModel.syncFromRemote(host) } },
+                            onSendToHost = { file, destHost, destPath -> transferHost()?.let { viewModel.sendRemoteTo(it, file, destHost, destPath) } },
+                            onPauseTransfer = viewModel::pauseTransfer,
+                            onResumeTransfer = viewModel::resumeTransfer,
+                            onCancelTransfer = viewModel::cancelTransfer,
+                            onPauseAllTransfers = viewModel::pauseAllTransfers,
+                            onResumeAllTransfers = viewModel::resumeAllTransfers,
+                            onCancelAllTransfers = viewModel::cancelAllTransfers,
+                            onRunTransferNow = viewModel::runTransferNow,
+                            onOpenTransferActions = { transfer ->
+                                // A window of its own rather than a sheet over the card it acts on: the card
+                                // is a live progress row, and covering it to offer Pause is backwards. See
+                                // [TransferActionsActivity].
+                                context.startActivity(TransferActionsActivity.intent(context, transfer))
+                            },
+                            // The host the Add-forward form will name at launch. It used to be reached for at
+                            // *confirmation* time by the `onAddForward` lambda that stood here, which is how a
+                            // forward ended up on whichever server the user had switched to while the form was
+                            // open — see [openConfirmedForward].
+                            activeHost = activeHost,
+                            onStopForward = viewModel::stopForwarding,
+                            onImportVault = {
+                                pickerActive = true
+                                importPicker.launch(arrayOf("*/*"))
+                            },
+                            onImportProfiles = {
+                                pickerActive = true
+                                accountImportPicker.launch(arrayOf("*/*"))
+                            },
+                            onImportSshConfig = {
+                                pickerActive = true
+                                configImportPicker.launch(arrayOf("text/plain", "*/*"))
+                            },
+                            onBiometric = ::setBiometric,
+                            onDarkTheme = viewModel::setDarkTheme,
+                            onTerminalKeyRow = viewModel::setTerminalKeyRowVisible,
+                            onTerminalFontSize = viewModel::setTerminalFontSize,
+                            onLegacyAlgorithms = viewModel::setLegacyAlgorithms,
+                            onBlockScreenshots = viewModel::setBlockScreenshots,
+                            onReconnectAskFirst = viewModel::setReconnectAskFirst,
+                            onTerminalTheme = viewModel::setTerminalTheme,
+                            onTerminalKeepSystemBars = viewModel::setTerminalKeepSystemBars,
+                            onTerminalScrollbackCount = viewModel::setTerminalScrollbackCountVisible,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    Scaffold(
+                        // Placed by the Scaffold rather than overlaid on the whole window, which is what the
+                        // single host at the bottom of the outer Box used to do: the snackbar covered the
+                        // navigation bar, so for as long as one was showing — four seconds, and every status
+                        // and error message raises one — the five tabs were untappable, and a tap during that
+                        // window was swallowed with no visible effect. The Scaffold offsets its snackbar above
+                        // bottomBar and the system insets, which is what Material 3 specifies. The wide
+                        // layout keeps the overlay: its navigation is a rail down the left side, so nothing
+                        // is underneath.
+                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        bottomBar = {
+                            // Gone while a shell owns the window - see [terminalSessionOpen].
+                            if (!terminalSessionOpen) {
+                                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                                    Destination.entries.forEach { item ->
+                                        NavigationBarItem(
+                                            selected = destination == item,
+                                            onClick = { destination = item },
+                                            icon = { Icon(item.icon, item.label) },
+                                            label = { Text(item.label) },
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.background,
+                    ) { padding ->
+                        WorkspaceScaffold(
+                            destination = destination,
+                            state = state,
+                            frames = viewModel.frames,
+                            channelProvider = viewModel::terminalChannelFor,
+                            filesExplorer = viewModel.filesExplorer,
+                            linuxUserspace = viewModel.linuxUserspace,
+                            localLinuxCard = viewModel.localLinuxCard,
+                            pendingAction = pendingAction,
+                            onActionHandled = onActionHandled,
+                            onPreviewFile = { entry, provider ->
+                                context.startActivity(FilePreviewActivity.intent(context, entry, provider))
+                            },
+                            onEditFile = { entry, provider -> editorRequest = EditorRequest(entry, provider) },
+                            onOpenArchive = ::openArchive,
+                            onDestination = { destination = it },
+                            onSearch = viewModel::setQuery,
+                            onAddHost = { openHostForm(context) },
+                            onConnect = { host ->
+                                // The local Ubuntu card never opens the login: there is nothing to
+                                // authenticate (the session is the app's own uid), so the tap goes straight
+                                // to the terminal. Every other host gets the auth dialog as before.
+                                if (LocalLinuxHost.isLocalHost(host.id)) viewModel.connect(host) else showAuthHost = host
+                            },
+                            onReconnectSession = { reconnectAndOpen(it) },
+                            onShowDetails = {
+                                context.startActivity(
+                                    HostDetailsActivity.intent(context, it, state.serverStats[it.id]),
+                                )
+                            },
+                            onEditHost = { openHostForm(context, it) },
+                            onRemoveHost = { pendingDeleteHost = it },
+                            onToggleFavoriteHost = { viewModel.saveHost(it.copy(isFavorite = !it.isFavorite)) },
+                            onExportAccount = {
+                                pendingAccountExportHost = it
+                                showAccountExportDialog = true
+                            },
+                            onDuplicateHost = requestDuplicateHost,
+                            // A window, and handed the runtime half of its own subject here: the state
+                            // of every rule and the forwards actually bound are this workspace's, which is
+                            // what the manager window cannot read for itself. See ActionSubject.ForwardManager.
+                            onManageForwards = {
+                                context.startActivity(
+                                    PortForwardManagerActivity.intent(context, it, state.forwardStatuses, state.forwardings),
+                                )
+                            },
+                            onRemoteDesktop = requestRemoteDesktop,
+                            onWakeOnLan = viewModel::wakeHost,
+                            onRdpDesktop = requestRdpDesktop,
+                            onCloseTab = viewModel::closeTab,
+                            onDuplicateSession = viewModel::duplicateSession,
+                            onDisconnectAll = viewModel::disconnectAll,
+                            openSessionId = openSessionId,
+                            onOpenSession = { openSessionId = it },
+                            // The session owns the window whatever the bars do; the immersive flag is only
+                            // the system-bars half of full screen.
+                            immersive = terminalSessionOpen,
+                            onSendInput = viewModel::sendInput,
+                            onSendText = viewModel::sendText,
+                            onSendKey = viewModel::sendKey,
+                            onSendChar = viewModel::sendChar,
+                            onResizeTerminal = viewModel::resizeTerminal,
+                            onScrollTerminal = viewModel::scrollTerminalBy,
+                            onScrollTerminalTo = viewModel::scrollTerminal,
+                            onSessionReview = viewModel::sessionReview,
+                            onScrollToLine = viewModel::scrollTerminalToLine,
+                            onMouseWheel = viewModel::sendMouseWheel,
+                            onArrowKeys = viewModel::sendArrowKeys,
+                            onMouseGesture = viewModel::sendMouseGesture,
+                            onCopySelection = { hostId, sel ->
+                                val range = sel.toTextRange()
+                                val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
+                                if (text.isNotEmpty()) viewModel.copyToClipboard(text)
+                            },
+                            onCopyTerminalText = viewModel::copyToClipboard,
+                            onPasteTerminal = viewModel::pasteFromClipboard,
+                            onSaveSnippet = viewModel::saveSnippet,
+                            onSaveLogs = { hostId, text ->
+                                pendingTextExport = ("Eclipse SSH session log\nHost: $hostId\nSaved: ${System.currentTimeMillis()}\n\n$text").toByteArray()
+                                pickerActive = true
+                                textExportPicker.launch("eclipse-$hostId.log")
+                            },
+                            // The raw log comes straight from the view model's per-session transcript -
+                            // keyed by session, so the shell on screen is the one saved - and rides the
+                            // same SAF launcher and pending-bytes slot the diagnostics save uses. Nothing
+                            // is written unless a log exists, which the menu item already ensured.
+                            onSaveSessionLog = { sessionKey, hostName ->
+                                val text = viewModel.sessionLogText(sessionKey)
+                                if (text.isNullOrEmpty()) {
+                                    viewModel.reportUiMessage("This session has no output to save yet")
+                                } else {
+                                    pendingTextExport = text.toByteArray()
+                                    pickerActive = true
+                                    textExportPicker.launch("$hostName-session.log")
+                                }
+                            },
+                            // The other half of the same incident. The log above is what the session sent;
+                            // this is what the app drew from it, and a rendering bug is only ever the two
+                            // read together.
+                            onSaveRenderAudit = { sessionKey, hostName ->
+                                val text = viewModel.renderAuditText(sessionKey)
+                                if (text.isNullOrEmpty()) {
+                                    viewModel.reportUiMessage("This session has not drawn anything yet")
+                                } else {
+                                    pendingTextExport = text.toByteArray()
+                                    pickerActive = true
+                                    textExportPicker.launch("$hostName-render-audit.txt")
+                                }
+                            },
+                            onNotifyWhenDone = viewModel::notifyWhenDone,
+                            onSaveText = { hostId, text ->
+                                pendingTextExport = text.toByteArray()
+                                pickerActive = true
+                                textExportPicker.launch("eclipse-$hostId.txt")
+                            },
+                            onSaveScreen = { hostId, text ->
+                                // Rendered off the main thread. The bitmap is clamped to 2048x4096, so this
+                                // allocates up to ~33 MB and then PNG-compresses it — far too much to run in a
+                                // click handler, where it janked and risked an ANR on a long scrollback.
+                                // The picker is launched from inside the coroutine, after the bytes exist, so
+                                // the result callback can never observe pendingScreenExport still null.
+                                pickerActive = true
+                                scope.launch {
+                                    pendingScreenExport =
+                                        withContext(Dispatchers.Default) {
+                                            TerminalExportRenderer.renderScreenPng("Eclipse SSH · $hostId", text)
+                                        }
+                                    screenExportPicker.launch("eclipse-$hostId.png")
+                                }
+                            },
+                            onClearCompleted = viewModel::clearCompletedTransfers,
+                            onUpload = {
+                                pickerActive = true
+                                uploadPicker.launch(arrayOf("*/*"))
+                            },
+                            onDownloadFile = { remote ->
+                                // The explorer's session, not merely the selected host - see [transferHost].
+                                val host = transferHost()
+                                if (host != null) {
+                                    if (state.localDirUri != null) {
+                                        viewModel.downloadToLocal(host, remote)
+                                    } else {
+                                        pendingDownload = remote
+                                        pickerActive = true
+                                        downloadPicker.launch(remote.name)
+                                    }
+                                }
+                            },
+                            onCopyToDevice = { entries ->
+                                // The explorer's session again, because a copy out of the userspace is only a
+                                // copy while the userspace is what is on screen. One file is offered a name -
+                                // the same `CreateDocument` answer a server's download gets - and a selection
+                                // is offered a folder, the one destination that serves any number of them,
+                                // since `CreateDocument` can only answer with a single document.
+                                pendingUbuntuCopyOut = entries
+                                pickerActive = true
+                                if (entries.size == 1) {
+                                    downloadPicker.launch(entries.first().name)
+                                } else {
+                                    ubuntuCopyOutPicker.launch(null)
+                                }
+                            },
+                            onPickLocalFolder = {
+                                pickerActive = true
+                                localFolderPicker.launch(null)
+                            },
+                            onUploadLocal = { file -> transferHost()?.let { viewModel.uploadLocal(it, file) } },
+                            onScheduleDownload = {
+                                    files,
+                                    scheduledAt,
+                                    repeatMinutes,
+                                ->
+                                transferHost()?.let { host -> files.forEach { viewModel.scheduleDownload(host, it, scheduledAt, repeatMinutes) } }
+                            },
+                            onScheduleUpload = {
+                                    files,
+                                    scheduledAt,
+                                    repeatMinutes,
+                                ->
+                                transferHost()?.let { host -> files.forEach { viewModel.scheduleUpload(host, it, scheduledAt, repeatMinutes) } }
+                            },
+                            onSync = { direction -> transferHost()?.let { host -> if (direction == SyncDirection.LOCAL_TO_REMOTE) viewModel.syncToRemote(host) else viewModel.syncFromRemote(host) } },
+                            onSendToHost = { file, destHost, destPath -> transferHost()?.let { viewModel.sendRemoteTo(it, file, destHost, destPath) } },
+                            onPauseTransfer = viewModel::pauseTransfer,
+                            onResumeTransfer = viewModel::resumeTransfer,
+                            onCancelTransfer = viewModel::cancelTransfer,
+                            onPauseAllTransfers = viewModel::pauseAllTransfers,
+                            onResumeAllTransfers = viewModel::resumeAllTransfers,
+                            onCancelAllTransfers = viewModel::cancelAllTransfers,
+                            onRunTransferNow = viewModel::runTransferNow,
+                            onOpenTransferActions = { transfer ->
+                                // A window of its own rather than a sheet over the card it acts on: the card
+                                // is a live progress row, and covering it to offer Pause is backwards. See
+                                // [TransferActionsActivity].
+                                context.startActivity(TransferActionsActivity.intent(context, transfer))
+                            },
+                            // The host the Add-forward form will name at launch. It used to be reached for at
+                            // *confirmation* time by the `onAddForward` lambda that stood here, which is how a
+                            // forward ended up on whichever server the user had switched to while the form was
+                            // open — see [openConfirmedForward].
+                            activeHost = activeHost,
+                            onStopForward = viewModel::stopForwarding,
+                            onImportVault = {
+                                pickerActive = true
+                                importPicker.launch(arrayOf("*/*"))
+                            },
+                            onImportProfiles = {
+                                pickerActive = true
+                                accountImportPicker.launch(arrayOf("*/*"))
+                            },
+                            onImportSshConfig = {
+                                pickerActive = true
+                                configImportPicker.launch(arrayOf("text/plain", "*/*"))
+                            },
+                            onBiometric = ::setBiometric,
+                            onDarkTheme = viewModel::setDarkTheme,
+                            onTerminalKeyRow = viewModel::setTerminalKeyRowVisible,
+                            onTerminalFontSize = viewModel::setTerminalFontSize,
+                            onLegacyAlgorithms = viewModel::setLegacyAlgorithms,
+                            onBlockScreenshots = viewModel::setBlockScreenshots,
+                            onReconnectAskFirst = viewModel::setReconnectAskFirst,
+                            onTerminalTheme = viewModel::setTerminalTheme,
+                            onTerminalKeepSystemBars = viewModel::setTerminalKeepSystemBars,
+                            onTerminalScrollbackCount = viewModel::setTerminalScrollbackCountVisible,
+                            // The shell is the one screen that must not be inset by this Scaffold. Its own
+                            // padding comes from `safeDrawingPadding` inside the terminal, and applying both
+                            // would inset the grid twice - once for a navigation bar that is not there and
+                            // again for the window - costing rows the pty was told it had.
+                            modifier = if (terminalSessionOpen) Modifier else Modifier.padding(padding),
+                        )
+                    }
+                }
+                if (isWide) {
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    )
+                }
+            }
+
+            // The host details sheet and the port-forwarding manager that stood here are windows of their
+            // own now ([HostDetailsActivity] and [PortForwardManagerActivity]), and what they answer comes
+            // back through [ActionRequests] on the workspace's next resume rather than through this
+            // composition - see [onResume]. Both subjects carry a snapshot of the half of themselves the
+            // workspace owns, which is why they are opened with a token rather than an id.
+            remoteDesktopHostId?.let { hostId ->
+                // Resolved from the live hosts flow, like the forwarding manager above: the dialog's own
+                // saves rewrite this profile, and a host removed while the dialog was open closes it
+                // rather than offering to save a profile that no longer exists.
+                state.hosts.firstOrNull { it.id == hostId }?.let { host ->
+                    RemoteDesktopConfigDialog(
+                        host = host,
+                        onSave = { viewModel.saveRemoteDesktopTarget(hostId, it) },
+                        onOpen = { target ->
+                            remoteDesktopHostId = null
+                            openRemoteDesktop(host, target)
+                        },
+                        onDismiss = { remoteDesktopHostId = null },
+                    )
+                }
+            }
+            rdpDesktopHostId?.let { hostId ->
+                // Same live-profile resolution as the VNC dialog above, for the same reasons. Connect is
+                // the VNC dialog's Connect exactly: the save through the view model, then the jump into
+                // the viewer window through the same token handoff every RDP desktop opens by.
+                state.hosts.firstOrNull { it.id == hostId }?.let { host ->
+                    RdpConfigDialog(
+                        host = host,
+                        onSave = { viewModel.saveRdpTarget(hostId, it) },
+                        onOpen = { target ->
+                            rdpDesktopHostId = null
+                            openRdpDesktop(host, target)
+                        },
+                        onDismiss = { rdpDesktopHostId = null },
+                    )
+                }
+            }
+            pendingDeleteHost?.let { host ->
+                AlertDialog(
+                    onDismissRequest = { pendingDeleteHost = null },
+                    title = { Text("Remove ${host.name}?") },
+                    text = { Text("This removes the saved connection profile and its stored credentials. Active sessions are not affected until disconnected.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.deleteHost(host)
+                            pendingDeleteHost = null
+                        }) {
+                            Text("Remove", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = { TextButton(onClick = { pendingDeleteHost = null }) { Text("Cancel") } },
+                )
+            }
+            duplicateAskHost?.let { host ->
+                // Counted here rather than carried in from the kebab click: the count in the sentence has to
+                // match the rules this dialog will actually copy, and decoding the same column twice is what
+                // the engine itself does to keep its ids honest.
+                val ruleCount = remember(host) { decodeForwardRules(host.savedForwards, host.id).size }
+                AlertDialog(
+                    onDismissRequest = { duplicateAskHost = null },
+                    title = { Text("Duplicate ${host.name}?") },
+                    text = {
+                        Column {
+                            Text("A copy with the same settings and saved credentials, under a name of its own.")
+                            // A row-wide toggle, not just the checkbox: the label is the sentence the user is
+                            // agreeing to, so tapping it anywhere is agreeing to it.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp)
+                                        .toggleable(
+                                            value = duplicateForwards,
+                                            role = Role.Checkbox,
+                                            onValueChange = { duplicateForwards = it },
+                                        ),
+                            ) {
+                                Checkbox(checked = duplicateForwards, onCheckedChange = null)
+                                Text(
+                                    if (ruleCount == 1) {
+                                        "Also duplicate its 1 port forwarding rule"
+                                    } else {
+                                        "Also duplicate its $ruleCount port forwarding rules"
+                                    },
+                                    modifier = Modifier.padding(start = 8.dp),
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.duplicateHost(host, duplicateForwards)
+                            duplicateAskHost = null
+                        }) {
+                            Text("Duplicate")
+                        }
+                    },
+                    dismissButton = { TextButton(onClick = { duplicateAskHost = null }) { Text("Cancel") } },
+                )
+            }
+            showAuthHost?.let { host ->
+                AuthenticationDialog(
+                    host = host,
+                    onDismiss = { showAuthHost = null },
+                    onPickKey = {
+                        pickerActive = true
+                        keyPicker.launch(KEY_FILE_MIME_TYPES)
+                    },
+                    selectedKeyName = selectedKeyName,
+                    onConnect = { password, passphrase ->
+                        showAuthHost = null
+                        connectAndStart(host, password, passphrase)
+                    },
+                    onPasteSecret = viewModel::pasteSecret,
+                )
+            }
+            state.hostKeyChallenge?.let { challenge ->
+                HostKeyDialog(
+                    challenge = challenge,
+                    onAccept = viewModel::acceptHostKey,
+                    onReject = viewModel::rejectHostKey,
+                )
+            }
+            // Looked up rather than carried on the prompt so a host deleted while the dialog was open cannot
+            // be resurrected by its own Retry button — see [AuthFailurePrompt].
+            state.authFailure?.let { prompt ->
+                val failedHost = state.hosts.firstOrNull { it.id == prompt.hostId }
+                if (failedHost != null) {
+                    AuthFailureDialog(
+                        prompt = prompt,
+                        host = failedHost,
+                        onDismiss = viewModel::consumeAuthFailure,
+                        onPickKey = {
+                            pickerActive = true
+                            keyPicker.launch(KEY_FILE_MIME_TYPES)
+                        },
+                        selectedKeyName = selectedKeyName,
+                        onEditHost = {
+                            viewModel.consumeAuthFailure()
+                            openHostForm(context, failedHost)
+                        },
+                        onRetry = { password, passphrase, save ->
+                            viewModel.consumeAuthFailure()
+                            if (save) saveAnsweredCredentials(failedHost, password, passphrase)
+                            connectAndStart(failedHost, password, passphrase)
+                        },
+                        onPasteSecret = viewModel::pasteSecret,
+                    )
+                }
+            }
+            // Ask-first reconnect: the tab is already parked at Disconnected with the reason, and this is
+            // the question. Looked up like the auth-failure prompt above so a host deleted while the dialog
+            // was open simply takes its question with it.
+            state.reconnectPrompt?.let { prompt ->
+                ReconnectDialog(prompt = prompt, onReconnect = viewModel::answerReconnectPrompt)
+            }
+            if (showImportDialog) {
+                PassphraseDialog(
+                    title = "Import backup",
+                    confirmLabel = "Import",
+                    onDismiss = {
+                        showImportDialog = false
+                        pendingImportUri = null
+                    },
+                    onConfirm = { pass ->
+                        showImportDialog = false
+                        pendingImportUri?.let { viewModel.importVault(pass, it) }
+                        pendingImportUri = null
+                    },
+                    onPasteSecret = viewModel::pasteSecret,
+                )
+            }
+            if (showAccountExportDialog) {
+                PassphraseDialog(
+                    title = "Export profile",
+                    confirmLabel = "Choose file",
+                    onDismiss = {
+                        showAccountExportDialog = false
+                        pendingAccountExportHost = null
+                    },
+                    onConfirm = { pass ->
+                        showAccountExportDialog = false
+                        pendingAccountExportPassphrase = pass
+                        pickerActive = true
+                        accountExportPicker.launch("${safeFileName(pendingAccountExportHost?.name ?: "account")}.eclipse-profile")
+                    },
+                    onPasteSecret = viewModel::pasteSecret,
+                )
+            }
+            if (showAccountImportDialog) {
+                PassphraseDialog(
+                    // "profiles", not "account": one file may carry a whole selection of them, and the same
+                    // door imports both. The row that opens it says the same thing.
+                    title = "Import profiles",
+                    confirmLabel = "Import",
+                    onDismiss = {
+                        showAccountImportDialog = false
+                        pendingAccountImportUri = null
+                    },
+                    onConfirm = { pass ->
+                        showAccountImportDialog = false
+                        pendingAccountImportUri?.let { viewModel.importProfiles(pass, it) }
+                        pendingAccountImportUri = null
+                    },
+                    onPasteSecret = viewModel::pasteSecret,
+                )
+            }
+            // The key-generation dialog stood here, and with it the two chained pickers that wrote the pair
+            // out. All of it is [KeyGenActivity]'s now: the algorithm chooser, the off-main-thread generation
+            // the comment used to justify, and the hold across the private-key write that kept the PIN lock
+            // from re-arming in the gap before the public-key picker opened. The two pickers went with the
+            // dialog rather than staying behind, because nothing else ever launched them - the private-key
+            // picker was the dialog's only caller and the public-key one only ran from inside its callback.
+            //
+            // The editor request below is a different flow and stays: it travels through the process-wide
+            // handoff for reasons of its own.
+            // The editor opens in its own window (see [TextEditorActivity]) so it sits fully on top of the
+            // workspace instead of floating over it; the request itself travels through the process-wide
+            // [EditorRequests] handoff because it carries a live provider an intent cannot parcel. Cleared
+            // as soon as the launch is issued, so every place that sets `editorRequest` — the explorer, the
+            // preview sheet, the New File dialog — keeps working unchanged.
+            LaunchedEffect(editorRequest) {
+                val request = editorRequest ?: return@LaunchedEffect
+                editorRequest = null
+                val token = EditorRequests.put(request)
+                context.startActivity(
+                    Intent(context, TextEditorActivity::class.java).putExtra(TextEditorActivity.EXTRA_REQUEST_TOKEN, token),
+                )
+            }
+            // The file preview's sheet stood here, and its Edit button with it. Both are the preview
+            // window's now: it is opened where the file was, and its Edit hands the editor the same entry
+            // and provider through the same one-shot handoff this workspace uses. Nothing is reported back
+            // either way — a file the editor saves is read again by whoever lists it.
+            // The View Archive browser, a full-window layer above the workspace for the same reason the
+            // editor is one: browsing an archive is a task of its own, and a sheet over the explorer would
+            // both fight the explorer's own bottom sheets and show one folder's worth of a 1M-entry tree in
+            // a window measured for a file list. The layer reads the browser's state; dismissal is the
+            // close above, which cancels the scan/watcher and releases the channel.
+            // The per-entry window was a sheet held here, above the browser, because it acts on this
+            // workspace's clipboard and extract destination rather than on anything the browser knows. It
+            // is a window of its own now (see [ArchiveEntryActionsActivity]) and the window holds nothing;
+            // what stays is the *target* - which row it was opened on - because the answer carries no entry
+            // (see [ActionAnswer]) and this is the only place that knows which row the user pressed.
+            var archiveEntryAction by remember { mutableStateOf<ArchiveEntry?>(null) }
+            var archiveEntryProperties by remember { mutableStateOf<ArchiveEntry?>(null) }
+            var showArchiveProperties by remember { mutableStateOf(false) }
+            // The extract that is waiting on the user to pick a destination folder. The entries are held
+            // here - outside the browser, like every other per-entry action target - because the picker
+            // is an activity result that lands in this workspace's scope, not the browser's; when it
+            // returns, the extract runs against the browser's byte source, which is why the target holds
+            // both. Null entry list = nothing pending.
+            var pendingExtract by remember { mutableStateOf<Pair<ArchiveTarget, List<ArchiveEntry>>?>(null) }
+            // The SAF folder picker for extraction. Unlike the explorer's Local root picker, this one
+            // takes no persistable grant and changes no setting: the destination is a one-shot answer to
+            // "where should these files land", and remembering it silently would make the second extract
+            // write somewhere the user forgot they picked weeks ago.
+            val archiveExtractPicker =
+                rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+                    val pending = pendingExtract
+                    pendingExtract = null
+                    if (uri == null) return@rememberLauncherForActivityResult
+                    val (target, entries) = pending ?: return@rememberLauncherForActivityResult
+                    val browser = target.browser
+                    scope.launch {
+                        val destination =
+                            runCatching { SafArchiveDestination(context, uri) }
+                                .getOrElse {
+                                    viewModel.reportUiMessage("The picked folder cannot be written")
+                                    return@launch
+                                }
+                        viewModel.reportUiMessage("Extracting ${entries.size} item(s) from \"${browser.archiveName}\"…")
+                        val outcomes =
+                            ArchiveExtractor.extract(
+                                browser.format,
+                                browser.sourceForReading(),
+                                entries,
+                                destination,
+                            )
+                        reportExtractOutcome(browser.archiveName, outcomes)
+                    }
+                }
+            archiveTarget?.let { target ->
+                val browser = target.browser
+                // The preview used to be a sheet in this layer, held as a target like the sheets that act on
+                // an entry. It is a window of its own now (see [ArchiveEntryPreviewActivity]), so opening
+                // one is a launch rather than a state change — and the reader it is launched with closes
+                // over *this* browser, so the bytes still come from the archive the user has open.
+                val openEntryPreview: (ArchiveEntry) -> Unit = { entry ->
                     context.startActivity(
-                        ArchiveEntryActionsActivity.intent(
+                        ArchiveEntryPreviewActivity.intent(
                             context = context,
                             entry = entry,
-                            canReadEntry = ArchiveReader.supportsRandomAccess(browser.format) && !entry.isDirectory,
+                            // Only ZIP can fetch one entry's bytes by range; a TAR entry gets no reader,
+                            // and the window says so rather than streaming the whole archive to show it.
+                            readEntry =
+                                if (ArchiveReader.supportsRandomAccess(browser.format)) {
+                                    { ArchiveReader.readEntry(browser.format, browser.sourceForReading(), entry) }
+                                } else {
+                                    null
+                                },
                         ),
                     )
-                },
-                // The batch extract from the browser's selection bar: the same pendingExtract +
-                // picker the per-entry sheet's Extract row feeds, so there is one extract path,
-                // not two. The browser keeps its selection behind the picker; a cancelled pick
-                // returns to it intact for a retry.
-                onExtractEntries = { entries ->
-                    pendingExtract = target to entries
-                    archiveExtractPicker.launch(null)
-                },
-                onReload = browser::reload,
-                onDismissServerChange = browser::dismissServerChange,
-                onShowProperties = { showArchiveProperties = true },
-            ),
-        )
-        // The entry preview's sheet stood here, and so did the action sheet's. Both are windows now:
-        // the preview reads through the same ranged source the scan did - one entry's bytes, never
-        // the archive around it - and the actions are answered back into this layer, below.
-        // What the entry action window answered, acted on here rather than at the workspace's own
-        // drain below, because everything it needs - the browser's format, this workspace's clipboard,
-        // the extract picker and the properties dialog - is in scope in this layer and nowhere else.
-        // Two effects keyed on the same answer is safe: this one consumes only its own kind, and the
-        // other ignores this kind, so exactly one of them acts and exactly one clears the slot.
-        LaunchedEffect(pendingAction) {
-            val answer = pendingAction as? ActionAnswer.ArchiveEntryAction ?: return@LaunchedEffect
-            val entry = archiveEntryAction ?: return@LaunchedEffect
-            when (answer.action) {
-                // Preview only where the range read exists - the same condition the window drew its
-                // Preview row by, resolved here because a TAR entry has no reader to hand it.
-                ArchiveEntryActionKind.PREVIEW ->
-                    if (ArchiveReader.supportsRandomAccess(browser.format) && !entry.isDirectory) {
-                        openEntryPreview(entry)
-                    } else {
-                        viewModel.reportUiMessage("${entry.path} cannot be previewed in this archive format")
-                    }
-                // Extract, and single-entry Download under its other name: hand the entry to the
-                // destination picker, and the extract itself runs when the picker answers. The
-                // archive stays remote throughout - what moves is the entry's own bytes.
-                ArchiveEntryActionKind.EXTRACT -> {
-                    pendingExtract = target to listOf(entry)
-                    archiveExtractPicker.launch(null)
                 }
-                // The path *inside* the archive, which is the archive's own coordinate system and
-                // what somebody pasting it beside the archive in a shell is addressing.
-                ArchiveEntryActionKind.COPY_PATH -> viewModel.copyToClipboard(entry.path)
-                ArchiveEntryActionKind.PROPERTIES -> archiveEntryProperties = entry
+                ArchiveBrowserScreen(
+                    archiveName = browser.archiveName,
+                    state = browser.state,
+                    actions =
+                        ArchiveActions(
+                            onClose = {
+                                browser.close()
+                                archiveTarget = null
+                            },
+                            onCancelScan = browser::cancelScan,
+                            onRetry = browser::retry,
+                            onUnlock = browser::unlock,
+                            // Opening a file is the preview; only the ZIP format can fetch one entry's bytes
+                            // by range, so a TAR entry falls to the action window's honest Extract verb rather
+                            // than a preview that would secretly stream the whole archive.
+                            onOpenEntry = { entry ->
+                                if (ArchiveReader.supportsRandomAccess(browser.format)) {
+                                    openEntryPreview(entry)
+                                } else {
+                                    archiveEntryAction = entry
+                                    context.startActivity(
+                                        ArchiveEntryActionsActivity.intent(context, entry, canReadEntry = false),
+                                    )
+                                }
+                            },
+                            onEntryActions = { entry ->
+                                // The same verdict the sheet was given, and the same one the preview row above
+                                // was decided by: a range read exists only for ZIP, and only for a file.
+                                archiveEntryAction = entry
+                                context.startActivity(
+                                    ArchiveEntryActionsActivity.intent(
+                                        context = context,
+                                        entry = entry,
+                                        canReadEntry = ArchiveReader.supportsRandomAccess(browser.format) && !entry.isDirectory,
+                                    ),
+                                )
+                            },
+                            // The batch extract from the browser's selection bar: the same pendingExtract +
+                            // picker the per-entry sheet's Extract row feeds, so there is one extract path,
+                            // not two. The browser keeps its selection behind the picker; a cancelled pick
+                            // returns to it intact for a retry.
+                            onExtractEntries = { entries ->
+                                pendingExtract = target to entries
+                                archiveExtractPicker.launch(null)
+                            },
+                            onReload = browser::reload,
+                            onDismissServerChange = browser::dismissServerChange,
+                            onShowProperties = { showArchiveProperties = true },
+                        ),
+                )
+                // The entry preview's sheet stood here, and so did the action sheet's. Both are windows now:
+                // the preview reads through the same ranged source the scan did - one entry's bytes, never
+                // the archive around it - and the actions are answered back into this layer, below.
+                // What the entry action window answered, acted on here rather than at the workspace's own
+                // drain below, because everything it needs - the browser's format, this workspace's clipboard,
+                // the extract picker and the properties dialog - is in scope in this layer and nowhere else.
+                // Two effects keyed on the same answer is safe: this one consumes only its own kind, and the
+                // other ignores this kind, so exactly one of them acts and exactly one clears the slot.
+                LaunchedEffect(pendingAction) {
+                    val answer = pendingAction as? ActionAnswer.ArchiveEntryAction ?: return@LaunchedEffect
+                    val entry = archiveEntryAction ?: return@LaunchedEffect
+                    when (answer.action) {
+                        // Preview only where the range read exists - the same condition the window drew its
+                        // Preview row by, resolved here because a TAR entry has no reader to hand it.
+                        ArchiveEntryActionKind.PREVIEW ->
+                            if (ArchiveReader.supportsRandomAccess(browser.format) && !entry.isDirectory) {
+                                openEntryPreview(entry)
+                            } else {
+                                viewModel.reportUiMessage("${entry.path} cannot be previewed in this archive format")
+                            }
+                        // Extract, and single-entry Download under its other name: hand the entry to the
+                        // destination picker, and the extract itself runs when the picker answers. The
+                        // archive stays remote throughout - what moves is the entry's own bytes.
+                        ArchiveEntryActionKind.EXTRACT -> {
+                            pendingExtract = target to listOf(entry)
+                            archiveExtractPicker.launch(null)
+                        }
+                        // The path *inside* the archive, which is the archive's own coordinate system and
+                        // what somebody pasting it beside the archive in a shell is addressing.
+                        ArchiveEntryActionKind.COPY_PATH -> viewModel.copyToClipboard(entry.path)
+                        ArchiveEntryActionKind.PROPERTIES -> archiveEntryProperties = entry
+                    }
+                    archiveEntryAction = null
+                    onActionHandled()
+                }
+                archiveEntryProperties?.let { entry ->
+                    ArchiveEntryPropertiesDialog(
+                        entry = entry,
+                        formatLabel = browser.format.label,
+                        onDismiss = { archiveEntryProperties = null },
+                    )
+                }
+                val readyState = browser.state
+                if (showArchiveProperties && readyState is ArchiveUiState.Ready) {
+                    ArchivePropertiesDialog(
+                        state = readyState,
+                        remotePath = browser.remotePath,
+                        onDismiss = { showArchiveProperties = false },
+                    )
+                }
             }
-            archiveEntryAction = null
-            onActionHandled()
-        }
-        archiveEntryProperties?.let { entry ->
-            ArchiveEntryPropertiesDialog(
-                entry = entry,
-                formatLabel = browser.format.label,
-                onDismiss = { archiveEntryProperties = null },
-            )
-        }
-        val readyState = browser.state
-        if (showArchiveProperties && readyState is ArchiveUiState.Ready) {
-            ArchivePropertiesDialog(
-                state = readyState,
-                remotePath = browser.remotePath,
-                onDismiss = { showArchiveProperties = false },
-            )
-        }
-    }
-    // What the windows that used to be sheets over this workspace answered, acted on here for the
-    // same reason the deep link above is: the answer needs something only this composition has. The
-    // view-model calls are the easy half; View/Edit/Open resolve a provider from the transfer and then
-    // open a window with it, and `editorRequest` and the preview launcher are this workspace's own.
-    //
-    // Two kinds of answer are deliberately *not* acted on here. `FileAction` and `SnippetAction` are
-    // handled by the screen that opened the window - the explorer and the terminal, each of which is
-    // the only place holding the row the answer is about - and they consume themselves, so this drain
-    // must leave the slot alone rather than clear it out from under them. That is safe rather than
-    // racy: the workspace is *stopped* while one of these windows is in front of it, so the screen
-    // that launched it is still composed when its answer arrives, and its own `LaunchedEffect` fires
-    // on the same recomposition this one does.
-    //
-    // Consumed at the end, exactly as the deep link is, so a recomposition cannot run one answer
-    // twice. `takeAnswer` has already emptied the slot, so the worst a lost frame can do is drop an
-    // action the user would have seen had they waited - which is the right way round for a command.
-    LaunchedEffect(pendingAction) {
-        val answer = pendingAction ?: return@LaunchedEffect
-        if (answer is ActionAnswer.TransferAction) {
-            // Resolved from the list the window was opened from rather than trusted as an id: the item
-            // is live, and one that has since left the list has nothing left to act on.
-            val transfer = state.transfers.firstOrNull { it.id == answer.transferId }
-            if (transfer == null) {
-                viewModel.reportUiMessage("That transfer is no longer in the list")
-            } else when (answer.action) {
-                TransferActionKind.PAUSE -> viewModel.pauseTransfer(transfer.id)
-                TransferActionKind.RESUME -> viewModel.resumeTransfer(transfer.id)
-                TransferActionKind.CANCEL -> viewModel.cancelTransfer(transfer.id)
-                TransferActionKind.RUN_NOW -> viewModel.runTransferNow(transfer.id)
-                // The five below are why these answers come back here at all - see [ActionAnswer].
-                TransferActionKind.VIEW_FILE ->
-                    transferLocalTarget(context, transfer)?.let { target ->
-                        context.startActivity(FilePreviewActivity.intent(context, target.entry, target.provider))
-                    } ?: viewModel.reportUiMessage("${transfer.name} has no local file to view")
-                TransferActionKind.EDIT_FILE ->
-                    transferLocalTarget(context, transfer)?.let { editorRequest = EditorRequest(it.entry, it.provider) }
-                        ?: viewModel.reportUiMessage("${transfer.name} has no local file to edit")
-                TransferActionKind.OPEN_FILE ->
-                    openTransferFileExternally(context, transfer, choose = false, onNoApp = viewModel::reportUiMessage)
-                TransferActionKind.OPEN_FILE_WITH ->
-                    openTransferFileExternally(context, transfer, choose = true, onNoApp = viewModel::reportUiMessage)
-                TransferActionKind.COPY_DETAILS -> viewModel.copyToClipboard(transferDetails(transfer))
+            // What the windows that used to be sheets over this workspace answered, acted on here for the
+            // same reason the deep link above is: the answer needs something only this composition has. The
+            // view-model calls are the easy half; View/Edit/Open resolve a provider from the transfer and then
+            // open a window with it, and `editorRequest` and the preview launcher are this workspace's own.
+            //
+            // Two kinds of answer are deliberately *not* acted on here. `FileAction` and `SnippetAction` are
+            // handled by the screen that opened the window - the explorer and the terminal, each of which is
+            // the only place holding the row the answer is about - and they consume themselves, so this drain
+            // must leave the slot alone rather than clear it out from under them. That is safe rather than
+            // racy: the workspace is *stopped* while one of these windows is in front of it, so the screen
+            // that launched it is still composed when its answer arrives, and its own `LaunchedEffect` fires
+            // on the same recomposition this one does.
+            //
+            // Consumed at the end, exactly as the deep link is, so a recomposition cannot run one answer
+            // twice. `takeAnswer` has already emptied the slot, so the worst a lost frame can do is drop an
+            // action the user would have seen had they waited - which is the right way round for a command.
+            LaunchedEffect(pendingAction) {
+                val answer = pendingAction ?: return@LaunchedEffect
+                if (answer is ActionAnswer.TransferAction) {
+                    // Resolved from the list the window was opened from rather than trusted as an id: the item
+                    // is live, and one that has since left the list has nothing left to act on.
+                    val transfer = state.transfers.firstOrNull { it.id == answer.transferId }
+                    if (transfer == null) {
+                        viewModel.reportUiMessage("That transfer is no longer in the list")
+                    } else {
+                        when (answer.action) {
+                            TransferActionKind.PAUSE -> viewModel.pauseTransfer(transfer.id)
+                            TransferActionKind.RESUME -> viewModel.resumeTransfer(transfer.id)
+                            TransferActionKind.CANCEL -> viewModel.cancelTransfer(transfer.id)
+                            TransferActionKind.RUN_NOW -> viewModel.runTransferNow(transfer.id)
+                            // The five below are why these answers come back here at all - see [ActionAnswer].
+                            TransferActionKind.VIEW_FILE ->
+                                transferLocalTarget(context, transfer)?.let { target ->
+                                    context.startActivity(FilePreviewActivity.intent(context, target.entry, target.provider))
+                                } ?: viewModel.reportUiMessage("${transfer.name} has no local file to view")
+                            TransferActionKind.EDIT_FILE ->
+                                transferLocalTarget(context, transfer)?.let { editorRequest = EditorRequest(it.entry, it.provider) }
+                                    ?: viewModel.reportUiMessage("${transfer.name} has no local file to edit")
+                            TransferActionKind.OPEN_FILE ->
+                                openTransferFileExternally(context, transfer, choose = false, onNoApp = viewModel::reportUiMessage)
+                            TransferActionKind.OPEN_FILE_WITH ->
+                                openTransferFileExternally(context, transfer, choose = true, onNoApp = viewModel::reportUiMessage)
+                            TransferActionKind.COPY_DETAILS -> viewModel.copyToClipboard(transferDetails(transfer))
+                        }
+                    }
+                }
+                // The forwarding manager's own two halves. Both resolve the host from the live list first,
+                // for the reason the transfer above does: a host removed while its manager was open has no
+                // rules left to start, and the save path would otherwise write a column for a host that is
+                // gone. The rules themselves are the window's whole new list rather than a delta it computed
+                // - that is the engine's own contract, and it is what makes its stop-the-removed behaviour
+                // apply to this window exactly as it applies to a connect.
+                if (answer is ActionAnswer.ForwardRuleAction) {
+                    val host = state.hosts.firstOrNull { it.id == answer.hostId }
+                    if (host == null) {
+                        viewModel.reportUiMessage("That host is no longer configured, so no rule was changed")
+                    } else {
+                        when (answer.action) {
+                            ForwardRuleKind.START -> viewModel.startForwardRule(host.id, answer.ruleId)
+                            // No host id: the engine's stop is keyed on the rule, because a tunnel is stopped
+                            // where it was started and the rule already knows which host it belongs to.
+                            ForwardRuleKind.STOP -> viewModel.stopForwardRule(answer.ruleId)
+                        }
+                    }
+                }
+                if (answer is ActionAnswer.ForwardRules) {
+                    if (state.hosts.none { it.id == answer.hostId }) {
+                        viewModel.reportUiMessage("That host is no longer configured, so no rule was saved")
+                    } else {
+                        viewModel.saveForwardRules(answer.hostId, answer.rules)
+                    }
+                }
+                // The host details window's two rows. Both are view-model calls and neither is a read, which
+                // is the whole reason they are answers: forgetting the credentials also unregisters the
+                // host's live session, and a stats refresh is a connection this workspace owns.
+                if (answer is ActionAnswer.HostDetailsAction) {
+                    val host = state.hosts.firstOrNull { it.id == answer.hostId }
+                    if (host == null) {
+                        viewModel.reportUiMessage("That host is no longer configured")
+                    } else {
+                        when (answer.action) {
+                            HostDetailsKind.FORGET_CREDENTIALS -> viewModel.forgetCredentials(host)
+                            HostDetailsKind.REFRESH_STATS -> viewModel.refreshStats(host)
+                        }
+                    }
+                }
+                // Cleared for every kind this drain owns, and for the archive's too, which is drained in its
+                // own layer above. Left alone for the two the explorer and the terminal consume themselves -
+                // clearing it here would race the screen whose answer it is.
+                if (answer !is ActionAnswer.FileAction && answer !is ActionAnswer.SnippetAction) onActionHandled()
             }
         }
-        // The forwarding manager's own two halves. Both resolve the host from the live list first,
-        // for the reason the transfer above does: a host removed while its manager was open has no
-        // rules left to start, and the save path would otherwise write a column for a host that is
-        // gone. The rules themselves are the window's whole new list rather than a delta it computed
-        // - that is the engine's own contract, and it is what makes its stop-the-removed behaviour
-        // apply to this window exactly as it applies to a connect.
-        if (answer is ActionAnswer.ForwardRuleAction) {
-            val host = state.hosts.firstOrNull { it.id == answer.hostId }
-            if (host == null) {
-                viewModel.reportUiMessage("That host is no longer configured, so no rule was changed")
-            } else when (answer.action) {
-                ForwardRuleKind.START -> viewModel.startForwardRule(host.id, answer.ruleId)
-                // No host id: the engine's stop is keyed on the rule, because a tunnel is stopped
-                // where it was started and the rule already knows which host it belongs to.
-                ForwardRuleKind.STOP -> viewModel.stopForwardRule(answer.ruleId)
-            }
-        }
-        if (answer is ActionAnswer.ForwardRules) {
-            if (state.hosts.none { it.id == answer.hostId }) {
-                viewModel.reportUiMessage("That host is no longer configured, so no rule was saved")
-            } else {
-                viewModel.saveForwardRules(answer.hostId, answer.rules)
-            }
-        }
-        // The host details window's two rows. Both are view-model calls and neither is a read, which
-        // is the whole reason they are answers: forgetting the credentials also unregisters the
-        // host's live session, and a stats refresh is a connection this workspace owns.
-        if (answer is ActionAnswer.HostDetailsAction) {
-            val host = state.hosts.firstOrNull { it.id == answer.hostId }
-            if (host == null) {
-                viewModel.reportUiMessage("That host is no longer configured")
-            } else when (answer.action) {
-                HostDetailsKind.FORGET_CREDENTIALS -> viewModel.forgetCredentials(host)
-                HostDetailsKind.REFRESH_STATS -> viewModel.refreshStats(host)
-            }
-        }
-        // Cleared for every kind this drain owns, and for the archive's too, which is drained in its
-        // own layer above. Left alone for the two the explorer and the terminal consume themselves -
-        // clearing it here would race the screen whose answer it is.
-        if (answer !is ActionAnswer.FileAction && answer !is ActionAnswer.SnippetAction) onActionHandled()
-    }
-    }
     }
 }
 
@@ -2267,14 +2452,24 @@ private fun LockScreen(
             Spacer(Modifier.height(24.dp))
             OutlinedTextField(
                 value = pin,
-                onValueChange = { pin = it.filter(Char::isDigit).take(6); error = null },
+                onValueChange = {
+                    pin = it.filter(Char::isDigit).take(6)
+                    error = null
+                },
                 label = { Text("PIN") },
                 singleLine = true,
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                visualTransformation =
+                    androidx.compose.ui.text.input
+                        .PasswordVisualTransformation(),
+                keyboardOptions =
+                    androidx.compose.foundation.text
+                        .KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
                 modifier = Modifier.widthIn(max = 280.dp).fillMaxWidth(),
             )
-            error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium) }
+            error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+            }
             Spacer(Modifier.height(18.dp))
             Button(
                 onClick = {
@@ -2284,7 +2479,12 @@ private fun LockScreen(
                     // showing the previous attempt's message.
                     error = null
                     scope.launch {
-                        if (verifyPin(pin)) onUnlocked() else { error = "Incorrect PIN"; verifying = false }
+                        if (verifyPin(pin)) {
+                            onUnlocked()
+                        } else {
+                            error = "Incorrect PIN"
+                            verifying = false
+                        }
                     }
                 },
                 enabled = pin.isNotBlank() && !verifying,
@@ -2292,7 +2492,15 @@ private fun LockScreen(
             ) { Text(if (verifying) "Verifying…" else "Unlock") }
             if (biometricEnabled) {
                 Spacer(Modifier.height(10.dp))
-                TextButton(onClick = { onBiometricUnlock { reason -> error = reason } }) { Icon(Icons.Default.Security, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Use biometric") }
+                TextButton(onClick = {
+                    onBiometricUnlock { reason ->
+                        error = reason
+                    }
+                }) {
+                    Icon(Icons.Default.Security, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Use biometric")
+                }
             }
         }
     }
@@ -2615,10 +2823,11 @@ private fun WorkspaceScaffold(
                             shape = RoundedCornerShape(16.dp),
                             // Transparent so the field reads as part of the bar instead of as a
                             // second surface stacked on it; the outline still marks the hit area.
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                            ),
+                            colors =
+                                OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                ),
                         )
                     },
                     actions = {
@@ -2677,7 +2886,13 @@ private fun WorkspaceScaffold(
             // The horizontal padding is deliberately thin: a phone screen is the scarce resource here,
             // and 8dp is enough to keep a card's ripple from touching the screen edge. (The 1280dp
             // widthIn above still caps a tablet or desktop window at a readable column.)
-            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 1280.dp).padding(horizontal = 8.dp)) {
+            Column(
+                Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .widthIn(max = 1280.dp)
+                    .padding(horizontal = 8.dp),
+            ) {
                 FilesScreen(
                     state,
                     filesExplorer,
@@ -2701,32 +2916,65 @@ private fun WorkspaceScaffold(
             }
             return@Scaffold
         }
-        Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 1280.dp).verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+        Column(
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .widthIn(max = 1280.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp),
+        ) {
             when (destination) {
-                Destination.HOSTS -> HostsScreen(
-                    state, localLinuxCard, onAddHost, onConnect, onShowDetails, onEditHost,
-                    onRemoveHost, onToggleFavoriteHost, onExportAccount, onDuplicateHost,
-                    onManageForwards, onRemoteDesktop, onWakeOnLan, onRdpDesktop,
-                )
+                Destination.HOSTS ->
+                    HostsScreen(
+                        state,
+                        localLinuxCard,
+                        onAddHost,
+                        onConnect,
+                        onShowDetails,
+                        onEditHost,
+                        onRemoveHost,
+                        onToggleFavoriteHost,
+                        onExportAccount,
+                        onDuplicateHost,
+                        onManageForwards,
+                        onRemoteDesktop,
+                        onWakeOnLan,
+                        onRdpDesktop,
+                    )
                 // Both handled above, outside the scrolling column, because both are measured.
                 Destination.TERMINAL, Destination.FILES -> Unit
-                Destination.TRANSFERS -> TransfersScreen(
-                    state.transfers, onClearCompleted, onPauseTransfer, onResumeTransfer, onCancelTransfer,
-                    onPauseAllTransfers, onResumeAllTransfers, onCancelAllTransfers, onRunTransferNow,
-                    onOpenTransferActions,
-                )
-                Destination.SETTINGS -> SettingsScreen(
-                    state, activeHost, linuxUserspace, onBiometric, onDarkTheme, onStopForward,
-                    onImportVault,
-                    onImportProfiles,
-                    onLegacyAlgorithms = onLegacyAlgorithms,
-                    onBlockScreenshots = onBlockScreenshots,
-                    onReconnectAskFirst = onReconnectAskFirst,
-                    onTerminalTheme = onTerminalTheme,
-                    onTerminalKeepSystemBars = onTerminalKeepSystemBars,
-                    onTerminalScrollbackCount = onTerminalScrollbackCount,
-                    onImportSshConfig = onImportSshConfig,
-                )
+                Destination.TRANSFERS ->
+                    TransfersScreen(
+                        state.transfers,
+                        onClearCompleted,
+                        onPauseTransfer,
+                        onResumeTransfer,
+                        onCancelTransfer,
+                        onPauseAllTransfers,
+                        onResumeAllTransfers,
+                        onCancelAllTransfers,
+                        onRunTransferNow,
+                        onOpenTransferActions,
+                    )
+                Destination.SETTINGS ->
+                    SettingsScreen(
+                        state,
+                        activeHost,
+                        linuxUserspace,
+                        onBiometric,
+                        onDarkTheme,
+                        onStopForward,
+                        onImportVault,
+                        onImportProfiles,
+                        onLegacyAlgorithms = onLegacyAlgorithms,
+                        onBlockScreenshots = onBlockScreenshots,
+                        onReconnectAskFirst = onReconnectAskFirst,
+                        onTerminalTheme = onTerminalTheme,
+                        onTerminalKeepSystemBars = onTerminalKeepSystemBars,
+                        onTerminalScrollbackCount = onTerminalScrollbackCount,
+                        onImportSshConfig = onImportSshConfig,
+                    )
             }
         }
     }
@@ -2795,7 +3043,10 @@ private fun HostsScreen(
  * does: "Open terminal" alone describes the action, and the row names the environment.
  */
 @Composable
-private fun LocalUbuntuCard(host: HostProfile, onConnect: (HostProfile) -> Unit) {
+private fun LocalUbuntuCard(
+    host: HostProfile,
+    onConnect: (HostProfile) -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onConnect(host) },
         shape = RoundedCornerShape(22.dp),
@@ -2808,7 +3059,13 @@ private fun LocalUbuntuCard(host: HostProfile, onConnect: (HostProfile) -> Unit)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(host.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(LocalLinuxHost.cardSubtitle(host.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    LocalLinuxHost.cardSubtitle(host.name),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Icon(Icons.Default.PlayArrow, "Open terminal on ${host.name}", tint = MaterialTheme.colorScheme.primary)
         }
@@ -2872,9 +3129,18 @@ private fun HostCard(
                         // being pushed to the far edge, and a long one still ellipsizes rather than
                         // pushing the star off the card.
                         Text(host.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        if (host.isFavorite) { Spacer(Modifier.width(6.dp)); Icon(Icons.Default.Star, "Favorite", tint = EclipseWarning, modifier = Modifier.size(17.dp)) }
+                        if (host.isFavorite) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.Star, "Favorite", tint = EclipseWarning, modifier = Modifier.size(17.dp))
+                        }
                     }
-                    Text("${host.username}@${host.host}:${host.port}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${host.username}@${host.host}:${host.port}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More actions for ${host.name}") }
@@ -2882,7 +3148,10 @@ private fun HostCard(
                         DropdownMenuItem(
                             text = { Text("Connect") },
                             leadingIcon = { Icon(Icons.Default.Wifi, null) },
-                            onClick = { menuOpen = false; onConnect(host) },
+                            onClick = {
+                                menuOpen = false
+                                onConnect(host)
+                            },
                         )
                         // Directly under Connect because it is the other thing a connected host is
                         // opened for: the manager works whether or not the session is up, but it is
@@ -2890,7 +3159,10 @@ private fun HostCard(
                         DropdownMenuItem(
                             text = { Text("Port forwarding") },
                             leadingIcon = { Icon(Icons.Default.SwapVert, null) },
-                            onClick = { menuOpen = false; onPortForwarding(host) },
+                            onClick = {
+                                menuOpen = false
+                                onPortForwarding(host)
+                            },
                         )
                         // Beside the tunnels, because it is built from the same parts - a desktop
                         // rides an ad-hoc local forward - and it is the third thing a connected
@@ -2904,7 +3176,10 @@ private fun HostCard(
                         DropdownMenuItem(
                             text = { Text("VNC Viewer") },
                             leadingIcon = { Icon(Icons.Default.DesktopWindows, null) },
-                            onClick = { menuOpen = false; onRemoteDesktop(host) },
+                            onClick = {
+                                menuOpen = false
+                                onRemoteDesktop(host)
+                            },
                         )
                         // Beside the things that use a *running* session, because it is the one action
                         // that cannot: the whole point of waking the machine is that nothing is
@@ -2914,7 +3189,10 @@ private fun HostCard(
                         DropdownMenuItem(
                             text = { Text("Wake on LAN") },
                             leadingIcon = { Icon(Icons.Default.Bolt, null) },
-                            onClick = { menuOpen = false; onWakeOnLan(host) },
+                            onClick = {
+                                menuOpen = false
+                                onWakeOnLan(host)
+                            },
                         )
                         // Beside the VNC item, and un-gated the way that one is now that the
                         // viewer exists: a host with no saved RDP target gets the config dialog
@@ -2924,7 +3202,10 @@ private fun HostCard(
                         DropdownMenuItem(
                             text = { Text("RDP Viewer") },
                             leadingIcon = { Icon(Icons.Default.DesktopWindows, null) },
-                            onClick = { menuOpen = false; onRdpDesktop(host) },
+                            onClick = {
+                                menuOpen = false
+                                onRdpDesktop(host)
+                            },
                         )
                         // The arrow this item replaced used to sit beside the kebab as a second way
                         // into the details sheet; now this is the way in, so it sits high in the
@@ -2932,34 +3213,52 @@ private fun HostCard(
                         DropdownMenuItem(
                             text = { Text("Details") },
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) },
-                            onClick = { menuOpen = false; onDetails(host) },
+                            onClick = {
+                                menuOpen = false
+                                onDetails(host)
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text(if (host.isFavorite) "Unfavorite" else "Favorite") },
                             leadingIcon = { Icon(if (host.isFavorite) Icons.Default.Star else Icons.Default.StarBorder, null) },
-                            onClick = { menuOpen = false; onToggleFavorite(host) },
+                            onClick = {
+                                menuOpen = false
+                                onToggleFavorite(host)
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text("Export profile") },
                             leadingIcon = { Icon(Icons.Default.Upload, null) },
-                            onClick = { menuOpen = false; onExportAccount(host) },
+                            onClick = {
+                                menuOpen = false
+                                onExportAccount(host)
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text("Edit") },
                             leadingIcon = { Icon(Icons.Default.Edit, null) },
-                            onClick = { menuOpen = false; onEdit(host) },
+                            onClick = {
+                                menuOpen = false
+                                onEdit(host)
+                            },
                         )
                         DropdownMenuItem(
                             text = { Text("Duplicate") },
                             leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
-                            onClick = { menuOpen = false; onDuplicate(host) },
+                            onClick = {
+                                menuOpen = false
+                                onDuplicate(host)
+                            },
                         )
                         // Confirmed by the caller, never here: the menu closes on the tap, so a
                         // confirmation owned by this composable would be dismissed with it.
                         DropdownMenuItem(
                             text = { Text("Remove", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                            onClick = { menuOpen = false; onRemove(host) },
+                            onClick = {
+                                menuOpen = false
+                                onRemove(host)
+                            },
                         )
                     }
                 }
@@ -2967,7 +3266,9 @@ private fun HostCard(
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 host.tags.take(3).forEach { tag ->
-                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) { Text(tag, style = MaterialTheme.typography.labelSmall, maxLines = 1, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)) }
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(tag, style = MaterialTheme.typography.labelSmall, maxLines = 1, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 // The per-host SFTP switch, shown where the auth method is: both answer "what will
@@ -3060,6 +3361,7 @@ private fun TerminalScreen(
     var showReview by rememberSaveable { mutableStateOf(false) }
     // For the one thing this screen launches rather than draws: the snippets window.
     val context = LocalContext.current
+
     /**
      * The half-typed command line.
      *
@@ -3115,15 +3417,18 @@ private fun TerminalScreen(
     val terminalText = state.terminalOutput[activeTab.id].orEmpty()
     // The geometry this host has chosen, or zeroes for "match the screen". Looked up here rather than
     // carried on the tab because it is a stored setting: editing it and coming back has to take effect.
-    val hostGeometry = remember(state.hosts, activeTab.hostId) {
-        state.hosts.firstOrNull { it.id == activeTab.hostId }
-            ?.let { it.terminalColumns to it.terminalRows } ?: (0 to 0)
-    }
+    val hostGeometry =
+        remember(state.hosts, activeTab.hostId) {
+            state.hosts
+                .firstOrNull { it.id == activeTab.hostId }
+                ?.let { it.terminalColumns to it.terminalRows } ?: (0 to 0)
+        }
     // Collected here, at the one composable that draws it, and with the lifecycle: the collection ends
     // when this screen leaves composition or the app stops, which is the signal the view model uses to
     // stop producing frames nobody can see.
     val currentFrames by frames.collectAsStateWithLifecycle()
     val frame = currentFrames[activeTab.id] ?: TerminalFrame.EMPTY
+
     /**
      * The commands the review pane is showing.
      *
@@ -3159,6 +3464,7 @@ private fun TerminalScreen(
     val latches = rememberTerminalLatches()
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+
     /**
      * The size a live pinch is showing, or null when no pinch has happened since the setting caught up.
      *
@@ -3169,6 +3475,7 @@ private fun TerminalScreen(
      * which is what stops the text from snapping back to the old size for the frames in between.
      */
     var pinchSize by remember { mutableStateOf<Int?>(null) }
+
     /** The size the current pinch started from; zero when no pinch is in progress. */
     var pinchBase by remember { mutableIntStateOf(0) }
     LaunchedEffect(fontSize) { if (pinchSize == fontSize) pinchSize = null }
@@ -3180,9 +3487,11 @@ private fun TerminalScreen(
     // the text would step towards the top edge as the user typed. The screen does not change under an
     // IME, so the gap stays where the user last saw it. See [terminalTextInset].
     val configuration = LocalConfiguration.current
-    val textInset = remember(configuration.screenWidthDp, configuration.screenHeightDp) {
-        terminalTextInset(configuration.screenWidthDp, configuration.screenHeightDp)
-    }
+    val textInset =
+        remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+            terminalTextInset(configuration.screenWidthDp, configuration.screenHeightDp)
+        }
+
     /**
      * Whether the invisible IME host actually holds focus, reported by the field itself.
      *
@@ -3196,6 +3505,7 @@ private fun TerminalScreen(
         runCatching { focusRequester.requestFocus() }
         keyboard?.show()
     }
+
     /**
      * Tabs whose keyboard has already been offered, so it is offered once and not fought over.
      *
@@ -3291,8 +3601,14 @@ private fun TerminalScreen(
             // The transcript and the review are alternatives to the grid and to each other, so opening
             // one closes the other: two flags that could both be set would leave the menu offering
             // "Live terminal" twice and the screen drawing whichever the branch happens to test first.
-            onToggleHistory = { showHistory = !showHistory; if (showHistory) showReview = false },
-            onToggleReview = { showReview = !showReview; if (showReview) showHistory = false },
+            onToggleHistory = {
+                showHistory = !showHistory
+                if (showHistory) showReview = false
+            },
+            onToggleReview = {
+                showReview = !showReview
+                if (showReview) showHistory = false
+            },
             // A window rather than a sheet over this grid: the saved commands are only worth offering
             // while the command line they will land on is legible, and a sheet is a slot at the
             // bottom of the screen - exactly where the grid's own last lines are. It carries nothing:
@@ -3338,12 +3654,13 @@ private fun TerminalScreen(
                         color = termFg,
                         fontFamily = FontFamily.Monospace,
                         fontSize = liveFontSize.sp,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            // The same gap as the live grid, so switching between the two does not
-                            // move the text.
-                            .padding(textInset),
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                // The same gap as the live grid, so switching between the two does not
+                                // move the text.
+                                .padding(textInset),
                     )
                 }
             } else if (showReview) {
@@ -3383,109 +3700,113 @@ private fun TerminalScreen(
                             // path below, but written once per gesture end (the Compose side owns
                             // the gesture here, not Termux's own touch handler).
                             val base = if (pinchBase > 0) pinchBase else fontSize.also { pinchBase = it }
-                            val next = (base * scale).roundToInt()
-                                .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
+                            val next =
+                                (base * scale)
+                                    .roundToInt()
+                                    .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
                             pinchSize = next
                             if (next != fontSize) onFontSize(next)
                             pinchBase = 0
                         },
                     )
                 } else {
-                TerminalView(
-                    frame = frame,
-                    style = textStyle,
-                    background = termBg,
-                    foreground = termFg,
-                    metrics = metrics,
-                    modifier = Modifier.fillMaxSize().padding(textInset),
-                    // The host's own width is a floor here as well as an argument to the pty: a
-                    // viewport report resizes the pty, and the first one arrives before any output does.
-                    minColumns = minTerminalColumns(state.settings.terminalMinColumns, hostGeometry.first),
-                    // The app-wide height, which is a floor the view scrolls through — see [atLeastRows].
-                    // A taller terminal is a taller pty, not a taller screen: the shell prints without
-                    // paging and the window follows the cursor.
-                    minRows = state.settings.terminalRows,
-                    // The host's height over it, which can only shorten — see [atMostRows]. This is the
-                    // one place a per-host value beats the app-wide one, and the only way to tell a single
-                    // server that the window is short.
-                    hostRows = hostGeometry.second,
-                    selection = selection,
-                    onSelectionChange = { selection = it },
-                    onSelectionFinished = { finished ->
-                        // A drag that never left its cell is a tap that Compose reported as a drag;
-                        // treating it as a selection would copy one character and swallow the tap.
-                        if (finished.isSingleCell) {
-                            selection = null
-                            showKeyboard()
-                        } else {
-                            onCopySelection(activeTab.id, finished)
-                        }
-                    },
-                    onScroll = { delta -> onScroll(activeTab.id, delta) },
-                    onMouseWheel = { up, column, row, count ->
-                        repeat(count) { onMouseWheel(activeTab.id, up, column, row) }
-                    },
-                    onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
-                    onMouseGesture = { gesture, column, row ->
-                        onMouseGesture(activeTab.id, gesture, column, row)
-                    },
-                    composing = composing,
-                    onTap = { line, column ->
-                        // A link first, because the tap was aimed at the cell the finger is on and a
-                        // linked cell is the one case where a tap means something other than "give me
-                        // the keyboard" - and a reader who tapped a link did not mean to dismiss a
-                        // selection they were reading either.
-                        val target = hyperlinkAt(frame, line, column)
-                        when {
-                            target != null -> hyperlinkTarget = target
-                            selection != null -> selection = null
-                            else -> showKeyboard()
-                        }
-                    },
-                    onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
-                    onZoom = { scale, ended ->
-                        // The gesture reports a factor against its own start, so the start size has to
-                        // be captured once: reading the current size every step would compound the
-                        // factor against a size it already changed and run away.
-                        val base = if (pinchBase > 0) pinchBase else fontSize.also { pinchBase = it }
-                        val next = (base * scale).roundToInt()
-                            .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
-                        pinchSize = next
-                        if (ended) {
-                            pinchBase = 0
-                            // Written once, on lift. Writing per step would put a DataStore commit
-                            // behind every frame of the gesture.
-                            if (next == fontSize) pinchSize = null else onFontSize(next)
-                        }
-                    },
-                    onLongPressCell = { line, column ->
-                        val text = state.terminalLine(activeTab.id, line)
-                        selection = TerminalSelection.wordAt(line, column, text)
-                            // The line's own length, not the grid's: scrollback printed at a wider
-                            // terminal keeps every character, and a whole-line selection that stopped
-                            // at the current width would copy a truncated line.
-                            ?: TerminalSelection.wholeLine(line, maxOf(frame.columns, text.length))
-                        selection?.let { onCopySelection(activeTab.id, it) }
-                    },
-                )
-                // Scrolled back, so the live output is no longer on screen. Without this the only
-                // clue is that nothing moves, which reads as a hung session — so it is drawn when
-                // the count is asked for, and the grid is left alone when it is not. Read from the
-                // state this screen already has, the way the key row's own visibility is read
-                // below: a preference that changes what the terminal draws needs no plumbing to
-                // reach the thing that draws it.
-                val linesBelow = frame.linesBelow()
-                if (state.settings.terminalScrollbackCountVisible && linesBelow > 0) {
-                    ScrollbackBadge(
-                        lines = linesBelow,
-                        // What the row is keyed on, and the only thing that brings it back: the
-                        // viewport moving. New output arriving behind a viewport that is standing
-                        // still leaves it hidden, which is the point of hiding it at all.
-                        scrollPosition = frame.firstLine,
-                        onJump = { onScrollTo(activeTab.id, 0) },
-                        modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                    TerminalView(
+                        frame = frame,
+                        style = textStyle,
+                        background = termBg,
+                        foreground = termFg,
+                        metrics = metrics,
+                        modifier = Modifier.fillMaxSize().padding(textInset),
+                        // The host's own width is a floor here as well as an argument to the pty: a
+                        // viewport report resizes the pty, and the first one arrives before any output does.
+                        minColumns = minTerminalColumns(state.settings.terminalMinColumns, hostGeometry.first),
+                        // The app-wide height, which is a floor the view scrolls through — see [atLeastRows].
+                        // A taller terminal is a taller pty, not a taller screen: the shell prints without
+                        // paging and the window follows the cursor.
+                        minRows = state.settings.terminalRows,
+                        // The host's height over it, which can only shorten — see [atMostRows]. This is the
+                        // one place a per-host value beats the app-wide one, and the only way to tell a single
+                        // server that the window is short.
+                        hostRows = hostGeometry.second,
+                        selection = selection,
+                        onSelectionChange = { selection = it },
+                        onSelectionFinished = { finished ->
+                            // A drag that never left its cell is a tap that Compose reported as a drag;
+                            // treating it as a selection would copy one character and swallow the tap.
+                            if (finished.isSingleCell) {
+                                selection = null
+                                showKeyboard()
+                            } else {
+                                onCopySelection(activeTab.id, finished)
+                            }
+                        },
+                        onScroll = { delta -> onScroll(activeTab.id, delta) },
+                        onMouseWheel = { up, column, row, count ->
+                            repeat(count) { onMouseWheel(activeTab.id, up, column, row) }
+                        },
+                        onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
+                        onMouseGesture = { gesture, column, row ->
+                            onMouseGesture(activeTab.id, gesture, column, row)
+                        },
+                        composing = composing,
+                        onTap = { line, column ->
+                            // A link first, because the tap was aimed at the cell the finger is on and a
+                            // linked cell is the one case where a tap means something other than "give me
+                            // the keyboard" - and a reader who tapped a link did not mean to dismiss a
+                            // selection they were reading either.
+                            val target = hyperlinkAt(frame, line, column)
+                            when {
+                                target != null -> hyperlinkTarget = target
+                                selection != null -> selection = null
+                                else -> showKeyboard()
+                            }
+                        },
+                        onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
+                        onZoom = { scale, ended ->
+                            // The gesture reports a factor against its own start, so the start size has to
+                            // be captured once: reading the current size every step would compound the
+                            // factor against a size it already changed and run away.
+                            val base = if (pinchBase > 0) pinchBase else fontSize.also { pinchBase = it }
+                            val next =
+                                (base * scale)
+                                    .roundToInt()
+                                    .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
+                            pinchSize = next
+                            if (ended) {
+                                pinchBase = 0
+                                // Written once, on lift. Writing per step would put a DataStore commit
+                                // behind every frame of the gesture.
+                                if (next == fontSize) pinchSize = null else onFontSize(next)
+                            }
+                        },
+                        onLongPressCell = { line, column ->
+                            val text = state.terminalLine(activeTab.id, line)
+                            selection = TerminalSelection.wordAt(line, column, text)
+                                // The line's own length, not the grid's: scrollback printed at a wider
+                                // terminal keeps every character, and a whole-line selection that stopped
+                                // at the current width would copy a truncated line.
+                                ?: TerminalSelection.wholeLine(line, maxOf(frame.columns, text.length))
+                            selection?.let { onCopySelection(activeTab.id, it) }
+                        },
                     )
-                }
+                    // Scrolled back, so the live output is no longer on screen. Without this the only
+                    // clue is that nothing moves, which reads as a hung session — so it is drawn when
+                    // the count is asked for, and the grid is left alone when it is not. Read from the
+                    // state this screen already has, the way the key row's own visibility is read
+                    // below: a preference that changes what the terminal draws needs no plumbing to
+                    // reach the thing that draws it.
+                    val linesBelow = frame.linesBelow()
+                    if (state.settings.terminalScrollbackCountVisible && linesBelow > 0) {
+                        ScrollbackBadge(
+                            lines = linesBelow,
+                            // What the row is keyed on, and the only thing that brings it back: the
+                            // viewport moving. New output arriving behind a viewport that is standing
+                            // still leaves it hidden, which is the point of hiding it at all.
+                            scrollPosition = frame.firstLine,
+                            onJump = { onScrollTo(activeTab.id, 0) },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                        )
+                    }
                 } // end legacy TerminalView branch
             }
         }
@@ -3501,7 +3822,7 @@ private fun TerminalScreen(
                     runCatching {
                         context.startActivity(
                             Intent(Intent.ACTION_VIEW, Uri.parse(target))
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                         )
                     }
                 },
@@ -3522,9 +3843,10 @@ private fun TerminalScreen(
             // Decoded here rather than in the ViewModel so the terminal never waits on a settings
             // read to know what its bar looks like: the blob is in the UI state, the codec is pure
             // and never throws, and a damaged blob renders the default bar.
-            val keyBarPrefs = remember(state.settings.terminalKeyBarJson) {
-                KeyBarPrefsCodec.decode(state.settings.terminalKeyBarJson).withMissingStandardCaps()
-            }
+            val keyBarPrefs =
+                remember(state.settings.terminalKeyBarJson) {
+                    KeyBarPrefsCodec.decode(state.settings.terminalKeyBarJson).withMissingStandardCaps()
+                }
             TerminalKeyRow(
                 latches = latches,
                 prefs = keyBarPrefs,
@@ -3547,7 +3869,10 @@ private fun TerminalScreen(
         if (showCommandBar) {
             TerminalCommandBar(
                 command = command,
-                onCommand = { command = it; historyIndex = -1 },
+                onCommand = {
+                    command = it
+                    historyIndex = -1
+                },
                 onRecall = recall,
                 onSend = {
                     onSendInput(activeTab.id, command + "\n")
@@ -3590,13 +3915,14 @@ private fun TerminalScreen(
         // between the tap and this line: the workspace is stopped while the window is in front of it.
         val snippet = answer.snippetId?.let { id -> state.snippets.firstOrNull { it.id == id } }
         when (answer.action) {
-            SnippetActionKind.INSERT -> snippet?.let {
-                // Typed into the remote shell rather than into a form, so the shell's own line
-                // editing applies: the snippet arrives on the command line where it can be
-                // corrected before Enter, which is what a snippet is for. Deliberately no newline.
-                onSendText(activeTab.id, it.command)
-                showKeyboard()
-            }
+            SnippetActionKind.INSERT ->
+                snippet?.let {
+                    // Typed into the remote shell rather than into a form, so the shell's own line
+                    // editing applies: the snippet arrives on the command line where it can be
+                    // corrected before Enter, which is what a snippet is for. Deliberately no newline.
+                    onSendText(activeTab.id, it.command)
+                    showKeyboard()
+                }
             // The naming dialog stays here rather than moving into the window, and this is why the
             // row is an answer at all: it names the command the user has typed, which is live text
             // in this composition - a copy of it taken at launch would be a name for the wrong line
@@ -3611,7 +3937,11 @@ private fun TerminalScreen(
             label = snippetLabel,
             onLabelChange = { snippetLabel = it },
             onDismiss = { showSaveSnippet = false },
-            onConfirm = { label -> onSaveSnippet(label, command); showSaveSnippet = false; snippetLabel = "" },
+            onConfirm = { label ->
+                onSaveSnippet(label, command)
+                showSaveSnippet = false
+                snippetLabel = ""
+            },
         )
     }
 }
@@ -3703,7 +4033,11 @@ private fun TerminalSessionsScreen(
     }
     val context = LocalContext.current
     // The platform's own time format, so a 24-hour device shows 24-hour times.
-    val timeFormat = remember(context) { android.text.format.DateFormat.getTimeFormat(context) }
+    val timeFormat =
+        remember(context) {
+            android.text.format.DateFormat
+                .getTimeFormat(context)
+        }
     // Raised by the header's "Disconnect all" and answered here. Held in this screen rather than
     // hoisted, because the number the question needs is this screen's own subject: the list it is
     // about to empty.
@@ -3733,9 +4067,10 @@ private fun TerminalSessionsScreen(
                 SessionRow(
                     tab = tab,
                     host = state.hosts.firstOrNull { it.id == tab.hostId },
-                    startedAt = remember(tab.startedAt, timeFormat) {
-                        timeFormat.format(java.util.Date(tab.startedAt))
-                    },
+                    startedAt =
+                        remember(tab.startedAt, timeFormat) {
+                            timeFormat.format(java.util.Date(tab.startedAt))
+                        },
                     lastOutput = state.terminalOutput[tab.id],
                     onOpen = { onOpenSession(tab) },
                     // The row's own session key, for the same reason the shell above routes by tab.
@@ -3750,7 +4085,10 @@ private fun TerminalSessionsScreen(
     if (confirmDisconnectAll) {
         ConfirmDisconnectAllDialog(
             sessionCount = state.tabs.size,
-            onConfirm = { confirmDisconnectAll = false; onDisconnectAll() },
+            onConfirm = {
+                confirmDisconnectAll = false
+                onDisconnectAll()
+            },
             onDismiss = { confirmDisconnectAll = false },
         )
     }
@@ -3781,44 +4119,45 @@ internal fun statusLine(
     lastError: String?,
     compact: Boolean,
     networkHeld: Boolean = false,
-): String = if (networkHeld && state.isLive) {
-    // Said as a connected session that is waiting, because that is what it is: nothing has been closed,
-    // and if the network returns to the same address the shell carries on mid-command. Saying
-    // "Reconnecting…" here would be a lie in the one direction that matters, since it is the word the
-    // user has learnt to read as "your session is gone".
-    if (compact) "Connected · waiting for network" else "Connected · waiting for the network to come back"
-} else {
-    when (state) {
-        SessionConnectionState.IDLE -> "Not connected"
-        // A working phase with something already written against it is the connect ladder retrying, and
-        // its own sentence is better than the phase word: [dev.eclipse.ssh.presentation.retryNotice]
-        // says which half of the login failed and which attempt this is, where "Connecting…" says only
-        // that the app is busy. Nothing else puts a message on a working state - a fresh connect clears
-        // it, and a reconnect stays RECONNECTING - so there is no stale text to leak in here.
-        SessionConnectionState.CONNECTING -> lastError ?: "Connecting…"
-        SessionConnectionState.AUTHENTICATING -> lastError ?: "Authenticating…"
-        // Not "Connecting…": the login is done by this point, and a user watching a slow server open a
-        // pty is entitled to know the difference between a host that will not let them in and one that
-        // has.
-        SessionConnectionState.CHANNEL_PTY_INITIALIZING -> lastError ?: "Opening shell…"
-        SessionConnectionState.CONNECTED ->
-            if (compact || startedAt == null) "Connected · encrypted" else "Connected · since $startedAt"
-        // The reason travels with the state, in compact rows as much as roomy ones. `takeIf { !compact }`
-        // used to drop it here, and the terminal screen - the only caller that asks for compact, and the
-        // one screen a user is looking at while this happens - was therefore the single place in the app
-        // that showed the bare word. Every other ended state keeps its reason when compact; this one
-        // deleted the app's entire account of what went wrong, and the two-line row below the call site
-        // exists precisely to carry it. What that cost was not cosmetic: the ladder writes "attempt 2 of
-        // 5 · The server disconnected: Timeout, your session not responding" onto the tab and keeps it
-        // there for the whole recovery, and for several releases none of it reached the screen, so a
-        // session that would not stay up could only ever be described as "it keeps reconnecting" - by
-        // the user, and by anyone trying to fix it from that report.
-        SessionConnectionState.RECONNECTING ->
-            lastError?.let { if (compact) "Reconnecting · $it" else it } ?: "Reconnecting…"
-        SessionConnectionState.DISCONNECTED -> lastError ?: "Disconnected"
-        SessionConnectionState.ERROR -> lastError ?: "Connection failed"
+): String =
+    if (networkHeld && state.isLive) {
+        // Said as a connected session that is waiting, because that is what it is: nothing has been closed,
+        // and if the network returns to the same address the shell carries on mid-command. Saying
+        // "Reconnecting…" here would be a lie in the one direction that matters, since it is the word the
+        // user has learnt to read as "your session is gone".
+        if (compact) "Connected · waiting for network" else "Connected · waiting for the network to come back"
+    } else {
+        when (state) {
+            SessionConnectionState.IDLE -> "Not connected"
+            // A working phase with something already written against it is the connect ladder retrying, and
+            // its own sentence is better than the phase word: [dev.eclipse.ssh.presentation.retryNotice]
+            // says which half of the login failed and which attempt this is, where "Connecting…" says only
+            // that the app is busy. Nothing else puts a message on a working state - a fresh connect clears
+            // it, and a reconnect stays RECONNECTING - so there is no stale text to leak in here.
+            SessionConnectionState.CONNECTING -> lastError ?: "Connecting…"
+            SessionConnectionState.AUTHENTICATING -> lastError ?: "Authenticating…"
+            // Not "Connecting…": the login is done by this point, and a user watching a slow server open a
+            // pty is entitled to know the difference between a host that will not let them in and one that
+            // has.
+            SessionConnectionState.CHANNEL_PTY_INITIALIZING -> lastError ?: "Opening shell…"
+            SessionConnectionState.CONNECTED ->
+                if (compact || startedAt == null) "Connected · encrypted" else "Connected · since $startedAt"
+            // The reason travels with the state, in compact rows as much as roomy ones. `takeIf { !compact }`
+            // used to drop it here, and the terminal screen - the only caller that asks for compact, and the
+            // one screen a user is looking at while this happens - was therefore the single place in the app
+            // that showed the bare word. Every other ended state keeps its reason when compact; this one
+            // deleted the app's entire account of what went wrong, and the two-line row below the call site
+            // exists precisely to carry it. What that cost was not cosmetic: the ladder writes "attempt 2 of
+            // 5 · The server disconnected: Timeout, your session not responding" onto the tab and keeps it
+            // there for the whole recovery, and for several releases none of it reached the screen, so a
+            // session that would not stay up could only ever be described as "it keeps reconnecting" - by
+            // the user, and by anyone trying to fix it from that report.
+            SessionConnectionState.RECONNECTING ->
+                lastError?.let { if (compact) "Reconnecting · $it" else it } ?: "Reconnecting…"
+            SessionConnectionState.DISCONNECTED -> lastError ?: "Disconnected"
+            SessionConnectionState.ERROR -> lastError ?: "Connection failed"
+        }
     }
-}
 
 /**
  * One session in [TerminalSessionsScreen]: what it is, whether it is alive, and the way into it.
@@ -3846,19 +4185,25 @@ private fun SessionRow(
     // does. The list is where a session that dropped while the app was elsewhere gets discovered, which
     // is also where a close tap is most likely to be aimed at the wrong row.
     var confirmClose by remember { mutableStateOf(false) }
-    val preview = remember(lastOutput) {
-        lastOutput?.takeLast(SESSION_PREVIEW_SCAN_CHARS)
-            ?.lineSequence()?.lastOrNull { it.isNotBlank() }?.trim()?.take(120)
-    }
+    val preview =
+        remember(lastOutput) {
+            lastOutput
+                ?.takeLast(SESSION_PREVIEW_SCAN_CHARS)
+                ?.lineSequence()
+                ?.lastOrNull { it.isNotBlank() }
+                ?.trim()
+                ?.take(120)
+        }
     // One line about the file browser, and whether it is a problem. The reason sentence comes from
     // describeSftpFailure, so what the snackbar said and what the row keeps saying are the same text.
-    val sftpNote: Pair<String, Boolean>? = when (tab.sftpState) {
-        SftpSessionState.IDLE -> null
-        SftpSessionState.DISABLED -> "SFTP auto login off · SSH only" to false
-        SftpSessionState.CONNECTING -> "Signing in to SFTP…" to false
-        SftpSessionState.READY -> "SFTP ready" to false
-        SftpSessionState.FAILED -> "SFTP: ${tab.sftpError ?: "unavailable"}" to true
-    }
+    val sftpNote: Pair<String, Boolean>? =
+        when (tab.sftpState) {
+            SftpSessionState.IDLE -> null
+            SftpSessionState.DISABLED -> "SFTP auto login off · SSH only" to false
+            SftpSessionState.CONNECTING -> "Signing in to SFTP…" to false
+            SftpSessionState.READY -> "SFTP ready" to false
+            SftpSessionState.FAILED -> "SFTP: ${tab.sftpError ?: "unavailable"}" to true
+        }
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -3868,7 +4213,9 @@ private fun SessionRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(9.dp).clip(RoundedCornerShape(50))
+                Modifier
+                    .size(9.dp)
+                    .clip(RoundedCornerShape(50))
                     .background(statusColor(tab.state, tab.networkHeld)),
             )
             Spacer(Modifier.width(12.dp))
@@ -3905,8 +4252,12 @@ private fun SessionRow(
                     Text(
                         note,
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (isProblem) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color =
+                            if (isProblem) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -3992,7 +4343,10 @@ private fun SessionRow(
     if (confirmClose) {
         ConfirmCloseSessionDialog(
             tab = tab,
-            onConfirm = { confirmClose = false; onClose() },
+            onConfirm = {
+                confirmClose = false
+                onClose()
+            },
             onDismiss = { confirmClose = false },
         )
     }
@@ -4026,7 +4380,7 @@ private fun ConfirmCloseSessionDialog(
                     "The session is still running. Closing it ends the shell on the server; nothing is saved on the way out."
                 } else {
                     "Close this session's tab?"
-                }
+                },
             )
         },
         confirmButton = {
@@ -4113,7 +4467,7 @@ private fun ConfirmDisconnectAllDialog(
                 } else {
                     "They are all still running. Closing them ends each shell on the server, and nothing is " +
                         "saved on the way out. This cannot be undone."
-                }
+                },
             )
         },
         confirmButton = {
@@ -4139,7 +4493,10 @@ private fun ConfirmDisconnectAllDialog(
  * character after such a cell then sits one place to the left of the cell the user actually tapped. The
  * selection that comes back is addressed in cells, so the string it is found in has to be too.
  */
-private fun MainUiState.terminalLine(sessionKey: String, line: Int): String {
+private fun MainUiState.terminalLine(
+    sessionKey: String,
+    line: Int,
+): String {
     val text = terminalOutput[sessionKey] ?: return ""
     return terminalCellText(text.lineSequence().elementAtOrNull(line).orEmpty())
 }
@@ -4202,6 +4559,7 @@ private fun ScrollbackBadge(
  * competing with it for the screen. Collapsing them into an overflow menu is what freed the rest of
  * the window for the terminal itself.
  */
+
 /**
  * The one-tap collapse/expand affordance for [TerminalKeyRow], drawn as a drag handle.
  *
@@ -4212,15 +4570,18 @@ private fun ScrollbackBadge(
  * screen-reader-friendly path to the same setting is the terminal menu's "Shortcut keys" item.
  */
 @Composable
-private fun TerminalKeyRowHandle(expanded: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+private fun TerminalKeyRowHandle(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier
             .fillMaxWidth()
             .clickable(
                 onClickLabel = if (expanded) "Hide shortcut keys" else "Show shortcut keys",
                 onClick = onToggle,
-            )
-            .padding(vertical = if (expanded) 2.dp else 5.dp),
+            ).padding(vertical = if (expanded) 2.dp else 5.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -4324,10 +4685,11 @@ private fun TerminalTabStrip(
                     // own session. Same gesture as the Files list uses to reach an item's actions, and
                     // the strip's overflow menu carries the same command for anyone who finds gestures
                     // easier to hit than to remember.
-                    modifier = Modifier.combinedClickable(
-                        onClick = { onSelect(tab) },
-                        onLongClick = { onDuplicate(tab) },
-                    ),
+                    modifier =
+                        Modifier.combinedClickable(
+                            onClick = { onSelect(tab) },
+                            onLongClick = { onDuplicate(tab) },
+                        ),
                     shape = RoundedCornerShape(12.dp),
                     // Terminal-derived, like everything else on this strip: the app theme's
                     // primaryContainer is a fixed mid-blue that vanishes on both a black terminal
@@ -4340,7 +4702,9 @@ private fun TerminalTabStrip(
                 ) {
                     Row(Modifier.padding(start = 12.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(
-                            Modifier.size(7.dp).clip(RoundedCornerShape(50))
+                            Modifier
+                                .size(7.dp)
+                                .clip(RoundedCornerShape(50))
                                 .background(statusColor(tab.state, tab.networkHeld)),
                         )
                         Spacer(Modifier.width(8.dp))
@@ -4377,7 +4741,10 @@ private fun TerminalTabStrip(
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text("New Terminal") },
-                    onClick = { menuOpen = false; onDuplicate(activeTab) },
+                    onClick = {
+                        menuOpen = false
+                        onDuplicate(activeTab)
+                    },
                 )
                 // Only on a live session: the wait is for a command to *finish*, and a session
                 // that has already ended cannot finish anything. The notification the arming
@@ -4385,44 +4752,89 @@ private fun TerminalTabStrip(
                 if (activeTab.state.isLive) {
                     DropdownMenuItem(
                         text = { Text("Notify when done") },
-                        onClick = { menuOpen = false; onNotifyWhenDone() },
+                        onClick = {
+                            menuOpen = false
+                            onNotifyWhenDone()
+                        },
                     )
                 }
                 DropdownMenuItem(
                     text = { Text(if (showCommandBar) "Hide command bar" else "Show command bar") },
-                    onClick = { menuOpen = false; onToggleCommandBar() },
+                    onClick = {
+                        menuOpen = false
+                        onToggleCommandBar()
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(if (showHistory) "Live terminal" else "Transcript") },
-                    onClick = { menuOpen = false; onToggleHistory() },
+                    onClick = {
+                        menuOpen = false
+                        onToggleHistory()
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(if (showReview) "Live terminal" else "Command review") },
-                    onClick = { menuOpen = false; onToggleReview() },
+                    onClick = {
+                        menuOpen = false
+                        onToggleReview()
+                    },
                 )
                 DropdownMenuItem(
                     text = { Text(if (keyRowVisible) "Hide shortcut keys" else "Show shortcut keys") },
-                    onClick = { menuOpen = false; onToggleKeyRow() },
+                    onClick = {
+                        menuOpen = false
+                        onToggleKeyRow()
+                    },
                 )
-                DropdownMenuItem(text = { Text("Snippets") }, onClick = { menuOpen = false; onSnippets() })
-                DropdownMenuItem(text = { Text("Paste") }, onClick = { menuOpen = false; onPaste() })
-                DropdownMenuItem(text = { Text("Copy all output") }, onClick = { menuOpen = false; onCopyAll() })
-                DropdownMenuItem(text = { Text("Jump to live output") }, onClick = { menuOpen = false; onScrollToBottom() })
-                DropdownMenuItem(text = { Text("Save logs") }, onClick = { menuOpen = false; onSaveLogs() })
+                DropdownMenuItem(text = { Text("Snippets") }, onClick = {
+                    menuOpen = false
+                    onSnippets()
+                })
+                DropdownMenuItem(text = { Text("Paste") }, onClick = {
+                    menuOpen = false
+                    onPaste()
+                })
+                DropdownMenuItem(text = { Text("Copy all output") }, onClick = {
+                    menuOpen = false
+                    onCopyAll()
+                })
+                DropdownMenuItem(text = { Text("Jump to live output") }, onClick = {
+                    menuOpen = false
+                    onScrollToBottom()
+                })
+                DropdownMenuItem(text = { Text("Save logs") }, onClick = {
+                    menuOpen = false
+                    onSaveLogs()
+                })
                 // Only once there is something to save: the session log is created with the
                 // session, so on a shell that has not spoken yet the item would offer an empty
                 // file. `terminalText` is the observable proxy for "this session has output" -
                 // it is what the transcript view and the other saves read.
                 if (terminalText.isNotBlank()) {
-                    DropdownMenuItem(text = { Text("Save session log") }, onClick = { menuOpen = false; onSaveSessionLog() })
+                    DropdownMenuItem(text = { Text("Save session log") }, onClick = {
+                        menuOpen = false
+                        onSaveSessionLog()
+                    })
                 }
                 // Not gated on output, unlike the log above: the audit is the file that says whether
                 // anything was drawn, so hiding it while the screen is blank would hide it exactly
                 // when it is wanted. An audit with nothing in it says so in its own words.
-                DropdownMenuItem(text = { Text("Save render audit") }, onClick = { menuOpen = false; onSaveRenderAudit() })
-                DropdownMenuItem(text = { Text("Save text") }, onClick = { menuOpen = false; onSaveText() })
-                DropdownMenuItem(text = { Text("Save screen") }, onClick = { menuOpen = false; onSaveScreen() })
-                DropdownMenuItem(text = { Text("Disconnect all") }, onClick = { menuOpen = false; confirmDisconnectAll = true })
+                DropdownMenuItem(text = { Text("Save render audit") }, onClick = {
+                    menuOpen = false
+                    onSaveRenderAudit()
+                })
+                DropdownMenuItem(text = { Text("Save text") }, onClick = {
+                    menuOpen = false
+                    onSaveText()
+                })
+                DropdownMenuItem(text = { Text("Save screen") }, onClick = {
+                    menuOpen = false
+                    onSaveScreen()
+                })
+                DropdownMenuItem(text = { Text("Disconnect all") }, onClick = {
+                    menuOpen = false
+                    confirmDisconnectAll = true
+                })
             }
         }
     }
@@ -4444,7 +4856,9 @@ private fun TerminalTabStrip(
     Row(
         // Padding first, so the reserved height belongs to the content and the insets are a constant on
         // top of it. The other order would let a two-line reason add the padding twice.
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
             .heightIn(min = TERMINAL_STATUS_ROW_MIN_HEIGHT),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -4524,22 +4938,24 @@ private fun TerminalTabStrip(
             // Drawn on the terminal's own background like the rest of the strip: the app theme's
             // field colours assume the app surface and produce a pale field on a black terminal or
             // an invisible outline on a light one.
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = termFg,
-                unfocusedTextColor = termFg,
-                cursorColor = termFg,
-                focusedBorderColor = termFg,
-                unfocusedBorderColor = termFg.copy(alpha = 0.5f),
-                focusedPlaceholderColor = termFg.copy(alpha = 0.6f),
-                unfocusedPlaceholderColor = termFg.copy(alpha = 0.6f),
-            ),
+            colors =
+                OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = termFg,
+                    unfocusedTextColor = termFg,
+                    cursorColor = termFg,
+                    focusedBorderColor = termFg,
+                    unfocusedBorderColor = termFg.copy(alpha = 0.5f),
+                    focusedPlaceholderColor = termFg.copy(alpha = 0.6f),
+                    unfocusedPlaceholderColor = termFg.copy(alpha = 0.6f),
+                ),
         )
         if (searchQuery.isNotBlank()) {
             // Splitting a 2 000-line scrollback on every keystroke is not free, and this recomposes
             // with each of them.
-            val matches = remember(terminalText, searchQuery) {
-                terminalText.lines().count { it.contains(searchQuery, ignoreCase = true) }
-            }
+            val matches =
+                remember(terminalText, searchQuery) {
+                    terminalText.lines().count { it.contains(searchQuery, ignoreCase = true) }
+                }
             Text(
                 "$matches matches",
                 style = MaterialTheme.typography.labelSmall,
@@ -4551,7 +4967,10 @@ private fun TerminalTabStrip(
     confirmClose?.let { tab ->
         ConfirmCloseSessionDialog(
             tab = tab,
-            onConfirm = { confirmClose = null; onCloseTab(tab) },
+            onConfirm = {
+                confirmClose = null
+                onCloseTab(tab)
+            },
             onDismiss = { confirmClose = null },
         )
     }
@@ -4560,7 +4979,10 @@ private fun TerminalTabStrip(
         // is the count that gets closed.
         ConfirmDisconnectAllDialog(
             sessionCount = tabs.size,
-            onConfirm = { confirmDisconnectAll = false; onDisconnectAll() },
+            onConfirm = {
+                confirmDisconnectAll = false
+                onDisconnectAll()
+            },
             onDismiss = { confirmDisconnectAll = false },
         )
     }
@@ -4590,12 +5012,17 @@ private val TERMINAL_STATUS_ROW_MIN_HEIGHT = 48.dp
  * is legible against both ends - which is what makes this safer than the app palette, whose fixed
  * values cannot know whether they landed on a black or a pale terminal.
  */
-private fun blend(base: Color, toward: Color, fraction: Float): Color = Color(
-    red = base.red + (toward.red - base.red) * fraction,
-    green = base.green + (toward.green - base.green) * fraction,
-    blue = base.blue + (toward.blue - base.blue) * fraction,
-    alpha = 1f,
-)
+private fun blend(
+    base: Color,
+    toward: Color,
+    fraction: Float,
+): Color =
+    Color(
+        red = base.red + (toward.red - base.red) * fraction,
+        green = base.green + (toward.green - base.green) * fraction,
+        blue = base.blue + (toward.blue - base.blue) * fraction,
+        alpha = 1f,
+    )
 
 /**
  * Whether there is anything worth explaining about this state.
@@ -4629,15 +5056,24 @@ private fun TerminalCommandBar(
     OutlinedTextField(
         value = command,
         onValueChange = onCommand,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).onPreviewKeyEvent { event ->
-            if (event.type == KeyEventType.KeyDown) {
-                when (event.key) {
-                    Key.DirectionUp -> { onRecall(1); true }
-                    Key.DirectionDown -> { onRecall(-1); true }
-                    else -> false
+        modifier =
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.DirectionUp -> {
+                            onRecall(1)
+                            true
+                        }
+                        Key.DirectionDown -> {
+                            onRecall(-1)
+                            true
+                        }
+                        else -> false
+                    }
+                } else {
+                    false
                 }
-            } else false
-        },
+            },
         placeholder = { Text("Type a command…", color = foreground.copy(alpha = 0.5f)) },
         singleLine = true,
         textStyle = TextStyle(color = foreground, fontFamily = TerminalMonoFontFamily, fontSize = fontSize.sp),
@@ -4654,9 +5090,14 @@ private fun TerminalCommandBar(
  */
 private val KEY_FILE_MIME_TYPES = arrayOf("application/octet-stream", "text/plain", "*/*")
 
-
 @Composable
-private fun SaveSnippetDialog(initialCommand: String, label: String, onLabelChange: (String) -> Unit, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun SaveSnippetDialog(
+    initialCommand: String,
+    label: String,
+    onLabelChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Save snippet") },
@@ -4835,8 +5276,10 @@ private fun ColumnScope.FilesScreen(
                         // local document tree has no ranged reads to browse with, the userspace has
                         // no SFTP channel to range-read over, and an unknown extension has no engine
                         // to browse with - hiding the verb beats offering it and failing.
-                        canOpenArchive = onOpenArchive != null && explorer.isSftp &&
-                            ArchiveReader.formatFor(entry.name) != null,
+                        canOpenArchive =
+                            onOpenArchive != null &&
+                                explorer.isSftp &&
+                                ArchiveReader.formatFor(entry.name) != null,
                     ),
                 )
             },
@@ -4852,31 +5295,51 @@ private fun ColumnScope.FilesScreen(
             // the userspace copies to a folder the user picks (both ends are this device, so there
             // is no transfer to queue), a server goes through the SFTP pipeline one row at a time,
             // and the device's own storage has nothing to download *to* — its rows are already here.
-            onDownload = when {
-                explorer.isSftp -> {
-                    // The bar works on the explorer's FsEntry rows; the transfer queue wants the
-                    // backend-shaped RemoteFile those rows stand for.
-                    { selectedEntries.map { it.toRemoteFile() }.forEach(onDownloadFile); filesExplorer.clearSelection() }
-                }
+            onDownload =
+                when {
+                    explorer.isSftp -> {
+                        // The bar works on the explorer's FsEntry rows; the transfer queue wants the
+                        // backend-shaped RemoteFile those rows stand for.
+                        {
+                            selectedEntries.map { it.toRemoteFile() }.forEach(onDownloadFile)
+                            filesExplorer.clearSelection()
+                        }
+                    }
 
-                explorer.isUbuntu -> {
-                    { onCopyToDevice(selectedEntries); filesExplorer.clearSelection() }
-                }
+                    explorer.isUbuntu -> {
+                        {
+                            onCopyToDevice(selectedEntries)
+                            filesExplorer.clearSelection()
+                        }
+                    }
 
-                else -> null
-            },
-            onUpload = if (explorer.isLocal) {
-                { selectedEntries.map { it.toLocalFile() }.forEach(onUploadLocal); filesExplorer.clearSelection() }
-            } else null,
+                    else -> null
+                },
+            onUpload =
+                if (explorer.isLocal) {
+                    {
+                        selectedEntries.map { it.toLocalFile() }.forEach(onUploadLocal)
+                        filesExplorer.clearSelection()
+                    }
+                } else {
+                    null
+                },
             // Scheduled transfers are a WorkManager queue keyed on a host. The userspace has no host
             // and both ends of its copy are the same disk, so there is nothing to schedule.
-            onSchedule = when {
-                explorer.isUbuntu -> null
-                explorer.isLocal -> ({ scheduleLocal = true })
-                else -> ({ scheduleRemote = true })
+            onSchedule =
+                when {
+                    explorer.isUbuntu -> null
+                    explorer.isLocal -> ({ scheduleLocal = true })
+                    else -> ({ scheduleRemote = true })
+                },
+            onCopy = {
+                pendingRelocate = PendingRelocate(copy = true, entries = selectedEntries)
+                filesExplorer.clearSelection()
             },
-            onCopy = { pendingRelocate = PendingRelocate(copy = true, entries = selectedEntries); filesExplorer.clearSelection() },
-            onMove = { pendingRelocate = PendingRelocate(copy = false, entries = selectedEntries); filesExplorer.clearSelection() },
+            onMove = {
+                pendingRelocate = PendingRelocate(copy = false, entries = selectedEntries)
+                filesExplorer.clearSelection()
+            },
             onDelete = { deleteEntries = selectedEntries },
         )
     }
@@ -4888,29 +5351,32 @@ private fun ColumnScope.FilesScreen(
     LaunchedEffect(pendingAction) {
         val answer = pendingAction as? ActionAnswer.FileAction ?: return@LaunchedEffect
         val entry = actionEntry
-        if (entry != null) when (answer.action) {
-            // The batch bar this summons is why the window closes first: the row joins whatever
-            // selection is already active, which is the old long-press behaviour one tap deeper.
-            FileActionKind.SELECT -> filesExplorer.toggleSelected(entry.path)
-            FileActionKind.PREVIEW -> provider?.let { onPreviewFile(entry, it) }
-            FileActionKind.EDIT -> provider?.let { onEditFile(entry, it) }
-            FileActionKind.RENAME -> renameEntry = entry
-            FileActionKind.COPY -> pendingRelocate = PendingRelocate(copy = true, entries = listOf(entry))
-            FileActionKind.MOVE -> pendingRelocate = PendingRelocate(copy = false, entries = listOf(entry))
-            FileActionKind.DELETE -> deleteEntries = listOf(entry)
-            FileActionKind.PROPERTIES -> propertiesEntry = entry
-            FileActionKind.CHMOD -> chmodEntry = entry
-            FileActionKind.TRANSFER -> when {
-                explorer.isLocal -> onUploadLocal(entry.toLocalFile())
-                // The userspace's Transfer copies out, like a server's downloads, but it is this
-                // device on both ends: the list goes to the copy, not to the transfer queue.
-                explorer.isUbuntu -> onCopyToDevice(listOf(entry))
-                else -> onDownloadFile(entry.toRemoteFile())
+        if (entry != null) {
+            when (answer.action) {
+                // The batch bar this summons is why the window closes first: the row joins whatever
+                // selection is already active, which is the old long-press behaviour one tap deeper.
+                FileActionKind.SELECT -> filesExplorer.toggleSelected(entry.path)
+                FileActionKind.PREVIEW -> provider?.let { onPreviewFile(entry, it) }
+                FileActionKind.EDIT -> provider?.let { onEditFile(entry, it) }
+                FileActionKind.RENAME -> renameEntry = entry
+                FileActionKind.COPY -> pendingRelocate = PendingRelocate(copy = true, entries = listOf(entry))
+                FileActionKind.MOVE -> pendingRelocate = PendingRelocate(copy = false, entries = listOf(entry))
+                FileActionKind.DELETE -> deleteEntries = listOf(entry)
+                FileActionKind.PROPERTIES -> propertiesEntry = entry
+                FileActionKind.CHMOD -> chmodEntry = entry
+                FileActionKind.TRANSFER ->
+                    when {
+                        explorer.isLocal -> onUploadLocal(entry.toLocalFile())
+                        // The userspace's Transfer copies out, like a server's downloads, but it is this
+                        // device on both ends: the list goes to the copy, not to the transfer queue.
+                        explorer.isUbuntu -> onCopyToDevice(listOf(entry))
+                        else -> onDownloadFile(entry.toRemoteFile())
+                    }
+                FileActionKind.SEND_TO_HOST -> sendEntry = entry
+                // The row is drawn only when the session and the name can both be served - see the
+                // window - so the only thing left to check is whether an opener was supplied at all.
+                FileActionKind.OPEN_ARCHIVE -> onOpenArchive?.let { open -> provider?.let { open(entry, it) } }
             }
-            FileActionKind.SEND_TO_HOST -> sendEntry = entry
-            // The row is drawn only when the session and the name can both be served - see the
-            // window - so the only thing left to check is whether an opener was supplied at all.
-            FileActionKind.OPEN_ARCHIVE -> onOpenArchive?.let { open -> provider?.let { open(entry, it) } }
         }
         actionEntry = null
         onActionHandled()
@@ -5004,7 +5470,10 @@ private fun ColumnScope.FilesScreen(
         )
     }
     if (showSync) {
-        SyncDialog(onDismiss = { showSync = false }, onConfirm = { direction -> showSync = false; onSync(direction) })
+        SyncDialog(onDismiss = { showSync = false }, onConfirm = { direction ->
+            showSync = false
+            onSync(direction)
+        })
     }
     if (scheduleRemote) {
         val files = selectedEntries.map { it.toRemoteFile() }
@@ -5050,19 +5519,23 @@ private data class PreviewTarget(
  * in what they will report for a single document — the transfer's name and size are facts the row
  * already knows.
  */
-private fun transferLocalTarget(context: Context, item: TransferItem): PreviewTarget? {
+private fun transferLocalTarget(
+    context: Context,
+    item: TransferItem,
+): PreviewTarget? {
     val uri = item.localUri?.let(Uri::parse) ?: return null
     val document = runCatching { DocumentFile.fromSingleUri(context, uri) }.getOrNull()
     return PreviewTarget(
-        entry = FsEntry(
-            name = document?.name ?: item.name,
-            path = uri.toString(),
-            isDirectory = false,
-            size = document?.length()?.takeIf { it >= 0 } ?: item.totalBytes,
-            modifiedEpochMillis = document?.lastModified()?.takeIf { it > 0 },
-            permissions = null,
-            mimeType = document?.type,
-        ),
+        entry =
+            FsEntry(
+                name = document?.name ?: item.name,
+                path = uri.toString(),
+                isDirectory = false,
+                size = document?.length()?.takeIf { it >= 0 } ?: item.totalBytes,
+                modifiedEpochMillis = document?.lastModified()?.takeIf { it > 0 },
+                permissions = null,
+                mimeType = document?.type,
+            ),
         provider = SingleDocumentProvider(context, uri),
     )
 }
@@ -5081,23 +5554,25 @@ private fun openTransferFileExternally(
 ) {
     val uri = item.localUri?.let(Uri::parse) ?: return onNoApp("${item.name} has no local file")
     val mime = runCatching { DocumentFile.fromSingleUri(context, uri)?.type }.getOrNull() ?: "*/*"
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, mime)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
+    val intent =
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     val target = if (choose) Intent.createChooser(intent, "Open ${item.name} with") else intent
     runCatching { context.startActivity(target) }
         .onFailure { onNoApp("No app on this device can open ${item.name}") }
 }
 
 /** The transfer's facts as text, for the clipboard: what it is, where it sits, how far it got. */
-private fun transferDetails(item: TransferItem): String = listOfNotNull(
-    item.name,
-    "${item.direction.label} · ${item.hostName}",
-    "Status: ${item.status.name.lowercase()} (${(item.progress * 100).toInt()}%)",
-    item.remotePath?.let { "Remote: $it" },
-    item.localUri?.let { "Local: $it" },
-).joinToString("\n")
+private fun transferDetails(item: TransferItem): String =
+    listOfNotNull(
+        item.name,
+        "${item.direction.label} · ${item.hostName}",
+        "Status: ${item.status.name.lowercase()} (${(item.progress * 100).toInt()}%)",
+        item.remotePath?.let { "Remote: $it" },
+        item.localUri?.let { "Local: $it" },
+    ).joinToString("\n")
 
 /** A copy or move waiting on the user to browse to its destination — see [FilesScreen]. */
 private data class PendingRelocate(
@@ -5112,25 +5587,30 @@ private data class PendingRelocate(
  * type. The unknowns become the pipeline's own "not reported" values rather than guesses a
  * transfer row would then present as fact.
  */
-private fun FsEntry.toRemoteFile() = RemoteFile(
-    name = name,
-    path = path,
-    isDirectory = isDirectory,
-    size = size ?: 0L,
-    modifiedEpochSeconds = (modifiedEpochMillis ?: 0L) / 1000L,
-    permissions = permissions ?: "",
-)
+private fun FsEntry.toRemoteFile() =
+    RemoteFile(
+        name = name,
+        path = path,
+        isDirectory = isDirectory,
+        size = size ?: 0L,
+        modifiedEpochSeconds = (modifiedEpochMillis ?: 0L) / 1000L,
+        permissions = permissions ?: "",
+    )
 
 /** An [FsEntry] as the transfer pipeline's local file; the provider path *is* the document URI. */
-private fun FsEntry.toLocalFile() = LocalFile(
-    name = name,
-    uri = Uri.parse(path),
-    isDirectory = isDirectory,
-    size = size ?: 0L,
-)
+private fun FsEntry.toLocalFile() =
+    LocalFile(
+        name = name,
+        uri = Uri.parse(path),
+        isDirectory = isDirectory,
+        size = size ?: 0L,
+    )
 
 @Composable
-private fun NewFileDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun NewFileDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -5142,7 +5622,10 @@ private fun NewFileDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 }
 
 @Composable
-private fun NewFolderDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun NewFolderDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -5154,7 +5637,11 @@ private fun NewFolderDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) 
 }
 
 @Composable
-private fun RenameDialog(name: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun RenameDialog(
+    name: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
     var newName by remember { mutableStateOf(name) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -5166,14 +5653,20 @@ private fun RenameDialog(name: String, onDismiss: () -> Unit, onConfirm: (String
 }
 
 @Composable
-private fun SyncDialog(onDismiss: () -> Unit, onConfirm: (SyncDirection) -> Unit) {
+private fun SyncDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (SyncDirection) -> Unit,
+) {
     var direction by remember { mutableStateOf(SyncDirection.LOCAL_TO_REMOTE) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Sync folder") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Compares the local folder with the remote directory recursively and transfers missing or changed files. Existing files that are newer on the destination are left untouched.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Compares the local folder with the remote directory recursively and transfers missing or changed files. Existing files that are newer on the destination are left untouched.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SyncDirection.entries.forEach { option ->
                         FilterChip(selected = direction == option, onClick = { direction = option }, label = { Text(option.label) })
@@ -5187,7 +5680,12 @@ private fun SyncDialog(onDismiss: () -> Unit, onConfirm: (SyncDirection) -> Unit
 }
 
 @Composable
-private fun SendToHostDialog(file: RemoteFile, hosts: List<HostProfile>, onDismiss: () -> Unit, onConfirm: (HostProfile, String) -> Unit) {
+private fun SendToHostDialog(
+    file: RemoteFile,
+    hosts: List<HostProfile>,
+    onDismiss: () -> Unit,
+    onConfirm: (HostProfile, String) -> Unit,
+) {
     var selectedHost by remember { mutableStateOf(hosts.firstOrNull()) }
     var path by remember { mutableStateOf("") }
     AlertDialog(
@@ -5212,20 +5710,27 @@ private fun SendToHostDialog(file: RemoteFile, hosts: List<HostProfile>, onDismi
 }
 
 @Composable
-private fun ScheduleTransferDialog(count: Int, direction: String, onDismiss: () -> Unit, onConfirm: (Long, Long?) -> Unit) {
-    val presets = listOf(
-        5 * 60_000L to "5 min",
-        15 * 60_000L to "15 min",
-        60 * 60_000L to "1 hour",
-        6 * 60 * 60_000L to "6 hours",
-        24 * 60 * 60_000L to "Tomorrow",
-    )
-    val repeats = listOf(
-        null to "Once",
-        60L to "Hourly",
-        60 * 24L to "Daily",
-        60 * 24 * 7L to "Weekly",
-    )
+private fun ScheduleTransferDialog(
+    count: Int,
+    direction: String,
+    onDismiss: () -> Unit,
+    onConfirm: (Long, Long?) -> Unit,
+) {
+    val presets =
+        listOf(
+            5 * 60_000L to "5 min",
+            15 * 60_000L to "15 min",
+            60 * 60_000L to "1 hour",
+            6 * 60 * 60_000L to "6 hours",
+            24 * 60 * 60_000L to "Tomorrow",
+        )
+    val repeats =
+        listOf(
+            null to "Once",
+            60L to "Hourly",
+            60 * 24L to "Daily",
+            60 * 24 * 7L to "Weekly",
+        )
     var selectedDelay by remember { mutableLongStateOf(presets[1].first) }
     var repeatMinutes by remember { mutableStateOf<Long?>(null) }
     val scheduledAt = System.currentTimeMillis() + selectedDelay
@@ -5234,7 +5739,10 @@ private fun ScheduleTransferDialog(count: Int, direction: String, onDismiss: () 
         title = { Text("Schedule $direction") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("$count item(s) will be queued and transferred when the network is available. Keep this host connected or reconnect it before the scheduled time.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "$count item(s) will be queued and transferred when the network is available. Keep this host connected or reconnect it before the scheduled time.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     presets.forEach { (delay, label) ->
                         FilterChip(selected = selectedDelay == delay, onClick = { selectedDelay = delay }, label = { Text(label) })
@@ -5255,17 +5763,20 @@ private fun ScheduleTransferDialog(count: Int, direction: String, onDismiss: () 
     )
 }
 
-private fun formatRepeat(minutes: Long?): String = when (minutes) {
-    null -> ""
-    60L -> "hour"
-    60 * 24L -> "day"
-    60 * 24 * 7L -> "week"
-    else -> "$minutes minutes"
-}
+private fun formatRepeat(minutes: Long?): String =
+    when (minutes) {
+        null -> ""
+        60L -> "hour"
+        60 * 24L -> "day"
+        60 * 24 * 7L -> "week"
+        else -> "$minutes minutes"
+    }
 
-private fun formatScheduledAt(epochMillis: Long): String = DateTimeFormatter.ofPattern("MMM d, HH:mm")
-    .withZone(ZoneId.systemDefault())
-    .format(Instant.ofEpochMilli(epochMillis))
+private fun formatScheduledAt(epochMillis: Long): String =
+    DateTimeFormatter
+        .ofPattern("MMM d, HH:mm")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(epochMillis))
 
 /**
  * Picks new permissions for [file]. Tapping a row applies it, so there is no confirm button.
@@ -5275,14 +5786,20 @@ private fun formatScheduledAt(epochMillis: Long): String = DateTimeFormatter.ofP
  * hold instead, and what it did to people's files, is written up there.
  */
 @Composable
-private fun ChmodDialog(name: String, permissions: String?, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+private fun ChmodDialog(
+    name: String,
+    permissions: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
     // Shown so the change can be judged against what is already there — and, on the first release
     // where these presets do what they say, so a file left mis-set by an earlier one is visible.
-    val current = permissions
-        ?.toIntOrNull(radix = 8)
-        ?.let { "$permissions · ${symbolicPermissions(it)}" }
-        ?: permissions
-        ?: "unknown"
+    val current =
+        permissions
+            ?.toIntOrNull(radix = 8)
+            ?.let { "$permissions · ${symbolicPermissions(it)}" }
+            ?: permissions
+            ?: "unknown"
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Permissions · $name") },
@@ -5309,7 +5826,11 @@ private fun ChmodDialog(name: String, permissions: String?, onDismiss: () -> Uni
 private fun safeFileName(value: String): String = value.trim().replace(Regex("[^A-Za-z0-9._-]+"), "_").ifBlank { "account" }
 
 @Composable
-private fun TruncatedListingNotice(total: Int, what: String, advice: String) {
+private fun TruncatedListingNotice(
+    total: Int,
+    what: String,
+    advice: String,
+) {
     if (total <= MAX_LISTED_ENTRIES) return
     Text(
         "Showing the first $MAX_LISTED_ENTRIES of $total $what. $advice",
@@ -5373,9 +5894,10 @@ private fun TransfersScreen(
     // count is zero filters nothing, and five chips on a queue of two transfers is most of a row
     // spent on ways to see fewer items.
     var filter by remember { mutableStateOf(TransferFilter.ALL) }
-    val filterable = TransferFilter.entries.filter { f ->
-        f == TransferFilter.ALL || transfers.any { it.matches(f) }
-    }
+    val filterable =
+        TransferFilter.entries.filter { f ->
+            f == TransferFilter.ALL || transfers.any { it.matches(f) }
+        }
     if (filterable.size > 1) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             filterable.forEach { f -> FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label) }) }
@@ -5403,7 +5925,10 @@ private fun TransfersScreen(
 }
 
 /** The Transfers tab's filter chips. Everything unfinished and unscheduled reads as "active". */
-private enum class TransferFilter(val label: String, val emptyTitle: String) {
+private enum class TransferFilter(
+    val label: String,
+    val emptyTitle: String,
+) {
     ALL("All", "No transfers"),
     ACTIVE("Active", "Nothing active"),
     SCHEDULED("Scheduled", "Nothing scheduled"),
@@ -5411,16 +5936,19 @@ private enum class TransferFilter(val label: String, val emptyTitle: String) {
     DONE("Done", "Nothing completed"),
 }
 
-private fun TransferItem.matches(filter: TransferFilter): Boolean = when (filter) {
-    TransferFilter.ALL -> true
-    // PAUSED belongs here rather than nowhere: it is a transfer part-way through, one Resume away
-    // from running, and a filter list that hid it would make a paused queue look empty.
-    TransferFilter.ACTIVE -> status == TransferStatus.RUNNING || status == TransferStatus.PAUSED ||
-        (status == TransferStatus.QUEUED && scheduledAt == null)
-    TransferFilter.SCHEDULED -> status == TransferStatus.QUEUED && scheduledAt != null
-    TransferFilter.FAILED -> status == TransferStatus.FAILED
-    TransferFilter.DONE -> status == TransferStatus.COMPLETE
-}
+private fun TransferItem.matches(filter: TransferFilter): Boolean =
+    when (filter) {
+        TransferFilter.ALL -> true
+        // PAUSED belongs here rather than nowhere: it is a transfer part-way through, one Resume away
+        // from running, and a filter list that hid it would make a paused queue look empty.
+        TransferFilter.ACTIVE ->
+            status == TransferStatus.RUNNING ||
+                status == TransferStatus.PAUSED ||
+                (status == TransferStatus.QUEUED && scheduledAt == null)
+        TransferFilter.SCHEDULED -> status == TransferStatus.QUEUED && scheduledAt != null
+        TransferFilter.FAILED -> status == TransferStatus.FAILED
+        TransferFilter.DONE -> status == TransferStatus.COMPLETE
+    }
 
 /**
  * One transfer as a card.
@@ -5432,7 +5960,14 @@ private fun TransferItem.matches(filter: TransferFilter): Boolean = when (filter
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TransferCard(item: TransferItem, onPause: (String) -> Unit, onResume: (String) -> Unit, onCancel: (String) -> Unit, onRunNow: (String) -> Unit, onOpenActions: (TransferItem) -> Unit) {
+private fun TransferCard(
+    item: TransferItem,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit,
+    onCancel: (String) -> Unit,
+    onRunNow: (String) -> Unit,
+    onOpenActions: (TransferItem) -> Unit,
+) {
     Card(
         Modifier
             .fillMaxWidth()
@@ -5442,20 +5977,39 @@ private fun TransferCard(item: TransferItem, onPause: (String) -> Unit, onResume
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)) { Box(contentAlignment = Alignment.Center) { Icon(if (item.direction == TransferDirection.DOWNLOAD) Icons.Default.CloudDownload else Icons.Default.CloudUpload, null, tint = MaterialTheme.colorScheme.primary) } }
-                Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text("${item.hostName} · ${item.sizeLabel}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(40.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (item.direction ==
+                                TransferDirection.DOWNLOAD
+                            ) {
+                                Icons.Default.CloudDownload
+                            } else {
+                                Icons.Default.CloudUpload
+                            },
+                            null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${item.hostName} · ${item.sizeLabel}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 when (item.status) {
                     TransferStatus.COMPLETE -> Icon(Icons.Default.CheckCircle, "Complete", tint = EclipseSuccess)
                     TransferStatus.RUNNING -> IconButton(onClick = { onPause(item.id) }) { Icon(Icons.Default.Pause, "Pause", tint = MaterialTheme.colorScheme.primary) }
                     // A retry is a resume with a different name, and the icon says which: the arrow
                     // asks to continue what was interrupted, the refresh says start over because the
                     // last try did not work.
-                    else -> IconButton(onClick = { onResume(item.id) }) {
-                        Icon(
-                            if (item.status == TransferStatus.FAILED) Icons.Default.Refresh else Icons.Default.PlayArrow,
-                            if (item.status == TransferStatus.FAILED) "Retry ${item.name}" else "Resume",
-                        )
-                    }
+                    else ->
+                        IconButton(onClick = { onResume(item.id) }) {
+                            Icon(
+                                if (item.status == TransferStatus.FAILED) Icons.Default.Refresh else Icons.Default.PlayArrow,
+                                if (item.status == TransferStatus.FAILED) "Retry ${item.name}" else "Resume",
+                            )
+                        }
                 }
                 if (item.status != TransferStatus.COMPLETE) {
                     IconButton(onClick = { onCancel(item.id) }) { Icon(Icons.Default.Close, "Cancel transfer", tint = MaterialTheme.colorScheme.error) }
@@ -5556,13 +6110,14 @@ private fun SettingsScreen(
     // host at all, which is the state the old dialog handled by quietly doing nothing after the user
     // had filled it in: the buttons below are disabled rather than accepting a form that cannot be
     // acted on.
-    val openForwardForm = activeHost?.let { host ->
-        {
-            context.startActivity(
-                ForwardFormActivity.intent(context, hostId = host.id, hostName = host.name),
-            )
+    val openForwardForm =
+        activeHost?.let { host ->
+            {
+                context.startActivity(
+                    ForwardFormActivity.intent(context, hostId = host.id, hostName = host.name),
+                )
+            }
         }
-    }
     // Hosts with at least one secret saved. `savedCredentials` only ever contains entries the store
     // actually wrote, but an entry whose secrets were all forgotten individually can still be present
     // with nothing in it, so the count filters rather than reading `size`.
@@ -5598,8 +6153,26 @@ private fun SettingsScreen(
         SettingRow(Icons.Default.Lock, "Biometric vault lock", "Protect passwords and private keys") { Switch(checked = state.settings.biometricUnlock, onCheckedChange = onBiometric) }
         // Building the pair is the window's own work now, not this list's: generating one is seconds
         // to tens of seconds of prime searching, and the dialog that used to hold the tap froze for it.
-        SettingRow(Icons.Default.Key, "Generate SSH key pair", "RSA 2048/4096 or ECDSA P-256, exported as PEM") { TextButton(onClick = { context.startActivity(Intent(context, KeyGenActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Generate SSH key pair" }) { Text("Generate") } }
-        SettingRow(Icons.Default.Lock, "PIN lock", if (state.settings.pinEnabled) "Enabled · PIN fallback at launch" else "Set a PIN for quick unlock") { TextButton(onClick = { context.startActivity(Intent(context, PinLockActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "PIN lock" }) { Text(if (state.settings.pinEnabled) "Change" else "Set") } }
+        SettingRow(Icons.Default.Key, "Generate SSH key pair", "RSA 2048/4096 or ECDSA P-256, exported as PEM") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, KeyGenActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Generate SSH key pair"
+                    },
+            ) { Text("Generate") }
+        }
+        SettingRow(Icons.Default.Lock, "PIN lock", if (state.settings.pinEnabled) "Enabled · PIN fallback at launch" else "Set a PIN for quick unlock") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, PinLockActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "PIN lock"
+                    },
+            ) { Text(if (state.settings.pinEnabled) "Change" else "Set") }
+        }
         // The subtitle says so when there is no lock to re-arm: with no PIN set the vault has no
         // lock screen at all, so the delay would be a setting over nothing.
         SettingRow(
@@ -5610,9 +6183,23 @@ private fun SettingsScreen(
                 state.settings.vaultAutoLockMinutes == 0 -> "Never re-locks while the app is in the background"
                 else -> "Re-locks after ${state.settings.vaultAutoLockMinutes} minutes in the background"
             },
-        ) { TextButton(onClick = { context.startActivity(Intent(context, VaultAutoLockActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Auto-lock vault" }) { Text("Change") } }
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, VaultAutoLockActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Auto-lock vault" },
+            ) { Text("Change") }
+        }
         SettingRow(Icons.Default.Security, "Encrypted vault", "AES-256-GCM · Android Keystore") { Text("Protected", color = EclipseSuccess, style = MaterialTheme.typography.labelMedium) }
-        SettingRow(Icons.Default.Key, "Known hosts", "${state.knownHosts.size} trusted fingerprint(s)") { TextButton(onClick = { context.startActivity(Intent(context, KnownHostsActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Known hosts" }) { Text("Manage") } }
+        SettingRow(Icons.Default.Key, "Known hosts", "${state.knownHosts.size} trusted fingerprint(s)") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, KnownHostsActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Known hosts"
+                    },
+            ) { Text("Manage") }
+        }
         SettingRow(
             Icons.Default.Security,
             "Saved credentials",
@@ -5628,15 +6215,55 @@ private fun SettingsScreen(
             // one because there was nowhere to look before deciding; the screen behind it is the list
             // this count always implied, so the thing to offer here is the going-and-looking. It also
             // means forgetting one host no longer costs forgetting every other host to reach it.
-            TextButton(onClick = { context.startActivity(Intent(context, SavedCredentialsActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Saved credentials" }) { Text("Manage") }
+            TextButton(
+                onClick = { context.startActivity(Intent(context, SavedCredentialsActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Saved credentials" },
+            ) { Text("Manage") }
         }
     }
     Spacer(Modifier.height(14.dp))
     SettingsSection("Workspace") {
         SettingRow(Icons.Default.Settings, "Dark appearance", "Optimized for terminal work") { Switch(checked = state.settings.darkTheme, onCheckedChange = onDarkTheme) }
-        SettingRow(Icons.Default.Wifi, "Keep-alive interval", "Every ${state.settings.keepAliveSeconds} seconds") { TextButton(onClick = { context.startActivity(Intent(context, KeepAliveActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Keep-alive interval" }) { Text("Change") } }
-        SettingRow(Icons.Default.Security, "Clipboard auto-clear", if (state.settings.clearClipboardAfterSeconds == 0) "Never clear copied secrets automatically" else "Clear secrets after ${state.settings.clearClipboardAfterSeconds} seconds") { TextButton(onClick = { context.startActivity(Intent(context, ClipboardClearActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Clipboard auto-clear" }) { Text("Change") } }
-        SettingRow(Icons.Default.Terminal, "Terminal font size", "${state.settings.terminalFontSize} sp JetBrains Mono") { TextButton(onClick = { context.startActivity(Intent(context, TerminalFontSizeActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Terminal font size" }) { Text("Change") } }
+        SettingRow(Icons.Default.Wifi, "Keep-alive interval", "Every ${state.settings.keepAliveSeconds} seconds") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, KeepAliveActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Keep-alive interval"
+                    },
+            ) { Text("Change") }
+        }
+        SettingRow(
+            Icons.Default.Security,
+            "Clipboard auto-clear",
+            if (state.settings.clearClipboardAfterSeconds ==
+                0
+            ) {
+                "Never clear copied secrets automatically"
+            } else {
+                "Clear secrets after ${state.settings.clearClipboardAfterSeconds} seconds"
+            },
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, ClipboardClearActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Clipboard auto-clear"
+                    },
+            ) { Text("Change") }
+        }
+        SettingRow(Icons.Default.Terminal, "Terminal font size", "${state.settings.terminalFontSize} sp JetBrains Mono") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, TerminalFontSizeActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Terminal font size"
+                    },
+            ) { Text("Change") }
+        }
         // Next to the font size because both shape the terminal screen. The subtitle names what the
         // window edits rather than listing the caps - the count changes with the user's own setup.
         // The window rather than a dialog because the editor can now be left unsaved: it is a screen
@@ -5645,7 +6272,12 @@ private fun SettingsScreen(
             Icons.Default.Keyboard,
             "Shortcut bar",
             "Choose the keys on the bar, add custom buttons, set the rows",
-        ) { TextButton(onClick = { context.startActivity(Intent(context, ShortcutBarActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Shortcut bar" }) { Text("Customize") } }
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, ShortcutBarActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Shortcut bar" },
+            ) { Text("Customize") }
+        }
         SettingRow(
             Icons.Default.Terminal,
             "Terminal width",
@@ -5654,7 +6286,12 @@ private fun SettingsScreen(
             } else {
                 "At least ${state.settings.terminalMinColumns} columns; drag sideways for the rest"
             },
-        ) { TextButton(onClick = { context.startActivity(Intent(context, TerminalWidthActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Terminal width" }) { Text("Change") } }
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, TerminalWidthActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Terminal width" },
+            ) { Text("Change") }
+        }
         // Directly under the width, because they are the two halves of one question - how big is the
         // terminal - and the subtitles have to be read together to make sense: both are floors the
         // server is told, one reached by panning and the other by scrolling. A row that said "Terminal
@@ -5667,7 +6304,12 @@ private fun SettingsScreen(
             } else {
                 "At least ${state.settings.terminalRows} rows; the window scrolls the rest"
             },
-        ) { TextButton(onClick = { context.startActivity(Intent(context, TerminalHeightActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Terminal height" }) { Text("Change") } }
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, TerminalHeightActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Terminal height" },
+            ) { Text("Change") }
+        }
         SettingRow(Icons.Default.Terminal, "Terminal theme", "Colours the grid and its background") {
             SettingDropdown(
                 label = "Terminal theme",
@@ -5693,8 +6335,12 @@ private fun SettingsScreen(
             "Scrolled-back line count",
             "How far behind the live output the view is, shown over the grid when the view is scrolled back",
         ) { Switch(checked = state.settings.terminalScrollbackCountVisible, onCheckedChange = onTerminalScrollbackCount) }
-        SettingRow(Icons.Default.Security, "Legacy algorithms", "Also offer CBC, SHA-1 and dh-group1 to reach older servers") { Switch(checked = state.settings.legacyAlgorithms, onCheckedChange = onLegacyAlgorithms) }
-        SettingRow(Icons.Default.Lock, "Block screenshots", "Hides this app from screenshots, screen recording and the recents preview") { Switch(checked = state.settings.blockScreenshots, onCheckedChange = onBlockScreenshots) }
+        SettingRow(Icons.Default.Security, "Legacy algorithms", "Also offer CBC, SHA-1 and dh-group1 to reach older servers") {
+            Switch(checked = state.settings.legacyAlgorithms, onCheckedChange = onLegacyAlgorithms)
+        }
+        SettingRow(Icons.Default.Lock, "Block screenshots", "Hides this app from screenshots, screen recording and the recents preview") {
+            Switch(checked = state.settings.blockScreenshots, onCheckedChange = onBlockScreenshots)
+        }
     }
     Spacer(Modifier.height(14.dp))
     SettingsSection("Port forwarding") {
@@ -5734,9 +6380,10 @@ private fun SettingsScreen(
             TextButton(
                 onClick = { openForwardForm?.invoke() },
                 enabled = openForwardForm != null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics { contentDescription = "Add port forward" },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .semantics { contentDescription = "Add port forward" },
             ) { Text("Add forward") }
         }
     }
@@ -5745,10 +6392,28 @@ private fun SettingsScreen(
         // The window owns the passphrase field and the SAF picker that follows it, because the two
         // have to be one motion: the picker leaves the app, and the passphrase must not be left
         // behind in a list that has already scrolled on.
-        SettingRow(Icons.Default.CloudUpload, "Export encrypted backup", "Hosts and settings, passphrase-protected") { TextButton(onClick = { context.startActivity(Intent(context, ExportBackupActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Export encrypted backup" }) { Text("Export") } }
+        SettingRow(Icons.Default.CloudUpload, "Export encrypted backup", "Hosts and settings, passphrase-protected") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, ExportBackupActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Export encrypted backup"
+                    },
+            ) { Text("Export") }
+        }
         // Beside the vault export and deliberately not the same thing: this one carries the secrets
         // and no settings, that one the settings and no secrets. See [ExportProfilesActivity].
-        SettingRow(Icons.Default.Person, "Export profiles", "One or more accounts, credentials included") { TextButton(onClick = { context.startActivity(Intent(context, ExportProfilesActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Export profiles" }) { Text("Export") } }
+        SettingRow(Icons.Default.Person, "Export profiles", "One or more accounts, credentials included") {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, ExportProfilesActivity::class.java)) },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            "Export profiles"
+                    },
+            ) { Text("Export") }
+        }
         SettingRow(Icons.Default.CloudDownload, "Import backup", "Restore hosts and settings") { TextButton(onClick = onImportVault) { Text("Import") } }
         SettingRow(Icons.Default.Person, "Import profiles", "Restore one or more saved accounts") { TextButton(onClick = onImportProfiles) { Text("Import") } }
         SettingRow(Icons.Default.Computer, "Import OpenSSH config", "Parse Host blocks from ssh_config") { TextButton(onClick = onImportSshConfig) { Text("Import") } }
@@ -5769,7 +6434,12 @@ private fun SettingsScreen(
             Icons.Default.Refresh,
             "Reconnect delay",
             "First retry after ${state.settings.reconnectBaseSeconds} s, then doubling · auto reconnect on network recovery",
-        ) { TextButton(onClick = { context.startActivity(Intent(context, ReconnectDelayActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Reconnect delay" }) { Text("Change") } }
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, ReconnectDelayActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Reconnect delay" },
+            ) { Text("Change") }
+        }
         SettingRow(
             Icons.Default.Terminal,
             "Connection diagnostics",
@@ -5778,10 +6448,15 @@ private fun SettingsScreen(
             } else {
                 "${state.diagnostics.size} event(s) recorded · no secrets"
             },
-        // "View" alone is ambiguous on this list - the Ubuntu row above carries a control too, and
-        // the About row at the end of this block records that a screen reader once heard two rows
-        // as the same word.
-        ) { TextButton(onClick = { context.startActivity(Intent(context, DiagnosticsActivity::class.java)) }, modifier = Modifier.semantics { contentDescription = "Connection diagnostics" }) { Text("View") } }
+            // "View" alone is ambiguous on this list - the Ubuntu row above carries a control too, and
+            // the About row at the end of this block records that a screen reader once heard two rows
+            // as the same word.
+        ) {
+            TextButton(
+                onClick = { context.startActivity(Intent(context, DiagnosticsActivity::class.java)) },
+                modifier = Modifier.semantics { contentDescription = "Connection diagnostics" },
+            ) { Text("View") }
+        }
     }
     Spacer(Modifier.height(14.dp))
     SettingsSection("About") {
@@ -5823,11 +6498,12 @@ private fun SettingsScreen(
  * Falls back to [TerminalCursorShape.BLOCK] for unknown values — the same default
  * [dev.eclipse.ssh.data.settings.SettingsRepository] writes when the setting is absent.
  */
-private fun parseCursorShape(setting: String): TerminalCursorShape = when (setting.lowercase()) {
-    "underline" -> TerminalCursorShape.UNDERLINE
-    "bar", "beam" -> TerminalCursorShape.BAR
-    else -> TerminalCursorShape.BLOCK
-}
+private fun parseCursorShape(setting: String): TerminalCursorShape =
+    when (setting.lowercase()) {
+        "underline" -> TerminalCursorShape.UNDERLINE
+        "bar", "beam" -> TerminalCursorShape.BAR
+        else -> TerminalCursorShape.BLOCK
+    }
 
 /**
  * A one-line summary of the Ubuntu userspace state, for the row on the Linux screen.
@@ -5865,26 +6541,31 @@ private fun linuxUserspaceSummary(ui: LinuxUserspaceUiState): String {
  * so this is the phase alone — the install's overall figure is what the user is watching, and a
  * phase-local one would start over at every step.
  */
-private fun describeInstallStep(step: LinuxInstallStep): String = when (step) {
-    is LinuxInstallStep.Downloading ->
-        "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
-    LinuxInstallStep.Verifying -> "Verifying the download"
-    is LinuxInstallStep.Extracting -> "Extracting · ${step.entries} files"
-    is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)
-    LinuxInstallStep.VerifyingHealth -> "Running the health check"
-}
-
-private fun describeSetupStep(step: SetupStep, detail: String?): String {
-    val label = when (step) {
-        SetupStep.REGISTER_USER -> "Creating the ubuntu account"
-        SetupStep.PREPARE_WORKSPACE -> "Preparing the workspace"
-        SetupStep.CONFIGURE_DNS -> "Configuring DNS"
-        SetupStep.CONFIGURE_APT -> "Configuring package sources"
-        SetupStep.UPDATE_PACKAGES -> "Updating package lists"
-        SetupStep.INSTALL_BASE_PACKAGES -> "Installing the base packages"
-        SetupStep.INSTALL_EXTRA_PACKAGES -> "Installing the extra packages"
-        SetupStep.VERIFY -> "Verifying"
+private fun describeInstallStep(step: LinuxInstallStep): String =
+    when (step) {
+        is LinuxInstallStep.Downloading ->
+            "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+        LinuxInstallStep.Verifying -> "Verifying the download"
+        is LinuxInstallStep.Extracting -> "Extracting · ${step.entries} files"
+        is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)
+        LinuxInstallStep.VerifyingHealth -> "Running the health check"
     }
+
+private fun describeSetupStep(
+    step: SetupStep,
+    detail: String?,
+): String {
+    val label =
+        when (step) {
+            SetupStep.REGISTER_USER -> "Creating the ubuntu account"
+            SetupStep.PREPARE_WORKSPACE -> "Preparing the workspace"
+            SetupStep.CONFIGURE_DNS -> "Configuring DNS"
+            SetupStep.CONFIGURE_APT -> "Configuring package sources"
+            SetupStep.UPDATE_PACKAGES -> "Updating package lists"
+            SetupStep.INSTALL_BASE_PACKAGES -> "Installing the base packages"
+            SetupStep.INSTALL_EXTRA_PACKAGES -> "Installing the extra packages"
+            SetupStep.VERIFY -> "Verifying"
+        }
     // The newest command output beside the step's label: a slow-but-alive `apt-get update` shows
     // "Get: 47 …" crawling instead of a label that could be wedged for all the user can tell.
     // Capped because an apt line is unbounded prose, and this sits in a settings row's subtitle.
@@ -5908,9 +6589,21 @@ private fun EmptyState(
     actionIcon: ImageVector = Icons.Default.Add,
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 90.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(68.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Dashboard, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp)) } }
-        Spacer(Modifier.height(18.dp)); Text(title, style = MaterialTheme.typography.titleLarge); Spacer(Modifier.height(6.dp)); Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        action?.let { Spacer(Modifier.height(18.dp)); Button(onClick = it) { Icon(actionIcon, null); Spacer(Modifier.width(7.dp)); Text(actionLabel) } }
+        Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(68.dp)) {
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Dashboard, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp)) }
+        }
+        Spacer(Modifier.height(18.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(6.dp))
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        action?.let {
+            Spacer(Modifier.height(18.dp))
+            Button(onClick = it) {
+                Icon(actionIcon, null)
+                Spacer(Modifier.width(7.dp))
+                Text(actionLabel)
+            }
+        }
     }
 }
 
@@ -5936,19 +6629,27 @@ private fun AuthenticationDialog(
                     onValueChange = { password = it },
                     label = { Text("Password (optional for SSH key)") },
                     singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    visualTransformation =
+                        androidx.compose.ui.text.input
+                            .PasswordVisualTransformation(),
                     keyboardOptions = SecretFieldKeyboard,
                     trailingIcon = { SecretPasteButton("password", onPasteSecret) { password = it } },
                 )
                 Text("Auth method: ${host.authMethod.label}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                OutlinedButton(onClick = onPickKey) { Icon(Icons.Default.Key, null); Spacer(Modifier.width(8.dp)); Text(selectedKeyName ?: "Choose SSH private key") }
+                OutlinedButton(onClick = onPickKey) {
+                    Icon(Icons.Default.Key, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(selectedKeyName ?: "Choose SSH private key")
+                }
                 if (selectedKeyName != null) {
                     OutlinedTextField(
                         value = passphrase,
                         onValueChange = { passphrase = it },
                         label = { Text("Key passphrase (optional)") },
                         singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        visualTransformation =
+                            androidx.compose.ui.text.input
+                                .PasswordVisualTransformation(),
                         keyboardOptions = SecretFieldKeyboard,
                         trailingIcon = { SecretPasteButton("passphrase", onPasteSecret) { passphrase = it } },
                     )
@@ -5970,6 +6671,7 @@ private fun AuthenticationDialog(
  * screen: the password again, a different private key, or both — plus the choice to update what is
  * stored on the host so the correction outlives this attempt.
  */
+
 /**
  * The ask-first reconnect question: a session dropped, and the user said never to bring their
  * sessions back without asking. "Reconnect" answers through the same dial the automatic ladder
@@ -5977,7 +6679,10 @@ private fun AuthenticationDialog(
  * still works whenever they change their mind.
  */
 @Composable
-private fun ReconnectDialog(prompt: ReconnectPrompt, onReconnect: (Boolean) -> Unit) {
+private fun ReconnectDialog(
+    prompt: ReconnectPrompt,
+    onReconnect: (Boolean) -> Unit,
+) {
     AlertDialog(
         onDismissRequest = { onReconnect(false) },
         icon = { Icon(Icons.Default.Refresh, null, tint = MaterialTheme.colorScheme.tertiary) },
@@ -6017,7 +6722,9 @@ private fun AuthFailureDialog(
                     onValueChange = { password = it },
                     label = { Text("Password — type it again") },
                     singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    visualTransformation =
+                        androidx.compose.ui.text.input
+                            .PasswordVisualTransformation(),
                     keyboardOptions = SecretFieldKeyboard,
                     trailingIcon = { SecretPasteButton("password", onPasteSecret) { password = it } },
                 )
@@ -6032,7 +6739,9 @@ private fun AuthFailureDialog(
                         onValueChange = { passphrase = it },
                         label = { Text("Key passphrase (optional)") },
                         singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        visualTransformation =
+                            androidx.compose.ui.text.input
+                                .PasswordVisualTransformation(),
                         keyboardOptions = SecretFieldKeyboard,
                         trailingIcon = { SecretPasteButton("passphrase", onPasteSecret) { passphrase = it } },
                     )
@@ -6062,14 +6771,20 @@ private fun AuthFailureDialog(
 }
 
 @Composable
-private fun HostKeyDialog(challenge: HostKeyChallenge, onAccept: () -> Unit, onReject: () -> Unit) {
+private fun HostKeyDialog(
+    challenge: HostKeyChallenge,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onReject,
         icon = { Icon(Icons.Default.Security, null, tint = if (challenge.changed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) },
         title = { Text(if (challenge.changed) "Host key changed" else "Verify host fingerprint") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (challenge.changed) "The server key changed. Do not continue unless you have verified this change out-of-band." else "This server is not in Known Hosts yet. Verify the fingerprint before trusting it.")
+                Text(
+                    if (challenge.changed) "The server key changed. Do not continue unless you have verified this change out-of-band." else "This server is not in Known Hosts yet. Verify the fingerprint before trusting it.",
+                )
                 Text("${challenge.host}:${challenge.port}", fontWeight = FontWeight.SemiBold)
                 Text(challenge.fingerprint, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
@@ -6097,7 +6812,9 @@ private fun PassphraseDialog(
                 { value = it },
                 label = { Text("Passphrase") },
                 singleLine = true,
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                visualTransformation =
+                    androidx.compose.ui.text.input
+                        .PasswordVisualTransformation(),
                 keyboardOptions = SecretFieldKeyboard,
                 trailingIcon = { SecretPasteButton("passphrase", onPasteSecret) { value = it } },
             )
@@ -6120,11 +6837,13 @@ private fun PassphraseDialog(
  * the failed-login prompt. The last of those is why the form owns its own key picker: the prompt's
  * picker returns a key for a *retry*, not for the form, and the two used to share one launcher.
  */
-private fun openHostForm(context: Context, host: HostProfile? = null) {
+private fun openHostForm(
+    context: Context,
+    host: HostProfile? = null,
+) {
     context.startActivity(
         Intent(context, HostFormActivity::class.java).apply {
             if (host != null) putExtra(HostFormActivity.EXTRA_HOST_ID, host.id)
-        }
+        },
     )
 }
-
