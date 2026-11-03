@@ -3694,6 +3694,17 @@ private fun TerminalScreen(
                         fontSizeSp = liveFontSize,
                         cursorShape = parseCursorShape(state.settings.terminalCursorStyle),
                         modifier = Modifier.fillMaxSize().padding(textInset),
+                        // The on-screen key bar's Ctrl/Alt/Shift latches are sticky-until-used:
+                        // tapping CTRL arms it, the next keystroke consumes it. The Termux View
+                        // polls these on every key event (readControlKey/readAltKey/readShiftKey,
+                        // and via onCodePoint's merged ctrlDown), so wiring them as live reads
+                        // makes a latched Ctrl turn the next typed 'c' into Ctrl+C. onModifiersConsumed
+                        // disarms the latches after the keystroke lands — the key bar's own
+                        // direct-key path (onSendKey) consumes independently and never reaches here.
+                        isCtrlDown = { latches.ctrl },
+                        isAltDown = { latches.alt },
+                        isShiftDown = { latches.shift },
+                        onModifiersConsumed = { latches.consume() },
                         onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
                         onScale = { scale ->
                             // Pinch-to-zoom on the Termux renderer: same coercion as the legacy

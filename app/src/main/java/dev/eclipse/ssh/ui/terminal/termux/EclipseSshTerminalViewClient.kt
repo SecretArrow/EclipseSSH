@@ -44,6 +44,7 @@ class EclipseSshTerminalViewClient(
     private val onScale: (Float) -> Unit,
     private val onCopyModeChanged: (Boolean) -> Unit,
     private val sessionProvider: () -> EclipseSshTerminalSession?,
+    private val onModifiersConsumed: () -> Unit = {},
 ) : TerminalViewClient {
     /**
      * Pinch-to-zoom on the terminal text. Termux drives the [com.termux.view.TerminalView.setTextSize]
@@ -151,6 +152,11 @@ class EclipseSshTerminalViewClient(
                 applicationCursorKeys = ssh.isCursorKeysApplicationMode(),
             )
         ssh.write(bytes, 0, bytes.size)
+        // A keystroke is what the on-screen key bar's Ctrl/Alt/Shift latches were armed for; the
+        // latches are sticky-until-used, so consume them now so an armed Ctrl does not bleed into
+        // the next character. The key bar's own direct-key path (onSendKey → ViewModel → channel)
+        // consumes independently and never reaches here.
+        onModifiersConsumed()
         return true
     }
 
@@ -218,6 +224,9 @@ class EclipseSshTerminalViewClient(
             }
         val withAlt = if (alt) byteArrayOf(0x1B.toByte()) + bytes else bytes
         ssh.write(withAlt, 0, withAlt.size)
+        // Same sticky-until-used consume as in [onKeyDown]: an armed Ctrl must not survive the
+        // character it was meant to modify.
+        onModifiersConsumed()
         return true
     }
 

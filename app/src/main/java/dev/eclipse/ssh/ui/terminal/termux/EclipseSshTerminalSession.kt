@@ -230,9 +230,22 @@ class EclipseSshTerminalSession(
     ) {
         val emulator = emulatorField
         if (emulator == null) {
-            // Copy the slice: the SharedFlow's replay buffer may reuse this array, and we hold it
-            // across the gap until the emulator arrives.
+            // Re-check inside the lock: the SSH thread's volatile read of [emulatorField] can be
+            // overtaken by the main thread's [ensureEmulator] running between that read and the
+            // `synchronized(pendingBytes)` entry below. If [ensureEmulator] completes first it
+            // calls [drainPending], which sees an empty buffer (these bytes are not in it yet) and
+            // returns — leaving these bytes stranded in the buffer with no second drain to collect
+            // them. Re-reading [emulatorField] under the same lock [drainPending] takes closes that
+            // window: either the emulator is still null (buffer, as before) or it has appeared
+            // (append directly, never touching the buffer).
             synchronized(pendingBytes) {
+                val live = emulatorField
+                if (live != null) {
+                    live.append(data, length)
+                    return
+                }
+                // Copy the slice: the SharedFlow's replay buffer may reuse this array, and we hold it
+                // across the gap until the emulator arrives.
                 pendingBytes.write(data, 0, length)
                 // Cap so a session whose emulator never materialises (a view torn down before its
                 // first layout) does not pin unbounded memory. The head is dropped because the

@@ -65,17 +65,39 @@ class EclipseSshTerminalSessionClient(
     }
 
     /**
+     * Marshal a redraw onto the view's own (main) thread.
+     *
+     * Termux's [com.termux.view.TerminalView.onScreenUpdated] ends in `invalidate()` — the
+     * main-thread-only variant — not `postInvalidate()`. It also writes `mTopRow` (which `onDraw`
+     * reads) and may touch the text-selection `ActionMode`, all of which assume the main thread.
+     *
+     * The emulator calls our callbacks ([onTextChanged], [onColorsChanged],
+     * [onTerminalCursorStateChange]) on whatever thread drove [TerminalEmulator.append] — in our
+     * pipeline that is the SSH collector on [kotlinx.coroutines.Dispatchers.IO]. Calling
+     * `onScreenUpdated` directly from there is undefined behaviour: missed invalidations at best,
+     * a crashed `ActionMode` when a selection is active at worst. So every redraw is posted.
+     *
+     * [com.termux.view.TerminalView.post] runs the runnable on the view's looper (the main looper)
+     * and drops it cleanly if the view is detached — which is the right behaviour for a session
+     * whose view Compose has torn down (the bytes still buffer in the emulator; the next attach
+     * redraws from scratch in the update block).
+     */
+    private fun postRedraw() {
+        viewRef.get().get()?.post { it.onScreenUpdated() }
+    }
+
+    /**
      * The emulator's screen changed. Termux's redraw path is view-internal: it reads
      * [com.termux.terminal.TerminalEmulator.getScreen] in [com.termux.view.TerminalView.onScreenUpdated]
      * and paints directly to the Canvas. Our job is just to call that method on the right thread.
      *
-     * The view's `onScreenUpdated` is safe to call from any thread — it ends in `postInvalidate()`,
-     * not `invalidate()` — so we do not need to bounce through the main handler. The Termux app
-     * itself calls it from the main thread because that is where its main handler runs, not
-     * because the method requires it.
+     * The view's `onScreenUpdated` is **not** safe to call from any thread — it ends in
+     * `invalidate()` (main-thread-only, not `postInvalidate()`) and also mutates `mTopRow` and the
+     * text-selection controller — so every redraw callback below marshals onto the view's looper via
+     * [postRedraw] rather than calling it directly.
      */
     override fun onTextChanged(changedSession: TerminalSession) {
-        viewRef.get().get()?.onScreenUpdated()
+        postRedraw()
     }
 
     /**
@@ -128,7 +150,7 @@ class EclipseSshTerminalSessionClient(
      * emulator on every frame, so a redraw is sufficient.
      */
     override fun onColorsChanged(session: TerminalSession) {
-        viewRef.get().get()?.onScreenUpdated()
+        postRedraw()
     }
 
     /**
@@ -137,7 +159,7 @@ class EclipseSshTerminalSessionClient(
      * blinker *is* running, this is the blinker's own state-flip, and we'd be double-invalidating.
      */
     override fun onTerminalCursorStateChange(state: Boolean) {
-        viewRef.get().get()?.onScreenUpdated()
+        postRedraw()
     }
 
     /**

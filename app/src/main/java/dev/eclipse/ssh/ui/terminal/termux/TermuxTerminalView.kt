@@ -40,10 +40,11 @@ import java.lang.ref.WeakReference
  * Bytes flow:
  *
  *  - **SSH → screen**: the channel's [TerminalChannel.output] SharedFlow is collected in a
- *    coroutine launched in [rememberCoroutineScope]; each chunk is passed to
+ *    coroutine launched in [rememberCoroutineScope] on [Dispatchers.IO]; each chunk is passed to
  *    [EclipseSshTerminalSession.feedBytes], which calls `TerminalEmulator.append(data, length)`.
  *    The emulator then calls [EclipseSshTerminalSessionClient.onTextChanged] on the collector's
- *    thread, which calls [TerminalView.onScreenUpdated] (thread-safe via `postInvalidate`).
+ *    thread, which posts [TerminalView.onScreenUpdated] onto the view's (main) looper — the View's
+ *    own `onScreenUpdated` ends in `invalidate()` (main-thread-only), not `postInvalidate()`.
  *
  *  - **screen → SSH**: keystrokes are typed into the [TerminalView], which translates them into
  *    escape sequences via `TerminalSession.writeCodePoint` / the parent's `write(byte[], int, int)`
@@ -84,6 +85,7 @@ fun TermuxTerminalView(
     onSingleTapUp: () -> Unit = {},
     onLongPress: () -> Unit = {},
     onCopyModeChanged: (Boolean) -> Unit = {},
+    onModifiersConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -163,6 +165,7 @@ fun TermuxTerminalView(
                             onScale = onScale,
                             onCopyModeChanged = onCopyModeChanged,
                             sessionProvider = { session.sshSession },
+                            onModifiersConsumed = onModifiersConsumed,
                         ),
                     )
                     // Termux's default text size is 8sp; the user's setting is in sp already.
