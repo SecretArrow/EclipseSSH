@@ -83,7 +83,12 @@ class EclipseSshTerminalSessionClient(
      * redraws from scratch in the update block).
      */
     private fun postRedraw() {
-        viewRef.get().get()?.post { it.onScreenUpdated() }
+        // Capture the view in a local so the runnable closes over a stable reference, not the
+        // WeakReference's live get(): the view could be cleared between the null-check and the
+        // runnable running, and we want the runnable to redraw the view we saw, not whatever the
+        // ref points to by the time the main looper runs it.
+        val view = viewRef.get().get() ?: return
+        view.post { view.onScreenUpdated() }
     }
 
     /**
