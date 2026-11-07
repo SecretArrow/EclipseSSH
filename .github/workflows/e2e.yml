@@ -79,6 +79,23 @@ jobs:
             arch: x86_64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Grant KVM access to the runner user
+        # Some ubuntu-24.04 runner images ship /dev/kvm but the runner user
+        # is not in the kvm group ("ProbeKVM: This user doesn't have
+        # permissions to use KVM" in run 42370740804). Without KVM the
+        # emulator falls back to TCG software emulation: boots take 4-13
+        # minutes and the guest freezes mid-test with
+        # ShellCommandUnresponsiveException, which gradle reports as
+        # "Skipping device 'test(AVD)': Unknown API Level / No compatible
+        # devices connected". chmod on the device node is enough - the
+        # emulator probes access with open(), not group membership.
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          else
+            echo "::warning::no /dev/kvm on this runner - emulator will use TCG"
+          fi
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
         with:
           distribution: temurin
