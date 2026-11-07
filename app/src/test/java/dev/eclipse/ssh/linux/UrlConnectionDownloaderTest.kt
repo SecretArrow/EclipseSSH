@@ -28,7 +28,10 @@ class UrlConnectionDownloaderTest {
             receivedRanges.add(range ?: "none")
             val bytes = BODY
             if (range != null && range.startsWith("bytes=")) {
-                val start = range.removePrefix("bytes=").trim().toLong()
+                // An open-ended range is "bytes=N-": the dash travels with the header, so it is
+                // cut off here rather than fed to toLong() - which was exactly the bug that made
+                // the first CI round of this file die with 'Unexpected end of file from server'.
+                val start = range.removePrefix("bytes=").substringBefore('-').trim().toLong()
                 val slice = bytes.copyOfRange(start.toInt(), bytes.size)
                 exchange.responseHeaders.add("Content-Range", "bytes $start-${bytes.size - 1}/${bytes.size}")
                 exchange.sendResponseHeaders(206, slice.size.toLong())
@@ -131,7 +134,11 @@ class UrlConnectionDownloaderTest {
     }
 
     private fun newTarget(): File =
-        Files.createTempDirectory("downloader-test").toFile().resolve("rootfs.tar.gz").apply { deleteOnExit() }
+        Files
+            .createTempDirectory("downloader-test")
+            .toFile()
+            .resolve("rootfs.tar.gz")
+            .apply { deleteOnExit() }
 
     companion object {
         /** Big enough to span several 64 KiB chunks, so the pause has a boundary to fire at. */
