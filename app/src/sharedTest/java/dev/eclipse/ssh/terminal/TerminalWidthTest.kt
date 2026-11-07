@@ -41,7 +41,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `a combining mark takes no column of its own`() {
+    fun aCombiningMarkTakesNoColumnOfItsOwn() {
         // The accents, a Cyrillic sign, a Greek mark and the combining half marks: the characters that
         // arrive when text is decomposed rather than precomposed, which is what a filename written on
         // macOS carries and what a paste from many editors produces.
@@ -49,7 +49,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `the invisible characters a shell emits take no column`() {
+    fun theInvisibleCharactersAShellEmitsTakeNoColumn() {
         // Zero-width space, the two joiners, and the directional marks: the joiner is what every
         // composed emoji is built from, so it arrives from any tool that prints one.
         assertAll(0, 0x200B, 0x200C, 0x200D, 0x200E, 0x200F)
@@ -64,7 +64,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `a byte order mark takes no column, and neither does a null`() {
+    fun aByteOrderMarkTakesNoColumnAndNeitherDoesANull() {
         // A BOM is what `cat` of a file written on Windows puts at the head of a line. Counting it as a
         // column shifts the whole line right by one, which is how a shell prompt ends up with its first
         // character gone.
@@ -72,7 +72,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `the ambiguous characters this app meets stay one column wide`() {
+    fun theAmbiguousCharactersThisAppMeetsStayOneColumnWide() {
         // Box drawing and blocks: what ncurses draws every dialog, menu and border with. Widening these
         // is the single most destructive thing a width table can do to a terminal.
         assertAll(1, 0x2500, 0x2502, 0x250C, 0x2510, 0x2514, 0x2518, 0x253C, 0x2550, 0x2551, 0x2554)
@@ -88,7 +88,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `braille is one column, which is what the spinner alphabet is`() {
+    fun brailleIsOneColumnWhichIsWhatTheSpinnerAlphabetIs() {
         // Wide in no terminal, and it is what a progress spinner prints when it is not using a
         // powerline glyph. Treating the block as wide would put every spinner's frame one cell further
         // right than the one before it.
@@ -96,7 +96,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `the format characters that are not zero width stay one column`() {
+    fun theFormatCharactersThatAreNotZeroWidthStayOneColumn() {
         // The category is not the rule: SOFT HYPHEN, the Arabic number signs and the Syriac abbreviation
         // mark are all format characters, and every terminal counts each of them as one column. Taking
         // the whole category as zero-width would pull every Arabic line one cell left per number sign.
@@ -104,7 +104,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `wide characters take two columns`() {
+    fun wideCharactersTakeTwoColumns() {
         assertAll(2, 0x1100, 0x4E2D, 0x6587, 0x3042, 0x30AB, 0xAC00, 0xD55C)
         assertAll(2, 0xFF01, 0xFF21, 0xFF5E, 0xFFE0, 0xFFE5)
         // Two columns of emoji, which is where the standard itself moved: Unicode 9 widened them, so a
@@ -114,7 +114,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `the two marks the reference counts as one column are the two exceptions`() {
+    fun theTwoMarksTheReferenceCountsAsOneColumnAreTheTwoExceptions() {
         // Both are combining marks by category, and the reference counts each of them as a column, so the
         // category rule would give the wrong answer on any platform. U+1734 is the plainer case of the
         // two: a mark between two zero-width marks, and it is the one that is one column wide.
@@ -127,7 +127,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `a mark the platform alone would miss is still zero width`() {
+    fun aMarkThePlatformAloneWouldMissIsStillZeroWidth() {
         // These are all nonspacing marks in current Unicode whose `Character.getType` on the JVM this
         // suite runs on is *unassigned* - the JVM's tables are older than the reference's. Each one is a
         // real character a device would meet: an Arabic vowel sign, a Telugu nukta, a Lao sign, a
@@ -140,7 +140,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `where the reference has no answer the table puts one column`() {
+    fun whereTheReferenceHasNoAnswerTheTablePutsOneColumn() {
         // A very large set of code points is not printable at all and the reference answers -1 for them:
         // the C0 and C1 controls, the private use areas, the surrogates, the unassigned code points. A
         // terminal that has been handed one still has to put something in a cell, and one column is what
@@ -154,13 +154,13 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `an unmapped astral character is one column`() {
+    fun anUnmappedAstralCharacterIsOneColumn() {
         // A private-use character from a supplementary plane: nothing says it is wide, so it is one.
         assertAll(1, 0xF0000, 0x100000, 0x10FFFD)
     }
 
     @Test
-    fun `the shape of the table at its boundaries`() {
+    fun theShapeOfTheTableAtItsBoundaries() {
         // Both sides of every boundary that a reader would doubt, in the order the code space runs. Where
         // the reference has no width for a code point at all it answers -1 and the entry says
         // `unassigned`: those are the ones `where the reference has no answer` above states the rule for.
@@ -267,7 +267,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `every run ends where the reference ends it`() {
+    fun everyRunEndsWhereTheReferenceEndsIt() {
         // The same walk, but over every run of both tables and from both sides - the code point before a
         // run, the two endpoints, and the one after - so that a run which is one code point too long or
         // too short cannot pass. That is the failure a generated table has, and there are 161 runs of
@@ -728,7 +728,7 @@ class TerminalWidthTest {
     // --- terminalCellText: the same table, read the other way ---
 
     @Test
-    fun `terminalCellText drops the marks so a column indexes it`() {
+    fun terminalCellTextDropsTheMarksSoAColumnIndexesIt() {
         // The case the function exists for: `e` and its accent are one cell in two code points, and the
         // string a column indexes has to have one character for it. Written with escapes throughout,
         // because a zero-width character in a source file is one no reader can see and check.
@@ -739,7 +739,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `terminalCellText leaves a surrogate pair whole`() {
+    fun terminalCellTextLeavesASurrogatePairWhole() {
         // A pair is two characters and two cells, which is what the far side counts for the emoji it
         // spells, so removing half of it would be worse than leaving it: the text would no longer be
         // the text.
@@ -750,7 +750,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `terminalCellText drops a zero-width character that is astral`() {
+    fun terminalCellTextDropsAZeroWidthCharacterThatIsAstral() {
         // U+E0100 is a variation selector from the supplement block: two `Char`s, no column. Removing it
         // needs the pair to be read as one character, which is the whole reason the walk is by code point.
         val selector = String(Character.toChars(0xE0100))
@@ -758,7 +758,7 @@ class TerminalWidthTest {
     }
 
     @Test
-    fun `terminalCellText leaves ordinary text alone`() {
+    fun terminalCellTextLeavesOrdinaryTextAlone() {
         assertThat(terminalCellText("")).isEmpty()
         assertThat(terminalCellText("plain ascii 123")).isEqualTo("plain ascii 123")
         // A wide character takes two columns in this buffer, so it is two characters here: the string is

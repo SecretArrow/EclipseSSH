@@ -46,7 +46,7 @@ class WideCharacterBoundaryTest {
     // --- DCH: the count is cells, and the range is widened to whole characters ------------------
 
     @Test
-    fun `a delete on a wide character's left half takes the whole character`() {
+    fun aDeleteOnAWideCharactersLeftHalfTakesTheWholeCharacter() {
         val buffer = row()
         buffer.feed("$E[1;5H$E[P")
 
@@ -56,7 +56,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `a delete on a wide character's right half leaves the row alone`() {
+    fun aDeleteOnAWideCharactersRightHalfLeavesTheRowAlone() {
         val buffer = row()
         buffer.feed("$E[1;6H$E[P")
 
@@ -66,7 +66,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `a delete starting on a left half spends its cells on whole characters`() {
+    fun aDeleteStartingOnALeftHalfSpendsItsCellsOnWholeCharacters() {
         val buffer = row()
         buffer.feed("$E[1;5H$E[2P")
 
@@ -76,7 +76,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `a delete starting on a right half spends one cell leaving the half alone`() {
+    fun aDeleteStartingOnARightHalfSpendsOneCellLeavingTheHalfAlone() {
         val buffer = row()
         buffer.feed("$E[1;6H$E[3P")
 
@@ -87,7 +87,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `a delete on an ordinary cell shifts one cell`() {
+    fun aDeleteOnAnOrdinaryCellShiftsOneCell() {
         val buffer = row()
         buffer.feed("$E[1;4H$E[P")
 
@@ -96,7 +96,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `a delete past the last column does nothing`() {
+    fun aDeletePastTheLastColumnDoesNothing() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
         buffer.feed("abc")
         buffer.feed("$E[1;20H$E[P")
@@ -105,7 +105,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `a delete of no cells is a delete of one`() {
+    fun aDeleteOfNoCellsIsADeleteOfOne() {
         val buffer = row()
         buffer.feed("$E[1;5H$E[0P")
 
@@ -115,7 +115,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `the cells a delete vacates at the end of the line wear the pen's background`() {
+    fun theCellsADeleteVacatesAtTheEndOfTheLineWearThePensBackground() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
         // Keep a background active across the delete: BCE fills with the *current* background, and
         // measured against tmux 3.5a the vacated cells are at the *end of the line*, not at the
@@ -131,7 +131,7 @@ class WideCharacterBoundaryTest {
     // --- ICH ------------------------------------------------------------------------------------
 
     @Test
-    fun `an insert on a wide character's left half pushes the pair along`() {
+    fun anInsertOnAWideCharactersLeftHalfPushesThePairAlong() {
         val buffer = row()
         buffer.feed("$E[1;5H$E[1@")
 
@@ -141,7 +141,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `an insert inside a wide character pushes its right half along`() {
+    fun anInsertInsideAWideCharacterPushesItsRightHalfAlong() {
         val buffer = row()
         buffer.feed("$E[1;6H$E[1@")
 
@@ -155,7 +155,7 @@ class WideCharacterBoundaryTest {
     // --- ECH and EL: the range is the cells it names, and a whole character in it goes whole -----
 
     @Test
-    fun `an erase of chars that covers a whole wide character takes it`() {
+    fun anEraseOfCharsThatCoversAWholeWideCharacterTakesIt() {
         val buffer = row()
         buffer.feed("$E[1;5H$E[2X")
 
@@ -164,7 +164,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `erasing from the cursor to the end of the line takes a whole character at the cursor`() {
+    fun erasingFromTheCursorToTheEndOfTheLineTakesAWholeCharacterAtTheCursor() {
         val buffer = row()
         buffer.feed("$E[1;5H$E[K")
 
@@ -174,7 +174,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `erasing to the cursor takes a whole character the cursor stands on`() {
+    fun erasingToTheCursorTakesAWholeCharacterTheCursorStandsOn() {
         val buffer = row()
         buffer.feed("$E[1;6H$E[1K")
 
@@ -201,7 +201,7 @@ class WideCharacterBoundaryTest {
      * the program believes it erased. [AnsiTerminalBuffer.clearUnit] is where that choice is made.
      */
     @Test
-    fun `an erase that cuts a wide character in half takes the whole character`() {
+    fun anEraseThatCutsAWideCharacterInHalfTakesTheWholeCharacter() {
         val buffer = row()
         buffer.feed("$E[1;6H$E[1X")
 
@@ -209,7 +209,7 @@ class WideCharacterBoundaryTest {
     }
 
     @Test
-    fun `an erase of no cells is an erase of one`() {
+    fun anEraseOfNoCellsIsAnEraseOfOne() {
         val buffer = row()
         // On an ordinary cell, so this measures the count and not the cut-a-character rule below.
         buffer.feed("$E[1;1H$E[0X")

@@ -151,7 +151,7 @@ class TerminalConformanceTest(
     }
 
     @Test
-    fun `the screen is the one tmux ends on`() {
+    fun theScreenIsTheOneTmuxEndsOn() {
         val buffer = AnsiTerminalBuffer(columns = case.columns, rows = case.rows, scrollbackLimit = 100)
         buffer.feed(case.input)
 
