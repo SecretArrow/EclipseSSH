@@ -55,7 +55,15 @@ LABEL_INSTALLING = "Installing"
 LABEL_INSTALLED = "Installed and verified"
 LABEL_NEEDS_REPAIR = "Needs repair"
 LABEL_LAST_OPERATION = "Last operation"  # the app's own error row: why the install ended
-LABEL_LOCAL_CARD = "Local Ubuntu"
+# The Local Ubuntu card in the host list. The card is NAMED after the installed
+# release (LocalLinuxHost.hostProfile -> distro.displayName, e.g. "Ubuntu 26.04
+# LTS"), so the title is not a stable needle - a version bump or a chooser pick
+# changes it. The subtitle is the stable contract instead: cardSubtitle always
+# ends with "on this device · tap to open a terminal", whatever release is
+# installed. Matched as a substring of the subtitle line, which no other host
+# row carries ("On this device" is the GROUP name, but find() matches the whole
+# attribute, and the group name alone never contains the tail).
+LABEL_LOCAL_CARD = "on this device · tap to open a terminal"
 # The install row's title in every settled state (UbuntuActivity's card); mid-install
 # the title is "Installing <distro>" instead. On the Settings list the same row
 # carries this title with the state folded into its summary line. Read as a title,
