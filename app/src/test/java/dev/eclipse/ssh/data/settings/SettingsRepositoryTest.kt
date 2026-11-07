@@ -30,7 +30,6 @@ import org.robolectric.annotation.Config
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 @Config(sdk = [35])
 class SettingsRepositoryTest {
-
     private val repository get() = SettingsRepository(RuntimeEnvironment.getApplication())
 
     /**
@@ -93,134 +92,139 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `01 defaults are returned before anything is written`() = runTest {
-        val settings = repository.settings.first()
+    fun `01 defaults are returned before anything is written`() =
+        runTest {
+            val settings = repository.settings.first()
 
-        assertThat(settings.biometricUnlock).isTrue()
-        assertThat(settings.darkTheme).isTrue()
-        assertThat(settings.clearClipboardAfterSeconds).isEqualTo(30)
-        assertThat(settings.keepAliveSeconds).isEqualTo(30)
-        assertThat(settings.reconnectBaseSeconds).isEqualTo(SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS)
-        assertThat(settings.terminalFontSize).isEqualTo(SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE)
-        // Shown by default: the row carries ESC, TAB and CTRL, which a phone keyboard does not, so a
-        // first-run terminal that hid it would have no way to interrupt a command.
-        assertThat(settings.terminalKeyRowVisible).isTrue()
-        // Hidden by default, unlike the row above, and the difference is what each one leaves on
-        // screen: the key row is the only way to send ESC from a phone keyboard, while the badge it
-        // accompanies stays either way - only its number is behind the setting. So the quiet default
-        // costs no install its way back to the live output, and the count has to be asked for.
-        assertThat(settings.terminalScrollbackCountVisible).isFalse()
-        assertThat(settings.pinEnabled).isFalse()
-        // 5 minutes: long enough that a glance away and back does not ask again, short enough that
-        // a phone left on a desk is not an open vault.
-        assertThat(settings.vaultAutoLockMinutes).isEqualTo(SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES)
-        assertThat(settings.legacyAlgorithms).isFalse()
-        assertThat(settings.terminalTheme).isEqualTo(TerminalTheme.DARK.name)
-        // Off unless asked for: FLAG_SECURE blocks the user's own screenshots too.
-        assertThat(settings.blockScreenshots).isFalse()
-        // Off unless asked for: the default is today's behaviour, a drop redials on its own.
-        assertThat(settings.reconnectAskFirst).isFalse()
-        // Off unless asked for: immersive full screen is the behaviour every install already had.
-        assertThat(settings.terminalKeepSystemBars).isFalse()
-        assertThat(settings.terminalScrollback).isEqualTo(2_000)
-        assertThat(settings.terminalCursorStyle).isEqualTo("block")
-        assertThat(settings.transferBytesPerSecond).isEqualTo(0L)
-    }
-
-    @Test
-    fun `02 every backup carried setting survives a write and read`() = runTest {
-        val repo = repository
-        repo.setBiometricUnlock(false)
-        repo.setDarkTheme(false)
-        repo.setClipboardSeconds(90)
-        repo.setKeepAliveSeconds(15)
-        repo.setReconnectBaseSeconds(12)
-        repo.setTerminalFontSize(18)
-        repo.setTerminalRows(42)
-        repo.setTerminalKeyRowVisible(false)
-        // Written opposite to its default, which is what makes the assertion below a test of the
-        // write rather than a second reading of the default.
-        repo.setTerminalScrollbackCountVisible(true)
-        repo.setLegacyAlgorithms(true)
-        repo.setTerminalTheme(TerminalTheme.entries.last().name)
-        repo.setBlockScreenshots(true)
-        repo.setReconnectAskFirst(true)
-        repo.setTerminalKeepSystemBars(true)
-        repo.setTerminalScrollback(20_000)
-        repo.setTerminalCursorStyle("bar")
-        repo.setTransferBytesPerSecond(5L * 1024 * 1024)
-        repo.setVaultAutoLockMinutes(15)
-        repo.setTerminalKeyBarJson(KEY_BAR_BLOB)
-
-        val settings = repo.settings.first()
-
-        assertThat(settings.biometricUnlock).isFalse()
-        assertThat(settings.darkTheme).isFalse()
-        assertThat(settings.clearClipboardAfterSeconds).isEqualTo(90)
-        assertThat(settings.keepAliveSeconds).isEqualTo(15)
-        assertThat(settings.reconnectBaseSeconds).isEqualTo(12)
-        assertThat(settings.terminalFontSize).isEqualTo(18)
-        // Set to something other than its default, because this setting's default (0) is also its
-        // "unset" sentinel and would round-trip even if the key were never written at all.
-        assertThat(settings.terminalRows).isEqualTo(42)
-        assertThat(settings.terminalKeyRowVisible).isFalse()
-        assertThat(settings.terminalScrollbackCountVisible).isTrue()
-        assertThat(settings.legacyAlgorithms).isTrue()
-        assertThat(settings.terminalTheme).isEqualTo(TerminalTheme.entries.last().name)
-        assertThat(settings.blockScreenshots).isTrue()
-        assertThat(settings.reconnectAskFirst).isTrue()
-        assertThat(settings.terminalKeepSystemBars).isTrue()
-        assertThat(settings.terminalScrollback).isEqualTo(20_000)
-        assertThat(settings.terminalCursorStyle).isEqualTo("bar")
-        assertThat(settings.transferBytesPerSecond).isEqualTo(5L * 1024 * 1024)
-        assertThat(settings.vaultAutoLockMinutes).isEqualTo(15)
-        assertThat(settings.terminalKeyBarJson).isEqualTo(KEY_BAR_BLOB)
-    }
+            assertThat(settings.biometricUnlock).isTrue()
+            assertThat(settings.darkTheme).isTrue()
+            assertThat(settings.clearClipboardAfterSeconds).isEqualTo(30)
+            assertThat(settings.keepAliveSeconds).isEqualTo(30)
+            assertThat(settings.reconnectBaseSeconds).isEqualTo(SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS)
+            assertThat(settings.terminalFontSize).isEqualTo(SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE)
+            // Shown by default: the row carries ESC, TAB and CTRL, which a phone keyboard does not, so a
+            // first-run terminal that hid it would have no way to interrupt a command.
+            assertThat(settings.terminalKeyRowVisible).isTrue()
+            // Hidden by default, unlike the row above, and the difference is what each one leaves on
+            // screen: the key row is the only way to send ESC from a phone keyboard, while the badge it
+            // accompanies stays either way - only its number is behind the setting. So the quiet default
+            // costs no install its way back to the live output, and the count has to be asked for.
+            assertThat(settings.terminalScrollbackCountVisible).isFalse()
+            assertThat(settings.pinEnabled).isFalse()
+            // 5 minutes: long enough that a glance away and back does not ask again, short enough that
+            // a phone left on a desk is not an open vault.
+            assertThat(settings.vaultAutoLockMinutes).isEqualTo(SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES)
+            assertThat(settings.legacyAlgorithms).isFalse()
+            assertThat(settings.terminalTheme).isEqualTo(TerminalTheme.DARK.name)
+            // Off unless asked for: FLAG_SECURE blocks the user's own screenshots too.
+            assertThat(settings.blockScreenshots).isFalse()
+            // Off unless asked for: the default is today's behaviour, a drop redials on its own.
+            assertThat(settings.reconnectAskFirst).isFalse()
+            // Off unless asked for: immersive full screen is the behaviour every install already had.
+            assertThat(settings.terminalKeepSystemBars).isFalse()
+            assertThat(settings.terminalScrollback).isEqualTo(2_000)
+            assertThat(settings.terminalCursorStyle).isEqualTo("block")
+            assertThat(settings.transferBytesPerSecond).isEqualTo(0L)
+        }
 
     @Test
-    fun `03 reconnect base delay is clamped so the service cannot busy spin`() = runTest {
-        val repo = repository
+    fun `02 every backup carried setting survives a write and read`() =
+        runTest {
+            val repo = repository
+            repo.setBiometricUnlock(false)
+            repo.setDarkTheme(false)
+            repo.setClipboardSeconds(90)
+            repo.setKeepAliveSeconds(15)
+            repo.setReconnectBaseSeconds(12)
+            repo.setTerminalFontSize(18)
+            repo.setTerminalRows(42)
+            repo.setTerminalKeyRowVisible(false)
+            // Written opposite to its default, which is what makes the assertion below a test of the
+            // write rather than a second reading of the default.
+            repo.setTerminalScrollbackCountVisible(true)
+            repo.setLegacyAlgorithms(true)
+            repo.setTerminalTheme(TerminalTheme.entries.last().name)
+            repo.setBlockScreenshots(true)
+            repo.setReconnectAskFirst(true)
+            repo.setTerminalKeepSystemBars(true)
+            repo.setTerminalScrollback(20_000)
+            repo.setTerminalCursorStyle("bar")
+            repo.setTransferBytesPerSecond(5L * 1024 * 1024)
+            repo.setVaultAutoLockMinutes(15)
+            repo.setTerminalKeyBarJson(KEY_BAR_BLOB)
 
-        repo.setReconnectBaseSeconds(0)
-        assertThat(repo.settings.first().reconnectBaseSeconds)
-            .isEqualTo(SettingsRepository.MIN_RECONNECT_BASE_SECONDS)
+            val settings = repo.settings.first()
 
-        repo.setReconnectBaseSeconds(-42)
-        assertThat(repo.settings.first().reconnectBaseSeconds)
-            .isEqualTo(SettingsRepository.MIN_RECONNECT_BASE_SECONDS)
-
-        repo.setReconnectBaseSeconds(Int.MAX_VALUE)
-        assertThat(repo.settings.first().reconnectBaseSeconds)
-            .isEqualTo(SettingsRepository.MAX_RECONNECT_BASE_SECONDS)
-    }
+            assertThat(settings.biometricUnlock).isFalse()
+            assertThat(settings.darkTheme).isFalse()
+            assertThat(settings.clearClipboardAfterSeconds).isEqualTo(90)
+            assertThat(settings.keepAliveSeconds).isEqualTo(15)
+            assertThat(settings.reconnectBaseSeconds).isEqualTo(12)
+            assertThat(settings.terminalFontSize).isEqualTo(18)
+            // Set to something other than its default, because this setting's default (0) is also its
+            // "unset" sentinel and would round-trip even if the key were never written at all.
+            assertThat(settings.terminalRows).isEqualTo(42)
+            assertThat(settings.terminalKeyRowVisible).isFalse()
+            assertThat(settings.terminalScrollbackCountVisible).isTrue()
+            assertThat(settings.legacyAlgorithms).isTrue()
+            assertThat(settings.terminalTheme).isEqualTo(TerminalTheme.entries.last().name)
+            assertThat(settings.blockScreenshots).isTrue()
+            assertThat(settings.reconnectAskFirst).isTrue()
+            assertThat(settings.terminalKeepSystemBars).isTrue()
+            assertThat(settings.terminalScrollback).isEqualTo(20_000)
+            assertThat(settings.terminalCursorStyle).isEqualTo("bar")
+            assertThat(settings.transferBytesPerSecond).isEqualTo(5L * 1024 * 1024)
+            assertThat(settings.vaultAutoLockMinutes).isEqualTo(15)
+            assertThat(settings.terminalKeyBarJson).isEqualTo(KEY_BAR_BLOB)
+        }
 
     @Test
-    fun `03b scrollback is clamped to the supported range`() = runTest {
-        val repo = repository
+    fun `03 reconnect base delay is clamped so the service cannot busy spin`() =
+        runTest {
+            val repo = repository
 
-        repo.setTerminalScrollback(0)
-        assertThat(repo.settings.first().terminalScrollback)
-            .isEqualTo(SettingsRepository.MIN_SCROLLBACK)
+            repo.setReconnectBaseSeconds(0)
+            assertThat(repo.settings.first().reconnectBaseSeconds)
+                .isEqualTo(SettingsRepository.MIN_RECONNECT_BASE_SECONDS)
 
-        repo.setTerminalScrollback(Int.MAX_VALUE)
-        assertThat(repo.settings.first().terminalScrollback)
-            .isEqualTo(SettingsRepository.MAX_SCROLLBACK)
+            repo.setReconnectBaseSeconds(-42)
+            assertThat(repo.settings.first().reconnectBaseSeconds)
+                .isEqualTo(SettingsRepository.MIN_RECONNECT_BASE_SECONDS)
 
-        // A request to disable the cap is preserved as 0.
-        repo.setTransferBytesPerSecond(0L)
-        assertThat(repo.settings.first().transferBytesPerSecond).isEqualTo(0L)
-
-        repo.setTransferBytesPerSecond(Long.MAX_VALUE)
-        assertThat(repo.settings.first().transferBytesPerSecond)
-            .isEqualTo(SettingsRepository.MAX_BANDWIDTH_BYTES_PER_SECOND)
-    }
+            repo.setReconnectBaseSeconds(Int.MAX_VALUE)
+            assertThat(repo.settings.first().reconnectBaseSeconds)
+                .isEqualTo(SettingsRepository.MAX_RECONNECT_BASE_SECONDS)
+        }
 
     @Test
-    fun `03c cursor style rejects unknown values`() = runTest {
-        val repo = repository
-        repo.setTerminalCursorStyle("oblique")
-        assertThat(repo.settings.first().terminalCursorStyle).isEqualTo("block")
-    }
+    fun `03b scrollback is clamped to the supported range`() =
+        runTest {
+            val repo = repository
+
+            repo.setTerminalScrollback(0)
+            assertThat(repo.settings.first().terminalScrollback)
+                .isEqualTo(SettingsRepository.MIN_SCROLLBACK)
+
+            repo.setTerminalScrollback(Int.MAX_VALUE)
+            assertThat(repo.settings.first().terminalScrollback)
+                .isEqualTo(SettingsRepository.MAX_SCROLLBACK)
+
+            // A request to disable the cap is preserved as 0.
+            repo.setTransferBytesPerSecond(0L)
+            assertThat(repo.settings.first().transferBytesPerSecond).isEqualTo(0L)
+
+            repo.setTransferBytesPerSecond(Long.MAX_VALUE)
+            assertThat(repo.settings.first().transferBytesPerSecond)
+                .isEqualTo(SettingsRepository.MAX_BANDWIDTH_BYTES_PER_SECOND)
+        }
+
+    @Test
+    fun `03c cursor style rejects unknown values`() =
+        runTest {
+            val repo = repository
+            repo.setTerminalCursorStyle("oblique")
+            assertThat(repo.settings.first().terminalCursorStyle).isEqualTo("block")
+        }
 
     /**
      * The terminal height is clamped to the range the pty accepts, and 0 stays 0.
@@ -232,58 +236,62 @@ class SettingsRepositoryTest {
      * backup, which is a file the user can hand-edit.
      */
     @Test
-    fun `03d the terminal height is clamped, but zero still means fit the screen`() = runTest {
-        val repo = repository
-        val range = TERMINAL_ROW_RANGE
+    fun `03d the terminal height is clamped, but zero still means fit the screen`() =
+        runTest {
+            val repo = repository
+            val range = TERMINAL_ROW_RANGE
 
-        repo.setTerminalRows(0)
-        assertThat(repo.settings.first().terminalRows).isEqualTo(0)
+            repo.setTerminalRows(0)
+            assertThat(repo.settings.first().terminalRows).isEqualTo(0)
 
-        repo.setTerminalRows(-40)
-        assertThat(repo.settings.first().terminalRows).isEqualTo(0)
+            repo.setTerminalRows(-40)
+            assertThat(repo.settings.first().terminalRows).isEqualTo(0)
 
-        repo.setTerminalRows(Int.MAX_VALUE)
-        assertThat(repo.settings.first().terminalRows).isEqualTo(range.last)
+            repo.setTerminalRows(Int.MAX_VALUE)
+            assertThat(repo.settings.first().terminalRows).isEqualTo(range.last)
 
-        repo.setTerminalRows(1)
-        assertThat(repo.settings.first().terminalRows).isEqualTo(range.first)
+            repo.setTerminalRows(1)
+            assertThat(repo.settings.first().terminalRows).isEqualTo(range.first)
 
-        // Every height the screen offers stores as itself, so choosing one never redraws as another.
-        SettingsRepository.TERMINAL_ROW_CHOICES.forEach { rows ->
-            repo.setTerminalRows(rows)
-            assertWithMessage("the height screen offers %s rows", rows)
-                .that(repo.settings.first().terminalRows)
-                .isEqualTo(rows)
+            // Every height the screen offers stores as itself, so choosing one never redraws as another.
+            SettingsRepository.TERMINAL_ROW_CHOICES.forEach { rows ->
+                repo.setTerminalRows(rows)
+                assertWithMessage("the height screen offers %s rows", rows)
+                    .that(repo.settings.first().terminalRows)
+                    .isEqualTo(rows)
+            }
         }
-    }
 
     @Test
-    fun `04 a PIN verifies only against the value that was set`() = runTest {
-        val repo = repository
+    fun `04 a PIN verifies only against the value that was set`() =
+        runTest {
+            val repo = repository
 
-        repo.setPin("246813")
+            repo.setPin("246813")
 
-        assertThat(repo.settings.first().pinEnabled).isTrue()
-        assertThat(repo.verifyPin("246813")).isTrue()
-        assertThat(repo.verifyPin("246812")).isFalse()
-        assertThat(repo.verifyPin("")).isFalse()
-    }
-
-    @Test
-    fun `05 clearing the PIN disables the lock and rejects the old value`() = runTest {
-        val repo = repository
-        repo.setPin("135791")
-
-        repo.clearPin()
-
-        assertThat(repo.settings.first().pinEnabled).isFalse()
-        assertThat(repo.verifyPin("135791")).isFalse()
-    }
+            assertThat(repo.settings.first().pinEnabled).isTrue()
+            assertThat(repo.verifyPin("246813")).isTrue()
+            assertThat(repo.verifyPin("246812")).isFalse()
+            assertThat(repo.verifyPin("")).isFalse()
+        }
 
     @Test
-    fun `06 verifying a PIN that was never set fails instead of throwing`() = runTest {
-        assertThat(repository.verifyPin("000000")).isFalse()
-    }
+    fun `05 clearing the PIN disables the lock and rejects the old value`() =
+        runTest {
+            val repo = repository
+            repo.setPin("135791")
+
+            repo.clearPin()
+
+            assertThat(repo.settings.first().pinEnabled).isFalse()
+            assertThat(repo.verifyPin("135791")).isFalse()
+        }
+
+    @Test
+    fun `06 verifying a PIN that was never set fails instead of throwing`() =
+        runTest {
+            assertThat(repository.verifyPin("000000")).isFalse()
+        }
 
     /**
      * Every delay the settings screen offers stores as itself.
@@ -294,46 +302,48 @@ class SettingsRepositoryTest {
      * is exactly where an added or edited choice lands.
      */
     @Test
-    fun `07 every reconnect delay the UI offers round-trips unchanged`() = runTest {
-        val repo = repository
+    fun `07 every reconnect delay the UI offers round-trips unchanged`() =
+        runTest {
+            val repo = repository
 
-        SettingsRepository.RECONNECT_BASE_CHOICES.forEach { choice ->
-            repo.setReconnectBaseSeconds(choice)
-            assertWithMessage("the settings screen offers %s seconds", choice)
-                .that(repo.settings.first().reconnectBaseSeconds)
-                .isEqualTo(choice)
+            SettingsRepository.RECONNECT_BASE_CHOICES.forEach { choice ->
+                repo.setReconnectBaseSeconds(choice)
+                assertWithMessage("the settings screen offers %s seconds", choice)
+                    .that(repo.settings.first().reconnectBaseSeconds)
+                    .isEqualTo(choice)
+            }
+
+            // Non-empty and containing the default, so the screen always has the current value to
+            // highlight; an empty or default-less list would render a dialog with nothing selected.
+            assertThat(SettingsRepository.RECONNECT_BASE_CHOICES)
+                .contains(SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS)
+
+            // Left as the default so this class's write does not leak into a sibling class through the
+            // classloader-shared DataStore.
+            repo.setReconnectBaseSeconds(SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS)
         }
-
-        // Non-empty and containing the default, so the screen always has the current value to
-        // highlight; an empty or default-less list would render a dialog with nothing selected.
-        assertThat(SettingsRepository.RECONNECT_BASE_CHOICES)
-            .contains(SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS)
-
-        // Left as the default so this class's write does not leak into a sibling class through the
-        // classloader-shared DataStore.
-        repo.setReconnectBaseSeconds(SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS)
-    }
 
     @Test
-    fun `07b every auto-lock delay the UI offers round-trips unchanged`() = runTest {
-        val repo = repository
+    fun `07b every auto-lock delay the UI offers round-trips unchanged`() =
+        runTest {
+            val repo = repository
 
-        SettingsRepository.VAULT_AUTO_LOCK_CHOICES.forEach { choice ->
-            repo.setVaultAutoLockMinutes(choice)
-            assertWithMessage("the settings screen offers %s minutes", choice)
-                .that(repo.settings.first().vaultAutoLockMinutes)
-                .isEqualTo(choice)
+            SettingsRepository.VAULT_AUTO_LOCK_CHOICES.forEach { choice ->
+                repo.setVaultAutoLockMinutes(choice)
+                assertWithMessage("the settings screen offers %s minutes", choice)
+                    .that(repo.settings.first().vaultAutoLockMinutes)
+                    .isEqualTo(choice)
+            }
+
+            // Non-empty and containing the default, so the dialog always has the current value to
+            // highlight; an empty or default-less list would render a dialog with nothing selected.
+            assertThat(SettingsRepository.VAULT_AUTO_LOCK_CHOICES)
+                .contains(SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES)
+
+            // Left as the default so this class's write does not leak into a sibling class through the
+            // classloader-shared DataStore.
+            repo.setVaultAutoLockMinutes(SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES)
         }
-
-        // Non-empty and containing the default, so the dialog always has the current value to
-        // highlight; an empty or default-less list would render a dialog with nothing selected.
-        assertThat(SettingsRepository.VAULT_AUTO_LOCK_CHOICES)
-            .contains(SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES)
-
-        // Left as the default so this class's write does not leak into a sibling class through the
-        // classloader-shared DataStore.
-        repo.setVaultAutoLockMinutes(SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES)
-    }
 
     /**
      * `pinEnabled` gates the whole app, and `verifyPin` can only fail without a hash, so the flag
@@ -351,11 +361,12 @@ class SettingsRepositoryTest {
             .isFalse()
 
         // The genuine pair still enables it, so the guard has not disabled the feature.
-        val stored = mutablePreferencesOf(
-            Keys.pinEnabled to true,
-            Keys.pinHash to "hash",
-            Keys.pinSalt to "salt",
-        )
+        val stored =
+            mutablePreferencesOf(
+                Keys.pinEnabled to true,
+                Keys.pinHash to "hash",
+                Keys.pinSalt to "salt",
+            )
         assertThat(settingsFrom(stored).pinEnabled).isTrue()
 
         // And a hash with the flag off stays off: clearPin removes the hash and writes false, but a
@@ -373,37 +384,38 @@ class SettingsRepositoryTest {
      * avoid - and a zero or negative size is a crash inside text measurement.
      */
     @Test
-    fun `09 the terminal font size is clamped to the range the UI offers`() = runTest {
-        val repo = repository
-        val range = SettingsRepository.TERMINAL_FONT_SIZE_RANGE
+    fun `09 the terminal font size is clamped to the range the UI offers`() =
+        runTest {
+            val repo = repository
+            val range = SettingsRepository.TERMINAL_FONT_SIZE_RANGE
 
-        repo.setTerminalFontSize(0)
-        assertThat(repo.settings.first().terminalFontSize).isEqualTo(range.first)
+            repo.setTerminalFontSize(0)
+            assertThat(repo.settings.first().terminalFontSize).isEqualTo(range.first)
 
-        repo.setTerminalFontSize(-8)
-        assertThat(repo.settings.first().terminalFontSize).isEqualTo(range.first)
+            repo.setTerminalFontSize(-8)
+            assertThat(repo.settings.first().terminalFontSize).isEqualTo(range.first)
 
-        repo.setTerminalFontSize(Int.MAX_VALUE)
-        assertThat(repo.settings.first().terminalFontSize).isEqualTo(range.last)
+            repo.setTerminalFontSize(Int.MAX_VALUE)
+            assertThat(repo.settings.first().terminalFontSize).isEqualTo(range.last)
 
-        // Every size the slider and the pinch gesture can land on stores as itself, so neither ever
-        // redraws showing a number the user did not choose.
-        range.forEach { size ->
-            repo.setTerminalFontSize(size)
-            assertWithMessage("the font dialog offers %s sp", size)
-                .that(repo.settings.first().terminalFontSize)
-                .isEqualTo(size)
+            // Every size the slider and the pinch gesture can land on stores as itself, so neither ever
+            // redraws showing a number the user did not choose.
+            range.forEach { size ->
+                repo.setTerminalFontSize(size)
+                assertWithMessage("the font dialog offers %s sp", size)
+                    .that(repo.settings.first().terminalFontSize)
+                    .isEqualTo(size)
+            }
+
+            // A value already written by an older build, or by a hand-edited backup, is clamped on read
+            // too - there is no setter that could have fixed it after the fact.
+            assertThat(settingsFrom(mutablePreferencesOf(Keys.terminalFontSize to 200)).terminalFontSize)
+                .isEqualTo(range.last)
+            assertThat(settingsFrom(mutablePreferencesOf(Keys.terminalFontSize to 0)).terminalFontSize)
+                .isEqualTo(range.first)
+
+            repo.setTerminalFontSize(SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE)
         }
-
-        // A value already written by an older build, or by a hand-edited backup, is clamped on read
-        // too - there is no setter that could have fixed it after the fact.
-        assertThat(settingsFrom(mutablePreferencesOf(Keys.terminalFontSize to 200)).terminalFontSize)
-            .isEqualTo(range.last)
-        assertThat(settingsFrom(mutablePreferencesOf(Keys.terminalFontSize to 0)).terminalFontSize)
-            .isEqualTo(range.first)
-
-        repo.setTerminalFontSize(SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE)
-    }
 
     /**
      * The collapsed shortcut bar survives a restart.
@@ -413,15 +425,16 @@ class SettingsRepositoryTest {
      * re-collapsing it on every connect would be a chore.
      */
     @Test
-    fun `10 the shortcut bar visibility round-trips both ways`() = runTest {
-        val repo = repository
+    fun `10 the shortcut bar visibility round-trips both ways`() =
+        runTest {
+            val repo = repository
 
-        repo.setTerminalKeyRowVisible(false)
-        assertThat(repo.settings.first().terminalKeyRowVisible).isFalse()
+            repo.setTerminalKeyRowVisible(false)
+            assertThat(repo.settings.first().terminalKeyRowVisible).isFalse()
 
-        repo.setTerminalKeyRowVisible(true)
-        assertThat(repo.settings.first().terminalKeyRowVisible).isTrue()
-    }
+            repo.setTerminalKeyRowVisible(true)
+            assertThat(repo.settings.first().terminalKeyRowVisible).isTrue()
+        }
 
     /**
      * The scrolled-back badge's count survives a restart, and an install that never touches it gets a
@@ -435,17 +448,18 @@ class SettingsRepositoryTest {
      * and the read side is checked separately below.
      */
     @Test
-    fun `11 the scrolled-back count round-trips and is off where it was never set`() = runTest {
-        val repo = repository
+    fun `11 the scrolled-back count round-trips and is off where it was never set`() =
+        runTest {
+            val repo = repository
 
-        repo.setTerminalScrollbackCountVisible(true)
-        assertThat(repo.settings.first().terminalScrollbackCountVisible).isTrue()
+            repo.setTerminalScrollbackCountVisible(true)
+            assertThat(repo.settings.first().terminalScrollbackCountVisible).isTrue()
 
-        repo.setTerminalScrollbackCountVisible(false)
-        assertThat(repo.settings.first().terminalScrollbackCountVisible).isFalse()
+            repo.setTerminalScrollbackCountVisible(false)
+            assertThat(repo.settings.first().terminalScrollbackCountVisible).isFalse()
 
-        // The read side, against a preference set no setter produces: an older build's store, with
-        // the key simply absent. `settingsFrom` is pure, so this needs no store of its own.
-        assertThat(settingsFrom(mutablePreferencesOf()).terminalScrollbackCountVisible).isFalse()
-    }
+            // The read side, against a preference set no setter produces: an older build's store, with
+            // the key simply absent. `settingsFrom` is pure, so this needs no store of its own.
+            assertThat(settingsFrom(mutablePreferencesOf()).terminalScrollbackCountVisible).isFalse()
+        }
 }

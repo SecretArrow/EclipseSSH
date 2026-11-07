@@ -12,23 +12,10 @@ import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalKeys
 import dev.eclipse.ssh.terminal.Utf8StreamDecoder
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.security.KeyPair
-import java.util.Collections
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -59,6 +46,18 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.KeyPair
+import java.util.Collections
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.ContinuationInterceptor
 
 /**
  * End-to-end test of the app's real SSH stack (SshConnectionManager, terminal,
@@ -68,7 +67,6 @@ import org.robolectric.RuntimeEnvironment
  */
 @RunWith(RobolectricTestRunner::class)
 class SshIntegrationTest {
-
     companion object {
         /**
          * Whatever the kernel hands out, read back after the bind. A fixed port only looked safe: the
@@ -106,10 +104,13 @@ class SshIntegrationTest {
             server = SshServer.setUpDefaultServer()
             server.port = 0
             server.keyPairProvider = SimpleGeneratorHostKeyProvider(Files.createTempFile("it-hostkey", ".ser"))
-            server.passwordAuthenticator = org.apache.sshd.server.auth.password.PasswordAuthenticator { username, password, _ ->
-                username == USER && password == PASSWORD
-            }
-            server.publickeyAuthenticator = org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator { username, _, _ -> username == USER }
+            server.passwordAuthenticator =
+                org.apache.sshd.server.auth.password.PasswordAuthenticator { username, password, _ ->
+                    username == USER && password == PASSWORD
+                }
+            server.publickeyAuthenticator =
+                org.apache.sshd.server.auth.pubkey
+                    .PublickeyAuthenticator { username, _, _ -> username == USER }
             server.subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
             server.fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
             // Provide an interactive echo shell + exec commands so the terminal and
@@ -136,43 +137,50 @@ class SshIntegrationTest {
      * these tests cover — a hole starts at the resume offset, a duplicated block starts one buffer
      * later — so that is what this prints.
      */
-    private fun assertSameBytes(expected: ByteArray, actual: ByteArray) {
-        val firstDifference = (0 until minOf(expected.size, actual.size))
-            .firstOrNull { expected[it] != actual[it] }
+    private fun assertSameBytes(
+        expected: ByteArray,
+        actual: ByteArray,
+    ) {
+        val firstDifference =
+            (0 until minOf(expected.size, actual.size))
+                .firstOrNull { expected[it] != actual[it] }
         if (firstDifference == null && expected.size == actual.size) return
-        val detail = when {
-            firstDifference != null -> "first differs at byte $firstDifference " +
-                "(expected 0x%02X, got 0x%02X)".format(expected[firstDifference], actual[firstDifference])
-            else -> "identical up to the shorter length, then truncated or padded"
-        }
+        val detail =
+            when {
+                firstDifference != null ->
+                    "first differs at byte $firstDifference " +
+                        "(expected 0x%02X, got 0x%02X)".format(expected[firstDifference], actual[firstDifference])
+                else -> "identical up to the shorter length, then truncated or padded"
+            }
         throw AssertionError(
             "remote file does not match the source: expected ${expected.size} bytes, " +
                 "got ${actual.size}; $detail",
         )
     }
 
-    private fun hostProfile() = HostProfile(
-        name = "integration",
-        host = "127.0.0.1",
-        username = USER,
-        port = serverPort,
-        authMethod = AuthMethod.PASSWORD,
-        // Stated, and roomier than the app default, on purpose. These tests assert SSH behaviour,
-        // not handshake latency: the suite shares one JVM with the Robolectric classes, and a
-        // loopback handshake that takes under a second in isolation has been seen to blow past the
-        // 15-second default on a loaded machine. A failure here should mean the SSH stack is wrong,
-        // never that the box was busy.
-        //
-        // Not larger than this, though. The same number also caps `session.auth().verify(...)`, so
-        // an over-generous value would let a genuinely wedged handshake sit until JUnit's 120-second
-        // timeout killed the test — a hang reported as a timeout instead of as the failure it is.
-        // Nothing here should ever actually wait this long; if something does, that is the finding.
-        //
-        // The production default is covered by the unit tests, and
-        // [aPerHostTimeoutIsHonouredInsteadOfTheOldHardCodedFifteenSeconds] proves the field is what
-        // the engine reads rather than a number the UI collects and MINA ignores.
-        connectTimeoutSeconds = 60,
-    )
+    private fun hostProfile() =
+        HostProfile(
+            name = "integration",
+            host = "127.0.0.1",
+            username = USER,
+            port = serverPort,
+            authMethod = AuthMethod.PASSWORD,
+            // Stated, and roomier than the app default, on purpose. These tests assert SSH behaviour,
+            // not handshake latency: the suite shares one JVM with the Robolectric classes, and a
+            // loopback handshake that takes under a second in isolation has been seen to blow past the
+            // 15-second default on a loaded machine. A failure here should mean the SSH stack is wrong,
+            // never that the box was busy.
+            //
+            // Not larger than this, though. The same number also caps `session.auth().verify(...)`, so
+            // an over-generous value would let a genuinely wedged handshake sit until JUnit's 120-second
+            // timeout killed the test — a hang reported as a timeout instead of as the failure it is.
+            // Nothing here should ever actually wait this long; if something does, that is the finding.
+            //
+            // The production default is covered by the unit tests, and
+            // [aPerHostTimeoutIsHonouredInsteadOfTheOldHardCodedFifteenSeconds] proves the field is what
+            // the engine reads rather than a number the UI collects and MINA ignores.
+            connectTimeoutSeconds = 60,
+        )
 
     /**
      * Connects, and the first time the server key is unknown it captures the
@@ -189,20 +197,21 @@ class SshIntegrationTest {
         profile: HostProfile,
         password: String? = null,
         keyPair: KeyPair? = null,
-    ): org.apache.sshd.client.session.ClientSession = coroutineScope {
-        val challengeRef = AtomicReference<HostKeyChallenge?>()
-        val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
-        val attempt = runCatching { manager.connect(profile, password, keyPair) }
-        delay(300)
-        collector.cancel()
-        val challenge = challengeRef.get()
-        if (attempt.isSuccess) return@coroutineScope attempt.getOrThrow()
-        if (challenge != null) {
-            manager.trustHost(challenge)
-            return@coroutineScope manager.connect(profile, password, keyPair)
+    ): org.apache.sshd.client.session.ClientSession =
+        coroutineScope {
+            val challengeRef = AtomicReference<HostKeyChallenge?>()
+            val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
+            val attempt = runCatching { manager.connect(profile, password, keyPair) }
+            delay(300)
+            collector.cancel()
+            val challenge = challengeRef.get()
+            if (attempt.isSuccess) return@coroutineScope attempt.getOrThrow()
+            if (challenge != null) {
+                manager.trustHost(challenge)
+                return@coroutineScope manager.connect(profile, password, keyPair)
+            }
+            throw attempt.exceptionOrNull() ?: IllegalStateException("connect failed without a host-key challenge")
         }
-        throw attempt.exceptionOrNull() ?: IllegalStateException("connect failed without a host-key challenge")
-    }
 
     /**
      * Authenticates against [server] with [keyPair] and nothing else, and proves the key is what got
@@ -245,12 +254,14 @@ class SshIntegrationTest {
     private fun startRestrictedServer(restrict: SshServer.() -> Unit): SshServer =
         SshServer.setUpDefaultServer().apply {
             port = 0
-            keyPairProvider = SimpleGeneratorHostKeyProvider(
-                Files.createTempDirectory("legacy-host").resolve("hostkey.ser"),
-            )
-            passwordAuthenticator = PasswordAuthenticator { username, password, _ ->
-                username == USER && password == PASSWORD
-            }
+            keyPairProvider =
+                SimpleGeneratorHostKeyProvider(
+                    Files.createTempDirectory("legacy-host").resolve("hostkey.ser"),
+                )
+            passwordAuthenticator =
+                PasswordAuthenticator { username, password, _ ->
+                    username == USER && password == PASSWORD
+                }
             restrict()
             start()
         }
@@ -294,7 +305,10 @@ class SshIntegrationTest {
      * classloader and Robolectric hands each test method a fresh `filesDir`, so a stray `true` left
      * here becomes a failure in some other class that never touched the setting.
      */
-    private fun withLegacyServer(restrict: SshServer.() -> Unit, body: suspend (SettingsRepository, SshConnectionManager, SshServer) -> Unit) {
+    private fun withLegacyServer(
+        restrict: SshServer.() -> Unit,
+        body: suspend (SettingsRepository, SshConnectionManager, SshServer) -> Unit,
+    ) {
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
             val settings = SettingsRepository(context)
@@ -359,12 +373,13 @@ class SshIntegrationTest {
     fun `an ssh-rsa only host key cannot be verified without legacy compatibility`() {
         withLegacyServer(
             {
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("legacy-rsa-host").resolve("hostkey.ser"),
-                ).apply {
-                    algorithm = "RSA"
-                    keySize = 2048
-                }
+                keyPairProvider =
+                    SimpleGeneratorHostKeyProvider(
+                        Files.createTempDirectory("legacy-rsa-host").resolve("hostkey.ser"),
+                    ).apply {
+                        algorithm = "RSA"
+                        keySize = 2048
+                    }
                 signatureFactories = listOf(BuiltinSignatures.rsa)
             },
             ::assertNeedsLegacyCompatibility,
@@ -416,44 +431,45 @@ class SshIntegrationTest {
     @Test(timeout = 120_000)
     fun `password connect runs command and opens terminal`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        try {
-            val session = trustedConnect(manager, hostProfile(), PASSWORD)
-            assertThat(session.isAuthenticated).isTrue()
-
-            // Command execution through the real channel.
-            val output = manager.runCommand(session, "echo integration-ok")
-            assertThat(output).contains("integration-ok")
-
-            // Terminal shell: read the banner until a prompt appears, then send input
-            // and wait for the echo to come back through the channel. The collector is
-            // resumed on the SSHD thread (tryEmit), so the banner is an AtomicReference.
-            val terminal = manager.openTerminal(session)
-            val banner = AtomicReference("")
-            val job = launch {
-                terminal.output.collect { chunk ->
-                    // Bytes now, decoded here as the ViewModel's collector does.
-                    banner.updateAndGet { it + String(chunk, Charsets.UTF_8) }
-                    if (banner.get().contains("$")) terminal.write("echo tty-works\n")
-                }
-            }
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
             try {
-                // Wait for our echo to come back through the PTY. delay() (not
-                // Thread.sleep) lets the runBlocking event loop schedule the
-                // collector coroutine so it can subscribe to the terminal flow.
-                val deadline = System.currentTimeMillis() + 15_000
-                while (!banner.get().contains("tty-works") && System.currentTimeMillis() < deadline) {
-                    delay(100)
+                val session = trustedConnect(manager, hostProfile(), PASSWORD)
+                assertThat(session.isAuthenticated).isTrue()
+
+                // Command execution through the real channel.
+                val output = manager.runCommand(session, "echo integration-ok")
+                assertThat(output).contains("integration-ok")
+
+                // Terminal shell: read the banner until a prompt appears, then send input
+                // and wait for the echo to come back through the channel. The collector is
+                // resumed on the SSHD thread (tryEmit), so the banner is an AtomicReference.
+                val terminal = manager.openTerminal(session)
+                val banner = AtomicReference("")
+                val job =
+                    launch {
+                        terminal.output.collect { chunk ->
+                            // Bytes now, decoded here as the ViewModel's collector does.
+                            banner.updateAndGet { it + String(chunk, Charsets.UTF_8) }
+                            if (banner.get().contains("$")) terminal.write("echo tty-works\n")
+                        }
+                    }
+                try {
+                    // Wait for our echo to come back through the PTY. delay() (not
+                    // Thread.sleep) lets the runBlocking event loop schedule the
+                    // collector coroutine so it can subscribe to the terminal flow.
+                    val deadline = System.currentTimeMillis() + 15_000
+                    while (!banner.get().contains("tty-works") && System.currentTimeMillis() < deadline) {
+                        delay(100)
+                    }
+                    assertThat(banner.get()).contains("tty-works")
+                } finally {
+                    job.cancel()
+                    terminal.close()
                 }
-                assertThat(banner.get()).contains("tty-works")
             } finally {
-                job.cancel()
-                terminal.close()
+                manager.close()
             }
-        } finally {
-            manager.close()
-        }
         }
     }
 
@@ -478,9 +494,10 @@ class SshIntegrationTest {
                 val decoder = Utf8StreamDecoder()
                 buffer.resize(80, 24)
                 // Exactly the ViewModel's collector: bytes to the decoder, text to the buffer.
-                val pump = launch(Dispatchers.IO) {
-                    terminal.output.collect { chunk -> buffer.feed(decoder.decode(chunk)) }
-                }
+                val pump =
+                    launch(Dispatchers.IO) {
+                        terminal.output.collect { chunk -> buffer.feed(decoder.decode(chunk)) }
+                    }
                 try {
                     awaitTerminal(buffer) { it.contains("$") }
                     assertThat(buffer.plainText()).contains("$")
@@ -530,7 +547,10 @@ class SshIntegrationTest {
     }
 
     /** Waits for the terminal's rendered text to satisfy [predicate], or fails saying what it held. */
-    private suspend fun awaitTerminal(buffer: AnsiTerminalBuffer, predicate: (String) -> Boolean) {
+    private suspend fun awaitTerminal(
+        buffer: AnsiTerminalBuffer,
+        predicate: (String) -> Boolean,
+    ) {
         val deadline = System.currentTimeMillis() + TERMINAL_WAIT_MS
         while (System.currentTimeMillis() < deadline) {
             if (predicate(buffer.plainText())) return
@@ -561,10 +581,11 @@ class SshIntegrationTest {
         runBlocking {
             SshKeyAlgorithm.entries.forEach { algorithm ->
                 val generated = algorithm.generate()
-                val loaded = SshKeyLoader.load(
-                    generated.privatePem.toByteArray(),
-                    generated.defaultPrivateName,
-                )
+                val loaded =
+                    SshKeyLoader.load(
+                        generated.privatePem.toByteArray(),
+                        generated.defaultPrivateName,
+                    )
                 assertKeyAuthenticates(loaded)
             }
         }
@@ -621,9 +642,10 @@ class SshIntegrationTest {
                 // this would pass without testing anything about keys.
                 val challengeRef = AtomicReference<HostKeyChallenge?>()
                 val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
-                val keyPair = SshKeyAlgorithm.ECDSA_P256.generate().let {
-                    SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName)
-                }
+                val keyPair =
+                    SshKeyAlgorithm.ECDSA_P256.generate().let {
+                        SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName)
+                    }
                 val profile = hostProfile().copy(username = "nobody", authMethod = AuthMethod.SSH_KEY)
                 runCatching { manager.connect(profile, null, keyPair) }
                 delay(300)
@@ -653,79 +675,79 @@ class SshIntegrationTest {
     @Test(timeout = 120_000)
     fun `unknown host key raises a challenge that can be trusted and reconnects`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        try {
-            // First connect: the server key is unknown -> challenge is emitted and connect fails.
-            var challenge: HostKeyChallenge? = null
-            val collector = launch { manager.hostKeyChallenges.collect { challenge = it } }
-            runCatching { manager.connect(hostProfile(), PASSWORD) }
-            Thread.sleep(500)
-            collector.cancel()
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
+            try {
+                // First connect: the server key is unknown -> challenge is emitted and connect fails.
+                var challenge: HostKeyChallenge? = null
+                val collector = launch { manager.hostKeyChallenges.collect { challenge = it } }
+                runCatching { manager.connect(hostProfile(), PASSWORD) }
+                Thread.sleep(500)
+                collector.cancel()
 
-            assertThat(challenge).isNotNull()
-            assertThat(challenge!!.fingerprint).startsWith("SHA256:")
+                assertThat(challenge).isNotNull()
+                assertThat(challenge!!.fingerprint).startsWith("SHA256:")
 
-            // Trust the fingerprint, then a second connect succeeds (verifier accepts).
-            manager.trustHost(challenge!!)
-            val session = manager.connect(hostProfile(), PASSWORD)
-            assertThat(session.isAuthenticated).isTrue()
-            session.close(false)
-        } finally {
-            manager.close()
-        }
+                // Trust the fingerprint, then a second connect succeeds (verifier accepts).
+                manager.trustHost(challenge!!)
+                val session = manager.connect(hostProfile(), PASSWORD)
+                assertThat(session.isAuthenticated).isTrue()
+                session.close(false)
+            } finally {
+                manager.close()
+            }
         }
     }
 
     @Test(timeout = 120_000)
     fun `sftp lists uploads downloads renames and chmods`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        val directory = SftpDirectoryService()
-        try {
-            val session = trustedConnect(manager, hostProfile(), PASSWORD)
-            manager.withSftp(session) { sftp ->
-                // List
-                val listing = directory.list(sftp, "sftp_test")
-                val names = listing.map { it.name }
-                assertThat(names).containsAtLeast("hello.txt", "large.bin", "subdir")
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
+            val directory = SftpDirectoryService()
+            try {
+                val session = trustedConnect(manager, hostProfile(), PASSWORD)
+                manager.withSftp(session) { sftp ->
+                    // List
+                    val listing = directory.list(sftp, "sftp_test")
+                    val names = listing.map { it.name }
+                    assertThat(names).containsAtLeast("hello.txt", "large.bin", "subdir")
 
-                // Stat / properties
-                val hello = listing.first { it.name == "hello.txt" }
-                assertThat(hello.size).isEqualTo("hello from integration test\n".length.toLong())
+                    // Stat / properties
+                    val hello = listing.first { it.name == "hello.txt" }
+                    assertThat(hello.size).isEqualTo("hello from integration test\n".length.toLong())
 
-                // Download and verify contents
-                val downloaded = java.io.ByteArrayOutputStream()
-                sftp.read("sftp_test/hello.txt").use { input -> input.copyTo(downloaded) }
-                assertThat(downloaded.toString(Charsets.UTF_8)).contains("hello from integration test")
+                    // Download and verify contents
+                    val downloaded = java.io.ByteArrayOutputStream()
+                    sftp.read("sftp_test/hello.txt").use { input -> input.copyTo(downloaded) }
+                    assertThat(downloaded.toString(Charsets.UTF_8)).contains("hello from integration test")
 
-                // Upload and verify size/rename
-                val uploadBytes = ByteArray(32 * 1024) { it.toByte() }
-                sftp.write("sftp_test/upload.bin").use { out -> out.write(uploadBytes) }
-                assertThat(sftp.stat("sftp_test/upload.bin").size).isEqualTo(uploadBytes.size.toLong())
-                directory.rename(sftp, "sftp_test/upload.bin", "sftp_test/renamed.bin")
-                assertThat(directory.exists(sftp, "sftp_test/renamed.bin")).isTrue()
+                    // Upload and verify size/rename
+                    val uploadBytes = ByteArray(32 * 1024) { it.toByte() }
+                    sftp.write("sftp_test/upload.bin").use { out -> out.write(uploadBytes) }
+                    assertThat(sftp.stat("sftp_test/upload.bin").size).isEqualTo(uploadBytes.size.toLong())
+                    directory.rename(sftp, "sftp_test/upload.bin", "sftp_test/renamed.bin")
+                    assertThat(directory.exists(sftp, "sftp_test/renamed.bin")).isTrue()
 
-                // chmod
-                directory.chmod(sftp, "sftp_test/hello.txt", 0b110_100_100)
-                assertThat(directory.list(sftp, "sftp_test").first { it.name == "hello.txt" }.permissions).isEqualTo("644")
+                    // chmod
+                    directory.chmod(sftp, "sftp_test/hello.txt", 0b110_100_100)
+                    assertThat(directory.list(sftp, "sftp_test").first { it.name == "hello.txt" }.permissions).isEqualTo("644")
 
-                // Recursive tree listing
-                val tree = directory.listTree(sftp, "sftp_test")
-                assertThat(tree.keys).contains("subdir/nested.txt")
+                    // Recursive tree listing
+                    val tree = directory.listTree(sftp, "sftp_test")
+                    assertThat(tree.keys).contains("subdir/nested.txt")
 
-                // Recursive copy of a directory
-                directory.copy(sftp, "sftp_test/subdir", "sftp_test/subdir_copy")
-                assertThat(directory.exists(sftp, "sftp_test/subdir_copy/nested.txt")).isTrue()
+                    // Recursive copy of a directory
+                    directory.copy(sftp, "sftp_test/subdir", "sftp_test/subdir_copy")
+                    assertThat(directory.exists(sftp, "sftp_test/subdir_copy/nested.txt")).isTrue()
 
-                // Delete
-                directory.delete(sftp, "sftp_test/renamed.bin")
-                assertThat(directory.exists(sftp, "sftp_test/renamed.bin")).isFalse()
+                    // Delete
+                    directory.delete(sftp, "sftp_test/renamed.bin")
+                    assertThat(directory.exists(sftp, "sftp_test/renamed.bin")).isFalse()
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
-        }
         }
     }
 
@@ -762,42 +784,43 @@ class SshIntegrationTest {
     @Test(timeout = 120_000)
     fun `an sftp lifetime opened for a caller stays off the caller's dispatcher`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        val uiThreads = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "stand-in-ui") }
-        val ui = uiThreads.asCoroutineDispatcher()
-        try {
-            val session = trustedConnect(manager, hostProfile(), PASSWORD)
-            withContext(ui) {
-                val caller = Thread.currentThread()
-                // `startsWith`, not equality: with assertions enabled - which Gradle's test tasks do
-                // by default - kotlinx.coroutines renames the running thread to `<name> @coroutine#N`
-                // while a coroutine is on it. The prefix is the part that says which dispatcher this is.
-                assertThat(caller.name).startsWith("stand-in-ui")
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
+            val uiThreads = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "stand-in-ui") }
+            val ui = uiThreads.asCoroutineDispatcher()
+            try {
+                val session = trustedConnect(manager, hostProfile(), PASSWORD)
+                withContext(ui) {
+                    val caller = Thread.currentThread()
+                    // `startsWith`, not equality: with assertions enabled - which Gradle's test tasks do
+                    // by default - kotlinx.coroutines renames the running thread to `<name> @coroutine#N`
+                    // while a coroutine is on it. The prefix is the part that says which dispatcher this is.
+                    assertThat(caller.name).startsWith("stand-in-ui")
 
-                // The hand-off: opened on IO, handed back here. This is the line that used to be
-                // followed by `.use { }`, and `use` closes where it stands.
-                val handedBack = manager.openSftp(session)
-                assertThat(Thread.currentThread()).isEqualTo(caller)
-                // Closed the way a hand-off's owner has to: somewhere that may block on a socket.
-                withContext(Dispatchers.IO) { handedBack.close() }
+                    // The hand-off: opened on IO, handed back here. This is the line that used to be
+                    // followed by `.use { }`, and `use` closes where it stands.
+                    val handedBack = manager.openSftp(session)
+                    assertThat(Thread.currentThread()).isEqualTo(caller)
+                    // Closed the way a hand-off's owner has to: somewhere that may block on a socket.
+                    withContext(Dispatchers.IO) { handedBack.close() }
 
-                // The owned lifetime: open, work and close, none of them here.
-                val where = manager.withSftp(session) { sftp ->
-                    // A real round trip on the wire from inside the block, so this is not merely a
-                    // statement about a dispatcher - the channel is open and answering from there.
-                    assertThat(sftp.canonicalPath(".")).isNotEmpty()
-                    Thread.currentThread() to currentCoroutineContext()[ContinuationInterceptor]
+                    // The owned lifetime: open, work and close, none of them here.
+                    val where =
+                        manager.withSftp(session) { sftp ->
+                            // A real round trip on the wire from inside the block, so this is not merely a
+                            // statement about a dispatcher - the channel is open and answering from there.
+                            assertThat(sftp.canonicalPath(".")).isNotEmpty()
+                            Thread.currentThread() to currentCoroutineContext()[ContinuationInterceptor]
+                        }
+                    assertThat(where.first).isNotEqualTo(caller)
+                    assertThat(where.second).isEqualTo(Dispatchers.IO)
                 }
-                assertThat(where.first).isNotEqualTo(caller)
-                assertThat(where.second).isEqualTo(Dispatchers.IO)
+                session.close(false)
+            } finally {
+                ui.close()
+                uiThreads.shutdownNow()
+                manager.close()
             }
-            session.close(false)
-        } finally {
-            ui.close()
-            uiThreads.shutdownNow()
-            manager.close()
-        }
         }
     }
 
@@ -823,32 +846,34 @@ class SshIntegrationTest {
     @Test(timeout = 120_000)
     fun `a command that never answers fails the caller instead of hanging it`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        // A server of its own: the shared one answers commands, and the whole point here is one
-        // that takes the channel and never speaks again.
-        val wedged = startRestrictedServer {
-            commandFactory = CommandFactory { _, _ -> WedgedCommand() }
-        }
-        try {
-            val profile = hostProfile().copy(port = wedged.port)
-            trustedConnect(manager, profile, PASSWORD).use { session ->
-                val startedAt = System.currentTimeMillis()
-                val error = runCatching { manager.runCommand(session, "forever", timeoutMs = 1_000) }
-                    .exceptionOrNull()
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
+            // A server of its own: the shared one answers commands, and the whole point here is one
+            // that takes the channel and never speaks again.
+            val wedged =
+                startRestrictedServer {
+                    commandFactory = CommandFactory { _, _ -> WedgedCommand() }
+                }
+            try {
+                val profile = hostProfile().copy(port = wedged.port)
+                trustedConnect(manager, profile, PASSWORD).use { session ->
+                    val startedAt = System.currentTimeMillis()
+                    val error =
+                        runCatching { manager.runCommand(session, "forever", timeoutMs = 1_000) }
+                            .exceptionOrNull()
 
-                assertThat(error).isInstanceOf(IOException::class.java)
-                assertThat(error!!.message).contains("did not answer")
-                // Bounded means bounded: generous over the one-second budget for a loaded CI box,
-                // and far under what JUnit's own 120-second method timeout would have needed to
-                // notice an unbounded wait. Closing the session (use) tears the wedged channel
-                // down with it, releasing the IO thread the abandoned read still occupies.
-                assertThat(System.currentTimeMillis() - startedAt).isLessThan(60_000)
+                    assertThat(error).isInstanceOf(IOException::class.java)
+                    assertThat(error!!.message).contains("did not answer")
+                    // Bounded means bounded: generous over the one-second budget for a loaded CI box,
+                    // and far under what JUnit's own 120-second method timeout would have needed to
+                    // notice an unbounded wait. Closing the session (use) tears the wedged channel
+                    // down with it, releasing the IO thread the abandoned read still occupies.
+                    assertThat(System.currentTimeMillis() - startedAt).isLessThan(60_000)
+                }
+            } finally {
+                manager.close()
+                runCatching { wedged.stop() }
             }
-        } finally {
-            manager.close()
-            runCatching { wedged.stop() }
-        }
         }
     }
 
@@ -868,82 +893,85 @@ class SshIntegrationTest {
     @Test(timeout = 120_000)
     fun `a failed archive open releases the sftp channel it opened`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        val store = SshSessionStore()
-        try {
-            val session = trustedConnect(manager, hostProfile(), PASSWORD)
-            store.install(sessionKey = "it-archive-host", session = session, hostId = "it-archive-host")
-            fun openChannelCount(): Int =
-                // getChannels() lives on AbstractConnectionService, not on the ConnectionService
-                // interface; the concrete service behind a client session is always the
-                // implementation (ClientConnectionService), so the cast cannot fail here.
-                (session.getService(ConnectionService::class.java) as AbstractConnectionService)
-                    .channels.size
-            val baseline = openChannelCount()
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
+            val store = SshSessionStore()
+            try {
+                val session = trustedConnect(manager, hostProfile(), PASSWORD)
+                store.install(sessionKey = "it-archive-host", session = session, hostId = "it-archive-host")
 
-            repeat(3) {
-                val source = SftpArchiveByteSource(
-                    connectionManager = manager,
-                    sessionStore = store,
-                    hostId = "it-archive-host",
-                    hostName = "integration",
-                    remotePath = "sftp_test/deleted-between-stat-and-open.zip",
-                    size = 64 * 1024,
-                )
-                val error = runCatching { source.readAt(0, 32) }.exceptionOrNull()
-                assertThat(error).isNotNull()
+                fun openChannelCount(): Int =
+                    // getChannels() lives on AbstractConnectionService, not on the ConnectionService
+                    // interface; the concrete service behind a client session is always the
+                    // implementation (ClientConnectionService), so the cast cannot fail here.
+                    (session.getService(ConnectionService::class.java) as AbstractConnectionService)
+                        .channels.size
+                val baseline = openChannelCount()
 
-                // The close runs in the throw path, but the channel leaving the service's list is
-                // MINA's close event, which lands on its own thread: poll for it with a deadline
-                // rather than assert it synchronously, so a leak fails instead of timing out.
-                val released = withTimeoutOrNull(10_000) {
-                    while (openChannelCount() > baseline) delay(100)
-                    true
-                } == true
-                assertThat(released).isTrue()
+                repeat(3) {
+                    val source =
+                        SftpArchiveByteSource(
+                            connectionManager = manager,
+                            sessionStore = store,
+                            hostId = "it-archive-host",
+                            hostName = "integration",
+                            remotePath = "sftp_test/deleted-between-stat-and-open.zip",
+                            size = 64 * 1024,
+                        )
+                    val error = runCatching { source.readAt(0, 32) }.exceptionOrNull()
+                    assertThat(error).isNotNull()
+
+                    // The close runs in the throw path, but the channel leaving the service's list is
+                    // MINA's close event, which lands on its own thread: poll for it with a deadline
+                    // rather than assert it synchronously, so a leak fails instead of timing out.
+                    val released =
+                        withTimeoutOrNull(10_000) {
+                            while (openChannelCount() > baseline) delay(100)
+                            true
+                        } == true
+                    assertThat(released).isTrue()
+                }
+
+                session.close(false)
+            } finally {
+                manager.close()
             }
-
-            session.close(false)
-        } finally {
-            manager.close()
-        }
         }
     }
 
     @Test(timeout = 120_000)
     fun `wrong password fails with a clear error`() {
         runBlocking {
-        val context = RuntimeEnvironment.getApplication()
-        val manager = SshConnectionManager(context, SettingsRepository(context))
-        try {
-            // Trust the server key first. Every test method gets fresh SharedPreferences, so
-            // without this the connection is refused by KnownHostsVerifier before a password is
-            // ever offered: the assertion below would hold for a host-key rejection and this test
-            // would pass without exercising authentication at all.
-            val challengeRef = AtomicReference<HostKeyChallenge?>()
-            val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
-            runCatching { manager.connect(hostProfile(), "wrong-password") }
-            delay(300)
-            collector.cancel()
-            val challenge = requireNotNull(challengeRef.get()) { "no host key challenge was raised" }
-            manager.trustHost(challenge)
+            val context = RuntimeEnvironment.getApplication()
+            val manager = SshConnectionManager(context, SettingsRepository(context))
+            try {
+                // Trust the server key first. Every test method gets fresh SharedPreferences, so
+                // without this the connection is refused by KnownHostsVerifier before a password is
+                // ever offered: the assertion below would hold for a host-key rejection and this test
+                // would pass without exercising authentication at all.
+                val challengeRef = AtomicReference<HostKeyChallenge?>()
+                val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
+                runCatching { manager.connect(hostProfile(), "wrong-password") }
+                delay(300)
+                collector.cancel()
+                val challenge = requireNotNull(challengeRef.get()) { "no host key challenge was raised" }
+                manager.trustHost(challenge)
 
-            val error = runCatching { manager.connect(hostProfile(), "wrong-password") }.exceptionOrNull()
+                val error = runCatching { manager.connect(hostProfile(), "wrong-password") }.exceptionOrNull()
 
-            assertThat(error).isNotNull()
-            // The key is trusted now, so a rejection can only come from the password — and the
-            // message must not still be blaming the host key, which is what the user would be shown.
-            assertThat(error!!.toString()).doesNotContain("Server key")
+                assertThat(error).isNotNull()
+                // The key is trusted now, so a rejection can only come from the password — and the
+                // message must not still be blaming the host key, which is what the user would be shown.
+                assertThat(error!!.toString()).doesNotContain("Server key")
 
-            // The control. Same manager, same trusted key, same profile: if the correct password
-            // gets in, the failure above was the credential and nothing else about this setup.
-            manager.connect(hostProfile(), PASSWORD).use { session ->
-                assertThat(session.isAuthenticated).isTrue()
+                // The control. Same manager, same trusted key, same profile: if the correct password
+                // gets in, the failure above was the credential and nothing else about this setup.
+                manager.connect(hostProfile(), PASSWORD).use { session ->
+                    assertThat(session.isAuthenticated).isTrue()
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
-        }
         }
     }
 
@@ -1060,14 +1088,15 @@ class SshIntegrationTest {
                 manager.withSftp(session) { sftp ->
                     sftp.write(remote).use { it.write(ByteArray(64 * 1024)) }
 
-                    val error = runCatching {
-                        transfers.resumeUpload(
-                            sftp = sftp,
-                            source = ByteArray(1_024).inputStream(),
-                            remotePath = remote,
-                            existingBytes = 64L * 1024,
-                        )
-                    }.exceptionOrNull()
+                    val error =
+                        runCatching {
+                            transfers.resumeUpload(
+                                sftp = sftp,
+                                source = ByteArray(1_024).inputStream(),
+                                remotePath = remote,
+                                existingBytes = 64L * 1024,
+                            )
+                        }.exceptionOrNull()
 
                     assertThat(error).isNotNull()
                     assertThat(error).isInstanceOf(java.io.IOException::class.java)
@@ -1146,22 +1175,27 @@ class SshIntegrationTest {
         // Accepted and then held open, deliberately unanswered. Letting the socket close instead
         // would produce an immediate EOF and the attempt would fail without reaching any timeout.
         val held = Collections.synchronizedList(mutableListOf<java.net.Socket>())
-        val acceptor = Thread {
-            runCatching { while (!silent.isClosed) held += silent.accept() }
-        }.apply { isDaemon = true; start() }
+        val acceptor =
+            Thread {
+                runCatching { while (!silent.isClosed) held += silent.accept() }
+            }.apply {
+                isDaemon = true
+                start()
+            }
         try {
             runBlocking {
                 val context = RuntimeEnvironment.getApplication()
                 val manager = SshConnectionManager(context, SettingsRepository(context))
                 try {
-                    val profile = HostProfile(
-                        name = "silent",
-                        host = LOOPBACK,
-                        username = USER,
-                        port = silent.localPort,
-                        authMethod = AuthMethod.PASSWORD,
-                        connectTimeoutSeconds = shortTimeout,
-                    )
+                    val profile =
+                        HostProfile(
+                            name = "silent",
+                            host = LOOPBACK,
+                            username = USER,
+                            port = silent.localPort,
+                            authMethod = AuthMethod.PASSWORD,
+                            connectTimeoutSeconds = shortTimeout,
+                        )
 
                     val startedAt = System.nanoTime()
                     val error = runCatching { manager.connect(profile, PASSWORD) }.exceptionOrNull()
@@ -1203,11 +1237,21 @@ class SshIntegrationTest {
  * served from a cloud provider actually does, since there is no file descriptor to `lseek`. Reads
  * still work normally — the stream is usable, just not positionable.
  */
-private class UnskippableInputStream(private val delegate: InputStream) : InputStream() {
+private class UnskippableInputStream(
+    private val delegate: InputStream,
+) : InputStream() {
     override fun read(): Int = delegate.read()
-    override fun read(b: ByteArray, off: Int, len: Int): Int = delegate.read(b, off, len)
+
+    override fun read(
+        b: ByteArray,
+        off: Int,
+        len: Int,
+    ): Int = delegate.read(b, off, len)
+
     override fun skip(n: Long): Long = 0
+
     override fun available(): Int = delegate.available()
+
     override fun close() = delegate.close()
 }
 
@@ -1219,10 +1263,18 @@ private class UnskippableInputStream(private val delegate: InputStream) : InputS
  */
 private class WedgedCommand : Command {
     override fun setInputStream(input: InputStream) = Unit
+
     override fun setOutputStream(output: OutputStream) = Unit
+
     override fun setErrorStream(error: OutputStream) = Unit
+
     override fun setExitCallback(callback: ExitCallback) = Unit
-    override fun start(channel: ChannelSession, env: Environment) = Unit
+
+    override fun start(
+        channel: ChannelSession,
+        env: Environment,
+    ) = Unit
+
     override fun destroy(channel: ChannelSession) = Unit
 }
 
@@ -1232,7 +1284,9 @@ private class WedgedCommand : Command {
  * each received line ("echo: <line>"), which is enough to exercise the client's
  * terminal channel end to end without needing a real PTY on the test host.
  */
-private class EchoCommand(private val initialReply: String? = null) : Command {
+private class EchoCommand(
+    private val initialReply: String? = null,
+) : Command {
     private var input: InputStream? = null
     private var output: OutputStream? = null
     private var exit: ExitCallback? = null
@@ -1251,7 +1305,10 @@ private class EchoCommand(private val initialReply: String? = null) : Command {
         this.exit = callback
     }
 
-    override fun start(channel: ChannelSession, env: Environment) {
+    override fun start(
+        channel: ChannelSession,
+        env: Environment,
+    ) {
         val out = output ?: return
         val inn = input ?: return
         if (initialReply != null) {

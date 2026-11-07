@@ -90,7 +90,11 @@ val linuxTriples =
         "x86_64" to "x86_64-linux-android",
     )
 
-val linuxSrcDir = layout.buildDirectory.dir("linux-src").get().asFile
+val linuxSrcDir =
+    layout.buildDirectory
+        .dir("linux-src")
+        .get()
+        .asFile
 val oonidTarball = File(linuxSrcDir, "oonid-pr-$prootForkCommit.tar.gz")
 val tallocTarball = File(linuxSrcDir, "talloc-$tallocVersion.tar.gz")
 // Root directory names the two tarballs extract to (codeload names them
@@ -98,7 +102,11 @@ val tallocTarball = File(linuxSrcDir, "talloc-$tallocVersion.tar.gz")
 val prootSrcRoot = File(linuxSrcDir, "pr-$prootForkCommit")
 val tallocSrcRoot = File(linuxSrcDir, "talloc-$tallocVersion")
 
-val nativeBuildRoot = layout.buildDirectory.dir("native").get().asFile
+val nativeBuildRoot =
+    layout.buildDirectory
+        .dir("native")
+        .get()
+        .asFile
 val nativeJniLibs = File(nativeBuildRoot, "jniLibs")
 
 // The hand-written feature set that compiles talloc.c for bionic without
@@ -140,14 +148,17 @@ androidComponents {
 // Only the SDK path resolves at configuration time - same rationale as
 // :freerdp: no multi-gigabyte NDK demand from gradle invocations that never
 // touch native code.
-val androidSdkRoot = androidComponents.sdkComponents.sdkDirectory.get().asFile
+val androidSdkRoot =
+    androidComponents.sdkComponents.sdkDirectory
+        .get()
+        .asFile
 
 val fetchLinuxSource =
     tasks.register("fetchLinuxSource") {
         group = "linux"
         description =
             "Downloads, SHA256-verifies and extracts the pinned proot fork and talloc tarballs, " +
-                "then applies linux/proot-patches/ to the extracted fork."
+            "then applies linux/proot-patches/ to the extracted fork."
         // Same rebind-to-locals rule as :freerdp's fetch task: a task action
         // reading a script-level val captures the script class itself, which
         // the configuration cache refuses to serialize - and a refused store
@@ -183,8 +194,9 @@ val fetchLinuxSource =
         // tree the next patch was told to expect stopped being the tree on
         // disk. The paths are relative to the patch directory and identical
         // on every machine, so this costs no relocatability.
-        inputs.files(prootPatchFiles)
-                .withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs
+            .files(prootPatchFiles)
+            .withPathSensitivity(PathSensitivity.RELATIVE)
         doLast {
             fun run(vararg command: String) {
                 logger.lifecycle("exec: ${command.joinToString(" ")}")
@@ -199,7 +211,10 @@ val fetchLinuxSource =
                 }
             }
 
-            fun download(urls: List<String>, target: File) {
+            fun download(
+                urls: List<String>,
+                target: File,
+            ) {
                 // A third-party mirror answering 5xx at the wrong moment must not
                 // fail a release-blocking job. samba.org sits behind a CDN that
                 // answers 503/504 in bursts: it cost CI a run on 2026-09-15, and
@@ -219,7 +234,10 @@ val fetchLinuxSource =
                 // The pinned sha256 still decides what gets built, which is what
                 // makes a second origin safe to name at all - an origin serving
                 // different bytes is rejected on arrival rather than built.
-                fun fetchOnce(url: String, target: File): Int {
+                fun fetchOnce(
+                    url: String,
+                    target: File,
+                ): Int {
                     val connection = URL(url).openConnection() as HttpURLConnection
                     connection.connectTimeout = 30_000
                     connection.readTimeout = 300_000
@@ -292,7 +310,10 @@ val fetchLinuxSource =
                 return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
             }
 
-            fun verifySha256(file: File, expected: String) {
+            fun verifySha256(
+                file: File,
+                expected: String,
+            ) {
                 val actual = sha256Of(file)
                 check(actual == expected) {
                     "sha256 mismatch for ${file.name}: expected $expected, got $actual"
@@ -356,11 +377,13 @@ val fetchLinuxSource =
                     logger.lifecycle("Patching the proot fork with ${patchFile.name} ...")
                     run(
                         "patch",
-                        "-d", prootRoot.absolutePath,
+                        "-d",
+                        prootRoot.absolutePath,
                         "-p1",
                         "--batch",
                         "--forward",
-                        "-i", patchFile.absolutePath,
+                        "-i",
+                        patchFile.absolutePath,
                     )
                 }
                 prootPatchedMarker.writeText("$patchFingerprint\n")
@@ -401,7 +424,7 @@ val buildLinuxNative =
         group = "linux"
         description =
             "Cross-compiles talloc, proot (with its loader) and the PTY bridge for every " +
-                "supported ABI and collects them into the jniLibs source set."
+            "supported ABI and collects them into the jniLibs source set."
         dependsOn(fetchLinuxSource)
         // Same rebind rule: the action below reads only these locals.
         val sdkRoot = androidSdkRoot
@@ -562,17 +585,22 @@ val buildLinuxNative =
                 val tallocLib = File(work, "libtalloc.a")
                 run(
                     File(ndkHostBin, "${triple}28-clang").absolutePath,
-                    "-c", File(tallocRoot, "talloc.c").absolutePath,
+                    "-c",
+                    File(tallocRoot, "talloc.c").absolutePath,
                     "-I${configDir.absolutePath}",
                     "-I${tallocRoot.absolutePath}",
                     "-I${File(tallocRoot, "lib/replace").absolutePath}",
-                    "-O2", "-Wall",
-                    "-o", tallocObj.absolutePath,
+                    "-O2",
+                    "-Wall",
+                    "-o",
+                    tallocObj.absolutePath,
                 )
                 tallocLib.delete()
                 run(
                     File(ndkHostBin, "llvm-ar").absolutePath,
-                    "rcs", tallocLib.absolutePath, tallocObj.absolutePath,
+                    "rcs",
+                    tallocLib.absolutePath,
+                    tallocObj.absolutePath,
                 )
 
                 // 2) proot + its standalone loader, through the fork's own
@@ -601,13 +629,16 @@ val buildLinuxNative =
                         "GIT" to "true",
                         "CPPFLAGS" to
                             "-I${configDir.absolutePath} " +
-                                "-I${tallocRoot.absolutePath} " +
-                                "-I${File(tallocRoot, "lib/replace").absolutePath} " +
-                                "-I${work.absolutePath}",
+                            "-I${tallocRoot.absolutePath} " +
+                            "-I${File(tallocRoot, "lib/replace").absolutePath} " +
+                            "-I${work.absolutePath}",
                         "LDFLAGS" to
                             "-static -L${work.absolutePath} -Wl,-z,max-page-size=16384",
                     ),
-                    "make", "-C", prootSrc.absolutePath, "-j2",
+                    "make",
+                    "-C",
+                    prootSrc.absolutePath,
+                    "-j2",
                 )
                 val prootBin = File(prootSrc, "proot")
                 val loaderBin = File(prootSrc, "loader/loader")
@@ -620,9 +651,12 @@ val buildLinuxNative =
                 val cmakeDir = File(work, "cmake")
                 run(
                     "cmake",
-                    "-S", ptySources.absolutePath,
-                    "-B", cmakeDir.absolutePath,
-                    "--toolchain", toolchain.absolutePath,
+                    "-S",
+                    ptySources.absolutePath,
+                    "-B",
+                    cmakeDir.absolutePath,
+                    "--toolchain",
+                    toolchain.absolutePath,
                     "-DANDROID_ABI=$abi",
                     "-DANDROID_PLATFORM=android-28",
                     "-DCMAKE_BUILD_TYPE=Release",

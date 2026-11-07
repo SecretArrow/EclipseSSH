@@ -32,11 +32,27 @@ max_line_length = 200
 #   no-consecutive-comments — legacy code has KDoc-then-block-comment
 #                             sequences that read fine; renaming them away
 #                             is churn.
+#   property-naming          — test fixtures (SettingsRepositoryTest and the
+#                             SSH integration suite) declare val properties
+#                             matching the wire/SSH spec names they stand for.
+#   if-else-wrapping         — HostFormActivity interleaves explanatory
+#                             comments with if/else branches; ktlint wants
+#                             them relocated, the branches read better where
+#                             they are.
+#   backing-property-naming  — LinuxUserspaceController's underscore-prefixed
+#                             state holders predate the rule's contract that
+#                             a matching public property must exist.
+#   comment-wrapping         — one inline block comment in SshIntegrationTest
+#                             documents the assertion beside it.
 ktlint_standard_no-wildcard-imports = disabled
 ktlint_standard_filename = disabled
 ktlint_standard_no-consecutive-comments = disabled
 ktlint_standard_max-line-length = disabled
 ktlint_standard_function-naming = disabled
+ktlint_standard_property-naming = disabled
+ktlint_standard_if-else-wrapping = disabled
+ktlint_standard_backing-property-naming = disabled
+ktlint_standard_comment-wrapping = disabled
 
 # JetBrains Mono ships in app/src/main/res/font; the editor default is set so
 # contributors editing in Android Studio see the same metrics the renderer ships.

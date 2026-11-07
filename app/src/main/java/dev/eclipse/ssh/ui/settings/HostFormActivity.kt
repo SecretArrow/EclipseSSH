@@ -84,13 +84,13 @@ import dev.eclipse.ssh.ssh.probeSshKey
 import dev.eclipse.ssh.ui.AdvancedHostSection
 import dev.eclipse.ssh.ui.SecretFieldKeyboard
 import dev.eclipse.ssh.ui.SecretPasteButton
-import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 /**
  * How long the form waits after the last passphrase keystroke before trying to read the picked key.
@@ -106,14 +106,15 @@ private const val KEY_PROBE_DEBOUNCE_MS = 300L
  * swatches carry no text, so without it TalkBack announces six identical unlabelled buttons and
  * the colour — the only thing distinguishing them — is unavailable to anyone who cannot see it.
  */
-private val ACCENT_COLORS = listOf(
-    "Red" to 0xFFE53935L,
-    "Blue" to 0xFF1E88E5L,
-    "Green" to 0xFF43A047L,
-    "Orange" to 0xFFFB8C00L,
-    "Purple" to 0xFF8E24AAL,
-    "Cyan" to 0xFF00ACC1L,
-)
+private val ACCENT_COLORS =
+    listOf(
+        "Red" to 0xFFE53935L,
+        "Blue" to 0xFF1E88E5L,
+        "Green" to 0xFF43A047L,
+        "Orange" to 0xFFFB8C00L,
+        "Purple" to 0xFF8E24AAL,
+        "Cyan" to 0xFF00ACC1L,
+    )
 
 /** What the key picker will accept. The wildcard is last and is what actually matters. */
 private val KEY_FILE_MIME_TYPES = arrayOf("application/octet-stream", "text/plain", "*/*")
@@ -145,12 +146,16 @@ private val KEY_FILE_MIME_TYPES = arrayOf("application/octet-stream", "text/plai
  */
 @AndroidEntryPoint
 class HostFormActivity : ComponentActivity() {
-
     @Inject lateinit var hostRepository: HostRepository
+
     @Inject lateinit var credentialStore: HostCredentialStore
+
     @Inject lateinit var sshConnectionManager: SshConnectionManager
+
     @Inject lateinit var secureClipboard: SecureClipboard
+
     @Inject lateinit var vaultUnlockGate: VaultUnlockGate
+
     @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -218,7 +223,6 @@ class HostFormActivity : ComponentActivity() {
  * worked, and then saves a second host instead of changing the one the user meant.
  */
 private sealed interface HostLoad {
-
     /** The stores have not answered yet. One frame, in practice. */
     data object Loading : HostLoad
 
@@ -226,10 +230,15 @@ private sealed interface HostLoad {
     data object Gone : HostLoad
 
     /** A store could not be read. Distinct from [Gone] because the two are not the same fact. */
-    data class Failed(val reason: String) : HostLoad
+    data class Failed(
+        val reason: String,
+    ) : HostLoad
 
     /** Ready to draw. [host] is null for Add. */
-    data class Ready(val host: HostProfile?, val credentials: StoredCredentials) : HostLoad
+    data class Ready(
+        val host: HostProfile?,
+        val credentials: StoredCredentials,
+    ) : HostLoad
 }
 
 /**
@@ -278,17 +287,18 @@ private fun HostForm(
         HostLoad.Loading -> Unit
         HostLoad.Gone -> HostUnavailable("That host is no longer saved, so there is nothing to edit.")
         is HostLoad.Failed -> HostUnavailable("That host could not be loaded: ${state.reason}")
-        is HostLoad.Ready -> HostFormFields(
-            initialHost = state.host,
-            storedCredentials = state.credentials,
-            draftHost = draftHost,
-            draftPort = draftPort,
-            hostRepository = hostRepository,
-            credentialStore = credentialStore,
-            sshConnectionManager = sshConnectionManager,
-            secureClipboard = secureClipboard,
-            vaultUnlockGate = vaultUnlockGate,
-        )
+        is HostLoad.Ready ->
+            HostFormFields(
+                initialHost = state.host,
+                storedCredentials = state.credentials,
+                draftHost = draftHost,
+                draftPort = draftPort,
+                hostRepository = hostRepository,
+                credentialStore = credentialStore,
+                sshConnectionManager = sshConnectionManager,
+                secureClipboard = secureClipboard,
+                vaultUnlockGate = vaultUnlockGate,
+            )
     }
 }
 
@@ -407,39 +417,42 @@ private fun HostFormFields(
     // Every validity rule lives in [HostFormDraft], which is a plain data class with plain tests.
     // Robolectric cannot idle a Compose dialog window, so rules left inline here would be permanently
     // unverifiable on the JVM.
-    val draft = HostFormDraft(
-        host = host,
-        username = username,
-        port = port,
-        timeout = timeout,
-        keepAlive = keepAlive,
-        fingerprint = fingerprint,
-        storedFingerprint = initialHost?.fingerprint,
-        wakeOnLanMac = wakeOnLanMac,
-        proxyType = proxyType,
-        proxyJump = proxyJump,
-        socksHost = socksHost,
-        socksPort = socksPort,
-        passphrase = passphrase,
-        keyPicked = pickedKey != null,
-        pickedKey = keyProbe,
-        storedCredentials = storedCredentials,
-        forgetKey = forgetKey,
-    )
+    val draft =
+        HostFormDraft(
+            host = host,
+            username = username,
+            port = port,
+            timeout = timeout,
+            keepAlive = keepAlive,
+            fingerprint = fingerprint,
+            storedFingerprint = initialHost?.fingerprint,
+            wakeOnLanMac = wakeOnLanMac,
+            proxyType = proxyType,
+            proxyJump = proxyJump,
+            socksHost = socksHost,
+            socksPort = socksPort,
+            passphrase = passphrase,
+            keyPicked = pickedKey != null,
+            pickedKey = keyProbe,
+            storedCredentials = storedCredentials,
+            forgetKey = forgetKey,
+        )
+
     /**
      * One line describing the key situation, and whether it is a problem. Null when there is nothing
      * to say — no key picked, none saved.
      */
-    val keyStatus: Pair<String, Boolean>? = when {
-        pickedKey != null && keyProbe == null -> "Reading ${pickedKey?.name}…" to false
-        keyProbe is SshKeyProbe.Ready -> "${pickedKey?.name.orEmpty()} · ${keyProbe.type}" to false
-        keyProbe is SshKeyProbe.PassphraseRequired -> "That key is encrypted — enter its passphrase below" to false
-        keyProbe is SshKeyProbe.Unreadable -> keyProbe.reason to true
-        forgetKey && storedCredentials.hasKey -> "The saved key will be removed when you save" to false
-        storedCredentials.hasKey ->
-            listOfNotNull(storedCredentials.keyLabel, storedCredentials.keyType).joinToString(" · ") to false
-        else -> null
-    }
+    val keyStatus: Pair<String, Boolean>? =
+        when {
+            pickedKey != null && keyProbe == null -> "Reading ${pickedKey?.name}…" to false
+            keyProbe is SshKeyProbe.Ready -> "${pickedKey?.name.orEmpty()} · ${keyProbe.type}" to false
+            keyProbe is SshKeyProbe.PassphraseRequired -> "That key is encrypted — enter its passphrase below" to false
+            keyProbe is SshKeyProbe.Unreadable -> keyProbe.reason to true
+            forgetKey && storedCredentials.hasKey -> "The saved key will be removed when you save" to false
+            storedCredentials.hasKey ->
+                listOfNotNull(storedCredentials.keyLabel, storedCredentials.keyType).joinToString(" · ") to false
+            else -> null
+        }
 
     /**
      * The clipboard read behind every Paste button here.
@@ -462,16 +475,19 @@ private fun HostFormFields(
     // The key file picker, owned by this window. The gate is held from the launch until the callback
     // delivers a result — including a cancellation, which arrives as a null uri and is still the
     // picker coming back. See [VaultUnlockGate] for why a picker needs it at all.
-    val keyPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        vaultUnlockGate.release()
-        if (uri != null) scope.launch {
-            readPickedKeyFile(context, uri)
-                .onSuccess { pickedKey = it }
-                // Not [reportWriteFailure]: nothing was being saved, and that helper's sentence opens
-                // with "Could not save", which would name the wrong thing.
-                .onFailure { error -> report(error.message ?: "That key file could not be read") }
+    val keyPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            vaultUnlockGate.release()
+            if (uri != null) {
+                scope.launch {
+                    readPickedKeyFile(context, uri)
+                        .onSuccess { pickedKey = it }
+                        // Not [reportWriteFailure]: nothing was being saved, and that helper's sentence opens
+                        // with "Could not save", which would name the wrong thing.
+                        .onFailure { error -> report(error.message ?: "That key file could not be read") }
+                }
+            }
         }
-    }
 
     /**
      * Writes the profile, then its credentials, then the pin — the view model's [saveHost] order.
@@ -489,7 +505,10 @@ private fun HostFormFields(
      * The known-hosts refresh the view model does after pinning has no equivalent here: that state is
      * the view model's own, and the Known hosts screen re-reads the store when it is opened.
      */
-    fun save(profile: HostProfile, credentials: HostCredentialUpdate) {
+    fun save(
+        profile: HostProfile,
+        credentials: HostCredentialUpdate,
+    ) {
         saving = true
         scope.launch {
             try {
@@ -667,14 +686,14 @@ private fun HostFormFields(
                 Surface(
                     // selectable (not clickable) so the swatch reports its checked state: TalkBack
                     // reads "Red, selected" instead of just "Red".
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(50))
-                        .selectable(
-                            selected = accentColor == color,
-                            onClick = { accentColor = color },
-                        )
-                        .semantics { contentDescription = colorName },
+                    modifier =
+                        Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(50))
+                            .selectable(
+                                selected = accentColor == color,
+                                onClick = { accentColor = color },
+                            ).semantics { contentDescription = colorName },
                     color = Color(color),
                 ) {
                     // Decorative: `selectable` above already announces the selected state, so
@@ -713,11 +732,14 @@ private fun HostFormFields(
             isError = !draft.fingerprintValid,
             supportingText = {
                 Text(
-                    if (!draft.fingerprintValid) "Expected SHA256:<base64>"
-                    // Pinning is strictly stronger than the trust-on-first-use prompt: paste the
+                    if (!draft.fingerprintValid) {
+                        "Expected SHA256:<base64>"
+                    } // Pinning is strictly stronger than the trust-on-first-use prompt: paste the
                     // fingerprint from a channel you already trust and the very first connection is
                     // verified instead of asking the user to accept an unseen key.
-                    else "Verifies the first connection instead of prompting",
+                    else {
+                        "Verifies the first connection instead of prompting"
+                    },
                 )
             },
             modifier = Modifier.fillMaxWidth(),
@@ -731,11 +753,14 @@ private fun HostFormFields(
             isError = !draft.wakeOnLanMacValid,
             supportingText = {
                 Text(
-                    if (!draft.wakeOnLanMacValid) "Six pairs of hex digits — AA:BB:CC:DD:EE:FF"
-                    // The same-LAN limit is stated here, in the field's own helper line, rather than
+                    if (!draft.wakeOnLanMacValid) {
+                        "Six pairs of hex digits — AA:BB:CC:DD:EE:FF"
+                    } // The same-LAN limit is stated here, in the field's own helper line, rather than
                     // left to a failure to explain: a wake sent from another network stops at the
                     // first router and nothing on screen would say why.
-                    else "Wakes the machine from the host menu — phone and machine must be on the same network",
+                    else {
+                        "Wakes the machine from the host menu — phone and machine must be on the same network"
+                    },
                 )
             },
             modifier = Modifier.fillMaxWidth(),
@@ -747,21 +772,25 @@ private fun HostFormFields(
         // the line.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(
-                    value = autoLoginSftp,
-                    role = Role.Switch,
-                    onValueChange = { autoLoginSftp = it },
-                ),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = autoLoginSftp,
+                        role = Role.Switch,
+                        onValueChange = { autoLoginSftp = it },
+                    ),
         ) {
             Column(Modifier.weight(1f)) {
                 Text("Auto Login SFTP")
                 // Worded as what happens on connect, not as a protocol name, and switched on the
                 // current value so the consequence is readable without toggling it first.
                 Text(
-                    if (autoLoginSftp) "Signs in to the file browser as soon as the shell connects"
-                    else "Connects the shell only — the Files tab opens on demand",
+                    if (autoLoginSftp) {
+                        "Signs in to the file browser as soon as the shell connects"
+                    } else {
+                        "Connects the shell only — the Files tab opens on demand"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -796,14 +825,22 @@ private fun HostFormFields(
                 onClick = {
                     save(
                         HostProfile(
-                            id = initialHost?.id ?: java.util.UUID.randomUUID().toString(),
+                            id =
+                                initialHost?.id ?: java.util.UUID
+                                    .randomUUID()
+                                    .toString(),
                             name = name.trim().ifBlank { host.trim() },
                             host = host.trim(),
                             username = username.trim(),
                             port = draft.portNumber ?: DEFAULT_SSH_PORT,
                             authMethod = authMethod,
                             group = group.trim().ifBlank { "Personal" },
-                            tags = tags.split(',').map(String::trim).filter(String::isNotBlank).distinct(),
+                            tags =
+                                tags
+                                    .split(',')
+                                    .map(String::trim)
+                                    .filter(String::isNotBlank)
+                                    .distinct(),
                             isFavorite = favorite,
                             lastConnectedAt = initialHost?.lastConnectedAt,
                             fingerprint = fingerprint.trim().takeIf(String::isNotBlank) ?: initialHost?.fingerprint,
@@ -826,26 +863,29 @@ private fun HostFormFields(
                             // A typed replacement beats a pending forget; a pending forget beats
                             // leaving it alone. Anything else leaves what is stored untouched, which
                             // is what an untouched empty field has to mean — see the fields above.
-                            password = when {
-                                password.isNotEmpty() -> SecretEdit.Replace(password)
-                                forgetPassword -> SecretEdit.Forget
-                                else -> SecretEdit.Keep
-                            },
+                            password =
+                                when {
+                                    password.isNotEmpty() -> SecretEdit.Replace(password)
+                                    forgetPassword -> SecretEdit.Forget
+                                    else -> SecretEdit.Keep
+                                },
                             // `draft.canSave` is false unless a picked key reached
                             // SshKeyProbe.Ready, so this never stores a key the app could not read.
-                            key = when {
-                                pickedKey != null && keyProbe is SshKeyProbe.Ready ->
-                                    KeyEdit.Replace(pickedKey!!.bytes, pickedKey!!.name, keyProbe.type)
-                                forgetKey -> KeyEdit.Forget
-                                else -> KeyEdit.Keep
-                            },
+                            key =
+                                when {
+                                    pickedKey != null && keyProbe is SshKeyProbe.Ready ->
+                                        KeyEdit.Replace(pickedKey!!.bytes, pickedKey!!.name, keyProbe.type)
+                                    forgetKey -> KeyEdit.Forget
+                                    else -> KeyEdit.Keep
+                                },
                             // Forgetting the key drops its passphrase in the same write, so this only
                             // has to handle a passphrase changing on a key that stays.
-                            passphrase = when {
-                                passphrase.isNotEmpty() -> SecretEdit.Replace(passphrase)
-                                forgetKey -> SecretEdit.Forget
-                                else -> SecretEdit.Keep
-                            },
+                            passphrase =
+                                when {
+                                    passphrase.isNotEmpty() -> SecretEdit.Replace(passphrase)
+                                    forgetKey -> SecretEdit.Forget
+                                    else -> SecretEdit.Keep
+                                },
                         ),
                     )
                 },

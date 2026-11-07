@@ -115,7 +115,13 @@ def kotlin_ranges(source, name=None, marker=None):
         begin, end = (BEGIN_MARKS, END_MARKS) if marker == "marks" else (BEGIN_WIDE, END_WIDE)
         body = source.split(begin, 1)[1].split(end, 1)[0]
     else:
-        body = source.split(f"private val {name} = ", 1)[1].split("\n)", 1)[0]
+        # The declaration the split lands on may break after "=" or keep the
+        # list on the same line (ktlint's multiline-expression-wrapping moves
+        # it), and the closing paren may sit at column 0 or indented to match,
+        # so both are matched: split on the equals, then up to the first line
+        # that holds only the closing paren at whatever indent it carries.
+        after = source.split(f"private val {name} =", 1)[1]
+        body = re.split(r"\n\s*\)", after, 1)[0]
     points = set()
     for match in re.finditer(r"0x([0-9A-Fa-f]+)(?:\.\.0x([0-9A-Fa-f]+))?", body):
         first = int(match.group(1), 16)

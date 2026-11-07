@@ -44,9 +44,10 @@ data class SocksProxyConfig(
      * Enumerated by hand, so a new field has to be added here too. The check is
      * `ProxyConfigTest.neither proxy config can print its password`.
      */
-    override fun toString(): String = "SocksProxyConfig(host=$host, port=$port, " +
-        "connectTimeoutMs=$connectTimeoutMs, username=$username, " +
-        "password=${if (password.isNullOrEmpty()) "none" else REDACTED})"
+    override fun toString(): String =
+        "SocksProxyConfig(host=$host, port=$port, " +
+            "connectTimeoutMs=$connectTimeoutMs, username=$username, " +
+            "password=${if (password.isNullOrEmpty()) "none" else REDACTED})"
 
     companion object {
         /** Deliberately says nothing about the value, not even its length. */
@@ -97,11 +98,16 @@ internal fun nio2Internals(
  * [nio2Internals] so the graceful-degradation behaviour can be unit-tested against an ordinary object
  * with a bogus field name, rather than needing a real MINA factory to stand one up.
  */
-internal fun reflectPrivateField(declaringClass: Class<*>, instance: Any, name: String): Any? = try {
-    declaringClass.getDeclaredField(name).apply { isAccessible = true }.get(instance)
-} catch (_: Throwable) {
-    null
-}
+internal fun reflectPrivateField(
+    declaringClass: Class<*>,
+    instance: Any,
+    name: String,
+): Any? =
+    try {
+        declaringClass.getDeclaredField(name).apply { isAccessible = true }.get(instance)
+    } catch (_: Throwable) {
+        null
+    }
 
 /**
  * Puts [key] to [value] in [map] when [map] can actually be written, reporting whether it was.
@@ -118,7 +124,11 @@ internal fun reflectPrivateField(declaringClass: Class<*>, instance: Any, name: 
  * "not a map"; the try/catch handles the unmodifiable-view case, which `as?` cannot — a Kotlin [Map]
  * and [MutableMap] are one JVM type, so the cast always succeeds and only the write tells them apart.
  */
-internal fun <K, V> putIfMutable(map: Map<K, V>, key: K, value: V): Boolean {
+internal fun <K, V> putIfMutable(
+    map: Map<K, V>,
+    key: K,
+    value: V,
+): Boolean {
     @Suppress("UNCHECKED_CAST")
     val mutable = map as? MutableMap<K, V> ?: return false
     return try {
@@ -155,9 +165,13 @@ class ProxyAwareClient : SshClient() {
 
     companion object {
         /** Builds a default-configured client backed by [ProxyAwareClient]. */
-        fun setUpDefault(): SshClient = ClientBuilder.builder()
-            .factory(org.apache.sshd.common.Factory { ProxyAwareClient() })
-            .build()
+        fun setUpDefault(): SshClient =
+            ClientBuilder
+                .builder()
+                .factory(
+                    org.apache.sshd.common
+                        .Factory { ProxyAwareClient() },
+                ).build()
     }
 }
 
@@ -172,7 +186,6 @@ class ProxyAwareConnector(
     group: AsynchronousChannelGroup,
     resumeTasks: ExecutorService,
 ) : Nio2Connector(factory, propertyResolver, handler, group, resumeTasks) {
-
     override fun connect(
         address: SocketAddress,
         context: AttributeRepository?,
@@ -185,20 +198,23 @@ class ProxyAwareConnector(
         val future = DefaultIoConnectFuture(address, null)
         var channel: AsynchronousSocketChannel? = null
         try {
-            val target = address as? InetSocketAddress
-                ?: throw IOException("Proxy requires an InetSocketAddress target")
+            val target =
+                address as? InetSocketAddress
+                    ?: throw IOException("Proxy requires an InetSocketAddress target")
             val socket = setSocketOptions(AsynchronousSocketChannel.open(getChannelGroup()))
             channel = socket
             if (localAddress != null) socket.bind(localAddress)
 
             when {
                 socks != null -> {
-                    socket.connect(InetSocketAddress(socks.host, socks.port))
+                    socket
+                        .connect(InetSocketAddress(socks.host, socks.port))
                         .get(socks.connectTimeoutMs, TimeUnit.MILLISECONDS)
                     Socks5Handshake.perform(socket, target.hostString, target.port, socks)
                 }
                 http != null -> {
-                    socket.connect(InetSocketAddress(http.host, http.port))
+                    socket
+                        .connect(InetSocketAddress(http.host, http.port))
                         .get(http.connectTimeoutMs, TimeUnit.MILLISECONDS)
                     HttpConnectHandshake.perform(socket, target.hostString, target.port, http)
                 }
@@ -271,11 +287,17 @@ object Socks5Handshake {
 
     /** Builds the method-negotiation greeting: VER, NMETHODS, and the offered methods. */
     internal fun negotiationBytes(hasCredentials: Boolean): ByteArray =
-        if (hasCredentials) byteArrayOf(0x05, 0x02, 0x00, 0x02) // no-auth + username/password
-        else byteArrayOf(0x05, 0x01, 0x00) // no-auth only
+        if (hasCredentials) {
+            byteArrayOf(0x05, 0x02, 0x00, 0x02) // no-auth + username/password
+        } else {
+            byteArrayOf(0x05, 0x01, 0x00) // no-auth only
+        }
 
     /** Builds the RFC 1929 username/password sub-negotiation request. */
-    internal fun authRequestBytes(username: String, password: String): ByteArray {
+    internal fun authRequestBytes(
+        username: String,
+        password: String,
+    ): ByteArray {
         val user = username.toByteArray(Charsets.UTF_8)
         val pass = password.toByteArray(Charsets.UTF_8)
         if (user.size > 255 || pass.size > 255) throw IOException("SOCKS5 username/password too long")
@@ -289,7 +311,10 @@ object Socks5Handshake {
     }
 
     /** Builds the RFC 1928 CONNECT request payload: VER, CMD, RSV, ATYP, address, port. */
-    internal fun connectRequestBytes(targetHost: String, targetPort: Int): ByteArray {
+    internal fun connectRequestBytes(
+        targetHost: String,
+        targetPort: Int,
+    ): ByteArray {
         val request = ByteArrayOutputStream()
         request.write(0x05) // VER
         request.write(0x01) // CMD = CONNECT
@@ -299,11 +324,12 @@ object Socks5Handshake {
         // literal. Those must go out as ATYP=0x04 with the 16 raw bytes; sending the text
         // form as a domain name asks the proxy to resolve "2001:db8::1" as a hostname,
         // which fails on every conforming proxy.
-        val ipv6 = if (ipv4 == null && targetHost.contains(':')) {
-            parseIpv6(targetHost) ?: throw IOException("Invalid IPv6 target address: $targetHost")
-        } else {
-            null
-        }
+        val ipv6 =
+            if (ipv4 == null && targetHost.contains(':')) {
+                parseIpv6(targetHost) ?: throw IOException("Invalid IPv6 target address: $targetHost")
+            } else {
+                null
+            }
         when {
             ipv4 != null -> {
                 request.write(0x01) // ATYP = IPv4
@@ -367,14 +393,16 @@ object Socks5Handshake {
         // groups that follow "::" — never before it. Allowed on both sides, "1.2.3.4::" parsed as
         // 1.2.3.4 padded on the *right*, which is a different address from the one written and not a
         // legal literal at all. Silently connecting somewhere else is worse than refusing.
-        val headBytes = ipv6GroupBytes(
-            if (headText.isEmpty()) emptyList() else headText.split(':'),
-            allowDottedQuad = false,
-        ) ?: return null
-        val tailBytes = ipv6GroupBytes(
-            if (tailText.isEmpty()) emptyList() else tailText.split(':'),
-            allowDottedQuad = true,
-        ) ?: return null
+        val headBytes =
+            ipv6GroupBytes(
+                if (headText.isEmpty()) emptyList() else headText.split(':'),
+                allowDottedQuad = false,
+            ) ?: return null
+        val tailBytes =
+            ipv6GroupBytes(
+                if (tailText.isEmpty()) emptyList() else tailText.split(':'),
+                allowDottedQuad = true,
+            ) ?: return null
         // "::" has to stand for at least one omitted 16-bit group.
         if (headBytes.size + tailBytes.size > 14) return null
 
@@ -391,7 +419,10 @@ object Socks5Handshake {
      * is, for the groups that end the address; it is not for the ones before a "::", which cannot be
      * the last 32 bits by definition.
      */
-    private fun ipv6GroupBytes(groups: List<String>, allowDottedQuad: Boolean): ByteArray? {
+    private fun ipv6GroupBytes(
+        groups: List<String>,
+        allowDottedQuad: Boolean,
+    ): ByteArray? {
         val out = ByteArrayOutputStream()
         for ((index, group) in groups.withIndex()) {
             if (group.contains('.')) {
@@ -424,19 +455,24 @@ object Socks5Handshake {
         if (reply[1] != 0x00.toByte()) throw IOException("SOCKS5 authentication failed")
     }
 
-    private fun repName(rep: Int): String = when (rep) {
-        1 -> "general failure"
-        2 -> "connection not allowed"
-        3 -> "network unreachable"
-        4 -> "host unreachable"
-        5 -> "connection refused"
-        6 -> "TTL expired"
-        7 -> "command not supported"
-        8 -> "address type not supported"
-        else -> "unknown error ($rep)"
-    }
+    private fun repName(rep: Int): String =
+        when (rep) {
+            1 -> "general failure"
+            2 -> "connection not allowed"
+            3 -> "network unreachable"
+            4 -> "host unreachable"
+            5 -> "connection refused"
+            6 -> "TTL expired"
+            7 -> "command not supported"
+            8 -> "address type not supported"
+            else -> "unknown error ($rep)"
+        }
 
-    private fun writeFully(channel: AsynchronousSocketChannel, bytes: ByteArray, timeoutMs: Long) {
+    private fun writeFully(
+        channel: AsynchronousSocketChannel,
+        bytes: ByteArray,
+        timeoutMs: Long,
+    ) {
         val buffer = ByteBuffer.wrap(bytes)
         while (buffer.hasRemaining()) {
             val written = channel.write(buffer).get(timeoutMs, TimeUnit.MILLISECONDS)
@@ -444,7 +480,11 @@ object Socks5Handshake {
         }
     }
 
-    private fun readFully(channel: AsynchronousSocketChannel, count: Int, timeoutMs: Long): ByteArray {
+    private fun readFully(
+        channel: AsynchronousSocketChannel,
+        count: Int,
+        timeoutMs: Long,
+    ): ByteArray {
         val out = ByteArray(count)
         val buffer = ByteBuffer.wrap(out)
         while (buffer.hasRemaining()) {
@@ -469,7 +509,6 @@ class SocksProxyConnector(
     group: AsynchronousChannelGroup,
     resumeTasks: ExecutorService,
 ) : Nio2Connector(factory, propertyResolver, handler, group, resumeTasks) {
-
     override fun connect(
         address: SocketAddress,
         context: AttributeRepository?,
@@ -480,14 +519,16 @@ class SocksProxyConnector(
         val future = DefaultIoConnectFuture(address, null)
         var channel: AsynchronousSocketChannel? = null
         try {
-            val target = address as? InetSocketAddress
-                ?: throw IOException("SOCKS5 requires an InetSocketAddress target")
+            val target =
+                address as? InetSocketAddress
+                    ?: throw IOException("SOCKS5 requires an InetSocketAddress target")
             val socket = setSocketOptions(AsynchronousSocketChannel.open(getChannelGroup()))
             channel = socket
             if (localAddress != null) socket.bind(localAddress)
 
             // 1. Connect to the proxy itself.
-            socket.connect(InetSocketAddress(proxy.host, proxy.port))
+            socket
+                .connect(InetSocketAddress(proxy.host, proxy.port))
                 .get(proxy.connectTimeoutMs, TimeUnit.MILLISECONDS)
             // 2. SOCKS5 CONNECT to the real target.
             Socks5Handshake.perform(socket, target.hostString, target.port, proxy)

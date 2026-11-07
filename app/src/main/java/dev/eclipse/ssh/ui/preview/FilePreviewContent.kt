@@ -58,19 +58,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.ui.rememberDialogBodyMaxHeight
 import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
-import java.io.File
-import java.text.DateFormat
-import java.util.Date
-import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.text.DateFormat
+import java.util.Date
+import kotlin.math.min
 
 /**
  * Type-aware preview for one file: an image with zoom, text, pretty JSON, rendered Markdown, the
@@ -97,12 +97,13 @@ fun FilePreviewContent(
 
     LaunchedEffect(entry.path, provider.providerId) {
         // Everything below reads whole files into memory, so each kind refuses what it cannot hold.
-        state = when (kind) {
-            PreviewKind.IMAGE -> loadBitmapPreview(entry, provider)
-            PreviewKind.PDF -> loadPdfPreview(entry, provider)
-            PreviewKind.TEXT, PreviewKind.JSON, PreviewKind.MARKDOWN -> loadTextPreview(entry, provider, kind)
-            PreviewKind.MEDIA, PreviewKind.OTHER -> PreviewState.Info
-        }
+        state =
+            when (kind) {
+                PreviewKind.IMAGE -> loadBitmapPreview(entry, provider)
+                PreviewKind.PDF -> loadPdfPreview(entry, provider)
+                PreviewKind.TEXT, PreviewKind.JSON, PreviewKind.MARKDOWN -> loadTextPreview(entry, provider, kind)
+                PreviewKind.MEDIA, PreviewKind.OTHER -> PreviewState.Info
+            }
     }
 
     Column(
@@ -119,21 +120,24 @@ fun FilePreviewContent(
         Spacer(Modifier.height(12.dp))
 
         when (val current = state) {
-            is PreviewState.Loading -> Box(
-                Modifier.fillMaxWidth().height(160.dp),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
+            is PreviewState.Loading ->
+                Box(
+                    Modifier.fillMaxWidth().height(160.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
 
-            is PreviewState.Failed -> Text(
-                current.message,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            is PreviewState.Failed ->
+                Text(
+                    current.message,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-            is PreviewState.TooLarge -> Text(
-                "This file is ${"%.1f".format(current.bytes / (1024.0 * 1024.0))} MB — too large " +
-                    "to preview on the device. It can still be downloaded, renamed or deleted.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            is PreviewState.TooLarge ->
+                Text(
+                    "This file is ${"%.1f".format(current.bytes / (1024.0 * 1024.0))} MB — too large " +
+                        "to preview on the device. It can still be downloaded, renamed or deleted.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
             is PreviewState.Info -> FileInformation(entry)
 
@@ -141,11 +145,12 @@ fun FilePreviewContent(
 
             is PreviewState.PdfPages -> PdfPages(current.pages, current.totalPages)
 
-            is PreviewState.Textual -> when (current.rendered) {
-                is RenderedText.Text -> SelectionContainerMonospace(current.rendered.content)
-                is RenderedText.Json -> SelectionContainerMonospace(current.rendered.content)
-                is RenderedText.Markdown -> MarkdownDocument(current.rendered.blocks)
-            }
+            is PreviewState.Textual ->
+                when (current.rendered) {
+                    is RenderedText.Text -> SelectionContainerMonospace(current.rendered.content)
+                    is RenderedText.Json -> SelectionContainerMonospace(current.rendered.content)
+                    is RenderedText.Markdown -> MarkdownDocument(current.rendered.blocks)
+                }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -176,12 +181,29 @@ fun FilePreviewContent(
 /** What the preview is showing. [Info] is a real answer, not a fallback of last resort. */
 private sealed interface PreviewState {
     data object Loading : PreviewState
+
     data object Info : PreviewState
-    data class Failed(val message: String) : PreviewState
-    data class TooLarge(val bytes: Long) : PreviewState
-    data class Image(val bitmap: Bitmap) : PreviewState
-    data class PdfPages(val pages: List<Bitmap>, val totalPages: Int) : PreviewState
-    data class Textual(val rendered: RenderedText) : PreviewState
+
+    data class Failed(
+        val message: String,
+    ) : PreviewState
+
+    data class TooLarge(
+        val bytes: Long,
+    ) : PreviewState
+
+    data class Image(
+        val bitmap: Bitmap,
+    ) : PreviewState
+
+    data class PdfPages(
+        val pages: List<Bitmap>,
+        val totalPages: Int,
+    ) : PreviewState
+
+    data class Textual(
+        val rendered: RenderedText,
+    ) : PreviewState
 }
 
 /** The kinds of preview this knows how to draw. */
@@ -203,17 +225,18 @@ private fun previewKind(entry: FsEntry): PreviewKind {
     return textKindOf(entry.name)
 }
 
-private fun textKindOf(name: String): PreviewKind = when (name.substringAfterLast('.', "").lowercase()) {
-    "png", "jpg", "jpeg", "gif", "webp", "bmp" -> PreviewKind.IMAGE
-    "mp4", "mkv", "webm", "mp3", "ogg", "wav", "flac", "m4a" -> PreviewKind.MEDIA
-    "pdf" -> PreviewKind.PDF
-    "json" -> PreviewKind.JSON
-    "md", "markdown" -> PreviewKind.MARKDOWN
-    "txt", "log", "xml", "yml", "yaml", "conf", "ini", "sh", "kt", "java", "py", "js", "ts",
-    "css", "html", "csv", "properties", "gradle", "kts", "toml", "env",
+private fun textKindOf(name: String): PreviewKind =
+    when (name.substringAfterLast('.', "").lowercase()) {
+        "png", "jpg", "jpeg", "gif", "webp", "bmp" -> PreviewKind.IMAGE
+        "mp4", "mkv", "webm", "mp3", "ogg", "wav", "flac", "m4a" -> PreviewKind.MEDIA
+        "pdf" -> PreviewKind.PDF
+        "json" -> PreviewKind.JSON
+        "md", "markdown" -> PreviewKind.MARKDOWN
+        "txt", "log", "xml", "yml", "yaml", "conf", "ini", "sh", "kt", "java", "py", "js", "ts",
+        "css", "html", "csv", "properties", "gradle", "kts", "toml", "env",
         -> PreviewKind.TEXT
-    else -> PreviewKind.OTHER
-}
+        else -> PreviewKind.OTHER
+    }
 
 // ---------------------------------------------------------------------------------------------
 // Loaders — one per kind, each with its own ceiling
@@ -224,14 +247,18 @@ private const val MAX_TEXT_BYTES = 512L * 1024
 private const val MAX_PDF_BYTES = 24L * 1024 * 1024
 private const val MAX_PDF_PAGES_SHOWN = 5
 
-private suspend fun loadBitmapPreview(entry: FsEntry, provider: FileSystemProvider): PreviewState {
+private suspend fun loadBitmapPreview(
+    entry: FsEntry,
+    provider: FileSystemProvider,
+): PreviewState {
     val size = entry.size
     if (size != null && size > MAX_IMAGE_BYTES) return PreviewState.TooLarge(size)
     return try {
         val bytes = provider.read(entry.path)
         if (bytes.size > MAX_IMAGE_BYTES) return PreviewState.TooLarge(bytes.size.toLong())
-        val bitmap = withContext(Dispatchers.IO) { decodeSampledBitmap(bytes) }
-            ?: return PreviewState.Failed("This image could not be decoded.")
+        val bitmap =
+            withContext(Dispatchers.IO) { decodeSampledBitmap(bytes) }
+                ?: return PreviewState.Failed("This image could not be decoded.")
         PreviewState.Image(bitmap)
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -251,13 +278,15 @@ private suspend fun loadTextPreview(
         val bytes = provider.read(entry.path)
         if (bytes.size > MAX_TEXT_BYTES) return PreviewState.TooLarge(bytes.size.toLong())
         val text = withContext(Dispatchers.IO) { bytes.toString(Charsets.UTF_8) }
-        val rendered = when (kind) {
-            PreviewKind.JSON -> prettyJson(text)
-                ?.let { RenderedText.Json(it) }
-                ?: RenderedText.Text(text)
-            PreviewKind.MARKDOWN -> RenderedText.Markdown(parseMarkdown(text))
-            else -> RenderedText.Text(text)
-        }
+        val rendered =
+            when (kind) {
+                PreviewKind.JSON ->
+                    prettyJson(text)
+                        ?.let { RenderedText.Json(it) }
+                        ?: RenderedText.Text(text)
+                PreviewKind.MARKDOWN -> RenderedText.Markdown(parseMarkdown(text))
+                else -> RenderedText.Text(text)
+            }
         PreviewState.Textual(rendered)
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -266,7 +295,10 @@ private suspend fun loadTextPreview(
     }
 }
 
-private suspend fun loadPdfPreview(entry: FsEntry, provider: FileSystemProvider): PreviewState {
+private suspend fun loadPdfPreview(
+    entry: FsEntry,
+    provider: FileSystemProvider,
+): PreviewState {
     val size = entry.size
     if (size != null && size > MAX_PDF_BYTES) return PreviewState.TooLarge(size)
     return try {
@@ -315,15 +347,20 @@ private fun renderPdf(pdfBytes: ByteArray): Pair<List<Bitmap>, Int>? {
 }
 
 /** Pretty-prints JSON when the text really is JSON; null when it only looks like it. */
-private fun prettyJson(text: String): String? = try {
-    text.trim().let { trimmed ->
-        if (trimmed.startsWith("{")) JSONObject(trimmed).toString(2)
-        else if (trimmed.startsWith("[")) JSONArray(trimmed).toString(2)
-        else null
+private fun prettyJson(text: String): String? =
+    try {
+        text.trim().let { trimmed ->
+            if (trimmed.startsWith("{")) {
+                JSONObject(trimmed).toString(2)
+            } else if (trimmed.startsWith("[")) {
+                JSONArray(trimmed).toString(2)
+            } else {
+                null
+            }
+        }
+    } catch (error: Throwable) {
+        null
     }
-} catch (error: Throwable) {
-    null
-}
 
 /**
  * Decodes [bytes] as a bitmap sized to something a screen can show, rather than whatever the file
@@ -388,7 +425,10 @@ private fun FileInformation(entry: FsEntry) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun InfoRow(
+    label: String,
+    value: String,
+) {
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         Text(
             label,
@@ -418,8 +458,7 @@ private fun ZoomableImage(bitmap: Bitmap) {
                     // it belongs and the offset is reset rather than nudged.
                     offset = if (next > 1f) offset + pan else Offset.Zero
                 }
-            }
-            .pointerInput(bitmap) {
+            }.pointerInput(bitmap) {
                 detectTapGestures(onDoubleTap = {
                     scale = 1f
                     offset = Offset.Zero
@@ -430,20 +469,24 @@ private fun ZoomableImage(bitmap: Bitmap) {
             bitmap = bitmap.asImageBitmap(),
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offset.x
+                        translationY = offset.y
+                    },
         )
     }
 }
 
 @Composable
-private fun PdfPages(pages: List<Bitmap>, totalPages: Int) {
+private fun PdfPages(
+    pages: List<Bitmap>,
+    totalPages: Int,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (totalPages > pages.size) {
             Text(
@@ -457,10 +500,11 @@ private fun PdfPages(pages: List<Bitmap>, totalPages: Int) {
                 bitmap = page.asImageBitmap(),
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(4.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(4.dp),
             )
         }
     }
@@ -499,17 +543,38 @@ private fun SelectionContainerMonospace(content: String) {
 
 /** What the text loaders produce for the textual kinds. */
 private sealed interface RenderedText {
-    data class Text(val content: String) : RenderedText
-    data class Json(val content: String) : RenderedText
-    data class Markdown(val blocks: List<MarkdownBlock>) : RenderedText
+    data class Text(
+        val content: String,
+    ) : RenderedText
+
+    data class Json(
+        val content: String,
+    ) : RenderedText
+
+    data class Markdown(
+        val blocks: List<MarkdownBlock>,
+    ) : RenderedText
 }
 
 /** One block of a Markdown document, at the granularity the renderer draws it. */
 private sealed interface MarkdownBlock {
-    data class Heading(val level: Int, val text: AnnotatedString) : MarkdownBlock
-    data class Paragraph(val text: AnnotatedString) : MarkdownBlock
-    data class Bullet(val text: AnnotatedString) : MarkdownBlock
-    data class CodeBlock(val code: String) : MarkdownBlock
+    data class Heading(
+        val level: Int,
+        val text: AnnotatedString,
+    ) : MarkdownBlock
+
+    data class Paragraph(
+        val text: AnnotatedString,
+    ) : MarkdownBlock
+
+    data class Bullet(
+        val text: AnnotatedString,
+    ) : MarkdownBlock
+
+    data class CodeBlock(
+        val code: String,
+    ) : MarkdownBlock
+
     data object Rule : MarkdownBlock
 }
 
@@ -581,87 +646,105 @@ private fun parseMarkdown(text: String): List<MarkdownBlock> {
  * Deliberately small: a preview that honored every inline construct of the Markdown spec would be
  * a Markdown engine, and pretending to be one is how a README renders *wrong* with confidence.
  */
-private fun markdownInline(text: String): AnnotatedString = buildAnnotatedString {
-    var i = 0
-    while (i < text.length) {
-        when {
-            text.startsWith("**", i) -> {
-                val end = text.indexOf("**", i + 2)
-                if (end < 0) { append(text.substring(i)); break }
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text.substring(i + 2, end)) }
-                i = end + 2
-            }
+private fun markdownInline(text: String): AnnotatedString =
+    buildAnnotatedString {
+        var i = 0
+        while (i < text.length) {
+            when {
+                text.startsWith("**", i) -> {
+                    val end = text.indexOf("**", i + 2)
+                    if (end < 0) {
+                        append(text.substring(i))
+                        break
+                    }
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text.substring(i + 2, end)) }
+                    i = end + 2
+                }
 
-            text[i] == '`' -> {
-                val end = text.indexOf('`', i + 1)
-                if (end < 0) { append(text.substring(i)); break }
-                withStyle(
-                    SpanStyle(
-                        fontFamily = FontFamily.Monospace,
-                        background = Color.Gray.copy(alpha = 0.25f),
-                    ),
-                ) { append(text.substring(i + 1, end)) }
-                i = end + 1
-            }
+                text[i] == '`' -> {
+                    val end = text.indexOf('`', i + 1)
+                    if (end < 0) {
+                        append(text.substring(i))
+                        break
+                    }
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            background = Color.Gray.copy(alpha = 0.25f),
+                        ),
+                    ) { append(text.substring(i + 1, end)) }
+                    i = end + 1
+                }
 
-            text[i] == '*' -> {
-                val end = text.indexOf('*', i + 1)
-                if (end < 0) { append(text.substring(i)); break }
-                withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(text.substring(i + 1, end)) }
-                i = end + 1
-            }
+                text[i] == '*' -> {
+                    val end = text.indexOf('*', i + 1)
+                    if (end < 0) {
+                        append(text.substring(i))
+                        break
+                    }
+                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(text.substring(i + 1, end)) }
+                    i = end + 1
+                }
 
-            else -> {
-                val next = text.indexOfAny(charArrayOf('*', '`'), i + 1)
-                if (next < 0) { append(text.substring(i)); break }
-                append(text.substring(i, next))
-                i = next
+                else -> {
+                    val next = text.indexOfAny(charArrayOf('*', '`'), i + 1)
+                    if (next < 0) {
+                        append(text.substring(i))
+                        break
+                    }
+                    append(text.substring(i, next))
+                    i = next
+                }
             }
         }
     }
-}
 
 @Composable
 private fun MarkdownDocument(blocks: List<MarkdownBlock>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEach { block ->
             when (block) {
-                is MarkdownBlock.Heading -> Text(
-                    block.text,
-                    style = when (block.level.coerceIn(1, 6)) {
-                        1 -> MaterialTheme.typography.headlineSmall
-                        2 -> MaterialTheme.typography.titleLarge
-                        3 -> MaterialTheme.typography.titleMedium
-                        else -> MaterialTheme.typography.titleSmall
-                    },
-                )
+                is MarkdownBlock.Heading ->
+                    Text(
+                        block.text,
+                        style =
+                            when (block.level.coerceIn(1, 6)) {
+                                1 -> MaterialTheme.typography.headlineSmall
+                                2 -> MaterialTheme.typography.titleLarge
+                                3 -> MaterialTheme.typography.titleMedium
+                                else -> MaterialTheme.typography.titleSmall
+                            },
+                    )
 
                 is MarkdownBlock.Paragraph -> Text(block.text, style = MaterialTheme.typography.bodyMedium)
 
-                is MarkdownBlock.Bullet -> Row {
-                    Text("•  ", style = MaterialTheme.typography.bodyMedium)
-                    Text(block.text, style = MaterialTheme.typography.bodyMedium)
-                }
+                is MarkdownBlock.Bullet ->
+                    Row {
+                        Text("•  ", style = MaterialTheme.typography.bodyMedium)
+                        Text(block.text, style = MaterialTheme.typography.bodyMedium)
+                    }
 
-                is MarkdownBlock.CodeBlock -> Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(
-                        block.code,
-                        Modifier.fillMaxWidth().padding(10.dp),
-                        fontFamily = TerminalMonoFontFamily,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
+                is MarkdownBlock.CodeBlock ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            block.code,
+                            Modifier.fillMaxWidth().padding(10.dp),
+                            fontFamily = TerminalMonoFontFamily,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        )
+                    }
+
+                MarkdownBlock.Rule ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant),
                     )
-                }
-
-                MarkdownBlock.Rule -> Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant),
-                )
             }
         }
     }
@@ -672,26 +755,32 @@ private fun MarkdownDocument(blocks: List<MarkdownBlock>) {
 // ---------------------------------------------------------------------------------------------
 
 /** Offers the file to another app — the user's explicit tap, local files only. */
-private fun openWithAnotherApp(context: Context, entry: FsEntry) {
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(Uri.parse(entry.path), entry.mimeType ?: "*/*")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
+private fun openWithAnotherApp(
+    context: Context,
+    entry: FsEntry,
+) {
+    val intent =
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(entry.path), entry.mimeType ?: "*/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     runCatching { context.startActivity(Intent.createChooser(intent, "Open with")) }
 }
 
-private fun describeSize(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
-    else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
-}
+private fun describeSize(bytes: Long): String =
+    when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
+        else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+    }
 
-private fun kindLabel(entry: FsEntry): String = when (previewKind(entry)) {
-    PreviewKind.IMAGE -> "Image"
-    PreviewKind.TEXT -> "Text"
-    PreviewKind.JSON -> "JSON"
-    PreviewKind.MARKDOWN -> "Markdown"
-    PreviewKind.PDF -> "PDF document"
-    PreviewKind.MEDIA -> "Media"
-    PreviewKind.OTHER -> "Unknown type"
-}
+private fun kindLabel(entry: FsEntry): String =
+    when (previewKind(entry)) {
+        PreviewKind.IMAGE -> "Image"
+        PreviewKind.TEXT -> "Text"
+        PreviewKind.JSON -> "JSON"
+        PreviewKind.MARKDOWN -> "Markdown"
+        PreviewKind.PDF -> "PDF document"
+        PreviewKind.MEDIA -> "Media"
+        PreviewKind.OTHER -> "Unknown type"
+    }

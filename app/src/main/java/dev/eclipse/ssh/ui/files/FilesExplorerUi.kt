@@ -1,8 +1,8 @@
 package dev.eclipse.ssh.ui.files
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,10 +16,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -143,8 +143,12 @@ fun ExplorerTopBar(
                                 style = MaterialTheme.typography.titleSmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                color = if (index == crumbs.lastIndex) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.primary,
+                                color =
+                                    if (index == crumbs.lastIndex) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    },
                                 modifier = Modifier.combinedClickableCompat { onCrumb(crumb) },
                             )
                         }
@@ -182,7 +186,10 @@ fun ExplorerTopBar(
                     placeholder = { Text("Search this folder…") },
                     singleLine = true,
                     trailingIcon = {
-                        TextButton(onClick = { searchOpen = false; onClearSearch() }) { Text("Close") }
+                        TextButton(onClick = {
+                            searchOpen = false
+                            onClearSearch()
+                        }) { Text("Close") }
                     },
                 )
             } else if (state.isLocal && state.path == null) {
@@ -206,12 +213,18 @@ fun ExplorerTopBar(
                     DropdownMenuItem(
                         text = { Text("New file") },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null) },
-                        onClick = { newMenuOpen = false; onNewFile() },
+                        onClick = {
+                            newMenuOpen = false
+                            onNewFile()
+                        },
                     )
                     DropdownMenuItem(
                         text = { Text("New folder") },
                         leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) },
-                        onClick = { newMenuOpen = false; onNewFolder() },
+                        onClick = {
+                            newMenuOpen = false
+                            onNewFolder()
+                        },
                     )
                 }
             }
@@ -230,8 +243,15 @@ fun ExplorerTopBar(
                     ExplorerSort.entries.forEach { sort ->
                         DropdownMenuItem(
                             text = { Text(sort.label) },
-                            trailingIcon = { if (sort == state.sort) { Icon(Icons.Default.CheckCircle, null, Modifier.size(18.dp)) } },
-                            onClick = { onSort(sort); moreMenuOpen = false },
+                            trailingIcon = {
+                                if (sort == state.sort) {
+                                    Icon(Icons.Default.CheckCircle, null, Modifier.size(18.dp))
+                                }
+                            },
+                            onClick = {
+                                onSort(sort)
+                                moreMenuOpen = false
+                            },
                         )
                     }
                     DropdownMenuItem(
@@ -249,7 +269,10 @@ fun ExplorerTopBar(
                         DropdownMenuItem(
                             text = { Text("Choose a different folder") },
                             leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
-                            onClick = { moreMenuOpen = false; onPickFolder() },
+                            onClick = {
+                                moreMenuOpen = false
+                                onPickFolder()
+                            },
                         )
                     }
                 }
@@ -259,7 +282,11 @@ fun ExplorerTopBar(
 }
 
 @Composable
-private fun SessionChip(session: ExplorerSession, selected: Boolean, onClick: () -> Unit) {
+private fun SessionChip(
+    session: ExplorerSession,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -288,7 +315,6 @@ private fun SessionChip(session: ExplorerSession, selected: Boolean, onClick: ()
         },
     )
 }
-
 
 /**
  * The entries, as a list or a grid.
@@ -320,7 +346,10 @@ fun ExplorerList(
 
 /** The one-slot outcome of the last operation, dismissible so it does not age into furniture. */
 @Composable
-private fun StatusBanner(message: String, onDismiss: () -> Unit) {
+private fun StatusBanner(
+    message: String,
+    onDismiss: () -> Unit,
+) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         shape = RoundedCornerShape(8.dp),
@@ -355,55 +384,60 @@ private fun ExplorerBody(
     onOpenActions: (FsEntry) -> Unit,
 ) {
     when {
-        state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
+        state.loading ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
 
-        state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(state.error, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-        }
+        state.error != null ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(state.error, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+            }
 
-        state.entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                when {
-                    state.searchQuery != null -> "Nothing matched “${state.searchQuery}”."
-                    // No listing was ever taken: local before its first folder is granted, which is a
-                    // missing permission rather than a folder that happens to hold nothing.
-                    state.path == null -> "No folder chosen yet — tap “Pick folder” to browse this device."
-                    else -> "This folder is empty."
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        state.viewMode == ExplorerViewMode.GRID -> LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 96.dp),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            items(state.entries, key = { it.path }) { entry ->
-                ExplorerGridCell(
-                    entry = entry,
-                    selected = entry.path in state.selection,
-                    selecting = state.selection.isNotEmpty(),
-                    onOpen = { onOpen(entry) },
-                    onToggleSelect = { onToggleSelect(entry.path) },
-                    onOpenActions = { onOpenActions(entry) },
+        state.entries.isEmpty() ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    when {
+                        state.searchQuery != null -> "Nothing matched “${state.searchQuery}”."
+                        // No listing was ever taken: local before its first folder is granted, which is a
+                        // missing permission rather than a folder that happens to hold nothing.
+                        state.path == null -> "No folder chosen yet — tap “Pick folder” to browse this device."
+                        else -> "This folder is empty."
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
 
-        else -> LazyColumn(Modifier.fillMaxSize()) {
-            items(state.entries, key = { it.path }) { entry ->
-                ExplorerRow(
-                    entry = entry,
-                    selected = entry.path in state.selection,
-                    selecting = state.selection.isNotEmpty(),
-                    onOpen = { onOpen(entry) },
-                    onToggleSelect = { onToggleSelect(entry.path) },
-                    onOpenActions = { onOpenActions(entry) },
-                )
+        state.viewMode == ExplorerViewMode.GRID ->
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 96.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(state.entries, key = { it.path }) { entry ->
+                    ExplorerGridCell(
+                        entry = entry,
+                        selected = entry.path in state.selection,
+                        selecting = state.selection.isNotEmpty(),
+                        onOpen = { onOpen(entry) },
+                        onToggleSelect = { onToggleSelect(entry.path) },
+                        onOpenActions = { onOpenActions(entry) },
+                    )
+                }
             }
-        }
+
+        else ->
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(state.entries, key = { it.path }) { entry ->
+                    ExplorerRow(
+                        entry = entry,
+                        selected = entry.path in state.selection,
+                        selecting = state.selection.isNotEmpty(),
+                        onOpen = { onOpen(entry) },
+                        onToggleSelect = { onToggleSelect(entry.path) },
+                        onOpenActions = { onOpenActions(entry) },
+                    )
+                }
+            }
     }
 }
 
@@ -445,11 +479,12 @@ fun ExplorerRow(
             )
             // The metadata line shows only what the provider knew: a local SAF entry has no
             // permissions and a directory has no size, and neither is invented here.
-            val pieces = listOfNotNull(
-                entry.size?.let { describeSize(it) },
-                entry.modifiedEpochMillis?.let { DateFormat.getDateInstance().format(Date(it)) },
-                entry.permissions,
-            )
+            val pieces =
+                listOfNotNull(
+                    entry.size?.let { describeSize(it) },
+                    entry.modifiedEpochMillis?.let { DateFormat.getDateInstance().format(Date(it)) },
+                    entry.permissions,
+                )
             if (pieces.isNotEmpty()) {
                 Text(
                     pieces.joinToString("  ·  "),
@@ -480,10 +515,12 @@ private fun ExplorerGridCell(
             .padding(6.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.surface,
-            )
-            .combinedClickable(onClick = if (selecting) onToggleSelect else onOpen, onLongClick = onOpenActions)
+                if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+            ).combinedClickable(onClick = if (selecting) onToggleSelect else onOpen, onLongClick = onOpenActions)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -547,7 +584,11 @@ fun ExplorerSelectionBar(
 
 /** The entry's facts, each row drawn only when the value exists — an invented "0 B" is worse than none. */
 @Composable
-fun ExplorerPropertiesDialog(entry: FsEntry, isLocal: Boolean, onDismiss: () -> Unit) {
+fun ExplorerPropertiesDialog(
+    entry: FsEntry,
+    isLocal: Boolean,
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(entry.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
@@ -566,7 +607,10 @@ fun ExplorerPropertiesDialog(entry: FsEntry, isLocal: Boolean, onDismiss: () -> 
 }
 
 @Composable
-private fun PropertyRow(label: String, value: String) {
+private fun PropertyRow(
+    label: String,
+    value: String,
+) {
     Row {
         Text(
             label,
@@ -580,8 +624,7 @@ private fun PropertyRow(label: String, value: String) {
 
 /** `combinedClickable` behind a non-experimental alias so call sites stay readable. */
 @OptIn(ExperimentalFoundationApi::class)
-private fun Modifier.combinedClickableCompat(onClick: () -> Unit): Modifier =
-    this.combinedClickable(onClick = onClick)
+private fun Modifier.combinedClickableCompat(onClick: () -> Unit): Modifier = this.combinedClickable(onClick = onClick)
 
 /**
  * One line of "Copying …", with a bar under it once there is a fraction to draw.
@@ -612,8 +655,9 @@ private fun CopyProgressRow(copy: ExplorerCopy) {
     }
 }
 
-fun describeSize(bytes: Long): String = when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
-    else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
-}
+fun describeSize(bytes: Long): String =
+    when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${"%.1f".format(bytes / 1024.0)} KB"
+        else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+    }

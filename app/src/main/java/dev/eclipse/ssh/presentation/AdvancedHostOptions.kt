@@ -162,11 +162,20 @@ internal data class AdvancedHostOptions(
      * since before this section existed. This is only about the fields the section owns.
      */
     val isValid: Boolean =
-        serverAliveCountValid && authTimeoutValid && maxReconnectAttemptsValid &&
-            backoffValid && columnsValid && rowsValid &&
-            cipherReview.isAcceptable && kexReview.isAcceptable && macReview.isAcceptable &&
-            hostKeyAlgorithmReview.isAcceptable && algorithmListsValid &&
-            startupCommandValid && environmentValid && forwardsValid
+        serverAliveCountValid &&
+            authTimeoutValid &&
+            maxReconnectAttemptsValid &&
+            backoffValid &&
+            columnsValid &&
+            rowsValid &&
+            cipherReview.isAcceptable &&
+            kexReview.isAcceptable &&
+            macReview.isAcceptable &&
+            hostKeyAlgorithmReview.isAcceptable &&
+            algorithmListsValid &&
+            startupCommandValid &&
+            environmentValid &&
+            forwardsValid
 
     /**
      * Whether anything here differs from the shipped defaults, which is what enables Reset.

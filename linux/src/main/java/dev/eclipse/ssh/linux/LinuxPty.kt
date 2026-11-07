@@ -24,7 +24,6 @@ package dev.eclipse.ssh.linux
  * All methods throw [java.io.IOException] on failure via the native side.
  */
 public object LinuxPty {
-
     init {
         // Packaged as a jniLib; System.loadLibrary finds it in
         // nativeLibraryDir. The object is deliberately not lazier than this:
@@ -81,7 +80,11 @@ public object LinuxPty {
      * process group, like resizing a terminal window. A no-op on a pty that
      * was already closed or reaped.
      */
-    public external fun resize(fd: Int, rows: Int, cols: Int)
+    public external fun resize(
+        fd: Int,
+        rows: Int,
+        cols: Int,
+    )
 
     /**
      * Blocks until the child exits, closes the master fd and returns the

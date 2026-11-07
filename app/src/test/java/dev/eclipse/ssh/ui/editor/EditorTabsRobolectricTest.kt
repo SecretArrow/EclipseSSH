@@ -15,10 +15,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.EclipseApp
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FsModificationConflictException
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The tab strip over the live editor window: what a second open does, and what closing does.
@@ -45,7 +45,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35])
 class EditorTabsRobolectricTest {
-
     /**
      * Every file this suite opens, in one provider: `read` serves the registered bytes, `write`
      * records and moves the clock, `stat` reports what the last write left. One provider for all
@@ -55,17 +54,26 @@ class EditorTabsRobolectricTest {
     private class MemoryFilesProvider : FileSystemProvider {
         override val providerId: String = "test"
 
-        private class Held(var bytes: ByteArray, var modified: Long)
+        private class Held(
+            var bytes: ByteArray,
+            var modified: Long,
+        )
 
         private val files = linkedMapOf<String, Held>()
         val writes = mutableListOf<String>()
 
-        fun add(path: String, contents: String) {
+        fun add(
+            path: String,
+            contents: String,
+        ) {
             files[path] = Held(contents.toByteArray(), 1_000L)
         }
 
         /** The server moves under the editor: new bytes and a newer clock, without a local write. */
-        fun changeUnderneath(path: String, contents: String) {
+        fun changeUnderneath(
+            path: String,
+            contents: String,
+        ) {
             val held = checkNotNull(files[path]) { "no such file: $path" }
             held.bytes = contents.toByteArray()
             held.modified += 1_000
@@ -74,24 +82,31 @@ class EditorTabsRobolectricTest {
         private fun name(path: String) = path.substringAfterLast('/')
 
         override suspend fun homePath(): String? = null
+
         override suspend fun parentPath(path: String): String? = null
+
         override suspend fun list(path: String): List<FsEntry> = emptyList()
-        override suspend fun stat(path: String): FsEntry? = files[path]?.let { held ->
-            FsEntry(
-                name = name(path),
-                path = path,
-                isDirectory = false,
-                size = held.bytes.size.toLong(),
-                modifiedEpochMillis = held.modified,
-                permissions = null,
-                mimeType = "text/plain",
-            )
-        }
 
-        override suspend fun read(path: String): ByteArray =
-            files[path]?.bytes ?: error("no such file: $path")
+        override suspend fun stat(path: String): FsEntry? =
+            files[path]?.let { held ->
+                FsEntry(
+                    name = name(path),
+                    path = path,
+                    isDirectory = false,
+                    size = held.bytes.size.toLong(),
+                    modifiedEpochMillis = held.modified,
+                    permissions = null,
+                    mimeType = "text/plain",
+                )
+            }
 
-        override suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long?) {
+        override suspend fun read(path: String): ByteArray = files[path]?.bytes ?: error("no such file: $path")
+
+        override suspend fun write(
+            path: String,
+            data: ByteArray,
+            onlyIfUnmodifiedSince: Long?,
+        ) {
             // The real providers raise the conflict when the guard no longer matches the file's
             // clock; the fake owes the editor the same honesty, or the conflict dialog could never
             // be raised from outside. An unguarded write (the user chose Overwrite) always passes.
@@ -105,20 +120,43 @@ class EditorTabsRobolectricTest {
             }
         }
 
-        override suspend fun createFile(parentPath: String, name: String): FsEntry =
-            error("unused by the tab suite")
-        override suspend fun createDirectory(parentPath: String, name: String) =
-            error("unused by the tab suite")
-        override suspend fun rename(path: String, newName: String) = error("unused by the tab suite")
-        override suspend fun copy(sourcePath: String, targetDirectoryPath: String) =
-            error("unused by the tab suite")
-        override suspend fun move(path: String, targetDirectoryPath: String) =
-            error("unused by the tab suite")
+        override suspend fun createFile(
+            parentPath: String,
+            name: String,
+        ): FsEntry = error("unused by the tab suite")
+
+        override suspend fun createDirectory(
+            parentPath: String,
+            name: String,
+        ) = error("unused by the tab suite")
+
+        override suspend fun rename(
+            path: String,
+            newName: String,
+        ) = error("unused by the tab suite")
+
+        override suspend fun copy(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the tab suite")
+
+        override suspend fun move(
+            path: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the tab suite")
+
         override suspend fun delete(path: String) = error("unused by the tab suite")
-        override suspend fun setPermissions(path: String, mode: Int) =
-            error("unused by the tab suite")
-        override suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry> =
-            emptyList()
+
+        override suspend fun setPermissions(
+            path: String,
+            mode: Int,
+        ) = error("unused by the tab suite")
+
+        override suspend fun search(
+            root: String,
+            query: String,
+            maxEntries: Int,
+        ): List<FsEntry> = emptyList()
     }
 
     private val provider = MemoryFilesProvider().apply { add(firstPath, firstText) }
@@ -133,16 +171,21 @@ class EditorTabsRobolectricTest {
         const val secondText = "the second file"
     }
 
-    private fun request(name: String, path: String, contents: String) = EditorRequest(
-        entry = FsEntry(
-            name = name,
-            path = path,
-            isDirectory = false,
-            size = contents.length.toLong(),
-            modifiedEpochMillis = 1_000L,
-            permissions = null,
-            mimeType = "text/plain",
-        ),
+    private fun request(
+        name: String,
+        path: String,
+        contents: String,
+    ) = EditorRequest(
+        entry =
+            FsEntry(
+                name = name,
+                path = path,
+                isDirectory = false,
+                size = contents.length.toLong(),
+                modifiedEpochMillis = 1_000L,
+                permissions = null,
+                mimeType = "text/plain",
+            ),
         provider = provider,
     )
 
@@ -155,17 +198,19 @@ class EditorTabsRobolectricTest {
      * answers lifecycle questions about a finished window. Later opens go through `onEditorToken`
      * inside the tests, the route a `singleTop` new-intent delivery takes.
      */
-    private val scenarioRule = ActivityScenarioRule<TextEditorActivity>(
-        Intent(ApplicationProvider.getApplicationContext(), TextEditorActivity::class.java)
-            .putExtra(TextEditorActivity.EXTRA_REQUEST_TOKEN, EditorRequests.put(request(firstName, firstPath, firstText))),
-    )
+    private val scenarioRule =
+        ActivityScenarioRule<TextEditorActivity>(
+            Intent(ApplicationProvider.getApplicationContext(), TextEditorActivity::class.java)
+                .putExtra(TextEditorActivity.EXTRA_REQUEST_TOKEN, EditorRequests.put(request(firstName, firstPath, firstText))),
+        )
 
     @get:Rule
-    val compose = AndroidComposeTestRule(scenarioRule) { rule ->
-        var activity: TextEditorActivity? = null
-        rule.scenario.onActivity { activity = it }
-        checkNotNull(activity)
-    }
+    val compose =
+        AndroidComposeTestRule(scenarioRule) { rule ->
+            var activity: TextEditorActivity? = null
+            rule.scenario.onActivity { activity = it }
+            checkNotNull(activity)
+        }
 
     /** A few frames of work, for the recompositions that follow a click or a token. */
     private fun pump(frames: Int = 12) {
@@ -180,7 +225,11 @@ class EditorTabsRobolectricTest {
      * Drives frames and main-looper work until [condition] holds — hand-pumped rather than
      * `waitForIdle`, which never settles once a dialog window is up.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -205,11 +254,14 @@ class EditorTabsRobolectricTest {
     }
 
     /** The number of nodes whose whole text is [text] — how tab labels and titles are counted. */
-    private fun countNamed(text: String): Int =
-        compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size
+    private fun countNamed(text: String): Int = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size
 
     /** Delivers a live request into the open window, the way a new intent's token would arrive. */
-    private fun openTab(name: String, path: String, contents: String) {
+    private fun openTab(
+        name: String,
+        path: String,
+        contents: String,
+    ) {
         provider.add(path, contents)
         val token = EditorRequests.put(request(name, path, contents))
         scenarioRule.scenario.onActivity { it.onEditorToken(token) }
@@ -379,7 +431,9 @@ class EditorTabsRobolectricTest {
         pumpUntil(describe = { "the conflicting save never raised the question" }) {
             ShadowDialog.getShownDialogs().size > before &&
                 ShadowDialog.getLatestDialog()?.isShowing == true &&
-                compose.onAllNodes(hasText("Changed since it was opened")).fetchSemanticsNodes()
+                compose
+                    .onAllNodes(hasText("Changed since it was opened"))
+                    .fetchSemanticsNodes()
                     .isNotEmpty()
         }
 

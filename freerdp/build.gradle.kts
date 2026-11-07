@@ -52,17 +52,22 @@ val freerdpAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
 // an OpenSSL provider module (ossl-modules/legacy.so) that must not be packaged,
 // and a renamed or renamed-away dependency should fail the build loudly instead
 // of letting the APK ship without it and die at load time.
-val freerdpRuntimeLibraries = listOf(
-    "libfreerdp3",
-    "libfreerdp-client3",
-    "libwinpr3",
-    "libcrypto",
-    "libssl",
-    "libcjson",
-    "liburiparser",
-)
+val freerdpRuntimeLibraries =
+    listOf(
+        "libfreerdp3",
+        "libfreerdp-client3",
+        "libwinpr3",
+        "libcrypto",
+        "libssl",
+        "libcjson",
+        "liburiparser",
+    )
 
-val freerdpSrcDir = layout.buildDirectory.dir("freerdp-src").get().asFile
+val freerdpSrcDir =
+    layout.buildDirectory
+        .dir("freerdp-src")
+        .get()
+        .asFile
 val freerdpTarball = File(freerdpSrcDir, "freerdp-$freerdpVersion.tar.gz")
 // Kept next to the version pins so the two cannot drift apart.
 val freerdpNdkVersion = "29.0.13113456"
@@ -80,7 +85,11 @@ val freerdpBridgeCMakeDir =
 val freerdpDepsJniLibs =
     File(freerdpSourceRoot, "client/Android/Studio/freeRDPCore/src/main/jniLibs")
 
-val nativeBuildRoot = layout.buildDirectory.dir("native").get().asFile
+val nativeBuildRoot =
+    layout.buildDirectory
+        .dir("native")
+        .get()
+        .asFile
 val nativeJniLibs = File(nativeBuildRoot, "jniLibs")
 
 android {
@@ -135,7 +144,10 @@ androidComponents {
 // supported access is the sdkComponents API, whose sdkDirectory provider is
 // already populated when the plugin is applied (unlike bootClasspath, it is
 // safe to read at configuration time).
-val androidSdkRoot = androidComponents.sdkComponents.sdkDirectory.get().asFile
+val androidSdkRoot =
+    androidComponents.sdkComponents.sdkDirectory
+        .get()
+        .asFile
 
 val fetchFreerdpSource =
     tasks.register("fetchFreerdpSource") {
@@ -188,8 +200,14 @@ val fetchFreerdpSource =
              * reddened a lint job whose diff could not have caused it. Roughly four minutes
              * across seven attempts; the pinned sha256 still decides what gets built.
              */
-            fun download(url: String, target: File) {
-                fun fetchOnce(url: String, target: File): Int {
+            fun download(
+                url: String,
+                target: File,
+            ) {
+                fun fetchOnce(
+                    url: String,
+                    target: File,
+                ): Int {
                     val connection = URL(url).openConnection() as HttpURLConnection
                     connection.connectTimeout = 30_000
                     connection.readTimeout = 300_000
@@ -227,7 +245,10 @@ val fetchFreerdpSource =
             }
 
             /** Verifies [file] against [expected] (lowercase hex) before anything is built from it. */
-            fun verifySha256(file: File, expected: String) {
+            fun verifySha256(
+                file: File,
+                expected: String,
+            ) {
                 val digest = MessageDigest.getInstance("SHA-256")
                 file.inputStream().use { input ->
                     val buffer = ByteArray(64 * 1024)
@@ -294,7 +315,7 @@ val buildFreerdpNative =
         group = "freerdp"
         description =
             "Cross-compiles the FreeRDP JNI bridge and dependencies for every ABI " +
-                "(the spike recipe) and collects the .so files into the jniLibs source set."
+            "(the spike recipe) and collects the .so files into the jniLibs source set."
         dependsOn(fetchFreerdpSource)
         // Same rebind-to-locals rule as fetchFreerdpSource: the action below reads only
         // these locals, never the script's fields, so the configuration cache can store
@@ -379,9 +400,12 @@ val buildFreerdpNative =
                     // minSdk, and must not promise more than it.
                     run(
                         "cmake",
-                        "-S", bridgeCMakeDir.absolutePath,
-                        "-B", cmakeDir.absolutePath,
-                        "--toolchain", toolchain.absolutePath,
+                        "-S",
+                        bridgeCMakeDir.absolutePath,
+                        "-B",
+                        cmakeDir.absolutePath,
+                        "--toolchain",
+                        toolchain.absolutePath,
                         "-DANDROID_ABI=$abi",
                         "-DANDROID_PLATFORM=android-28",
                         "-DCMAKE_BUILD_TYPE=Release",

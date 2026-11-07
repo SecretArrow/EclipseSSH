@@ -672,8 +672,12 @@ private fun AutoSaveEffect(
         tab.compareState,
         blocked,
     ) {
-        if (!prefs.autoSaveEnabled || !tab.dirty || tab.saving || tab.conflictOpen ||
-            tab.compareState != null || blocked
+        if (!prefs.autoSaveEnabled ||
+            !tab.dirty ||
+            tab.saving ||
+            tab.conflictOpen ||
+            tab.compareState != null ||
+            blocked
         ) {
             return@LaunchedEffect
         }
@@ -1132,8 +1136,10 @@ private fun EditorBody(
                             // Exact Ctrl: no Shift/Alt/Meta riding along, or it is a different
                             // shortcut than the one these branches implement.
                             val ctrl =
-                                event.isCtrlPressed && !event.isShiftPressed &&
-                                    !event.isAltPressed && !event.isMetaPressed
+                                event.isCtrlPressed &&
+                                    !event.isShiftPressed &&
+                                    !event.isAltPressed &&
+                                    !event.isMetaPressed
                             when {
                                 ctrl && event.key == Key.S && dirty && !saving -> {
                                     onSave()
@@ -1162,8 +1168,12 @@ private fun EditorBody(
                                 }
                                 // The other redo spelling; Ctrl is checked, Shift required — the
                                 // exact mirror of the plain-Ctrl branches above.
-                                event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed &&
-                                    !event.isMetaPressed && event.key == Key.Z && history.canRedo -> {
+                                event.isCtrlPressed &&
+                                    event.isShiftPressed &&
+                                    !event.isAltPressed &&
+                                    !event.isMetaPressed &&
+                                    event.key == Key.Z &&
+                                    history.canRedo -> {
                                     history.redo(textValue)?.let(onSnapshot)
                                     true
                                 }

@@ -172,7 +172,6 @@ import dev.eclipse.ssh.background.EclipseSessionService
 import dev.eclipse.ssh.data.MAX_TRANSFER_RETRIES
 import dev.eclipse.ssh.data.credentials.HostCredentialUpdate
 import dev.eclipse.ssh.data.credentials.KeyEdit
-import dev.eclipse.ssh.data.saf.StorageAccess
 import dev.eclipse.ssh.data.credentials.SecretEdit
 import dev.eclipse.ssh.data.fs.FileSystemProvider
 import dev.eclipse.ssh.data.fs.FsEntry
@@ -195,6 +194,7 @@ import dev.eclipse.ssh.data.model.decodeRemoteDesktop
 import dev.eclipse.ssh.data.model.isEnded
 import dev.eclipse.ssh.data.model.isLive
 import dev.eclipse.ssh.data.saf.LocalFile
+import dev.eclipse.ssh.data.saf.StorageAccess
 import dev.eclipse.ssh.data.saf.readPickedKeyFile
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.feature.quickconnect.QuickConnectContract
@@ -621,16 +621,17 @@ private fun EclipseWorkspace(
     // and a denial that no longer shows a dialog means Android has pinned the refusal — the only
     // way forward is the app's settings page, which this app can open for the user.
     val activity = LocalActivity.current
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted && activity != null) {
-            val canAskAgain =
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                    activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
-            if (!canAskAgain) {
-                runCatching { activity.startActivity(StorageAccess.appDetails(activity.packageName)) }
+    val notificationPermission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted && activity != null) {
+                val canAskAgain =
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                        activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+                if (!canAskAgain) {
+                    runCatching { activity.startActivity(StorageAccess.appDetails(activity.packageName)) }
+                }
             }
         }
-    }
     // Ask once, and only when the permission is actually missing: launching the request
     // unconditionally re-prompted on every rotation and on API < 33 asked for a permission
     // that does not exist there.

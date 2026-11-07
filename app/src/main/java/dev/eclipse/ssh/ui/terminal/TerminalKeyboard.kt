@@ -283,14 +283,16 @@ fun TerminalInputBridge(
                     // finished any composition before sending the key, and the next keystroke is a new
                     // line rather than the same frame. KeyDown only - the up event of the same press
                     // must not clear twice.
-                    if (handled && event.type == KeyEventType.KeyDown &&
+                    if (handled &&
+                        event.type == KeyEventType.KeyDown &&
                         TERMINAL_NAMED_KEYS[event.key] == TerminalKey.ENTER
                     ) {
                         // Never while a composition is live: the reset is a programmatic edit, and the
                         // IME's composition is a range *into* the text it replaces - tearing the field
                         // out from under one is what makes a keyboard drop the word it was holding, so
                         // the line is finished on the commit that follows instead.
-                        if (resetPendingFrom == null && composingHeld.isEmpty() &&
+                        if (resetPendingFrom == null &&
+                            composingHeld.isEmpty() &&
                             field.text.length > SENTINEL.length
                         ) {
                             resetPendingFrom = committedHeld
@@ -559,8 +561,10 @@ internal fun diffTerminalEdit(
 ): TerminalEdit {
     // The shared prefix: everything up to where the two texts stop agreeing.
     var common = 0
-    while (common < base.length && common < incoming.length &&
-        base[common] == incoming[common] && common < SENTINEL_LENGTH + FIELD_HARD_CAP
+    while (common < base.length &&
+        common < incoming.length &&
+        base[common] == incoming[common] &&
+        common < SENTINEL_LENGTH + FIELD_HARD_CAP
     ) {
         common++
     }
@@ -596,7 +600,8 @@ internal fun pendingResetBase(
     val preResetTail = resetPendingFrom.drop(SENTINEL_LENGTH)
     val incomingTail = incoming.drop(SENTINEL_LENGTH)
     val raced =
-        preResetTail.isNotEmpty() && incomingTail.isNotEmpty() &&
+        preResetTail.isNotEmpty() &&
+            incomingTail.isNotEmpty() &&
             (incomingTail.startsWith(preResetTail) || preResetTail.startsWith(incomingTail))
     return if (raced) resetPendingFrom else adopted
 }
@@ -625,7 +630,8 @@ internal fun pendingResetBase(
 internal fun nextFieldValue(change: TextFieldValue): TextFieldValue {
     if (isComposing(change.composition)) return change
     val resetsOnNewline = change.text.any { it == LINE_FEED || it == CARRIAGE_RETURN }
-    if (!resetsOnNewline && change.text.startsWith(SENTINEL) &&
+    if (!resetsOnNewline &&
+        change.text.startsWith(SENTINEL) &&
         change.text.length < SENTINEL_LENGTH + FIELD_HARD_CAP
     ) {
         // Plain adoption: what the IME wrote is what the field now holds.

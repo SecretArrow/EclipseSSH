@@ -23,7 +23,6 @@ import org.junit.Test
  *    never runs empty of the sentinel Backspace needs.
  */
 class TerminalCourierFieldTest {
-
     private fun sentinel(tail: String = "") = SENTINEL_TEST + tail
 
     // The sentinel is private to the file under test; this mirrors it by its definition - eight
@@ -104,8 +103,8 @@ class TerminalCourierFieldTest {
     @Test
     fun `deleting into the sentinel is still Backspaces, not zero`() {
         // The user held Backspace through everything they typed and into the padding. The shell
-    // needs one Backspace per deleted character; clamping at the sentinel would swallow the last
-    // few presses of a deliberate long press.
+        // needs one Backspace per deleted character; clamping at the sentinel would swallow the last
+        // few presses of a deliberate long press.
         val edit = diffTerminalEdit(sentinel("a"), SENTINEL_TEST.dropLast(1))
         assertThat(edit.deleted).isEqualTo(2)
     }

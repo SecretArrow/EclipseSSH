@@ -26,9 +26,6 @@ import dev.eclipse.ssh.linux.LinuxUserspaceState.NotInstalled
 import dev.eclipse.ssh.linux.OptionalPackage
 import dev.eclipse.ssh.linux.RootfsTransferState
 import dev.eclipse.ssh.linux.UserspaceDiagnosticEvent
-import java.io.IOException
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +44,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * What Settings → Linux Userspace renders, in one snapshot — and what the host-list rule reads.
@@ -129,542 +129,564 @@ fun LinuxUserspaceState.holdsProcess(): Boolean =
  * that happened to refresh health — the card would silently disagree with the truth.
  */
 @Singleton
-class LinuxUserspaceController @Inject constructor(
-    @ApplicationContext private val appContext: Context,
-    private val graphProvider: LinuxUserspaceGraphProvider,
-) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+class LinuxUserspaceController
+    @Inject
+    constructor(
+        @ApplicationContext private val appContext: Context,
+        private val graphProvider: LinuxUserspaceGraphProvider,
+    ) {
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    /**
-     * The whole graph, or null on an unsupported device; the connect path and the host-list rule
-     * read it directly. A property, not a val: it tracks the version the user picks while nothing
-     * is installed, so a caller cannot be left holding the graph from process start forever.
-     */
-    val graph: LinuxUserspaceGraph? get() = graphProvider.graph
+        /**
+         * The whole graph, or null on an unsupported device; the connect path and the host-list rule
+         * read it directly. A property, not a val: it tracks the version the user picks while nothing
+         * is installed, so a caller cannot be left holding the graph from process start forever.
+         */
+        val graph: LinuxUserspaceGraph? get() = graphProvider.graph
 
-    /** The graph as a flow, for subscribers that must re-derive when a version choice swaps it. */
-    val graphFlow: StateFlow<LinuxUserspaceGraph?> get() = graphProvider.graphFlow
+        /** The graph as a flow, for subscribers that must re-derive when a version choice swaps it. */
+        val graphFlow: StateFlow<LinuxUserspaceGraph?> get() = graphProvider.graphFlow
 
-    private val _error = MutableStateFlow<String?>(null)
-    private val _installWarnings = MutableStateFlow<List<String>>(emptyList())
-    private val _transferNotice = MutableStateFlow<String?>(null)
+        private val _error = MutableStateFlow<String?>(null)
+        private val _installWarnings = MutableStateFlow<List<String>>(emptyList())
+        private val _transferNotice = MutableStateFlow<String?>(null)
 
-    /**
-     * The transfer in flight, so the screen can abandon one. Only ever touched from the main thread —
-     * launched by the actions below, cancelled by [cancelTransfer] — and a completed job cancels as a
-     * no-op, which is what makes "the button was still on screen for a moment after it finished" a
-     * non-event rather than a special case.
-     */
-    private var transferJob: Job? = null
+        /**
+         * The transfer in flight, so the screen can abandon one. Only ever touched from the main thread —
+         * launched by the actions below, cancelled by [cancelTransfer] — and a completed job cancels as a
+         * no-op, which is what makes "the button was still on screen for a moment after it finished" a
+         * non-event rather than a special case.
+         */
+        private var transferJob: Job? = null
 
-    /**
-     * Whether the app is on screen, from the process-wide lifecycle. The binding's re-promotion
-     * rule is foreground-gated (see [holdProcessWhileRunning]), because Android 15 only allows a
-     * dataSync promotion while the app is visible — after the six-hour cap takes one away, the
-     * next return to the screen is the first legal moment to ask for it back.
-     */
-    private val appInForeground = MutableStateFlow(true)
+        /**
+         * Whether the app is on screen, from the process-wide lifecycle. The binding's re-promotion
+         * rule is foreground-gated (see [holdProcessWhileRunning]), because Android 15 only allows a
+         * dataSync promotion while the app is visible — after the six-hour cap takes one away, the
+         * next return to the screen is the first legal moment to ask for it back.
+         */
+        private val appInForeground = MutableStateFlow(true)
 
-    /**
-     * Set when the service's own onTimeout took the foreground hold away (the Android 15 six-hour
-     * dataSync cap): the userspace keeps running unprotected, and the binding should re-promote on
-     * the next foreground transition rather than trust its last promotion forever.
-     */
-    private val foregroundHoldLost = MutableStateFlow(false)
+        /**
+         * Set when the service's own onTimeout took the foreground hold away (the Android 15 six-hour
+         * dataSync cap): the userspace keeps running unprotected, and the binding should re-promote on
+         * the next foreground transition rather than trust its last promotion forever.
+         */
+        private val foregroundHoldLost = MutableStateFlow(false)
 
-    /**
-     * The three storage facts as one value, not three flows. A recompute used to write bytes, file
-     * count and the pending-backup claim as three separate StateFlow writes, and a subscriber
-     * could observe the combination in between — most misleadingly a freshly restored workspace
-     * (one file, bytes on disk) shown beside a backup still claimed as parked, three writes after
-     * the restore consumed it. One write per recompute makes the half-updated state unobservable;
-     * a failed recompute keeps the previous whole value instead of a partial new one.
-     */
-    private val _storageFacts = MutableStateFlow(StorageFacts())
+        /**
+         * The three storage facts as one value, not three flows. A recompute used to write bytes, file
+         * count and the pending-backup claim as three separate StateFlow writes, and a subscriber
+         * could observe the combination in between — most misleadingly a freshly restored workspace
+         * (one file, bytes on disk) shown beside a backup still claimed as parked, three writes after
+         * the restore consumed it. One write per recompute makes the half-updated state unobservable;
+         * a failed recompute keeps the previous whole value instead of a partial new one.
+         */
+        private val _storageFacts = MutableStateFlow(StorageFacts())
 
-    /** The UI state. On an unsupported device this is a constant; nothing beneath it exists. */
-    val uiState: StateFlow<LinuxUserspaceUiState>
+        /** The UI state. On an unsupported device this is a constant; nothing beneath it exists. */
+        val uiState: StateFlow<LinuxUserspaceUiState>
 
-    init {
-        uiState =
-            graphProvider.graphFlow
-                .flatMapLatest { graph ->
-                    if (graph == null) {
-                        flowOf(LinuxUserspaceUiState())
-                    } else {
-                        combine(
-                            graph.manager.state,
-                            graph.manager.lastHealth,
-                            _storageFacts,
-                            graph.transfer.state,
+        init {
+            uiState =
+                graphProvider.graphFlow
+                    .flatMapLatest { graph ->
+                        if (graph == null) {
+                            flowOf(LinuxUserspaceUiState())
+                        } else {
                             combine(
-                                _error,
-                                _installWarnings,
-                                _transferNotice,
-                                graph.manager.sessionCount,
-                            ) { error, warnings, notice, sessions ->
-                                Extras(error, warnings, notice, sessions)
-                            },
-                        ) { state, health, storage, transfer, extras ->
-                            LinuxUserspaceUiState(
-                                supported = true,
-                                distro = graph.distro,
-                                availableVersions = graphProvider.versions,
-                                state = state,
-                                health = health,
-                                storageUsedBytes = storage.usedBytes,
-                                workspaceFileCount = storage.workspaceFiles,
-                                hasPendingWorkspaceBackup = storage.hasPendingBackup,
-                                sessionCount = extras.sessionCount,
-                                transfer = transfer,
-                                transferNotice = extras.notice,
-                                error = extras.error,
-                                installWarnings = extras.warnings,
-                            )
+                                graph.manager.state,
+                                graph.manager.lastHealth,
+                                _storageFacts,
+                                graph.transfer.state,
+                                combine(
+                                    _error,
+                                    _installWarnings,
+                                    _transferNotice,
+                                    graph.manager.sessionCount,
+                                ) { error, warnings, notice, sessions ->
+                                    Extras(error, warnings, notice, sessions)
+                                },
+                            ) { state, health, storage, transfer, extras ->
+                                LinuxUserspaceUiState(
+                                    supported = true,
+                                    distro = graph.distro,
+                                    availableVersions = graphProvider.versions,
+                                    state = state,
+                                    health = health,
+                                    storageUsedBytes = storage.usedBytes,
+                                    workspaceFileCount = storage.workspaceFiles,
+                                    hasPendingWorkspaceBackup = storage.hasPendingBackup,
+                                    sessionCount = extras.sessionCount,
+                                    transfer = transfer,
+                                    transferNotice = extras.notice,
+                                    error = extras.error,
+                                    installWarnings = extras.warnings,
+                                )
+                            }
                         }
-                    }
-                }.stateIn(
-                    scope,
-                    // WhileSubscribed, not Eagerly: this flow's subscribers are the settings screen,
-                    // which only exists while it is shown. The host-list card does not read it — it
-                    // reads the manager's own flows, which never pause — so pausing this one when
-                    // nobody collects saves the combine work without ever hiding the card.
-                    SharingStarted.WhileSubscribed(5_000),
-                    // The synchronous now, so a resubscribed screen's first frame is the current
-                    // truth rather than a "not installed" flash while the combine warms up.
-                    currentSnapshot(),
-                )
+                    }.stateIn(
+                        scope,
+                        // WhileSubscribed, not Eagerly: this flow's subscribers are the settings screen,
+                        // which only exists while it is shown. The host-list card does not read it — it
+                        // reads the manager's own flows, which never pause — so pausing this one when
+                        // nobody collects saves the combine work without ever hiding the card.
+                        SharingStarted.WhileSubscribed(5_000),
+                        // The synchronous now, so a resubscribed screen's first frame is the current
+                        // truth rather than a "not installed" flash while the combine warms up.
+                        currentSnapshot(),
+                    )
 
-        // The graph-long collectors. collectLatest, not collect: a version swap while nothing is
-        // installed cancels the previous graph's collectors (whose flows would otherwise report a
-        // NotInstalled that is no longer anyone's truth) and starts them over the new graph.
-        scope.launch {
-            graphFlow.collectLatest { graph ->
-                val manager = graph?.manager ?: return@collectLatest
-                watchSettledStates(manager)
-                probeInstalledUserspace(manager)
-                holdProcessWhileRunning(manager)
+            // The graph-long collectors. collectLatest, not collect: a version swap while nothing is
+            // installed cancels the previous graph's collectors (whose flows would otherwise report a
+            // NotInstalled that is no longer anyone's truth) and starts them over the new graph.
+            scope.launch {
+                graphFlow.collectLatest { graph ->
+                    val manager = graph?.manager ?: return@collectLatest
+                    watchSettledStates(manager)
+                    probeInstalledUserspace(manager)
+                    holdProcessWhileRunning(manager)
+                }
+            }
+
+            // The foreground signal the binding's re-promotion rule is gated on. runCatching because
+            // the initializer that wires ProcessLifecycleOwner can be absent in stripped test
+            // environments; there the signal stays true and the binding behaves exactly as it did
+            // before the rule existed.
+            runCatching {
+                ProcessLifecycleOwner.get().lifecycle.addObserver(
+                    object : DefaultLifecycleObserver {
+                        override fun onStart(owner: LifecycleOwner) {
+                            appInForeground.value = true
+                        }
+
+                        override fun onStop(owner: LifecycleOwner) {
+                            appInForeground.value = false
+                        }
+                    },
+                )
             }
         }
 
-        // The foreground signal the binding's re-promotion rule is gated on. runCatching because
-        // the initializer that wires ProcessLifecycleOwner can be absent in stripped test
-        // environments; there the signal stays true and the binding behaves exactly as it did
-        // before the rule existed.
-        runCatching {
-            ProcessLifecycleOwner.get().lifecycle.addObserver(
-                object : DefaultLifecycleObserver {
-                    override fun onStart(owner: LifecycleOwner) {
-                        appInForeground.value = true
-                    }
+        /**
+         * The install and repair trace of the current graph, newest last, for a screen that shows it.
+         *
+         * Derived from [graphFlow] rather than read off the graph: while nothing is installed the
+         * version chooser can swap the graph, and a collector that had captured the first graph's ring
+         * would keep showing the events of a userspace that no longer exists.
+         *
+         * This ring is the userspace counterpart of the session trace, and unlike the session trace it
+         * had no way out of the app at all — every event of a failed install was written to a ring no
+         * UI read and to logcat, which a user without `adb` does not have. [exportInstallLog] and
+         * [clearInstallLog] are that way out.
+         */
+        val installLog: Flow<List<UserspaceDiagnosticEvent>> =
+            graphProvider.graphFlow.flatMapLatest { graph ->
+                graph?.distribution?.diagnostics?.events ?: flowOf(emptyList())
+            }
 
-                    override fun onStop(owner: LifecycleOwner) {
-                        appInForeground.value = false
-                    }
-                },
+        /** The whole trace as text, for the clipboard or a saved file. */
+        fun exportInstallLog(): String =
+            graph
+                ?.distribution
+                ?.diagnostics
+                ?.export()
+                .orEmpty()
+
+        /**
+         * Empties the trace. The useful way to use a five-hundred-entry ring is to clear it, reproduce
+         * the failure, and export what is left — a trace that begins at the moment of the bug is far
+         * easier to read than one that begins at app launch.
+         */
+        fun clearInstallLog() {
+            graph?.distribution?.diagnostics?.clear()
+        }
+
+        /** The snapshot [stateIn] starts from, computed over whatever graph is current right now. */
+        private fun currentSnapshot(): LinuxUserspaceUiState {
+            val graph = graphProvider.graph ?: return LinuxUserspaceUiState()
+            return LinuxUserspaceUiState(
+                supported = true,
+                distro = graph.distro,
+                availableVersions = graphProvider.versions,
+                state = graph.manager.state.value,
+                health = graph.manager.lastHealth.value,
+                transfer = graph.transfer.state.value,
+                transferNotice = _transferNotice.value,
             )
         }
-    }
 
-    /**
-     * The install and repair trace of the current graph, newest last, for a screen that shows it.
-     *
-     * Derived from [graphFlow] rather than read off the graph: while nothing is installed the
-     * version chooser can swap the graph, and a collector that had captured the first graph's ring
-     * would keep showing the events of a userspace that no longer exists.
-     *
-     * This ring is the userspace counterpart of the session trace, and unlike the session trace it
-     * had no way out of the app at all — every event of a failed install was written to a ring no
-     * UI read and to logcat, which a user without `adb` does not have. [exportInstallLog] and
-     * [clearInstallLog] are that way out.
-     */
-    val installLog: Flow<List<UserspaceDiagnosticEvent>> =
-        graphProvider.graphFlow.flatMapLatest { graph ->
-            graph?.distribution?.diagnostics?.events ?: flowOf(emptyList())
+        // ------------------------------------------------------------------ actions
+
+        /**
+         * Chooses the version [install] downloads: records the pick and swaps the graph while nothing
+         * is installed. Refused once anything is on disk — the installed version is what Repair and
+         * Start operate on, and only an Uninstall makes a choice meaningful again.
+         */
+        fun selectDistro(distroId: String): Boolean = graphProvider.selectDistro(distroId)
+
+        /**
+         * Installs the userspace from scratch: download, verify, extract, set up, verify health.
+         *
+         * [extras] are the optional packages the install dialog's checkboxes hold — see
+         * [OptionalPackage]. Passed through rather than stored, because they describe *this* install
+         * and not the userspace: they are what the user asked for at the moment they asked, and a
+         * controller field holding them would arm a later Repair with a selection nobody re-confirmed.
+         */
+        fun install(extras: List<OptionalPackage> = emptyList()) = act("Install") { _installWarnings.value = it.install(extras).warnings }
+
+        /** Starts the userspace: verifies health, then holds it open for terminal sessions. */
+        fun start() = act("Start") { it.start() }
+
+        /** Stops the userspace, closing every live terminal session it holds. */
+        fun stop() = act("Stop") { it.stop() }
+
+        /** Stop then Start — the settings screen's Restart, one operation. */
+        fun restart() = act("Restart") { it.restart() }
+
+        /** Repairs a broken install without re-downloading what is still sound. */
+        fun repair() = act("Repair") { _installWarnings.value = it.repair().warnings }
+
+        /**
+         * Uninstalls the userspace. [keepWorkspace] snapshots the workspace first (its failure aborts
+         * the uninstall rather than destroying the projects it was keeping); otherwise the workspace
+         * and any pending snapshot go too.
+         */
+        fun uninstall(keepWorkspace: Boolean) = act("Uninstall") { it.uninstall(keepWorkspace = keepWorkspace) }
+
+        /** Re-runs the health probe on demand; the settings screen's status line is its answer. */
+        fun refreshHealth() = act("Health check") { it.refreshHealth() }
+
+        /**
+         * Writes the installed userspace into [uri] — the document the user picked to export to — and
+         * reports the outcome on the state's notice line.
+         *
+         * The document is opened here rather than handed to the transfer as a URI, because the transfer
+         * is Android-free by design and the SAF plumbing is this layer's. Its failures are two different
+         * things and only one of them is the transfer's: the stream could not be opened (a revoked
+         * grant, a provider that disappeared), or the write itself failed. Both are reported the same
+         * way, and both leave the document deleted rather than half-written.
+         */
+        fun exportRootfs(uri: Uri) {
+            val graph = graphProvider.graph ?: return
+            transferJob =
+                scope.launch {
+                    _error.value = null
+                    _transferNotice.value = null
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val output =
+                                appContext.contentResolver.openOutputStream(uri, "wt")
+                                    ?: throw IOException("the document chosen for the export could not be opened")
+                            output.use { graph.transfer.exportTo(it) }
+                        }
+                        _transferNotice.value = "Rootfs exported to the document you chose"
+                    } catch (c: CancellationException) {
+                        // Cancelled is not failed, but the document is just as unfinished: the archive's
+                        // trailer was never written, and a file that no extractor will open is worse than
+                        // no file at all.
+                        discardDocument(uri)
+                        _transferNotice.value = "Export cancelled - the unfinished document was removed"
+                        throw c
+                    } catch (t: Throwable) {
+                        discardDocument(uri)
+                        reportFailure("Export", t)
+                    }
+                }
         }
 
-    /** The whole trace as text, for the clipboard or a saved file. */
-    fun exportInstallLog(): String = graph?.distribution?.diagnostics?.export().orEmpty()
+        /**
+         * Replaces the installed userspace with the archive in [uri] — the document the user picked —
+         * and has it set up for this device.
+         *
+         * The length is read from the provider when it will report one: it is the progress bar's
+         * denominator and the basis of the expansion budget, and -1 (or a provider that throws) leaves
+         * both at their honest fallbacks rather than refusing an archive whose size nobody stated.
+         */
+        fun importRootfs(uri: Uri) {
+            val graph = graphProvider.graph ?: return
+            transferJob =
+                scope.launch {
+                    _error.value = null
+                    _transferNotice.value = null
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val bytes =
+                                runCatching {
+                                    appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+                                        ?: UNKNOWN_LENGTH
+                                }.getOrDefault(UNKNOWN_LENGTH)
+                            val input =
+                                appContext.contentResolver.openInputStream(uri)
+                                    ?: throw IOException("the document chosen for the import could not be opened")
+                            input.use { graph.transfer.importFrom(it, bytes) }
+                        }
+                    } catch (c: CancellationException) {
+                        // Which of two endings this is, the transfer is the only one that knows: it refuses a
+                        // cancellation once the swap has happened, so this exception arriving with the flag
+                        // set means the cancel landed too late to matter.
+                        _transferNotice.value =
+                            if (graph.transfer.importSwapped) {
+                                "Import cancelled after the swap - the archive's userspace is installed"
+                            } else {
+                                "Import cancelled - nothing that was installed was changed"
+                            }
+                        throw c
+                    } catch (t: Throwable) {
+                        reportFailure("Import", t)
+                    }
+                }
+        }
 
-    /**
-     * Empties the trace. The useful way to use a five-hundred-entry ring is to clear it, reproduce
-     * the failure, and export what is left — a trace that begins at the moment of the bug is far
-     * easier to read than one that begins at app launch.
-     */
-    fun clearInstallLog() {
-        graph?.distribution?.diagnostics?.clear()
-    }
+        /**
+         * Abandons the transfer in flight, if any — the Cancel button's action.
+         *
+         * What the cancellation is allowed to do is the transfer's own decision, not this one's: it stops
+         * an unpacking archive and refuses once the swap has happened, because past that line the tree on
+         * disk is already the archive's and the setup pipeline has to finish for the userspace to work at
+         * all. This method only hands the request over.
+         */
+        fun cancelTransfer() {
+            transferJob?.cancel()
+        }
 
-    /** The snapshot [stateIn] starts from, computed over whatever graph is current right now. */
-    private fun currentSnapshot(): LinuxUserspaceUiState {
-        val graph = graphProvider.graph ?: return LinuxUserspaceUiState()
-        return LinuxUserspaceUiState(
-            supported = true,
-            distro = graph.distro,
-            availableVersions = graphProvider.versions,
-            state = graph.manager.state.value,
-            health = graph.manager.lastHealth.value,
-            transfer = graph.transfer.state.value,
-            transferNotice = _transferNotice.value,
+        /** Clears the export notice once the user has read it. */
+        fun clearTransferNotice() {
+            _transferNotice.value = null
+        }
+
+        /** Clears the error line once the user has read it. */
+        fun clearError() {
+            _error.value = null
+        }
+
+        /** Clears the install warnings once the user has read them. */
+        fun clearInstallWarnings() {
+            _installWarnings.value = emptyList()
+        }
+
+        // ------------------------------------------------------------------ internals
+
+        /**
+         * The fields that change too often to deserve their own combine slot — grouped so the typed
+         * overloads stay available for the state's main sources.
+         */
+        private data class Extras(
+            val error: String?,
+            val warnings: List<String>,
+            val notice: String?,
+            val sessionCount: Int,
         )
-    }
 
-    // ------------------------------------------------------------------ actions
+        /** The storage facts that must move together; see [_storageFacts]. */
+        private data class StorageFacts(
+            val usedBytes: Long = 0L,
+            val workspaceFiles: Long = 0L,
+            val hasPendingBackup: Boolean = false,
+        )
 
-    /**
-     * Chooses the version [install] downloads: records the pick and swaps the graph while nothing
-     * is installed. Refused once anything is on disk — the installed version is what Repair and
-     * Start operate on, and only an Uninstall makes a choice meaningful again.
-     */
-    fun selectDistro(distroId: String): Boolean = graphProvider.selectDistro(distroId)
-
-    /**
-     * Installs the userspace from scratch: download, verify, extract, set up, verify health.
-     *
-     * [extras] are the optional packages the install dialog's checkboxes hold — see
-     * [OptionalPackage]. Passed through rather than stored, because they describe *this* install
-     * and not the userspace: they are what the user asked for at the moment they asked, and a
-     * controller field holding them would arm a later Repair with a selection nobody re-confirmed.
-     */
-    fun install(extras: List<OptionalPackage> = emptyList()) =
-        act("Install") { _installWarnings.value = it.install(extras).warnings }
-
-    /** Starts the userspace: verifies health, then holds it open for terminal sessions. */
-    fun start() = act("Start") { it.start() }
-
-    /** Stops the userspace, closing every live terminal session it holds. */
-    fun stop() = act("Stop") { it.stop() }
-
-    /** Stop then Start — the settings screen's Restart, one operation. */
-    fun restart() = act("Restart") { it.restart() }
-
-    /** Repairs a broken install without re-downloading what is still sound. */
-    fun repair() = act("Repair") { _installWarnings.value = it.repair().warnings }
-
-    /**
-     * Uninstalls the userspace. [keepWorkspace] snapshots the workspace first (its failure aborts
-     * the uninstall rather than destroying the projects it was keeping); otherwise the workspace
-     * and any pending snapshot go too.
-     */
-    fun uninstall(keepWorkspace: Boolean) =
-        act("Uninstall") { it.uninstall(keepWorkspace = keepWorkspace) }
-
-    /** Re-runs the health probe on demand; the settings screen's status line is its answer. */
-    fun refreshHealth() = act("Health check") { it.refreshHealth() }
-
-    /**
-     * Writes the installed userspace into [uri] — the document the user picked to export to — and
-     * reports the outcome on the state's notice line.
-     *
-     * The document is opened here rather than handed to the transfer as a URI, because the transfer
-     * is Android-free by design and the SAF plumbing is this layer's. Its failures are two different
-     * things and only one of them is the transfer's: the stream could not be opened (a revoked
-     * grant, a provider that disappeared), or the write itself failed. Both are reported the same
-     * way, and both leave the document deleted rather than half-written.
-     */
-    fun exportRootfs(uri: Uri) {
-        val graph = graphProvider.graph ?: return
-        transferJob = scope.launch {
-            _error.value = null
-            _transferNotice.value = null
-            try {
-                withContext(Dispatchers.IO) {
-                    val output = appContext.contentResolver.openOutputStream(uri, "wt")
-                        ?: throw IOException("the document chosen for the export could not be opened")
-                    output.use { graph.transfer.exportTo(it) }
+        /**
+         * Runs one lifecycle action on the controller's scope, with the one error story every action
+         * shares: the manager has already moved its state machine to the right failure state (its own
+         * contract), and this layer adds the human sentence the settings screen shows beneath it.
+         *
+         * The manager is resolved when the action is requested, not when the coroutine runs: the graph
+         * can be swapped by a version choice between the two moments, and an Install must act on the
+         * distro the user saw on the button, not the one that was current when the tap was queued.
+         */
+        private fun act(
+            name: String,
+            block: suspend (LinuxUserspaceManager) -> Unit,
+        ) {
+            val manager = graphProvider.graph?.manager ?: return
+            scope.launch {
+                _error.value = null
+                try {
+                    block(manager)
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    reportFailure(name, t)
                 }
-                _transferNotice.value = "Rootfs exported to the document you chose"
-            } catch (c: CancellationException) {
-                // Cancelled is not failed, but the document is just as unfinished: the archive's
-                // trailer was never written, and a file that no extractor will open is worse than
-                // no file at all.
-                discardDocument(uri)
-                _transferNotice.value = "Export cancelled - the unfinished document was removed"
-                throw c
-            } catch (t: Throwable) {
-                discardDocument(uri)
-                reportFailure("Export", t)
             }
         }
-    }
 
-    /**
-     * Replaces the installed userspace with the archive in [uri] — the document the user picked —
-     * and has it set up for this device.
-     *
-     * The length is read from the provider when it will report one: it is the progress bar's
-     * denominator and the basis of the expansion budget, and -1 (or a provider that throws) leaves
-     * both at their honest fallbacks rather than refusing an archive whose size nobody stated.
-     */
-    fun importRootfs(uri: Uri) {
-        val graph = graphProvider.graph ?: return
-        transferJob = scope.launch {
-            _error.value = null
-            _transferNotice.value = null
-            try {
-                withContext(Dispatchers.IO) {
-                    val bytes = runCatching {
-                        appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
-                            ?: UNKNOWN_LENGTH
-                    }.getOrDefault(UNKNOWN_LENGTH)
-                    val input = appContext.contentResolver.openInputStream(uri)
-                        ?: throw IOException("the document chosen for the import could not be opened")
-                    input.use { graph.transfer.importFrom(it, bytes) }
-                }
-            } catch (c: CancellationException) {
-                // Which of two endings this is, the transfer is the only one that knows: it refuses a
-                // cancellation once the swap has happened, so this exception arriving with the flag
-                // set means the cancel landed too late to matter.
-                _transferNotice.value = if (graph.transfer.importSwapped) {
-                    "Import cancelled after the swap - the archive's userspace is installed"
-                } else {
-                    "Import cancelled - nothing that was installed was changed"
-                }
-                throw c
-            } catch (t: Throwable) {
-                reportFailure("Import", t)
-            }
+        /**
+         * The one failure story every operation shares: the sentence the settings screen shows beneath
+         * the row that failed, and the logcat line that outlives the screen. Logcat is the channel a
+         * field log or an E2E artifact ships, and without this line a failed operation's cause dies with
+         * the row that showed it.
+         */
+        private fun reportFailure(
+            name: String,
+            t: Throwable,
+        ) {
+            val detail = t.message?.takeIf { it.isNotBlank() } ?: t::class.java.simpleName
+            _error.value = "$name failed: $detail"
+            Log.w("EclipseSSH", "Linux userspace $name failed: $detail", t)
         }
-    }
 
-    /**
-     * Abandons the transfer in flight, if any — the Cancel button's action.
-     *
-     * What the cancellation is allowed to do is the transfer's own decision, not this one's: it stops
-     * an unpacking archive and refuses once the swap has happened, because past that line the tree on
-     * disk is already the archive's and the setup pipeline has to finish for the userspace to work at
-     * all. This method only hands the request over.
-     */
-    fun cancelTransfer() {
-        transferJob?.cancel()
-    }
-
-    /** Clears the export notice once the user has read it. */
-    fun clearTransferNotice() {
-        _transferNotice.value = null
-    }
-
-    /** Clears the error line once the user has read it. */
-    fun clearError() { _error.value = null }
-
-    /** Clears the install warnings once the user has read them. */
-    fun clearInstallWarnings() { _installWarnings.value = emptyList() }
-
-    // ------------------------------------------------------------------ internals
-
-    /**
-     * The fields that change too often to deserve their own combine slot — grouped so the typed
-     * overloads stay available for the state's main sources.
-     */
-    private data class Extras(
-        val error: String?,
-        val warnings: List<String>,
-        val notice: String?,
-        val sessionCount: Int,
-    )
-
-    /** The storage facts that must move together; see [_storageFacts]. */
-    private data class StorageFacts(
-        val usedBytes: Long = 0L,
-        val workspaceFiles: Long = 0L,
-        val hasPendingBackup: Boolean = false,
-    )
-
-    /**
-     * Runs one lifecycle action on the controller's scope, with the one error story every action
-     * shares: the manager has already moved its state machine to the right failure state (its own
-     * contract), and this layer adds the human sentence the settings screen shows beneath it.
-     *
-     * The manager is resolved when the action is requested, not when the coroutine runs: the graph
-     * can be swapped by a version choice between the two moments, and an Install must act on the
-     * distro the user saw on the button, not the one that was current when the tap was queued.
-     */
-    private fun act(name: String, block: suspend (LinuxUserspaceManager) -> Unit) {
-        val manager = graphProvider.graph?.manager ?: return
-        scope.launch {
-            _error.value = null
-            try {
-                block(manager)
-            } catch (c: CancellationException) {
-                throw c
-            } catch (t: Throwable) {
-                reportFailure(name, t)
-            }
+        /** Best-effort removal of a document this app created and failed to fill; see [exportRootfs]. */
+        private fun discardDocument(uri: Uri) {
+            runCatching { DocumentFile.fromSingleUri(appContext, uri)?.delete() }
         }
-    }
 
-    /**
-     * The one failure story every operation shares: the sentence the settings screen shows beneath
-     * the row that failed, and the logcat line that outlives the screen. Logcat is the channel a
-     * field log or an E2E artifact ships, and without this line a failed operation's cause dies with
-     * the row that showed it.
-     */
-    private fun reportFailure(name: String, t: Throwable) {
-        val detail = t.message?.takeIf { it.isNotBlank() } ?: t::class.java.simpleName
-        _error.value = "$name failed: $detail"
-        Log.w("EclipseSSH", "Linux userspace $name failed: $detail", t)
-    }
-
-    /** Best-effort removal of a document this app created and failed to fill; see [exportRootfs]. */
-    private fun discardDocument(uri: Uri) {
-        runCatching { DocumentFile.fromSingleUri(appContext, uri)?.delete() }
-    }
-
-    /**
-     * Recomputes storage and workspace numbers whenever the state machine settles — NotInstalled,
-     * Stopped or NeedsRepair — because those are the moments the bytes on disk changed (an install
-     * finished, an uninstall deleted the root, a repair replaced files). While Installing or
-     * Running the numbers would be a moving target the settings screen cannot render honestly.
-     */
-    private fun watchSettledStates(manager: LinuxUserspaceManager) {
-        scope.launch {
-            manager.state
-                .map { state ->
-                    when (state) {
-                        NotInstalled,
-                        is LinuxUserspaceState.Stopped,
-                        is LinuxUserspaceState.NeedsRepair,
-                        -> state
-                        // Unchanged-but-different sentinel: distinctUntilChanged drops repeats, so
-                        // an equal-but-new emission (e.g. NeedsRepair with the same detail) still
-                        // reaches the collector below only when it is a real settled state.
-                        else -> Unit
+        /**
+         * Recomputes storage and workspace numbers whenever the state machine settles — NotInstalled,
+         * Stopped or NeedsRepair — because those are the moments the bytes on disk changed (an install
+         * finished, an uninstall deleted the root, a repair replaced files). While Installing or
+         * Running the numbers would be a moving target the settings screen cannot render honestly.
+         */
+        private fun watchSettledStates(manager: LinuxUserspaceManager) {
+            scope.launch {
+                manager.state
+                    .map { state ->
+                        when (state) {
+                            NotInstalled,
+                            is LinuxUserspaceState.Stopped,
+                            is LinuxUserspaceState.NeedsRepair,
+                            -> state
+                            // Unchanged-but-different sentinel: distinctUntilChanged drops repeats, so
+                            // an equal-but-new emission (e.g. NeedsRepair with the same detail) still
+                            // reaches the collector below only when it is a real settled state.
+                            else -> Unit
+                        }
+                    }.distinctUntilChanged()
+                    .collect { settled ->
+                        if (settled !== Unit) refreshStorageNumbers()
                     }
-                }
-                .distinctUntilChanged()
-                .collect { settled ->
-                    if (settled !== Unit) refreshStorageNumbers()
-                }
-        }
-    }
-
-    /** One background probe when the process starts over an already-installed userspace. */
-    private fun probeInstalledUserspace(manager: LinuxUserspaceManager) {
-        scope.launch {
-            val state = manager.state.value
-            if (state is LinuxUserspaceState.Stopped || state is LinuxUserspaceState.NeedsRepair) {
-                runCatching { manager.refreshHealth() }
             }
         }
-    }
 
-    /**
-     * Called by [LinuxUserspaceService] when the foreground hold it was holding is gone — the
-     * Android 15 six-hour dataSync timeout, or a promotion the system refused. The userspace
-     * itself keeps running, unprotected; the binding re-promotes on the next foreground
-     * transition — the first moment Android will hear the request again — instead of trusting its
-     * last promotion forever.
-     */
-    internal fun onForegroundHoldLost() {
-        foregroundHoldLost.value = true
-    }
+        /** One background probe when the process starts over an already-installed userspace. */
+        private fun probeInstalledUserspace(manager: LinuxUserspaceManager) {
+            scope.launch {
+                val state = manager.state.value
+                if (state is LinuxUserspaceState.Stopped || state is LinuxUserspaceState.NeedsRepair) {
+                    runCatching { manager.refreshHealth() }
+                }
+            }
+        }
 
-    /**
-     * Keeps [LinuxUserspaceService] alive exactly while the state machine is in a state that runs
-     * proot children — see [LinuxUserspaceState.holdsProcess].
-     *
-     * Every Ubuntu terminal is a child of this process, so the spec's "backgrounding the app does
-     * not stop Ubuntu" is a process-liveness promise, and the foreground service is how it is
-     * kept. Installing is covered for the same reason: an install runs apt and Node setup inside
-     * proot for the longest phase the userspace ever has, and without the hold a screen-off during
-     * it would kill every child mid-install. This is the one owner of the binding — every entry
-     * into a holding state (Settings' Install and Start, a terminal opening a stopped userspace)
-     * promotes the process, and every path out (Stop, an uninstall, a failed install) demotes it —
-     * while the service itself watches the same states and stops itself if it is ever alive
-     * without a userspace that needs holding, so neither side trusts the other.
-     *
-     * Promotion is also re-attempted, not remembered. The Android 15 dataSync cap stops the
-     * service after six hours while the userspace stays Running, and a binding that edge-triggered
-     * on the state machine alone would never promote it again — the user would be degraded to
-     * "Ubuntu survives only while the app is open" until the next Stop/Start, silently. So the
-     * rule combines three signals — the state, whether the app is on screen (Android only grants
-     * the promotion while visible), and whether the hold was taken away by a timeout — and asks
-     * again on every foreground transition while a hold is owed. A refused ask posts the honest
-     * "Ubuntu is now only as durable as the app being open" alert, and the next transition asks
-     * again; the 24-hour window that took the hold away is also the only thing that rolls it
-     * back, and a backgrounded app cannot be the one to notice.
-     */
-    private fun holdProcessWhileRunning(manager: LinuxUserspaceManager) {
-        scope.launch {
-            var held = false
-            // Distinct per signal, then distinct as a triple: an install's progress churns
-            // Installing emissions that all mean the same thing to this rule.
-            combine(
-                manager.state.map { it.holdsProcess() }.distinctUntilChanged(),
-                appInForeground,
-                foregroundHoldLost,
-            ) { holds, foreground, lost ->
-                HoldSignal(holds, foreground, lost)
-            }.distinctUntilChanged().collect { signal ->
-                val intent = Intent(appContext, LinuxUserspaceService::class.java)
-                when {
-                    !signal.holds -> {
-                        appContext.stopService(intent)
-                        held = false
-                        foregroundHoldLost.value = false
-                    }
-                    // Foreground-gated: a promotion asked for while invisible is refused on
-                    // API 31+, so the rule waits for the screen. While invisible with the hold
-                    // still ours, nothing changes — the service, or its absence, stays as it is.
-                    signal.foreground && (!held || signal.lost) -> {
-                        val promoted = runCatching {
-                            ContextCompat.startForegroundService(appContext, intent)
-                        }.isSuccess
-                        if (promoted) {
-                            held = true
+        /**
+         * Called by [LinuxUserspaceService] when the foreground hold it was holding is gone — the
+         * Android 15 six-hour dataSync timeout, or a promotion the system refused. The userspace
+         * itself keeps running, unprotected; the binding re-promotes on the next foreground
+         * transition — the first moment Android will hear the request again — instead of trusting its
+         * last promotion forever.
+         */
+        internal fun onForegroundHoldLost() {
+            foregroundHoldLost.value = true
+        }
+
+        /**
+         * Keeps [LinuxUserspaceService] alive exactly while the state machine is in a state that runs
+         * proot children — see [LinuxUserspaceState.holdsProcess].
+         *
+         * Every Ubuntu terminal is a child of this process, so the spec's "backgrounding the app does
+         * not stop Ubuntu" is a process-liveness promise, and the foreground service is how it is
+         * kept. Installing is covered for the same reason: an install runs apt and Node setup inside
+         * proot for the longest phase the userspace ever has, and without the hold a screen-off during
+         * it would kill every child mid-install. This is the one owner of the binding — every entry
+         * into a holding state (Settings' Install and Start, a terminal opening a stopped userspace)
+         * promotes the process, and every path out (Stop, an uninstall, a failed install) demotes it —
+         * while the service itself watches the same states and stops itself if it is ever alive
+         * without a userspace that needs holding, so neither side trusts the other.
+         *
+         * Promotion is also re-attempted, not remembered. The Android 15 dataSync cap stops the
+         * service after six hours while the userspace stays Running, and a binding that edge-triggered
+         * on the state machine alone would never promote it again — the user would be degraded to
+         * "Ubuntu survives only while the app is open" until the next Stop/Start, silently. So the
+         * rule combines three signals — the state, whether the app is on screen (Android only grants
+         * the promotion while visible), and whether the hold was taken away by a timeout — and asks
+         * again on every foreground transition while a hold is owed. A refused ask posts the honest
+         * "Ubuntu is now only as durable as the app being open" alert, and the next transition asks
+         * again; the 24-hour window that took the hold away is also the only thing that rolls it
+         * back, and a backgrounded app cannot be the one to notice.
+         */
+        private fun holdProcessWhileRunning(manager: LinuxUserspaceManager) {
+            scope.launch {
+                var held = false
+                // Distinct per signal, then distinct as a triple: an install's progress churns
+                // Installing emissions that all mean the same thing to this rule.
+                combine(
+                    manager.state.map { it.holdsProcess() }.distinctUntilChanged(),
+                    appInForeground,
+                    foregroundHoldLost,
+                ) { holds, foreground, lost ->
+                    HoldSignal(holds, foreground, lost)
+                }.distinctUntilChanged().collect { signal ->
+                    val intent = Intent(appContext, LinuxUserspaceService::class.java)
+                    when {
+                        !signal.holds -> {
+                            appContext.stopService(intent)
+                            held = false
                             foregroundHoldLost.value = false
-                        } else {
-                            postAlert(
-                                appContext,
-                                NotificationChannels.ID_LINUX_PROMOTION,
-                                appContext.getString(R.string.notif_linux_promotion_title),
-                                appContext.getString(R.string.notif_linux_promotion_body),
-                                PendingIntent.getActivity(
+                        }
+                        // Foreground-gated: a promotion asked for while invisible is refused on
+                        // API 31+, so the rule waits for the screen. While invisible with the hold
+                        // still ours, nothing changes — the service, or its absence, stays as it is.
+                        signal.foreground && (!held || signal.lost) -> {
+                            val promoted =
+                                runCatching {
+                                    ContextCompat.startForegroundService(appContext, intent)
+                                }.isSuccess
+                            if (promoted) {
+                                held = true
+                                foregroundHoldLost.value = false
+                            } else {
+                                postAlert(
                                     appContext,
-                                    0,
-                                    Intent(appContext, MainActivity::class.java),
-                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                                ),
-                            )
+                                    NotificationChannels.ID_LINUX_PROMOTION,
+                                    appContext.getString(R.string.notif_linux_promotion_title),
+                                    appContext.getString(R.string.notif_linux_promotion_body),
+                                    PendingIntent.getActivity(
+                                        appContext,
+                                        0,
+                                        Intent(appContext, MainActivity::class.java),
+                                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-    /** The binding rule's inputs as one value: what the state owes, and what may be asked. */
-    private data class HoldSignal(
-        val holds: Boolean,
-        val foreground: Boolean,
-        val lost: Boolean,
-    )
+        /** The binding rule's inputs as one value: what the state owes, and what may be asked. */
+        private data class HoldSignal(
+            val holds: Boolean,
+            val foreground: Boolean,
+            val lost: Boolean,
+        )
 
-    private suspend fun refreshStorageNumbers() {
-        val graph = graphProvider.graph ?: return
-        // Computed as a whole and published as a whole: the reads happen on the IO dispatcher,
-        // and the one write lands on this controller's context, so a subscriber sees either the
-        // previous facts or the next ones — never a mixture. A failed recompute keeps the
-        // previous whole value; the old code could stop between writes and leave one number
-        // from the new disk state beside two from the old.
-        val facts = withContext(Dispatchers.IO) {
-            runCatching {
-                StorageFacts(
-                    usedBytes = graph.manager.storageUsedBytes(),
-                    workspaceFiles = graph.workspace.fileCount(),
-                    hasPendingBackup = graph.manager.hasPendingWorkspaceBackup(),
-                )
-            }.getOrDefault(_storageFacts.value)
+        private suspend fun refreshStorageNumbers() {
+            val graph = graphProvider.graph ?: return
+            // Computed as a whole and published as a whole: the reads happen on the IO dispatcher,
+            // and the one write lands on this controller's context, so a subscriber sees either the
+            // previous facts or the next ones — never a mixture. A failed recompute keeps the
+            // previous whole value; the old code could stop between writes and leave one number
+            // from the new disk state beside two from the old.
+            val facts =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        StorageFacts(
+                            usedBytes = graph.manager.storageUsedBytes(),
+                            workspaceFiles = graph.workspace.fileCount(),
+                            hasPendingBackup = graph.manager.hasPendingWorkspaceBackup(),
+                        )
+                    }.getOrDefault(_storageFacts.value)
+                }
+            _storageFacts.value = facts
         }
-        _storageFacts.value = facts
-    }
 
-    private companion object {
-        /**
-         * `AssetFileDescriptor.UNKNOWN_LENGTH`, spelled out rather than imported: a provider that
-         * cannot state its own size is the ordinary case for a pipe or a cloud-backed document, and
-         * the import treats it as "no denominator" rather than as a failure.
-         */
-        const val UNKNOWN_LENGTH = -1L
+        private companion object {
+            /**
+             * `AssetFileDescriptor.UNKNOWN_LENGTH`, spelled out rather than imported: a provider that
+             * cannot state its own size is the ordinary case for a pipe or a cloud-backed document, and
+             * the import treats it as "no denominator" rather than as a failure.
+             */
+            const val UNKNOWN_LENGTH = -1L
+        }
     }
-}

@@ -95,7 +95,9 @@ jobs:
       - name: Spotless check (ktlint)
         run: ./gradlew spotlessCheck --no-daemon
       - name: Android lint
-        run: ./gradlew lintRelease --no-daemon
+        # Same native exclusion as the unit job: lint analyzes sources, not
+        # .so files, and the NDK is not installed on this job.
+        run: ./gradlew lintRelease --no-daemon -x :freerdp:buildFreerdpNative -x :linux:buildLinuxNative
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -134,7 +136,13 @@ jobs:
             "platforms;${COMPILE_SDK}" \
             "build-tools;${BUILD_TOOLS}" > /dev/null
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon --continue
+        # The native :freerdp/:linux builds are excluded for the same reason
+        # the assemble job excludes them: Robolectric tests run on the JVM
+        # and never load a .so, while preBuild drags buildFreerdpNative in
+        # anyway — and that task fails outright without the NDK, which this
+        # job does not install (installing it just to skip the work it does
+        # would be the slower kind of green).
+        run: ./gradlew testDebugUnitTest --no-daemon --continue -x :freerdp:buildFreerdpNative -x :linux:buildLinuxNative
       - uses: actions/upload-artifact@v4
         if: always()
         with:
