@@ -31,7 +31,12 @@ class UrlConnectionDownloaderTest {
                 // An open-ended range is "bytes=N-": the dash travels with the header, so it is
                 // cut off here rather than fed to toLong() - which was exactly the bug that made
                 // the first CI round of this file die with 'Unexpected end of file from server'.
-                val start = range.removePrefix("bytes=").substringBefore('-').trim().toLong()
+                val start =
+                    range
+                        .removePrefix("bytes=")
+                        .substringBefore('-')
+                        .trim()
+                        .toLong()
                 val slice = bytes.copyOfRange(start.toInt(), bytes.size)
                 exchange.responseHeaders.add("Content-Range", "bytes $start-${bytes.size - 1}/${bytes.size}")
                 exchange.sendResponseHeaders(206, slice.size.toLong())
