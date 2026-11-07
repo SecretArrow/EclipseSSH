@@ -96,11 +96,11 @@ jobs:
           else
             echo "::warning::no /dev/kvm on this runner - emulator will use TCG"
           fi
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29
@@ -173,7 +173,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: instrumented-reports-api-${{ matrix.api-level }}
@@ -218,11 +218,11 @@ jobs:
           else
             echo "::warning::no /dev/kvm on this runner - emulator will use TCG"
           fi
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29
@@ -247,7 +247,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: instrumented-reports-api-${{ matrix.api-level }}
