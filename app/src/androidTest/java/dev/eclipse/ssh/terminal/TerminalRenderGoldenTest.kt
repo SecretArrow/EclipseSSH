@@ -95,10 +95,16 @@ class TerminalRenderGoldenTest {
     fun a_line_wider_than_the_window_continues_on_the_row_below() {
         val wide = List(COLUMNS * 2) { TerminalCell(value = if (it < COLUMNS) 'x' else 'y') }
         show(frame(listOf(wide, blankLine())))
-        val shot = capture()
+        var shot = capture()
 
         // Capture sanity gate - see [text_is_painted_in_the_cells_the_layout_names_and_in_no_other].
         if (!inkAt(shot, row = 0, column = 0)) return
+        // The software-GL compositor can hand back a frame that predates the wrapped continuation
+        // row while already carrying the first row's glyphs (run 42377990049 saw exactly that on
+        // API 28 and API 30: ink in row 0, none in row 1, over a frame the JVM pins as correct).
+        // One re-capture gives the guest a frame to catch up before the claim is judged; a frame
+        // that still lacks the continuation is a real defect and fails below.
+        if (!inkAt(shot, row = 1, column = 0)) shot = capture()
         // The second half of the line is drawn from the left margin of the row below it, which is what
         // makes a wrapped continuation read as a continuation rather than as a row of its own.
         assertThat(inkAt(shot, row = 1, column = 0)).isTrue()
