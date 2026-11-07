@@ -1416,6 +1416,14 @@ class UbuntuDistributionManager(
      * publisher's typo decide whether the other two landed. Each gets the whole budget, because a
      * prebuilt binary over a phone connection is minutes and the alternative — a shared timeout —
      * would cut off whichever tool happened to be last in the list.
+     *
+     * A failed `npm` gets one retry through node itself. The shim at /usr/bin/npm is a shebang
+     * script (`#!/usr/bin/env node`), and 26.04's extra packages put the uutils coreutils at
+     * /usr/bin/env — a multi-call binary that dispatches on argv[0], which under proot's shebang
+     * exec is the script's own name, so every npm invocation died with "coreutils: unknown
+     * program 'npm'" and every npm global with it. Running npm-cli.js through node skips the shim
+     * and the env it would fork; both layouts npm ships on Ubuntu are probed before the tool is
+     * written off.
      */
     private suspend fun installNpmGlobals(
         globals: List<String>,
@@ -1423,8 +1431,17 @@ class UbuntuDistributionManager(
         warnings: MutableList<String>,
     ) {
         for (tool in globals) {
-            val result =
+            var result =
                 runSetupCommand("npm install -g $tool", NPM_INSTALL_TIMEOUT_MS, lineTracker(onProgress))
+            if (result == null || result.exitCode != 0) {
+                result =
+                    runSetupCommand(
+                        "node \$(ls /usr/share/nodejs/npm/bin/npm-cli.js " +
+                            "/usr/lib/node_modules/npm/bin/npm-cli.js 2>/dev/null | head -n 1) install -g $tool",
+                        NPM_INSTALL_TIMEOUT_MS,
+                        lineTracker(onProgress),
+                    )
+            }
             if (result == null || result.exitCode != 0) {
                 warnings +=
                     "npm package '$tool' was not installed" +
