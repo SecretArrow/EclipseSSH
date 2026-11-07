@@ -833,6 +833,7 @@ class RootfsInstaller(
      * A cancelled install is not one of these: `ensureActive` raises `CancellationException`, which
      * is not an [IOException] and passes through the catch below untouched.
      */
+
     /**
      * One transfer of the pinned archive into [temp], continuing [temp] at byte [resumeFrom] when
      * that is non-zero, and every check that decides whether what arrived is what the pin
@@ -2389,7 +2390,8 @@ class UrlConnectionDownloader : HttpDownloader {
             val total =
                 when {
                     code == HttpURLConnection.HTTP_PARTIAL ->
-                        connection.getHeaderField("Content-Range")
+                        connection
+                            .getHeaderField("Content-Range")
                             ?.substringAfterLast('/')
                             ?.toLongOrNull()
                             ?.takeIf { it > 0 }

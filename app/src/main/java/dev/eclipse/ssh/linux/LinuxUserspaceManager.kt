@@ -120,8 +120,7 @@ class LinuxUserspaceManager(
     }
 
     /** Whether the running install's download is currently parked by [pauseInstall]. */
-    fun isInstallPaused(): Boolean =
-        installer.isDownloadPaused() && _state.value is LinuxUserspaceState.Installing
+    fun isInstallPaused(): Boolean = installer.isDownloadPaused() && _state.value is LinuxUserspaceState.Installing
 
     /**
      * The full install: download → verify → extract → set up the distribution → health check →

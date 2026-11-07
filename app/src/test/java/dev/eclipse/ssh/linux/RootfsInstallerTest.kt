@@ -585,6 +585,7 @@ class RootfsInstallerTest {
                         val call = calls.incrementAndGet()
                         resumePoints.add(resumeFrom)
                         var served = 0L
+                        var pausedOnce = false
                         TestTarballs.serving(fixture).download(
                             url,
                             target,
@@ -593,10 +594,12 @@ class RootfsInstallerTest {
                                 // The first call pauses once past the halfway mark, exactly as the
                                 // UI's pause button does: the gate goes up mid-transfer, and the
                                 // downloader honours it at the next chunk boundary.
-                                shouldPause() || (call == 1 && served >= pauseAfter && run {
+                                val wantPause = call == 1 && served >= pauseAfter && !pausedOnce
+                                if (wantPause) {
+                                    pausedOnce = true
                                     installerHolder!!.requestPauseDownload()
-                                    true
-                                })
+                                }
+                                shouldPause() || wantPause
                             },
                             { got, announced ->
                                 served = got
@@ -657,17 +660,23 @@ class RootfsInstallerTest {
                     TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(fixture)),
                     downloader = { url, target, resumeFrom, shouldPause, onChunk ->
                         var served = 0L
+                        var pausedOnce = false
                         TestTarballs.serving(fixture).download(
                             url,
                             target,
                             resumeFrom,
                             {
-                                shouldPause() || (served >= pauseAfter && run {
+                                val wantPause = served >= pauseAfter && !pausedOnce
+                                if (wantPause) {
+                                    pausedOnce = true
                                     installerHolder!!.requestPauseDownload()
-                                    true
-                                })
+                                }
+                                shouldPause() || wantPause
                             },
-                            { got, _ -> served = got; onChunk(got, fixture.length()) },
+                            { got, _ ->
+                                served = got
+                                onChunk(got, fixture.length())
+                            },
                         )
                     },
                 )

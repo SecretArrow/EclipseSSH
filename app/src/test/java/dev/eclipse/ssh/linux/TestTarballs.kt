@@ -3,6 +3,7 @@ package dev.eclipse.ssh.linux
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.GZIPOutputStream
@@ -224,7 +225,7 @@ internal object TestTarballs {
                     skipped += n
                 }
                 check(skipped == resumeFrom) { "source shorter than the resume point" }
-                target.outputStream(resumeFrom > 0).use { output ->
+                FileOutputStream(target, resumeFrom > 0).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var received = resumeFrom
                     while (true) {
