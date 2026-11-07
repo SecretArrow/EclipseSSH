@@ -991,7 +991,12 @@ class UbuntuDistributionManagerTest {
             harness.scripted.respond = { command ->
                 when {
                     command == "node --version" -> 0 to "v24.4.1\n"
+                    // Both routes the pipeline can take: the npm shim, and the node-with-npm-cli.js
+                    // retry it falls back to when the shim dies (26.04's uutils env kills the
+                    // shebang). A refusal only becomes a warning once both have said no.
                     command.startsWith("npm install -g cline") -> 100 to "npm ERR! 404 Not Found - cline\n"
+                    command.contains("npm-cli.js") && command.contains("install -g cline") ->
+                        100 to "npm ERR! 404 Not Found - cline\n"
                     else -> baseline(command)
                 }
             }
@@ -1003,6 +1008,43 @@ class UbuntuDistributionManagerTest {
             val refusals = report.warnings.filter { it.contains("npm package 'cline'") }
             assertThat(refusals).hasSize(1)
             assertThat(refusals.first()).contains("404 Not Found")
+        }
+
+    /**
+     * The other half of the refusal contract: a shim that dies gets one retry through node itself,
+     * and a retry that lands is the install — no warning, because the user asked for the tool and
+     * the tool arrived. This is the 26.04 path in miniature: `/usr/bin/npm` there is a shebang
+     * script under a uutils env that cannot dispatch it, while `node` keeps working.
+     */
+    @Test
+    fun `a dead npm shim is retried through node and a landing retry installs quietly`() =
+        runTest {
+            val harness = Harness(distro(arch = "arm64"))
+            harness.scripted.respond = { command ->
+                when {
+                    command == "node --version" -> 0 to "v22.22.1\n"
+                    // The shim refuses everything, exactly as the uutils env makes it.
+                    command.startsWith("npm install -g cline") ->
+                        125 to "coreutils: unknown program 'npm'\n"
+                    // The retry through node works.
+                    command.contains("npm-cli.js") && command.contains("install -g cline") ->
+                        0 to "added 1 package in 3s\n"
+                    else -> baseline(command)
+                }
+            }
+
+            val report = harness.distribution.setup(extras = listOf(OptionalPackage.CLINE))
+
+            // The retry happened at all, through the layouts Ubuntu ships.
+            val retry =
+                harness.scripted.commands.firstOrNull {
+                    it.contains("npm-cli.js") && it.contains("install -g cline")
+                }
+            assertThat(retry).isNotNull()
+            assertThat(retry!!.startsWith("node ")).isTrue()
+            assertThat(harness.scripted.commands.none { it.startsWith("npm install -g cline") }).isFalse()
+            // And it was the end of the story: no warning names a tool that arrived.
+            assertThat(report.warnings.none { it.contains("npm package") }).isTrue()
         }
 
     /**
