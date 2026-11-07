@@ -14,8 +14,10 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.MainActivity
 import dev.eclipse.ssh.R
 import dev.eclipse.ssh.di.LinuxUserspaceGraph
+import dev.eclipse.ssh.linux.LinuxDistro
 import dev.eclipse.ssh.linux.LinuxInstallStep
 import dev.eclipse.ssh.linux.LinuxUserspaceState
+import dev.eclipse.ssh.linux.LocalLinuxHost
 import dev.eclipse.ssh.linux.SetupStep
 import dev.eclipse.ssh.linux.percent
 import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
@@ -87,7 +89,7 @@ class LinuxUserspaceService : LifecycleService() {
                     stopSelf()
                     return@collect
                 }
-                updateNotification(state, count)
+                updateNotification(state, count, graph.distro)
             }
         }
     }
@@ -135,6 +137,7 @@ class LinuxUserspaceService : LifecycleService() {
                 buildNotification(
                     state = graph.manager.state.value,
                     sessionCount = graph.processes.sessionCount.value,
+                    distro = graph.distro,
                 ),
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
@@ -196,7 +199,11 @@ class LinuxUserspaceService : LifecycleService() {
         super.onDestroy()
     }
 
-    private fun buildNotification(state: LinuxUserspaceState, sessionCount: Int): Notification {
+    private fun buildNotification(
+        state: LinuxUserspaceState,
+        sessionCount: Int,
+        distro: LinuxDistro,
+    ): Notification {
         val openIntent = PendingIntent.getActivity(
             this,
             REQUEST_OPEN,
@@ -211,7 +218,7 @@ class LinuxUserspaceService : LifecycleService() {
         )
         val builder = NotificationCompat.Builder(this, NotificationChannels.LINUX)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_linux_title))
+            .setContentTitle(LocalLinuxHost.notificationTitle(distro))
             .setContentText(notificationBody(state, sessionCount))
             .setContentIntent(openIntent)
             .setOngoing(true)
@@ -273,9 +280,11 @@ class LinuxUserspaceService : LifecycleService() {
         return if (detail.isNullOrBlank()) label else "$label · ${detail.trim().take(80)}"
     }
 
-    private fun updateNotification(state: LinuxUserspaceState, sessionCount: Int) {
+    private fun updateNotification(state: LinuxUserspaceState, sessionCount: Int, distro: LinuxDistro) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        runCatching { manager.notify(NotificationChannels.ID_LINUX, buildNotification(state, sessionCount)) }
+        runCatching {
+            manager.notify(NotificationChannels.ID_LINUX, buildNotification(state, sessionCount, distro))
+        }
     }
 
     companion object {

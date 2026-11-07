@@ -73,7 +73,7 @@ object LocalLinuxHost {
      *
      * [name] is the installed distribution's own [LinuxDistro.displayName] rather than a constant,
      * so the card and its subtitle say which release is actually installed. It was the constant
-     * "Local Ubuntu 22.04" for every install, which is wrong twice over: the catalogue offers five
+     * "Local Ubuntu 22.04" for every install, which is wrong twice over: the catalogue offers four
      * LTS series and the chooser defaults to the newest, so most users got a card naming a release
      * they had not installed — and it would keep naming it after an upgrade.
      */
@@ -102,4 +102,12 @@ object LocalLinuxHost {
      * render as an empty line rather than a wrong one.
      */
     fun cardSubtitle(name: String): String = "${name.ifBlank { CARD_TITLE }} on this device · tap to open a terminal"
+
+    /**
+     * The Linux notification's title, from the same distro the card is named after. The
+     * notification is the surface the user reads while the app is backgrounded, and a static
+     * "Local Ubuntu 22.04" title over any other install was the app stating a version it had not
+     * checked — the same lie [hostProfile] stopped telling, so the title derives the same way.
+     */
+    fun notificationTitle(distro: LinuxDistro): String = "Local ${distro.displayName}"
 }

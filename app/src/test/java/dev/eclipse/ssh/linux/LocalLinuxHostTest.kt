@@ -67,7 +67,7 @@ class LocalLinuxHostTest {
         assertThat(LocalLinuxHost.isLocalHost(profile.id)).isTrue()
         assertThat(LocalLinuxHost.isLocalHost("any-real-host")).isFalse()
         // The card is named after the release actually installed, not a constant: the catalogue
-        // offers five LTS series, so a fixed "22.04" told most users they were running a version
+        // offers four LTS series, so a fixed "22.04" told most users they were running a version
         // they had not chosen.
         assertThat(profile.name).isEqualTo(distro.displayName)
         assertThat(LocalLinuxHost.cardSubtitle(profile.name)).startsWith(distro.displayName)
@@ -79,5 +79,18 @@ class LocalLinuxHostTest {
         // would be five timers fighting over one pty that never needed redialing.
         assertThat(profile.autoReconnect).isFalse()
         assertThat(profile.group).isEqualTo(LocalLinuxHost.GROUP)
+    }
+
+    @Test
+    fun `the notification title names the installed release, not a constant`() {
+        // The notification is what the user reads while the app is backgrounded, and the title
+        // was the one surface left naming a hard-coded release: "Local Ubuntu 22.04" over a 26.04
+        // install, the same lie the card stopped telling. It derives from the distro the graph
+        // resolved, so the two surfaces cannot disagree.
+        val distro = LinuxDistroCatalog.byId("ubuntu-26.04", "arm64")!!
+        assertThat(LocalLinuxHost.notificationTitle(distro)).isEqualTo("Local Ubuntu 26.04 LTS")
+
+        val older = LinuxDistroCatalog.byId("ubuntu-22.04", "amd64")!!
+        assertThat(LocalLinuxHost.notificationTitle(older)).isEqualTo("Local Ubuntu 22.04 LTS")
     }
 }

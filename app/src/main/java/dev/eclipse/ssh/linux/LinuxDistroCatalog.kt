@@ -204,9 +204,10 @@ object LinuxDistroCatalog {
 
     /**
      * The default `LinuxUserspaceGraphProvider.resolveDistro` falls back to when nothing is
-     * installed and the user has not picked a version. It is not the newest series this catalogue
-     * offers, and no reason for 22.04 specifically is recorded — the chooser is what makes the
-     * newer series reachable, and this is only the starting point.
+     * installed and the user has not picked a version: the newest LTS the catalogue offers, so a
+     * user who taps through the install dialog lands on the series Ubuntu maintains the longest.
+     * It is only the starting point — the resolution order still lets an installed distro and a
+     * chooser pick win, so this never names a version the device already has.
      */
-    const val DEFAULT_DISTRO_ID = "ubuntu-22.04"
+    const val DEFAULT_DISTRO_ID = "ubuntu-26.04"
 }
