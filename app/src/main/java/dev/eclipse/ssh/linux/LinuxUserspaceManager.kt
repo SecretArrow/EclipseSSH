@@ -100,6 +100,30 @@ class LinuxUserspaceManager(
     // ------------------------------------------------------------------ lifecycle operations
 
     /**
+     * Parks the running install's download at the next chunk boundary. The install call stays
+     * inside the download phase — state stays [LinuxUserspaceState.Installing] with
+     * [LinuxInstallStep.Downloading.paused] set — until [resumeInstall], and the bytes fetched so
+     * far stay on disk as the resume point. A no-op outside the download phase, and when no
+     * install is running at all.
+     */
+    fun pauseInstall() {
+        installer.requestPauseDownload()
+    }
+
+    /**
+     * Releases a [pauseInstall]: the parked download continues from the fragment on disk through
+     * a Range request rather than from byte zero. Safe to call any time — with no pause pending
+     * it is a no-op that only clears the gate.
+     */
+    fun resumeInstall() {
+        installer.resumeDownload()
+    }
+
+    /** Whether the running install's download is currently parked by [pauseInstall]. */
+    fun isInstallPaused(): Boolean =
+        installer.isDownloadPaused() && _state.value is LinuxUserspaceState.Installing
+
+    /**
      * The full install: download → verify → extract → set up the distribution → health check →
      * Stopped. The state machine only reaches Stopped after the health probe passes, so "installed"
      * and "works" are the same fact here, which is what lets the host-list card trust the state.
@@ -1325,7 +1349,7 @@ class LinuxUserspaceManager(
 
     private fun RootfsInstaller.Progress.toInstallStep(): LinuxInstallStep =
         when (this) {
-            is RootfsInstaller.Progress.Downloading -> LinuxInstallStep.Downloading(received, total)
+            is RootfsInstaller.Progress.Downloading -> LinuxInstallStep.Downloading(received, total, paused)
             is RootfsInstaller.Progress.Verifying -> LinuxInstallStep.Verifying
             is RootfsInstaller.Progress.Extracting -> LinuxInstallStep.Extracting(entries, fraction = fraction)
         }
@@ -1573,9 +1597,15 @@ sealed interface LinuxUserspaceState {
 
 /** The phases of [LinuxUserspaceState.Installing], mapped from the installer's and setup's own progress. */
 sealed interface LinuxInstallStep {
+    /**
+     * Downloading; [received] of [total] bytes. [paused] names a transfer parked by the user's
+     * pause: the fragment on disk is what the number shows, and the resume continues from it —
+     * the same install call, not a second pipeline.
+     */
     data class Downloading(
         val received: Long,
         val total: Long,
+        val paused: Boolean = false,
     ) : LinuxInstallStep
 
     data object Verifying : LinuxInstallStep

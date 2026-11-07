@@ -68,12 +68,12 @@ class LinuxUserspaceManagerTest {
             RootfsInstaller(
                 rootDir,
                 distro,
-                downloader = { _, target, onChunk ->
+                downloader = { _, target, _, _, onChunk ->
                     downloads++
                     // An IOException, because that is what an HTTP fetch raises and what `download()`
                     // types as PinnedArchiveUnavailable — the failure the ladder's gate reads.
                     if (downloadFails) throw IOException("the network is down")
-                    TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
+                    TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, 0L, { false }, onChunk)
                 },
                 storage = storage,
                 // No waiting between attempts: these tests break the transfer to drive the ladder

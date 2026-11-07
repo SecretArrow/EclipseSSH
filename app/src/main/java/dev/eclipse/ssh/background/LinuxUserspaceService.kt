@@ -270,7 +270,8 @@ class LinuxUserspaceService : LifecycleService() {
      */
     private fun describeInstallStep(step: LinuxInstallStep): String =
         when (step) {
-            is LinuxInstallStep.Downloading -> "downloading"
+            is LinuxInstallStep.Downloading ->
+                if (step.paused) "paused · ${step.received} bytes kept" else "downloading"
             LinuxInstallStep.Verifying -> "verifying the download"
             is LinuxInstallStep.Extracting -> "extracting · ${step.entries} files"
             is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)

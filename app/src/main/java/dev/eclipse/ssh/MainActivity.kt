@@ -6581,7 +6581,11 @@ private fun linuxUserspaceSummary(ui: LinuxUserspaceUiState): String {
 private fun describeInstallStep(step: LinuxInstallStep): String =
     when (step) {
         is LinuxInstallStep.Downloading ->
-            "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+            if (step.paused) {
+                "Paused · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+            } else {
+                "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+            }
         LinuxInstallStep.Verifying -> "Verifying the download"
         is LinuxInstallStep.Extracting -> "Extracting · ${step.entries} files"
         is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)

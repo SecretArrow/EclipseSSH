@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -64,8 +65,47 @@ class RootfsInstaller(
      */
     private val retryWaitsMillis: LongArray = longArrayOf(5_000, 20_000),
 ) {
+    /**
+     * The pause gate the transfer's chunk callback polls. An atomic rather than a suspending flow
+     * because the callback runs inside the blocking downloader on IO — there is no suspension
+     * point to receive a flow on — and the wait itself happens in this class's suspend context.
+     */
+    private val pauseRequested = AtomicBoolean(false)
+
     /** Where the tarball is downloaded to before verification. */
     val tarballFile: File get() = File(storage.downloadsDir, "rootfs-${distro.ubuntuArch}.tar.gz")
+
+    /**
+     * The fragment a paused download left behind, and where the resume continues from. `.part`
+     * because it is not the archive until the SHA-256 pin has verified it.
+     */
+    val downloadPartFile: File get() = File(storage.downloadsDir, tarballFile.name + ".part")
+
+    /**
+     * Whether a paused download's fragment is on disk and a later install would resume from it —
+     * the question the UI asks to decide between "Resume" and "Start over". A completed
+     * [tarballFile] makes it false: there is nothing partial to continue.
+     */
+    fun hasResumableDownload(): Boolean = downloadPartFile.isFile && !tarballFile.isFile
+
+    /**
+     * Holds the running download at the next chunk boundary. The transfer closes its connection
+     * and the install call stays parked inside the download phase — state on screen stays
+     * "Downloading", with the pause named — until [resumeDownload] or the install's own
+     * cancellation arrives. The fragment on disk is kept, so a process killed while paused is
+     * answered by the same resume on the next install.
+     */
+    fun requestPauseDownload() {
+        pauseRequested.set(true)
+    }
+
+    /** Releases a [requestPauseDownload]; the transfer continues from the fragment on disk. */
+    fun resumeDownload() {
+        pauseRequested.set(false)
+    }
+
+    /** Whether the download phase is currently parked by a [requestPauseDownload]. */
+    fun isDownloadPaused(): Boolean = pauseRequested.get()
 
     /** Where the rootfs is unpacked before being moved into place. */
     private val stagingDir: File get() = storage.stagingDir
@@ -81,10 +121,15 @@ class RootfsInstaller(
      * (which has a known total), step-precise for extraction.
      */
     sealed interface Progress {
-        /** Downloading; [received] of [total] bytes. */
+        /**
+         * Downloading; [received] of [total] bytes. [paused] is true while the transfer is held by
+         * a [requestPauseDownload] — the number on screen is the fragment on disk, and the resume
+         * continues from it rather than from zero.
+         */
         data class Downloading(
             val received: Long,
             val total: Long,
+            val paused: Boolean = false,
         ) : Progress
 
         /** Verifying the tarball's SHA256. */
@@ -681,36 +726,73 @@ class RootfsInstaller(
         // Captured so the downloader's non-suspending chunk callback can still honour
         // cancellation — a cancelled install must stop mid-download, not after 30 MB more.
         val job = coroutineContext[Job]
-        val temp = File(storage.downloadsDir, tarballFile.name + ".part")
+        val temp = downloadPartFile
+        // The transfer's own onProgress, watched once so the pause park can keep the announced
+        // total on screen: the fragment's byte count is what moves, and a number without its
+        // denominator would read as a reset to zero.
+        var lastAnnounced = 0L
+        val progress: (Progress) -> Unit = { p ->
+            if (p is Progress.Downloading && p.total > 0) lastAnnounced = p.total
+            onProgress(p)
+        }
         val attempts = retryWaitsMillis.size + 1
         var attempt = 0
         var receivedFinal = 0L
+        var resumedFrom = 0L
+        var resumedOnce = false
         try {
             while (true) {
                 attempt++
-                // A failed attempt's fragment is not a resume point and nothing here reads it as
-                // one: every attempt starts at byte zero, so a length the previous origin
-                // announced cannot be mistaken for what the pin describes.
-                temp.delete()
-                receivedFinal = 0L
-                val failure =
-                    try {
-                        receivedFinal = transferOnce(attempt, temp, job, onProgress)
-                        null
-                    } catch (e: PinnedArchiveUnavailable) {
-                        e
+                // The resume point: the fragment a *paused* transfer (or a process killed while
+                // parked) left behind is the one fragment this design keeps, and the next transfer
+                // continues from it through a Range request. A *failed* attempt's fragment is
+                // deleted in its catch below — the ladder's original rule — so resumeFrom is 0 for
+                // a retry after a failure, and the SHA-256 pin still decides what finally lands.
+                val resumeFrom = if (temp.isFile) temp.length() else 0L
+                if (resumeFrom > 0 && !resumedOnce) {
+                    resumedFrom = resumeFrom
+                    resumedOnce = true
+                }
+                receivedFinal = resumeFrom
+                try {
+                    receivedFinal = transferOnce(attempt, temp, resumeFrom, job, progress)
+                    break
+                } catch (e: DownloadPaused) {
+                    diagnostics.record(
+                        UserspaceDiagnosticCategory.DOWNLOAD,
+                        "download paused",
+                        detail = "held at ${e.received} bytes; fragment kept for the resume",
+                    )
+                    // Park inside the install rather than ending it: the state on screen stays
+                    // "Downloading" with the pause named, the lock stays held, and the resume
+                    // continues from the fragment without re-entering the pipeline. Cancellation
+                    // is the way out — the fragment survives it for the next install.
+                    while (pauseRequested.get()) {
+                        job?.ensureActive()
+                        progress(Progress.Downloading(e.received, lastAnnounced, paused = true))
+                        delay(200)
                     }
-                if (failure == null) break
-                if (attempt >= attempts || !worthAnotherAttempt(failure)) throw failure
-                val waitMillis = retryWaitsMillis[attempt - 1]
-                diagnostics.record(
-                    UserspaceDiagnosticCategory.DOWNLOAD,
-                    "download attempt failed; retrying",
-                    detail =
-                        "attempt $attempt of $attempts: ${failure.message} - " +
-                            "waiting ${waitMillis / 1000}s",
-                )
-                delay(waitMillis)
+                    diagnostics.record(
+                        UserspaceDiagnosticCategory.DOWNLOAD,
+                        "download resumed",
+                        detail = "continuing from ${e.received} bytes",
+                    )
+                    // A paused transfer is not one of the retry attempts: the attempt budget is
+                    // for failures, and a user who pauses ten times has spent none of it.
+                    attempt--
+                } catch (e: PinnedArchiveUnavailable) {
+                    temp.delete()
+                    if (attempt >= attempts || !worthAnotherAttempt(e)) throw e
+                    val waitMillis = retryWaitsMillis[attempt - 1]
+                    diagnostics.record(
+                        UserspaceDiagnosticCategory.DOWNLOAD,
+                        "download attempt failed; retrying",
+                        detail =
+                            "attempt $attempt of $attempts: ${e.message} - " +
+                                "waiting ${waitMillis / 1000}s",
+                    )
+                    delay(waitMillis)
+                }
             }
             // Bytes and seconds, not a progress transcript: the rate is what says whether a slow
             // install was the network or the unpack, which is the first question a report raises.
@@ -723,6 +805,7 @@ class RootfsInstaller(
                 durationMs = System.currentTimeMillis() - startedAt,
                 detail =
                     "$receivedFinal bytes from ${distro.rootfsTarballUrl}" +
+                        (resumedOnce.takeIf { it }?.let { " (resumed from $resumedFrom on disk)" } ?: "") +
                         (attempt.takeIf { it > 1 }?.let { " on attempt $it of $attempts" } ?: ""),
             )
             if (!temp.renameTo(tarballFile)) {
@@ -730,7 +813,10 @@ class RootfsInstaller(
                 temp.delete()
             }
         } finally {
-            temp.delete()
+            // A cancelled install keeps its fragment: the bytes are the resume point for the next
+            // install, and the pin verifies whatever they turn out to be. Everything else — the
+            // normal path, a ladder failure — has already disposed of the fragment its own way.
+            if (job?.isCancelled != true) temp.delete()
         }
     }
 
@@ -746,18 +832,36 @@ class RootfsInstaller(
      * A cancelled install is not one of these: `ensureActive` raises `CancellationException`, which
      * is not an [IOException] and passes through the catch below untouched.
      */
+    /**
+     * One transfer of the pinned archive into [temp], continuing [temp] at byte [resumeFrom] when
+     * that is non-zero, and every check that decides whether what arrived is what the pin
+     * describes; the absolute bytes on disk (resume offset plus this attempt's read).
+     *
+     * Every way it can fail leaves as a [PinnedArchiveUnavailable], so the caller has one type to
+     * catch and one question to ask of it — whether this is worth another attempt. [attempt] is
+     * carried into the failure so the sentence the user is finally shown can say how many
+     * transfers were spent rather than implying there was only ever one. A pause is not a failure:
+     * the downloader raises [DownloadPaused], which is a runtime exception and passes through the
+     * IOException ladder untouched.
+     *
+     * A cancelled install is not one of these: `ensureActive` raises `CancellationException`, which
+     * is not an [IOException] and passes through the catch below untouched.
+     */
     private suspend fun transferOnce(
         attempt: Int,
         temp: File,
+        resumeFrom: Long,
         job: Job?,
         onProgress: (Progress) -> Unit,
     ): Long {
-        var received = 0L
+        var received = resumeFrom
         var total = 0L
         try {
             downloader.download(
                 distro.rootfsTarballUrl,
                 temp,
+                resumeFrom = resumeFrom,
+                shouldPause = { pauseRequested.get() },
                 onChunk = { got, announced ->
                     job?.ensureActive()
                     received = got
@@ -2209,39 +2313,95 @@ class HttpStatusException(
     val isWorthRepeating: Boolean get() = code >= 500 || code == 408 || code == 425 || code == 429
 }
 
-/** A byte-range-progressing HTTP(S) GET; an interface so tests never touch the network. */
+/**
+ * A byte-range-progressing HTTP(S) GET with pause and resume; an interface so tests never touch
+ * the network.
+ */
 fun interface HttpDownloader {
     /**
-     * Downloads [url] into [target], reporting each [onChunk] with the bytes received so far and
-     * the total when the server names one (0 when it does not).
+     * Downloads [url] into [target], reporting each [onChunk] with the bytes received **so far
+     * including [resumeFrom]** and the total when the server names one (0 when it does not).
+     *
+     * [resumeFrom] is the byte offset the transfer starts at — the length of a partial download
+     * kept from an earlier attempt or a paused one. The implementation asks the server for
+     * `bytes=<resumeFrom>-`; a server that answers 206 continues into [target] in append mode,
+     * and one that answers 200 (ranges ignored) restarts from byte zero and truncates [target].
+     * A [resumeFrom] of 0 is the plain full transfer.
+     *
+     * [shouldPause] is polled before each chunk is written; when it turns true the transfer stops
+     * cleanly — the connection closes, [target] keeps exactly the bytes written so far — and
+     * [DownloadPaused] is raised, so the caller can hold the fragment for a later resume instead
+     * of treating it as a failure.
      */
     fun download(
         url: String,
         target: File,
+        resumeFrom: Long,
+        shouldPause: () -> Boolean,
         onChunk: (received: Long, total: Long) -> Unit,
     )
 }
+
+/**
+ * The transfer stopped because [HttpDownloader.download]'s [shouldPause] turned true, not because
+ * anything failed: [target] holds the first [received] bytes and a resume can continue from there.
+ *
+ * Deliberately not an [IOException] — the installer's retry ladder treats IOExceptions as transfer
+ * failures whose fragments are deleted, and a paused transfer's fragment is the one fragment worth
+ * keeping. A runtime exception passes through those catches untouched.
+ */
+class DownloadPaused(
+    val url: String,
+    /** Absolute bytes on disk when the pause was honoured: the resume offset plus this attempt's read. */
+    val received: Long,
+) : RuntimeException("download paused at $received bytes")
 
 /** The production downloader, on `HttpsURLConnection`. */
 class UrlConnectionDownloader : HttpDownloader {
     override fun download(
         url: String,
         target: File,
+        resumeFrom: Long,
+        shouldPause: () -> Boolean,
         onChunk: (received: Long, total: Long) -> Unit,
     ) {
+        require(resumeFrom >= 0) { "resumeFrom must not be negative" }
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 30_000
         connection.readTimeout = 60_000
         connection.instanceFollowRedirects = true
+        if (resumeFrom > 0) connection.setRequestProperty("Range", "bytes=$resumeFrom-")
         try {
             val code = connection.responseCode
             if (code !in 200..299) throw HttpStatusException(code, url)
-            val total = connection.contentLengthLong
+            // The two answers a resume request can get: 206 continues the fragment in append mode,
+            // and 200 means the origin ignored the Range header (a CDN stripping it is the classic)
+            // so the only correct move is to start over and truncate what is on disk. Anything else
+            // with resumeFrom > 0 - 416, a redirect to a different byte stream - is a failure, not
+            // a silently wrong file.
+            if (resumeFrom > 0 && code != HttpURLConnection.HTTP_PARTIAL) {
+                throw OriginIgnoredRangeException(code, url)
+            }
+            // Content-Range carries the whole resource's length ("bytes 500-999/1234"); the plain
+            // content length on a 206 names only the remaining bytes, so the two totals the UI
+            // sees must not be mixed. Unparsable or absent falls back to offset + remaining.
+            val total =
+                when {
+                    code == HttpURLConnection.HTTP_PARTIAL ->
+                        connection.getHeaderField("Content-Range")
+                            ?.substringAfterLast('/')
+                            ?.toLongOrNull()
+                            ?.takeIf { it > 0 }
+                            ?: (resumeFrom + connection.contentLengthLong)
+                    else -> connection.contentLengthLong
+                }
+            val append = code == HttpURLConnection.HTTP_PARTIAL && resumeFrom > 0
             connection.inputStream.use { input ->
-                target.outputStream().use { output ->
+                target.outputStream(append).use { output ->
                     val buffer = ByteArray(64 * 1024)
-                    var received = 0L
+                    var received = resumeFrom
                     while (true) {
+                        if (shouldPause()) throw DownloadPaused(url, received)
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
@@ -2255,3 +2415,14 @@ class UrlConnectionDownloader : HttpDownloader {
         }
     }
 }
+
+/**
+ * The caller asked to continue a fragment, and the origin answered 200 — it is serving the whole
+ * resource, Range ignored. Carried as a type rather than retried in place because retrying cannot
+ * help: the origin has said what it will do. The caller's answer is to drop the fragment and
+ * restart, which is safe here only because the SHA-256 pin still verifies whatever finally lands.
+ */
+class OriginIgnoredRangeException(
+    val code: Int,
+    url: String,
+) : IOException("resuming $url failed: origin answered HTTP $code instead of 206 Partial Content")

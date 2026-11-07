@@ -55,11 +55,13 @@ class RootfsTransferTest {
             RootfsInstaller(
                 rootDir,
                 distro,
-                downloader = { _, target, onChunk ->
+                downloader = { _, target, _, _, onChunk ->
                     downloads++
                     TestTarballs.serving(FIXTURE).download(
                         "https://fixtures.invalid/rootfs.tar.gz",
                         target,
+                        0L,
+                        { false },
                         onChunk,
                     )
                 },

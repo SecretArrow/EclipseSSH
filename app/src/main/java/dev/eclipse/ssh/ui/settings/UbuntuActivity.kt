@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -340,6 +341,25 @@ class UbuntuActivity : SettingsDestinationActivity() {
                         progress = { state.percent / 100f },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
                     )
+                    // The pause is offered only for the download, the one phase where stopping is
+                    // cheap and resuming is byte-exact: a fragment on disk and a Range request
+                    // continue where the transfer stopped. The later phases hold no bytes to keep —
+                    // apt's work is resumable by apt itself, extraction is atomic into staging —
+                    // so a pause there would be a stop wearing a pause's name.
+                    val step = state.step
+                    if (step is LinuxInstallStep.Downloading) {
+                        TextButton(
+                            onClick = { if (step.paused) linuxUserspace.resumeInstall() else linuxUserspace.pauseInstall() },
+                        ) {
+                            Icon(
+                                if (step.paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                null,
+                                Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (step.paused) "Resume" else "Pause")
+                        }
+                    }
                 }
                 is LinuxUserspaceState.NotInstalled ->
                     SettingRow(
@@ -1028,7 +1048,11 @@ private fun distroTitle(ui: LinuxUserspaceUiState): String = ui.distro?.displayN
 private fun describeInstallStep(step: LinuxInstallStep): String =
     when (step) {
         is LinuxInstallStep.Downloading ->
-            "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+            if (step.paused) {
+                "Paused · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+            } else {
+                "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+            }
         LinuxInstallStep.Verifying -> "Verifying the download"
         is LinuxInstallStep.Extracting -> "Extracting · ${step.entries} files"
         is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)

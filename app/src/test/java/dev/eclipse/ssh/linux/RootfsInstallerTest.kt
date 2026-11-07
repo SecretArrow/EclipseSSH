@@ -1,11 +1,15 @@
 package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The rootfs installer's three promises: only verified bytes are extracted, extraction cannot
@@ -168,7 +172,7 @@ class RootfsInstallerTest {
             val root = newRoot()
             var downloads = 0
             val failingDownloader =
-                HttpDownloader { _, target, _ ->
+                HttpDownloader { _, target, _, _, _ ->
                     downloads++
                     target.outputStream().use { it.write("truncated".toByteArray()) }
                     throw IOException("connection reset mid-download")
@@ -207,7 +211,7 @@ class RootfsInstallerTest {
                     RootfsInstaller(
                         root,
                         TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", "00".repeat(32)),
-                        downloader = { _, _, _ -> downloads++ },
+                        downloader = { _, _, _, _, _ -> downloads++ },
                     )
 
                 var thrown: IOException? = null
@@ -241,7 +245,7 @@ class RootfsInstallerTest {
                         "00".repeat(32),
                         rootfsSizeBytes = 30L * 1024 * 1024,
                     ),
-                    HttpDownloader { _, _, _ -> downloads++ },
+                    HttpDownloader { _, _, _, _, _ -> downloads++ },
                     storage = RuntimeStorageManager(root, freeBytesProbe = { 100L * 1024 * 1024 }),
                 )
 
@@ -296,7 +300,7 @@ class RootfsInstallerTest {
                     Files.createTempDirectory("linux-fixture").toFile().resolve("rootfs.tar.gz"),
                 )
             val truncated =
-                HttpDownloader { _, target, onChunk ->
+                HttpDownloader { _, target, _, _, onChunk ->
                     val all = fixture.readBytes()
                     val delivered = all.size / 2
                     target.outputStream().use { output -> output.write(all, 0, delivered) }
@@ -418,9 +422,9 @@ class RootfsInstallerTest {
             val fixture = TestTarballs.writeEscapingFixture(escapeParent.resolve("escape.tar.gz"))
             var downloads = 0
             val countingDownloader =
-                HttpDownloader { url, target, onChunk ->
+                HttpDownloader { url, target, _, _, onChunk ->
                     downloads++
-                    TestTarballs.serving(fixture).download(url, target, onChunk)
+                    TestTarballs.serving(fixture).download(url, target, 0L, { false }, onChunk)
                 }
             val installer = installInto(root, fixture, downloader = countingDownloader)
 
@@ -455,10 +459,10 @@ class RootfsInstallerTest {
                 )
             var downloads = 0
             val restarting =
-                HttpDownloader { _, target, onChunk ->
+                HttpDownloader { _, target, _, _, onChunk ->
                     downloads++
                     if (downloads < 3) throw HttpStatusException(503, "https://fixtures.invalid/rootfs.tar.gz")
-                    TestTarballs.serving(fixture).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
+                    TestTarballs.serving(fixture).download("https://fixtures.invalid/rootfs.tar.gz", target, 0L, { false }, onChunk)
                 }
             val installer = installInto(root, fixture, downloader = restarting, retryWaitsMillis = longArrayOf(1, 1))
 
@@ -485,7 +489,7 @@ class RootfsInstallerTest {
             val root = newRoot()
             var downloads = 0
             val down =
-                HttpDownloader { _, _, _ ->
+                HttpDownloader { _, _, _, _, _ ->
                     downloads++
                     throw IOException("connection reset by peer")
                 }
@@ -530,7 +534,7 @@ class RootfsInstallerTest {
             val root = newRoot()
             var downloads = 0
             val gone =
-                HttpDownloader { _, _, _ ->
+                HttpDownloader { _, _, _, _, _ ->
                     downloads++
                     throw HttpStatusException(404, "https://fixtures.invalid/rootfs.tar.gz")
                 }
@@ -553,5 +557,134 @@ class RootfsInstallerTest {
             assertThat(thrown).isNotNull()
             assertThat(thrown!!.attempts).isEqualTo(1)
             assertThat(thrown.message).contains("HTTP 404")
+        }
+
+    // ------------------------------------------------------------------ pause and resume
+
+    @Test
+    fun `a paused download keeps its fragment and the resume continues from it`() =
+        runBlocking {
+            val root = newRoot()
+            val fixture =
+                TestTarballs.writeRootfsFixture(
+                    Files.createTempDirectory("linux-fixture").toFile().resolve("rootfs.tar.gz"),
+                )
+            val total = fixture.length()
+            val pauseAfter = total / 2
+            val calls = AtomicInteger(0)
+            val resumePoints = mutableListOf<Long>()
+            // Held, not referenced directly: the downloader lambda is part of the constructor call
+            // the installer is being built by, so it reads the installer through a holder that is
+            // assigned before install() can ever invoke it.
+            var installerHolder: RootfsInstaller? = null
+            val installer =
+                RootfsInstaller(
+                    root,
+                    TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(fixture)),
+                    downloader = { url, target, resumeFrom, shouldPause, onChunk ->
+                        val call = calls.incrementAndGet()
+                        resumePoints.add(resumeFrom)
+                        var served = 0L
+                        TestTarballs.serving(fixture).download(
+                            url,
+                            target,
+                            resumeFrom,
+                            {
+                                // The first call pauses once past the halfway mark, exactly as the
+                                // UI's pause button does: the gate goes up mid-transfer, and the
+                                // downloader honours it at the next chunk boundary.
+                                shouldPause() || (call == 1 && served >= pauseAfter && run {
+                                    installerHolder!!.requestPauseDownload()
+                                    true
+                                })
+                            },
+                            { got, announced ->
+                                served = got
+                                onChunk(got, announced)
+                            },
+                        )
+                    },
+                )
+
+            installerHolder = installer
+            var sawPausedProgress = false
+            val install =
+                launch {
+                    installer.install(onProgress = { p ->
+                        if (p is RootfsInstaller.Progress.Downloading && p.paused) sawPausedProgress = true
+                    })
+                }
+            // Parked means the gate is up AND the paused progress reached the screen: the
+            // fragment is flushed to disk by the time the pause loop is emitting.
+            withTimeout(10_000) {
+                while (!sawPausedProgress) delay(20)
+            }
+            val fragment = installer.downloadPartFile
+            assertThat(fragment.isFile).isTrue()
+            val fragmentBytes = fragment.length()
+            assertThat(fragmentBytes).isAtLeast(pauseAfter)
+            assertThat(installer.tarballFile.isFile).isFalse()
+
+            installer.resumeDownload()
+            install.join()
+
+            assertThat(sawPausedProgress).isTrue()
+            assertThat(calls.get()).isEqualTo(2)
+            assertThat(resumePoints[0]).isEqualTo(0L)
+            // The resume continued from the fragment, not from byte zero.
+            assertThat(resumePoints[1]).isEqualTo(fragmentBytes)
+            assertThat(installer.tarballFile.isFile).isTrue()
+            assertThat(installer.tarballFile.length()).isEqualTo(total)
+            assertThat(installer.tarballFile.readBytes()).isEqualTo(fixture.readBytes())
+            assertThat(installer.isExtracted()).isTrue()
+            // The fragment was consumed by the rename, not left pinning space.
+            assertThat(fragment.isFile).isFalse()
+        }
+
+    @Test
+    fun `a cancelled install keeps the fragment the next install resumes from`() =
+        runBlocking {
+            val root = newRoot()
+            val fixture =
+                TestTarballs.writeRootfsFixture(
+                    Files.createTempDirectory("linux-fixture").toFile().resolve("rootfs.tar.gz"),
+                )
+            val pauseAfter = fixture.length() / 2
+            var installerHolder: RootfsInstaller? = null
+            val installer =
+                RootfsInstaller(
+                    root,
+                    TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(fixture)),
+                    downloader = { url, target, resumeFrom, shouldPause, onChunk ->
+                        var served = 0L
+                        TestTarballs.serving(fixture).download(
+                            url,
+                            target,
+                            resumeFrom,
+                            {
+                                shouldPause() || (served >= pauseAfter && run {
+                                    installerHolder!!.requestPauseDownload()
+                                    true
+                                })
+                            },
+                            { got, _ -> served = got; onChunk(got, fixture.length()) },
+                        )
+                    },
+                )
+            installerHolder = installer
+
+            val job =
+                launch {
+                    runCatching { installer.install(onProgress = { }) }
+                }
+            withTimeout(10_000) {
+                while (installer.downloadPartFile.length() < pauseAfter) delay(20)
+            }
+            job.cancel()
+            // The wait loop inside the park honours cancellation, and the finally keeps the
+            // fragment: a user who backs out of a paused install has not lost their bytes.
+            withTimeout(10_000) { job.join() }
+            assertThat(installer.downloadPartFile.isFile).isTrue()
+            assertThat(installer.hasResumableDownload()).isTrue()
         }
 }

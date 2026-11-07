@@ -72,9 +72,9 @@ class RootfsRepairTest {
             RootfsInstaller(
                 root,
                 TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(tarball)),
-                HttpDownloader { url, target, onChunk ->
+                HttpDownloader { url, target, _, _, onChunk ->
                     downloads++
-                    TestTarballs.serving(tarball).download(url, target, onChunk)
+                    TestTarballs.serving(tarball).download(url, target, 0L, { false }, onChunk)
                 },
             )
         installer.install()
@@ -386,7 +386,7 @@ class RootfsRepairTest {
                 RootfsInstaller(
                     bare,
                     TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
-                    HttpDownloader { _, _, _ -> throw IOException("this test never downloads") },
+                    HttpDownloader { _, _, _, _, _ -> throw IOException("this test never downloads") },
                 )
 
             assertThat(freshInstaller.rootfsInPlace()).isFalse()
@@ -408,7 +408,7 @@ class RootfsRepairTest {
                 RootfsInstaller(
                     installed.root,
                     TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
-                    HttpDownloader { _, _, _ -> throw IOException("no route to host") },
+                    HttpDownloader { _, _, _, _, _ -> throw IOException("no route to host") },
                     // Nothing is fetched here — the archive the install kept answers every read — so there
                     // is no transfer to retry and nothing to wait for.
                     retryWaitsMillis = longArrayOf(),
@@ -559,7 +559,7 @@ class RootfsRepairTest {
                 RootfsInstaller(
                     installed.root,
                     TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
-                    HttpDownloader { _, _, _ -> throw IOException("no route to host") },
+                    HttpDownloader { _, _, _, _, _ -> throw IOException("no route to host") },
                     // One attempt, no waiting: what this test pins is the failure the ladder gates on, and
                     // the three attempts a device would spend getting there are the retry's own business
                     // (RootfsInstallerTest). A connection with no route does not heal in twenty-five

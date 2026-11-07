@@ -205,14 +205,30 @@ internal object TestTarballs {
             rootfsSizeBytes = rootfsSizeBytes,
         )
 
-    /** A downloader that serves [source] regardless of the URL asked for. */
+    /**
+     * A downloader that serves [source] regardless of the URL asked for, with the production
+     * downloader's resume semantics: [resumeFrom] skips that many source bytes and appends, and
+     * [shouldPause] stops the transfer the way [UrlConnectionDownloader] does - fragment kept,
+     * [DownloadPaused] raised.
+     */
     fun serving(source: File): HttpDownloader =
-        HttpDownloader { _, target, onChunk ->
+        HttpDownloader { _, target, resumeFrom, shouldPause, onChunk ->
+            require(resumeFrom in 0..source.length()) { "resume past the source: $resumeFrom" }
             source.inputStream().use { input ->
-                target.outputStream().use { output ->
+                var skipped = 0L
+                val skipBuffer = ByteArray(64 * 1024)
+                while (skipped < resumeFrom) {
+                    val n =
+                        input.read(skipBuffer, 0, minOf(skipBuffer.size.toLong(), resumeFrom - skipped).toInt())
+                    if (n < 0) break
+                    skipped += n
+                }
+                check(skipped == resumeFrom) { "source shorter than the resume point" }
+                target.outputStream(resumeFrom > 0).use { output ->
                     val buffer = ByteArray(64 * 1024)
-                    var received = 0L
+                    var received = resumeFrom
                     while (true) {
+                        if (shouldPause()) throw DownloadPaused("test://fixture", received)
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)

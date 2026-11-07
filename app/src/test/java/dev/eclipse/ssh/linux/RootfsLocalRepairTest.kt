@@ -70,7 +70,7 @@ class RootfsLocalRepairTest {
             RootfsInstaller(
                 root,
                 TestTarballs.fixtureDistro(TARBALL_URL, TestTarballs.sha256(tarball)),
-                HttpDownloader { url, target, onChunk -> TestTarballs.serving(tarball).download(url, target, onChunk) },
+                HttpDownloader { url, target, _, _, onChunk -> TestTarballs.serving(tarball).download(url, target, 0L, { false }, onChunk) },
             )
         installer.install()
         return Installed(installer)

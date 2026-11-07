@@ -67,8 +67,8 @@ class LinuxUserspaceControllerTest {
             RootfsInstaller(
                 rootDir,
                 distro,
-                downloader = { _, target, onChunk ->
-                    TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, onChunk)
+                downloader = { _, target, _, _, onChunk ->
+                    TestTarballs.serving(FIXTURE).download("https://fixtures.invalid/rootfs.tar.gz", target, 0L, { false }, onChunk)
                 },
                 diagnostics = diagnostics,
             )
