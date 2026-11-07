@@ -105,7 +105,10 @@ def row_checked(d, els, label):
 
 def main():
     adb = Adb()
-    d = E2eDriver(adb, PACKAGE, PACKAGE + ".test", OUT, "SMOKE", 30)
+    d = E2eDriver(
+        adb, PACKAGE, PACKAGE + ".test", OUT, "SMOKE", 30,
+        launch_activity="dev.eclipse.ssh.MainActivity",
+    )
     summary = {"phases": {}}
 
     log("phase 1: clean state + fresh install with opencode ticked")
