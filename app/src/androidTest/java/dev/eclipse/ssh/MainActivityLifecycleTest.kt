@@ -94,11 +94,28 @@ class MainActivityLifecycleTest {
     }
 
     @Test
-    fun anSftpDeepLinkWithoutAUserFallsBackToRoot() {
+    fun anSftpDeepLinkWithoutAUserOpensTheAddHostFormInsteadOfAnAuthPrompt() {
         ActivityScenario.launch<MainActivity>(viewIntent("sftp://files.example.com")).use {
             compose.waitForIdle()
 
-            awaitTextDisplayed("Authenticate to root@files.example.com")
+            // parseSshDeepLink deliberately leaves a no-username link's username blank rather
+            // than guessing "root" - a guessed privileged account for a web-chosen host is
+            // exactly what a link is not allowed to smuggle in (see the note on
+            // parseSshDeepLink and the JVM pin in DeepLinkParsingTest). The blank username is
+            // what routes the link to the Add Host form, prefilled with the linked host,
+            // instead of an authentication prompt. This test used to expect the old root
+            // fallback; it never ran on a device before the matrix went green, so it was still
+            // pinning the behaviour the parser comment explicitly rejects.
+            compose.waitUntil(timeoutMillis = 30_000) {
+                compose
+                    .onAllNodesWithText("files.example.com")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                    .isNotEmpty()
+            }
+            compose
+                .onAllNodesWithText("Authenticate to root@files.example.com")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                .isEmpty()
         }
     }
 
