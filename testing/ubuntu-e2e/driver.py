@@ -1557,12 +1557,33 @@ class E2eDriver:
         self._reenter_settings_during_install("background")
         self.log("background round trip: install still alive")
 
+    def _wait_for_orientation(self, landscape, timeout_s=25, poll=2.0):
+        """Block until the uiautomator dump reports the rotated layout.
+
+        set_rotation is asynchronous: the rotation happens through a full
+        configuration change, and on a software-rendered container it can take
+        far longer than the fixed 6s the exercise used to sleep - a dump taken
+        mid-transition still reports the OLD extent, so taps computed from it
+        land where the navigation no longer is, and the exercise failed a
+        healthy install with "the Settings tab did not open". The window's
+        extent is the truth here (see _window_extent): wait until it says the
+        new orientation, then navigate."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            w, h = self._window_extent(self.dump())
+            if w and h and (w > h) == landscape:
+                return True
+            time.sleep(poll)
+        return False
+
     def _exercise_rotation_during_install(self):
         self.adb.set_rotation(1)
-        time.sleep(6)
+        if not self._wait_for_orientation(landscape=True):
+            self.log("rotation to landscape did not settle in time; proceeding")
         self._reenter_settings_during_install("rotation")
         self.adb.set_rotation(0)
-        time.sleep(3)
+        if not self._wait_for_orientation(landscape=False):
+            self.log("rotation back to portrait did not settle in time; proceeding")
         self._reenter_settings_during_install("rotation-back")
         self.log("rotation round trip: install still alive")
 
