@@ -141,7 +141,15 @@ def main():
     summary["node_bin"] = out2.strip()
 
     log("phase 4: terminal through the UI + run opencode")
+    # The app resumes on the tab the install flow left it on (Settings, where
+    # the Install was ticked), and the Local Ubuntu card lives in the Hosts
+    # list - so the tab is selected first, the same open_settings way: dismiss
+    # the IME, tap the tab, relaunch once if the tap did not take.
     d.launch()
+    if not d._open_tab("Hosts"):
+        d.launch()
+        if not d._open_tab("Hosts"):
+            raise RuntimeError("the Hosts tab was never reachable after install")
     if not d.wait_visible((LABEL_LOCAL_CARD,), 90, poll=5):
         raise RuntimeError("the Local Ubuntu card never appeared after install")
     card = d.find(d.dump(), LABEL_LOCAL_CARD)
