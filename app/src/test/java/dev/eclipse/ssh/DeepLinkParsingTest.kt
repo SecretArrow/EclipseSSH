@@ -42,8 +42,14 @@ class DeepLinkParsingTest {
     }
 
     @Test
-    fun `missing user falls back to root`() {
-        assertThat(parseSshDeepLink("ssh://example.com".toUri())!!.username).isEqualTo("root")
+    fun `missing user stays blank for the caller to route`() {
+        // Not completed with "root": the link came from a web page, and a guessed username for a
+        // host someone else chose is the user typing their password into a box already aimed at
+        // the wrong account. The blank username is what tells the caller to open the Add Host
+        // form instead of the auth prompt.
+        val profile = parseSshDeepLink("ssh://example.com".toUri())
+        assertThat(profile!!.username).isEmpty()
+        assertThat(profile.name).isEqualTo("example.com")
     }
 
     @Test
@@ -132,10 +138,11 @@ class DeepLinkParsingTest {
         hostile.forEach { raw ->
             val profile = runCatching { parseSshDeepLink(raw.toUri()) }
             assertThat(profile.exceptionOrNull()).isNull()
-            // If a profile did come back, it must be internally coherent.
+            // If a profile did come back, it must be internally coherent. The username may be
+            // blank by design (a userless link routes to the Add Host form), but the host and
+            // port are always populated.
             profile.getOrNull()?.let {
                 assertThat(it.host).isNotEmpty()
-                assertThat(it.username).isNotEmpty()
                 assertThat(it.port).isIn(1..65535)
             }
         }

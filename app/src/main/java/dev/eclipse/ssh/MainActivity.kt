@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -171,6 +172,7 @@ import dev.eclipse.ssh.background.EclipseSessionService
 import dev.eclipse.ssh.data.MAX_TRANSFER_RETRIES
 import dev.eclipse.ssh.data.credentials.HostCredentialUpdate
 import dev.eclipse.ssh.data.credentials.KeyEdit
+import dev.eclipse.ssh.data.saf.StorageAccess
 import dev.eclipse.ssh.data.credentials.SecretEdit
 import dev.eclipse.ssh.data.fs.FileSystemProvider
 import dev.eclipse.ssh.data.fs.FsEntry
@@ -512,17 +514,21 @@ class MainActivity : FragmentActivity() {
  * untrusted source (any web page can fire one) and each rejection below is load-bearing.
  *
  * Note that any password in the userInfo component is deliberately discarded — a link is never
- * allowed to smuggle in a credential.
+ * allowed to smuggle in a credential. A link with no username is likewise not completed with a
+ * guess: defaulting it to "root" would hand a web-chosen host the most privileged account name
+ * before the user has typed anything, so the blank username survives to the caller, which routes
+ * it to the Add Host form (where the username is a field the user fills) instead of the auth
+ * prompt.
  */
 internal fun parseSshDeepLink(uri: Uri?): HostProfile? {
     if (uri == null || (uri.scheme != "ssh" && uri.scheme != "sftp")) return null
     val host = uri.host?.takeIf(String::isNotBlank) ?: return null
-    val user = uri.userInfo?.substringBefore(':')?.takeIf(String::isNotBlank) ?: "root"
+    val user = uri.userInfo?.substringBefore(':')?.takeIf(String::isNotBlank) ?: ""
     // Uri.port is -1 when absent and can be any Int when malformed, so it is range-checked
     // rather than trusted.
     val port = if (uri.port in 1..65535) uri.port else 22
     return HostProfile(
-        name = "$user@$host",
+        name = if (user.isBlank()) host else "$user@$host",
         host = host,
         username = user,
         port = port,
@@ -609,7 +615,22 @@ private fun EclipseWorkspace(
         val explorer = viewModel.filesExplorer.state.value
         explorer.path.takeIf { explorer.isSftp }
     }
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // The three states the skill names for a runtime permission, with the launcher's callback
+    // doing the bookkeeping rather than sitting empty: granted is the end of it, a plain denial
+    // keeps the ask for a more contextual moment (a future transfer will surface its own need),
+    // and a denial that no longer shows a dialog means Android has pinned the refusal — the only
+    // way forward is the app's settings page, which this app can open for the user.
+    val activity = LocalActivity.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted && activity != null) {
+            val canAskAgain =
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+            if (!canAskAgain) {
+                runCatching { activity.startActivity(StorageAccess.appDetails(activity.packageName)) }
+            }
+        }
+    }
     // Ask once, and only when the permission is actually missing: launching the request
     // unconditionally re-prompted on every rotation and on API < 33 asked for a permission
     // that does not exist there.
@@ -1158,12 +1179,16 @@ private fun EclipseWorkspace(
     // rules-free Duplicate can raise is one some other action opened.
     var duplicateAskHost by remember { mutableStateOf<HostProfile?>(null) }
     var duplicateForwards by remember { mutableStateOf(true) }
-    var showAuthHost by remember { mutableStateOf<HostProfile?>(deepLinkHost) }
-    // A deep link arriving while the app is already running updates deepLinkHost, so open
-    // the auth prompt for it and let the activity clear the pending value.
+    // A link that names no user cannot go to the auth prompt: the prompt has no username field,
+    // and the only value it could have been filled with is a guess ("root") made on behalf of a
+    // host a web page chose. Those links open the Add Host form prefilled with the host and port
+    // instead, where the username is a field the user fills themselves.
+    var showAuthHost by remember { mutableStateOf<HostProfile?>(deepLinkHost?.takeIf { it.username.isNotBlank() }) }
+    // A deep link arriving while the app is already running updates deepLinkHost, so route
+    // it and let the activity clear the pending value.
     LaunchedEffect(deepLinkHost) {
         deepLinkHost?.let {
-            showAuthHost = it
+            if (it.username.isBlank()) openHostForm(context, draft = it) else showAuthHost = it
             onDeepLinkConsumed()
         }
     }
@@ -6851,10 +6876,15 @@ private fun PassphraseDialog(
 private fun openHostForm(
     context: Context,
     host: HostProfile? = null,
+    draft: HostProfile? = null,
 ) {
     context.startActivity(
         Intent(context, HostFormActivity::class.java).apply {
             if (host != null) putExtra(HostFormActivity.EXTRA_HOST_ID, host.id)
+            if (draft != null) {
+                putExtra(HostFormActivity.EXTRA_DRAFT_HOST, draft.host)
+                putExtra(HostFormActivity.EXTRA_DRAFT_PORT, draft.port)
+            }
         },
     )
 }

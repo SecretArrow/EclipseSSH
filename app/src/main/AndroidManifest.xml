@@ -64,22 +64,13 @@
             </intent-filter>
 
             <!--
-              Receive shared text (host config snippet, a public key, a
-              hostname to connect to). The activity reads the
-              EXTRA_STREAM / EXTRA_TEXT and routes it to the right
-              surface: a host key into the keys list, a hostname into
-              the Add Host form, a command into the terminal.
+              No ACTION_SEND filters, deliberately. A share target that
+              promises to route EXTRA_TEXT/EXTRA_STREAM but reads nothing
+              from the intent is a silent data sink: other apps would offer
+              EclipseSSH in their share sheet and whatever the user shared
+              would vanish on arrival. The share entry points live in the
+              export flows instead, which hand the app real content.
             -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/octet-stream" />
-            </intent-filter>
         </activity>
 
         <!--

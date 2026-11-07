@@ -159,6 +159,11 @@ class HostFormActivity : ComponentActivity() {
         // Read once, from the intent that opened this window. Not state: the id cannot change while
         // the window lives, and a rotation that recreates the Activity re-reads the same intent.
         val hostId = intent.getStringExtra(EXTRA_HOST_ID)
+        // Prefill for an Add, ignored when there is a host to edit. Arrives from a deep link, so
+        // the text is untrusted — it only ever lands in a field the user reads and can change
+        // before saving, never anywhere the form acts on it.
+        val draftHost = if (hostId == null) intent.getStringExtra(EXTRA_DRAFT_HOST)?.take(255) else null
+        val draftPort = if (hostId == null) intent.getIntExtra(EXTRA_DRAFT_PORT, 22) else 22
         setContent {
             SettingsDestinationWindow(
                 settingsRepository = settingsRepository,
@@ -167,6 +172,8 @@ class HostFormActivity : ComponentActivity() {
             ) {
                 HostForm(
                     hostId = hostId,
+                    draftHost = draftHost,
+                    draftPort = draftPort,
                     hostRepository = hostRepository,
                     credentialStore = credentialStore,
                     sshConnectionManager = sshConnectionManager,
@@ -184,6 +191,18 @@ class HostFormActivity : ComponentActivity() {
          * The id and not the profile — see this class's KDoc.
          */
         const val EXTRA_HOST_ID = "dev.eclipse.ssh.extra.HOST_ID"
+
+        /**
+         * Prefill the host field of an Add with this text. Sent only by the deep-link routing in
+         * [MainActivity], for a link that named a host but no user: the form is where the username
+         * gets typed, so the link's host and port travel with it as a starting point. Read only
+         * when [EXTRA_HOST_ID] is absent — an Edit draws its values from the stored profile, and a
+         * stale draft must never override them.
+         */
+        const val EXTRA_DRAFT_HOST = "dev.eclipse.ssh.extra.DRAFT_HOST"
+
+        /** The port that goes with [EXTRA_DRAFT_HOST]; already range-checked by the parser. */
+        const val EXTRA_DRAFT_PORT = "dev.eclipse.ssh.extra.DRAFT_PORT"
 
         private const val ADD_TITLE = "Add host"
         private const val EDIT_TITLE = "Edit host"
@@ -242,6 +261,8 @@ private suspend fun loadHost(
 @Composable
 private fun HostForm(
     hostId: String?,
+    draftHost: String? = null,
+    draftPort: Int = 22,
     hostRepository: HostRepository,
     credentialStore: HostCredentialStore,
     sshConnectionManager: SshConnectionManager,
@@ -260,6 +281,8 @@ private fun HostForm(
         is HostLoad.Ready -> HostFormFields(
             initialHost = state.host,
             storedCredentials = state.credentials,
+            draftHost = draftHost,
+            draftPort = draftPort,
             hostRepository = hostRepository,
             credentialStore = credentialStore,
             sshConnectionManager = sshConnectionManager,
@@ -306,6 +329,8 @@ private fun HostUnavailable(message: String) {
 private fun HostFormFields(
     initialHost: HostProfile?,
     storedCredentials: StoredCredentials,
+    draftHost: String? = null,
+    draftPort: Int = 22,
     hostRepository: HostRepository,
     credentialStore: HostCredentialStore,
     sshConnectionManager: SshConnectionManager,
@@ -314,9 +339,9 @@ private fun HostFormFields(
 ) {
     val editing = initialHost != null
     var name by remember(initialHost?.id) { mutableStateOf(initialHost?.name.orEmpty()) }
-    var host by remember(initialHost?.id) { mutableStateOf(initialHost?.host.orEmpty()) }
+    var host by remember(initialHost?.id) { mutableStateOf(initialHost?.host ?: draftHost.orEmpty()) }
     var username by remember(initialHost?.id) { mutableStateOf(initialHost?.username.orEmpty()) }
-    var port by remember(initialHost?.id) { mutableStateOf((initialHost?.port ?: 22).toString()) }
+    var port by remember(initialHost?.id) { mutableStateOf((initialHost?.port ?: draftPort).toString()) }
     var authMethod by remember(initialHost?.id) { mutableStateOf(initialHost?.authMethod ?: AuthMethod.PASSWORD) }
     var group by remember(initialHost?.id) { mutableStateOf(initialHost?.group ?: "Personal") }
     var tags by remember(initialHost?.id) { mutableStateOf(initialHost?.tags?.joinToString(", ").orEmpty()) }
