@@ -19,7 +19,6 @@ import org.junit.Test
  * render as an untappable hole in a short path.
  */
 class BreadcrumbsTest {
-
     // ---------------------------------------------------------------- segmentPosixPath
 
     @Test

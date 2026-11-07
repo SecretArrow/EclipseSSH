@@ -52,7 +52,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ForwardFormActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,7 +89,11 @@ class ForwardFormActivity : ComponentActivity() {
         const val EXTRA_HOST_NAME = "dev.eclipse.ssh.forward.HOST_NAME"
 
         /** The intent that opens the form on [hostId], named as the user sees it. */
-        fun intent(context: Context, hostId: String, hostName: String): Intent =
+        fun intent(
+            context: Context,
+            hostId: String,
+            hostName: String,
+        ): Intent =
             Intent(context, ForwardFormActivity::class.java)
                 .putExtra(EXTRA_HOST_ID, hostId)
                 .putExtra(EXTRA_HOST_NAME, hostName)
@@ -170,18 +173,20 @@ private fun ForwardForm(
                     description = "Remote port",
                 )
             }
-            ForwardType.REMOTE -> FormField(
-                value = state.remotePort,
-                onValueChange = { state = state.copy(remotePort = it) },
-                label = "Remote bind port",
-                error = state.remotePortError.takeIf { touched },
-                description = "Remote bind port",
-            )
-            ForwardType.DYNAMIC -> Text(
-                "Creates a SOCKS5 proxy on the local port for on-demand tunnelling.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            ForwardType.REMOTE ->
+                FormField(
+                    value = state.remotePort,
+                    onValueChange = { state = state.copy(remotePort = it) },
+                    label = "Remote bind port",
+                    error = state.remotePortError.takeIf { touched },
+                    description = "Remote bind port",
+                )
+            ForwardType.DYNAMIC ->
+                Text(
+                    "Creates a SOCKS5 proxy on the local port for on-demand tunnelling.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
         }
         Text(
             describe(state.type),
@@ -191,10 +196,11 @@ private fun ForwardForm(
         Button(
             onClick = { request?.let(onStart) },
             enabled = request != null,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp)
-                .semantics { contentDescription = "Start forward" },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .semantics { contentDescription = "Start forward" },
         ) { Text("Start") }
     }
 }
@@ -229,9 +235,10 @@ private fun FormField(
                 error,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier
-                    .padding(start = 16.dp)
-                    .semantics { contentDescription = "$description error" },
+                modifier =
+                    Modifier
+                        .padding(start = 16.dp)
+                        .semantics { contentDescription = "$description error" },
             )
         }
     }
@@ -245,15 +252,17 @@ private fun FormField(
  * the labels say which is which rather than leaving "Local port" to be read as "the port on the
  * server's side", which is exactly the sentence that starts the confusion.
  */
-private fun localPortLabel(type: ForwardType): String = when (type) {
-    ForwardType.LOCAL -> "Local port"
-    ForwardType.REMOTE -> "Local destination port"
-    ForwardType.DYNAMIC -> "Local port"
-}
+private fun localPortLabel(type: ForwardType): String =
+    when (type) {
+        ForwardType.LOCAL -> "Local port"
+        ForwardType.REMOTE -> "Local destination port"
+        ForwardType.DYNAMIC -> "Local port"
+    }
 
 /** One sentence on what pressing Start will open, in the type's own terms. */
-private fun describe(type: ForwardType): String = when (type) {
-    ForwardType.LOCAL -> "Listens on this device and forwards every connection to the remote host."
-    ForwardType.REMOTE -> "Asks the server to listen on the bind port and forward to this device."
-    ForwardType.DYNAMIC -> "A SOCKS5 proxy: the application chooses where each connection goes."
-}
+private fun describe(type: ForwardType): String =
+    when (type) {
+        ForwardType.LOCAL -> "Listens on this device and forwards every connection to the remote host."
+        ForwardType.REMOTE -> "Asks the server to listen on the bind port and forward to this device."
+        ForwardType.DYNAMIC -> "A SOCKS5 proxy: the application chooses where each connection goes."
+    }

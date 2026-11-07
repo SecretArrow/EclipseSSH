@@ -29,10 +29,10 @@ import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.security.normalizePastedSecret
 import dev.eclipse.ssh.ui.SecretFieldKeyboard
 import dev.eclipse.ssh.ui.SecretPasteButton
-import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 /**
  * Export an encrypted backup, in its own window.
@@ -60,7 +60,6 @@ import kotlinx.coroutines.withContext
  */
 @AndroidEntryPoint
 class ExportBackupActivity : SettingsDestinationActivity() {
-
     @Inject lateinit var vaultExporter: VaultExporter
 
     /**
@@ -83,7 +82,10 @@ class ExportBackupActivity : SettingsDestinationActivity() {
     // Neither the settings snapshot nor the repository is read. The only setting this screen touches
     // is the vault's contents, and those are read by [VaultExporter] when the export runs.
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         var passphrase by remember { mutableStateOf("") }
         // The passphrase the picker was launched with, held across the picker the same way the dialog
         // held it in `MainActivity` - the field itself is cleared at launch, so this is the only copy
@@ -97,46 +99,47 @@ class ExportBackupActivity : SettingsDestinationActivity() {
         val scope = rememberCoroutineScope()
         val report = LocalSettingsReport.current
 
-        val exportPicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/octet-stream"),
-        ) { uri: Uri? ->
-            // Released the moment the picker is back, before anything is done with the result: the
-            // picker is the whole of what the flag was covering here. Key generation has to hold it
-            // longer because it chains into a second picker; this one has no second picker to cover.
-            vaultUnlockGate.release()
-            val pass = pendingPassphrase
-            pendingPassphrase = null
-            // Cleared here rather than after the export for two reasons: the passphrase is no longer
-            // needed once it has been captured, and a field that still held it would keep it in the
-            // composition - and in any screenshot - for the whole of a slow write.
-            passphrase = ""
-            if (uri == null || pass == null) {
-                // The user cancelled the picker, or the answer that launched it is gone. Either way
-                // there is nothing to write.
-                busy = false
-            } else {
-                scope.launch {
-                    try {
-                        // On IO, not the main thread: the export reads the hosts and settings through
-                        // Room and DataStore, encrypts with a key derived from the passphrase, and
-                        // writes the result through a content resolver - all three of which are disk
-                        // or CPU work that would block the frame, and the write in particular can be a
-                        // binder round trip into a cloud provider.
-                        val exported = withContext(Dispatchers.IO) { vaultExporter.export(pass, uri) }
-                        report("Exported $exported host(s)")
-                    } catch (failure: Throwable) {
-                        // The exporter throws rather than returning a status, so this is where every
-                        // realistic failure arrives - a revoked URI grant, a provider that refuses the
-                        // write, a full disk - and [reportWriteFailure] is the shell's wording for a
-                        // write that did not land. It rethrows cancellation, which is the window going
-                        // away rather than a failed export.
-                        reportWriteFailure(report, "the backup", failure)
-                    } finally {
-                        busy = false
+        val exportPicker =
+            rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/octet-stream"),
+            ) { uri: Uri? ->
+                // Released the moment the picker is back, before anything is done with the result: the
+                // picker is the whole of what the flag was covering here. Key generation has to hold it
+                // longer because it chains into a second picker; this one has no second picker to cover.
+                vaultUnlockGate.release()
+                val pass = pendingPassphrase
+                pendingPassphrase = null
+                // Cleared here rather than after the export for two reasons: the passphrase is no longer
+                // needed once it has been captured, and a field that still held it would keep it in the
+                // composition - and in any screenshot - for the whole of a slow write.
+                passphrase = ""
+                if (uri == null || pass == null) {
+                    // The user cancelled the picker, or the answer that launched it is gone. Either way
+                    // there is nothing to write.
+                    busy = false
+                } else {
+                    scope.launch {
+                        try {
+                            // On IO, not the main thread: the export reads the hosts and settings through
+                            // Room and DataStore, encrypts with a key derived from the passphrase, and
+                            // writes the result through a content resolver - all three of which are disk
+                            // or CPU work that would block the frame, and the write in particular can be a
+                            // binder round trip into a cloud provider.
+                            val exported = withContext(Dispatchers.IO) { vaultExporter.export(pass, uri) }
+                            report("Exported $exported host(s)")
+                        } catch (failure: Throwable) {
+                            // The exporter throws rather than returning a status, so this is where every
+                            // realistic failure arrives - a revoked URI grant, a provider that refuses the
+                            // write, a full disk - and [reportWriteFailure] is the shell's wording for a
+                            // write that did not land. It rethrows cancellation, which is the window going
+                            // away rather than a failed export.
+                            reportWriteFailure(report, "the backup", failure)
+                        } finally {
+                            busy = false
+                        }
                     }
                 }
             }
-        }
 
         SettingsSection(screenTitle) {
             // The row's own subtitle, which is what this screen's card is about. The dialog had no
@@ -195,4 +198,3 @@ class ExportBackupActivity : SettingsDestinationActivity() {
         ) { Text("Export") }
     }
 }
-

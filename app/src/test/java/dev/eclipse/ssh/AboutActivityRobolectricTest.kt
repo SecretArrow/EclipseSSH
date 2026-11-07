@@ -33,7 +33,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class AboutActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<AboutActivity>()
 
@@ -77,7 +76,8 @@ class AboutActivityRobolectricTest {
         // A one-entry list would satisfy everything below without ever scrolling, which would make
         // the test pass in precisely the case it is supposed to catch.
         assertWithMessage("a list this short makes the scroll assertion vacuous")
-            .that(OPEN_SOURCE_LICENSES.size).isGreaterThan(1)
+            .that(OPEN_SOURCE_LICENSES.size)
+            .isGreaterThan(1)
 
         val last = OPEN_SOURCE_LICENSES.last()
         val lastLabel = "${last.name} ${last.version}"

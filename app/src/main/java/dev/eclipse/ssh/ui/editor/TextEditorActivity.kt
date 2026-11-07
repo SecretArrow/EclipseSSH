@@ -15,11 +15,11 @@ import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ui.EclipseTheme
 import dev.eclipse.ssh.ui.settings.LocalSettingsReport
 import dev.eclipse.ssh.ui.settings.reportWriteFailure
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
  * The text editor in its own window, on top of the app.
@@ -39,7 +39,6 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class TextEditorActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     // The app's one audited clipboard boundary (a Hilt @Singleton, shared with the rest of the
@@ -90,9 +89,10 @@ class TextEditorActivity : ComponentActivity() {
             // a corrupt blob yields defaults rather than a broken editor — but the read itself can
             // fail, and that failure should not take the window down.
             val prefs by produceState(initialValue = EditorPrefs()) {
-                value = runCatching {
-                    EditorPrefsCodec.decode(settingsRepository.settings.first().editorPrefsJson)
-                }.getOrDefault(EditorPrefs())
+                value =
+                    runCatching {
+                        EditorPrefsCodec.decode(settingsRepository.settings.first().editorPrefsJson)
+                    }.getOrDefault(EditorPrefs())
             }
             // The sheet persists on every toggle, not on dismiss: a user who flips word wrap and
             // force-closes the app has still told us what they want, and a preference lost to an

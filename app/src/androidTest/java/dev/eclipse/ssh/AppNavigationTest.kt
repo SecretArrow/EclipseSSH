@@ -11,8 +11,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import com.google.common.truth.Truth.assertWithMessage
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,7 +33,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class AppNavigationTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -67,7 +66,8 @@ class AppNavigationTest {
 
         tab("Terminal").performClick()
         compose.onNodeWithText("No active sessions").assertIsDisplayed()
-        compose.onNodeWithText("Connect to a host to open a secure terminal session.")
+        compose
+            .onNodeWithText("Connect to a host to open a secure terminal session.")
             .assertIsDisplayed()
 
         tab("Files").performClick()
@@ -178,8 +178,10 @@ class AppNavigationTest {
 
         compose.onNodeWithContentDescription("Add host").performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodesWithContentDescription("Paste password from clipboard")
-                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+            compose
+                .onAllNodesWithContentDescription("Paste password from clipboard")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                .isNotEmpty()
         }
         compose.onNodeWithContentDescription("Paste password from clipboard").assertIsDisplayed()
 
@@ -217,10 +219,11 @@ class AppNavigationTest {
         // announces "Terminal theme, ..."; a menu item never does, so that is the difference.
         // Negation is the SemanticsMatcher member operator `not`, invoked with `!` — there is no
         // top-level `not` function to import in androidx.compose.ui.test.
-        fun option(label: String) = compose.onNode(
-            hasText(label) and hasClickAction() and
-                !hasContentDescription("Terminal theme,", substring = true),
-        )
+        fun option(label: String) =
+            compose.onNode(
+                hasText(label) and hasClickAction() and
+                    !hasContentDescription("Terminal theme,", substring = true),
+            )
 
         trigger().performClick()
         compose.waitForIdle()
@@ -260,13 +263,16 @@ class AppNavigationTest {
         awaitSeededRow(SEEDED_HOST)
 
         assertWithMessage("a Connect button is back on the host cards")
-            .that(compose.onAllNodesWithText("Connect").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Connect").fetchSemanticsNodes())
+            .isEmpty()
 
         // The kebab is addressed in the unmerged tree: its description lives on the Icon
         // inside the button, and a hosted device has once composed the card without
         // exposing the button in the merged tree — the unmerged tree always has it.
-        compose.onNodeWithContentDescription("More actions for $SEEDED_HOST", useUnmergedTree = true)
-            .performScrollTo().performClick()
+        compose
+            .onNodeWithContentDescription("More actions for $SEEDED_HOST", useUnmergedTree = true)
+            .performScrollTo()
+            .performClick()
         compose.waitForIdle()
 
         compose.onNodeWithText("Connect").assertIsDisplayed()
@@ -287,16 +293,19 @@ class AppNavigationTest {
         compose.waitForIdle()
         awaitSeededRow(SEEDED_HOST)
 
-        compose.onNodeWithContentDescription("More actions for $SEEDED_HOST", useUnmergedTree = true)
-            .performScrollTo().performClick()
+        compose
+            .onNodeWithContentDescription("More actions for $SEEDED_HOST", useUnmergedTree = true)
+            .performScrollTo()
+            .performClick()
         compose.onNodeWithText("Remove").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithText("Remove $SEEDED_HOST?").assertIsDisplayed()
-        compose.onNodeWithText(
-            "This removes the saved connection profile and its stored credentials. " +
-                "Active sessions are not affected until disconnected.",
-        ).assertIsDisplayed()
+        compose
+            .onNodeWithText(
+                "This removes the saved connection profile and its stored credentials. " +
+                    "Active sessions are not affected until disconnected.",
+            ).assertIsDisplayed()
 
         compose.onNode(hasText("Cancel") and hasClickAction()).performClick()
         compose.waitForIdle()
@@ -317,12 +326,17 @@ class AppNavigationTest {
         compose.onNodeWithText("Auto Login SFTP").performScrollTo().assertIsDisplayed()
         // The explanation under the label is switched on the current value, so one of the two is on
         // screen and the default decides which.
-        val explained = compose.onAllNodesWithText(
-            "Signs in to the file browser as soon as the shell connects",
-        ).fetchSemanticsNodes().size +
-            compose.onAllNodesWithText(
-                "Connects the shell only \u2014 the Files tab opens on demand",
-            ).fetchSemanticsNodes().size
+        val explained =
+            compose
+                .onAllNodesWithText(
+                    "Signs in to the file browser as soon as the shell connects",
+                ).fetchSemanticsNodes()
+                .size +
+                compose
+                    .onAllNodesWithText(
+                        "Connects the shell only \u2014 the Files tab opens on demand",
+                    ).fetchSemanticsNodes()
+                    .size
         assertWithMessage("the switch has no explanation under it").that(explained).isEqualTo(1)
 
         compose.onNode(hasText("Cancel") and hasClickAction()).performScrollTo().performClick()
@@ -361,8 +375,10 @@ class AppNavigationTest {
      */
     private fun awaitTerminalTheme(label: String) {
         compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodesWithContentDescription("Terminal theme, $label")
-                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+            compose
+                .onAllNodesWithContentDescription("Terminal theme, $label")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                .isNotEmpty()
         }
     }
 

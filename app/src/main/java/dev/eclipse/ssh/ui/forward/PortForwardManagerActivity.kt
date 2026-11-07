@@ -43,12 +43,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.data.HostRepository
 import dev.eclipse.ssh.data.model.DEFAULT_FORWARD_LISTEN_HOST
-import dev.eclipse.ssh.data.model.MAX_SAVED_FORWARDS
 import dev.eclipse.ssh.data.model.ForwardEntry
 import dev.eclipse.ssh.data.model.ForwardRuntime
 import dev.eclipse.ssh.data.model.ForwardStatus
 import dev.eclipse.ssh.data.model.ForwardType
 import dev.eclipse.ssh.data.model.HostProfile
+import dev.eclipse.ssh.data.model.MAX_SAVED_FORWARDS
 import dev.eclipse.ssh.data.model.conflictsWith
 import dev.eclipse.ssh.data.model.decodeForwardRules
 import dev.eclipse.ssh.data.model.describe
@@ -98,7 +98,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class PortForwardManagerActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var hostRepository: HostRepository
@@ -106,8 +105,9 @@ class PortForwardManagerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val subject = ActionRequests.take(intent?.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
-            as? ActionSubject.ForwardManager
+        val subject =
+            ActionRequests.take(intent?.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
+                as? ActionSubject.ForwardManager
         if (subject == null) {
             finish()
             return
@@ -145,7 +145,6 @@ class PortForwardManagerActivity : ComponentActivity() {
     }
 
     companion object {
-
         /**
          * The intent that opens this window on [host].
          *
@@ -159,11 +158,12 @@ class PortForwardManagerActivity : ComponentActivity() {
             host: HostProfile,
             statuses: Map<String, ForwardStatus>,
             runningForwards: List<ForwardEntry>,
-        ): Intent = Intent(context, PortForwardManagerActivity::class.java)
-            .putExtra(
-                ActionRequests.EXTRA_SUBJECT_TOKEN,
-                ActionRequests.put(ActionSubject.ForwardManager(host.id, statuses, runningForwards)),
-            )
+        ): Intent =
+            Intent(context, PortForwardManagerActivity::class.java)
+                .putExtra(
+                    ActionRequests.EXTRA_SUBJECT_TOKEN,
+                    ActionRequests.put(ActionSubject.ForwardManager(host.id, statuses, runningForwards)),
+                )
     }
 }
 
@@ -214,8 +214,9 @@ private fun ForwardManagerBody(
                     // A rule never started this process has no recorded state, and the honest thing
                     // to say about it is what the rule itself says: Disabled when it is switched off,
                     // Stopped when it simply has not been started.
-                    status = statuses[rule.id]
-                        ?: ForwardStatus(rule, if (rule.enabled) ForwardRuntime.STOPPED else ForwardRuntime.DISABLED),
+                    status =
+                        statuses[rule.id]
+                            ?: ForwardStatus(rule, if (rule.enabled) ForwardRuntime.STOPPED else ForwardRuntime.DISABLED),
                     onToggleEnabled = { on ->
                         onAnswer(
                             ActionAnswer.ForwardRules(
@@ -226,7 +227,10 @@ private fun ForwardManagerBody(
                     },
                     onStart = { onAnswer(ActionAnswer.ForwardRuleAction(host.id, rule.id, ForwardRuleKind.START)) },
                     onStop = { onAnswer(ActionAnswer.ForwardRuleAction(host.id, rule.id, ForwardRuleKind.STOP)) },
-                    onEdit = { editingRuleId = rule.id; editorOpen = true },
+                    onEdit = {
+                        editingRuleId = rule.id
+                        editorOpen = true
+                    },
                     onDelete = { onAnswer(ActionAnswer.ForwardRules(host.id, rules.filterNot { it.id == rule.id })) },
                 )
             }
@@ -235,7 +239,10 @@ private fun ForwardManagerBody(
         // Capped rather than left open because the column itself is capped (MAX_SAVED_FORWARDS), and
         // a 33rd rule would be a button that saves a list the codec silently truncates.
         TextButton(
-            onClick = { editingRuleId = null; editorOpen = true },
+            onClick = {
+                editingRuleId = null
+                editorOpen = true
+            },
             enabled = rules.size < MAX_SAVED_FORWARDS,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Add rule") }
@@ -255,11 +262,12 @@ private fun ForwardManagerBody(
                 editorOpen = false
                 // Replacement is by id and in place, so an edit is not also a reorder - a reorder
                 // changes every shifted rule's derived id and restarts those tunnels.
-                val next = if (editingRuleId == null) {
-                    rules + entry
-                } else {
-                    rules.map { if (it.id == editingRuleId) entry else it }
-                }
+                val next =
+                    if (editingRuleId == null) {
+                        rules + entry
+                    } else {
+                        rules.map { if (it.id == editingRuleId) entry else it }
+                    }
                 onAnswer(ActionAnswer.ForwardRules(host.id, next))
             },
         )
@@ -272,12 +280,13 @@ private fun ForwardManagerBody(
  * vocabulary [dev.eclipse.ssh.ui] already uses for sessions.
  */
 @Composable
-private fun forwardStateColor(state: ForwardRuntime) = when (state) {
-    ForwardRuntime.RUNNING -> EclipseSuccess
-    ForwardRuntime.STARTING, ForwardRuntime.RECONNECTING -> EclipseWarning
-    ForwardRuntime.FAILED -> MaterialTheme.colorScheme.error
-    ForwardRuntime.STOPPED, ForwardRuntime.DISABLED -> MaterialTheme.colorScheme.onSurfaceVariant
-}
+private fun forwardStateColor(state: ForwardRuntime) =
+    when (state) {
+        ForwardRuntime.RUNNING -> EclipseSuccess
+        ForwardRuntime.STARTING, ForwardRuntime.RECONNECTING -> EclipseWarning
+        ForwardRuntime.FAILED -> MaterialTheme.colorScheme.error
+        ForwardRuntime.STOPPED, ForwardRuntime.DISABLED -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
 /**
  * One saved rule: what it does ([ForwardEntry.describe]), what it is doing right now, and the four
@@ -372,7 +381,13 @@ private fun ForwardRuleDialog(
     // LOCAL, this device for REMOTE.
     var listenPort by remember { mutableStateOf(initial?.localPort?.toString().orEmpty()) }
     var serverPort by remember {
-        mutableStateOf(initial?.takeIf { it.type == ForwardType.REMOTE }?.remotePort?.toString().orEmpty())
+        mutableStateOf(
+            initial
+                ?.takeIf { it.type == ForwardType.REMOTE }
+                ?.remotePort
+                ?.toString()
+                .orEmpty(),
+        )
     }
     var destinationHost by remember {
         mutableStateOf(
@@ -416,40 +431,49 @@ private fun ForwardRuleDialog(
     // DYNAMIC wants nothing but the listener. (For REMOTE, `listenPort` - the field - is not the
     // entry's localPort: there the destination port is the phone-side port and the server port is
     // the listener.)
-    val formValid = listenHostValid && when (type) {
-        ForwardType.LOCAL -> listenPortNum != null && destinationHostValid && destinationPortNum != null
-        ForwardType.REMOTE -> serverPortNum != null && destinationHostValid && destinationPortNum != null
-        ForwardType.DYNAMIC -> listenPortNum != null
-    }
+    val formValid =
+        listenHostValid &&
+            when (type) {
+                ForwardType.LOCAL -> listenPortNum != null && destinationHostValid && destinationPortNum != null
+                ForwardType.REMOTE -> serverPortNum != null && destinationHostValid && destinationPortNum != null
+                ForwardType.DYNAMIC -> listenPortNum != null
+            }
     // Built only when the fields parse, so the conflict check never runs against a half-typed rule;
     // the non-null assertions are exactly what `formValid` above has already established.
-    val candidate = if (!formValid) null else ForwardEntry(
-        // The edited rule's id, kept rather than regenerated: `conflictsWith` excludes by id,
-        // which is how the rule being edited never conflicts with itself.
-        id = initial?.id ?: UUID.randomUUID().toString(),
-        type = type,
-        localPort = (if (type == ForwardType.REMOTE) destinationPortNum else listenPortNum)!!,
-        remoteHost = if (type == ForwardType.LOCAL) destinationHost.trim() else null,
-        remotePort = when (type) {
-            ForwardType.LOCAL -> destinationPortNum!!
-            ForwardType.REMOTE -> serverPortNum!!
-            ForwardType.DYNAMIC -> null
-        },
-        hostId = hostId,
-        listenHost = listenHost.trim(),
-        localHost = if (type == ForwardType.REMOTE) destinationHost.trim() else null,
-        enabled = enabled,
-        autoStart = autoStart,
-        name = name.trim().takeIf(String::isNotBlank),
-    )
+    val candidate =
+        if (!formValid) {
+            null
+        } else {
+            ForwardEntry(
+                // The edited rule's id, kept rather than regenerated: `conflictsWith` excludes by id,
+                // which is how the rule being edited never conflicts with itself.
+                id = initial?.id ?: UUID.randomUUID().toString(),
+                type = type,
+                localPort = (if (type == ForwardType.REMOTE) destinationPortNum else listenPortNum)!!,
+                remoteHost = if (type == ForwardType.LOCAL) destinationHost.trim() else null,
+                remotePort =
+                    when (type) {
+                        ForwardType.LOCAL -> destinationPortNum!!
+                        ForwardType.REMOTE -> serverPortNum!!
+                        ForwardType.DYNAMIC -> null
+                    },
+                hostId = hostId,
+                listenHost = listenHost.trim(),
+                localHost = if (type == ForwardType.REMOTE) destinationHost.trim() else null,
+                enabled = enabled,
+                autoStart = autoStart,
+                name = name.trim().takeIf(String::isNotBlank),
+            )
+        }
     // The engine's own conflict sentence, so the form's refusal and the row's failure message are
     // the same words for the same mistake. Remote rules never conflict here - their listener is on
     // the server, and the server is the authority on that bind.
-    val conflict = candidate?.let { entry ->
-        val inThisList = others.any { entry.conflictsWith(it) }
-        val alreadyRunning = runningForwards.any { entry.conflictsWith(it) }
-        if (inThisList || alreadyRunning) "Port ${entry.localPort} is already in use by another forwarding rule." else null
-    }
+    val conflict =
+        candidate?.let { entry ->
+            val inThisList = others.any { entry.conflictsWith(it) }
+            val alreadyRunning = runningForwards.any { entry.conflictsWith(it) }
+            if (inThisList || alreadyRunning) "Port ${entry.localPort} is already in use by another forwarding rule." else null
+        }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -480,11 +504,12 @@ private fun ForwardRuleDialog(
                     label = { Text(if (type == ForwardType.REMOTE) "Listen interface (server side)" else "Listen interface") },
                     singleLine = true,
                     isError = !listenHostValid,
-                    supportingText = if (!listenHostValid) {
-                        { Text("Enter a hostname or address, or leave the default loopback.") }
-                    } else {
-                        null
-                    },
+                    supportingText =
+                        if (!listenHostValid) {
+                            { Text("Enter a hostname or address, or leave the default loopback.") }
+                        } else {
+                            null
+                        },
                 )
                 when (type) {
                     ForwardType.LOCAL -> {
@@ -494,7 +519,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Listen port") },
                             singleLine = true,
                             isError = listenPortNum == null,
-                            supportingText = if (listenPortNum == null) {{ Text("A port from 1 to 65535.") }} else null,
+                            supportingText =
+                                if (listenPortNum == null) {
+                                    { Text("A port from 1 to 65535.") }
+                                } else {
+                                    null
+                                },
                         )
                         OutlinedTextField(
                             destinationHost,
@@ -502,11 +532,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Destination host") },
                             singleLine = true,
                             isError = !destinationHostValid,
-                            supportingText = if (!destinationHostValid) {
-                                { Text("The host to reach from the server.") }
-                            } else {
-                                null
-                            },
+                            supportingText =
+                                if (!destinationHostValid) {
+                                    { Text("The host to reach from the server.") }
+                                } else {
+                                    null
+                                },
                         )
                         OutlinedTextField(
                             destinationPort,
@@ -514,7 +545,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Destination port") },
                             singleLine = true,
                             isError = destinationPortNum == null,
-                            supportingText = if (destinationPortNum == null) {{ Text("A port from 1 to 65535.") }} else null,
+                            supportingText =
+                                if (destinationPortNum == null) {
+                                    { Text("A port from 1 to 65535.") }
+                                } else {
+                                    null
+                                },
                         )
                     }
                     ForwardType.REMOTE -> {
@@ -524,7 +560,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Server port") },
                             singleLine = true,
                             isError = serverPortNum == null,
-                            supportingText = if (serverPortNum == null) {{ Text("A port from 1 to 65535.") }} else null,
+                            supportingText =
+                                if (serverPortNum == null) {
+                                    { Text("A port from 1 to 65535.") }
+                                } else {
+                                    null
+                                },
                         )
                         OutlinedTextField(
                             destinationHost,
@@ -532,11 +573,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Destination host (on this device)") },
                             singleLine = true,
                             isError = !destinationHostValid,
-                            supportingText = if (!destinationHostValid) {
-                                { Text("The phone-side address the server connects to.") }
-                            } else {
-                                null
-                            },
+                            supportingText =
+                                if (!destinationHostValid) {
+                                    { Text("The phone-side address the server connects to.") }
+                                } else {
+                                    null
+                                },
                         )
                         OutlinedTextField(
                             destinationPort,
@@ -544,7 +586,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Destination port") },
                             singleLine = true,
                             isError = destinationPortNum == null,
-                            supportingText = if (destinationPortNum == null) {{ Text("A port from 1 to 65535.") }} else null,
+                            supportingText =
+                                if (destinationPortNum == null) {
+                                    { Text("A port from 1 to 65535.") }
+                                } else {
+                                    null
+                                },
                         )
                     }
                     ForwardType.DYNAMIC -> {
@@ -554,7 +601,12 @@ private fun ForwardRuleDialog(
                             label = { Text("Listen port") },
                             singleLine = true,
                             isError = listenPortNum == null,
-                            supportingText = if (listenPortNum == null) {{ Text("A port from 1 to 65535.") }} else null,
+                            supportingText =
+                                if (listenPortNum == null) {
+                                    { Text("A port from 1 to 65535.") }
+                                } else {
+                                    null
+                                },
                         )
                         Text(
                             "Creates a SOCKS5 proxy on the listen port for on-demand tunneling.",

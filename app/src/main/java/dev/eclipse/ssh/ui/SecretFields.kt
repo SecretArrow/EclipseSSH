@@ -45,7 +45,11 @@ internal val SecretFieldKeyboard = KeyboardOptions(keyboardType = KeyboardType.P
  * pre-filled from storage, so whatever is in one is either empty or a typo being corrected.
  */
 @Composable
-internal fun SecretPasteButton(what: String, onPaste: () -> String?, into: (String) -> Unit) {
+internal fun SecretPasteButton(
+    what: String,
+    onPaste: () -> String?,
+    into: (String) -> Unit,
+) {
     IconButton(onClick = { onPaste()?.let(into) }) {
         Icon(Icons.Default.ContentPaste, contentDescription = "Paste $what from clipboard")
     }

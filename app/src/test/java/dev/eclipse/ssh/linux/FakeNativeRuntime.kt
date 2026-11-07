@@ -22,7 +22,6 @@ import java.nio.file.Files
 internal fun fakeNativeLibraryDir(): String = FakeNativeRuntime.dir
 
 private object FakeNativeRuntime {
-
     val dir: String by lazy {
         val dir = Files.createTempDirectory("fake-native-runtime").toFile()
         // Registered before the files it holds: the JVM deletes registered paths in reverse order,

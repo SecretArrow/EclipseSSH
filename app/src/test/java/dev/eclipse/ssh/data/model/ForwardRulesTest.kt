@@ -18,14 +18,14 @@ import org.junit.Test
  * that id alone.
  */
 class ForwardRulesTest {
-
     @Test
     fun `each of the three kinds round trips through its own syntax`() {
-        val rules = listOf(
-            ForwardEntry(type = ForwardType.LOCAL, localPort = 8080, remoteHost = "intranet.example", remotePort = 80),
-            ForwardEntry(type = ForwardType.REMOTE, localPort = 22, remotePort = 2222),
-            ForwardEntry(type = ForwardType.DYNAMIC, localPort = 1080),
-        )
+        val rules =
+            listOf(
+                ForwardEntry(type = ForwardType.LOCAL, localPort = 8080, remoteHost = "intranet.example", remotePort = 80),
+                ForwardEntry(type = ForwardType.REMOTE, localPort = 22, remotePort = 2222),
+                ForwardEntry(type = ForwardType.DYNAMIC, localPort = 1080),
+            )
 
         val text = encodeForwardRules(rules)
 
@@ -55,14 +55,25 @@ class ForwardRulesTest {
         // The other half of the backward-compat guarantee: the new fields are compared against their
         // defaults, not remembered as "present", so a rule that says only the old things is written
         // exactly as an older build would have written it - whichever way round the entry was built.
-        val local = ForwardEntry(
-            type = ForwardType.LOCAL, localPort = 8080, remoteHost = "db", remotePort = 5432,
-            listenHost = DEFAULT_FORWARD_LISTEN_HOST, enabled = true, autoStart = true, name = null,
-        )
-        val remote = ForwardEntry(
-            type = ForwardType.REMOTE, localPort = 22, remotePort = 2222,
-            listenHost = DEFAULT_FORWARD_LISTEN_HOST, localHost = DEFAULT_FORWARD_LISTEN_HOST,
-        )
+        val local =
+            ForwardEntry(
+                type = ForwardType.LOCAL,
+                localPort = 8080,
+                remoteHost = "db",
+                remotePort = 5432,
+                listenHost = DEFAULT_FORWARD_LISTEN_HOST,
+                enabled = true,
+                autoStart = true,
+                name = null,
+            )
+        val remote =
+            ForwardEntry(
+                type = ForwardType.REMOTE,
+                localPort = 22,
+                remotePort = 2222,
+                listenHost = DEFAULT_FORWARD_LISTEN_HOST,
+                localHost = DEFAULT_FORWARD_LISTEN_HOST,
+            )
 
         assertThat(local.toRuleText()).isEqualTo("L:8080:db:5432")
         assertThat(remote.toRuleText()).isEqualTo("R:2222:22")
@@ -211,7 +222,8 @@ class ForwardRulesTest {
         // A rule pasted from a note may well be lower case, and rejecting it would look like the editor
         // refusing a rule that is plainly correct.
         assertThat(decodeForwardRules("l:8080:a:80\nr:2222:22\nd:1080").map { it.type })
-            .containsExactly(ForwardType.LOCAL, ForwardType.REMOTE, ForwardType.DYNAMIC).inOrder()
+            .containsExactly(ForwardType.LOCAL, ForwardType.REMOTE, ForwardType.DYNAMIC)
+            .inOrder()
     }
 
     @Test
@@ -256,25 +268,26 @@ class ForwardRulesTest {
         // Decoding is validation, and it has to be total: this text can come from a hand-edited or
         // truncated vault backup, so one bad line must not be able to stop the other rules - or the host
         // itself - from loading. Each of these is a shape a real file could contain.
-        val hostile = listOf(
-            "",                       // nothing
-            "L",                      // a kind and no fields
-            "L:",                     // a kind and an empty tail
-            "X:1080",                 // a kind that does not exist
-            "D:0",                    // port 0 is reserved and would fail to bind
-            "D:70000",                // above the port range
-            "D:eighty",               // not a number
-            "D:-1",                   // negative
-            "L:8080",                 // a local rule with no target
-            "L:8080:host",            // a target with no port
-            "L:8080::80",             // a target with no host
-            "L:8080:  :80",           // a blank host
-            "L:8080:has space:80",    // whitespace could smuggle a second field past the encoder
-            "R:2222",                 // a remote rule with one port
-            "R:2222:0",               // a remote rule whose local port is reserved
-            "1080",                   // a bare port
-            "# a comment",            // not a syntax this codec claims to support
-        )
+        val hostile =
+            listOf(
+                "", // nothing
+                "L", // a kind and no fields
+                "L:", // a kind and an empty tail
+                "X:1080", // a kind that does not exist
+                "D:0", // port 0 is reserved and would fail to bind
+                "D:70000", // above the port range
+                "D:eighty", // not a number
+                "D:-1", // negative
+                "L:8080", // a local rule with no target
+                "L:8080:host", // a target with no port
+                "L:8080::80", // a target with no host
+                "L:8080:  :80", // a blank host
+                "L:8080:has space:80", // whitespace could smuggle a second field past the encoder
+                "R:2222", // a remote rule with one port
+                "R:2222:0", // a remote rule whose local port is reserved
+                "1080", // a bare port
+                "# a comment", // not a syntax this codec claims to support
+            )
 
         assertThat(decodeForwardRules(hostile.joinToString("\n"))).isEmpty()
         // And a bad line beside a good one costs only itself.
@@ -306,9 +319,10 @@ class ForwardRulesTest {
         // Both directions, because they defend different things: encoding bounds what the editor can save,
         // decoding bounds what an imported backup can ask the app to bind. A file naming ten thousand
         // rules must not turn a login into ten thousand listening sockets.
-        val many = (1..MAX_SAVED_FORWARDS + 20).map {
-            ForwardEntry(type = ForwardType.DYNAMIC, localPort = 1000 + it)
-        }
+        val many =
+            (1..MAX_SAVED_FORWARDS + 20).map {
+                ForwardEntry(type = ForwardType.DYNAMIC, localPort = 1000 + it)
+            }
 
         assertThat(encodeForwardRules(many).lines()).hasSize(MAX_SAVED_FORWARDS)
         assertThat(decodeForwardRules(many.joinToString("\n") { it.toRuleText() })).hasSize(MAX_SAVED_FORWARDS)

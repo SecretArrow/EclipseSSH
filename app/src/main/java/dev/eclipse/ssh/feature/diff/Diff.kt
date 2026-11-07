@@ -17,7 +17,6 @@ package dev.eclipse.ssh.feature.diff
  * unit-tested.
  */
 object Diff {
-
     /**
      * Computes the diff of [oldText] and [newText] line by line.
      *
@@ -61,15 +60,31 @@ object Diff {
      * renderer colours by kind.
      */
     sealed interface Change {
-        data class Equal(val text: String) : Change
-        data class Insert(val text: String) : Change
-        data class Delete(val text: String) : Change
+        data class Equal(
+            val text: String,
+        ) : Change
+
+        data class Insert(
+            val text: String,
+        ) : Change
+
+        data class Delete(
+            val text: String,
+        ) : Change
     }
 
     private sealed interface Op {
-        data class Keep(val text: String) : Op
-        data class Add(val text: String) : Op
-        data class Remove(val text: String) : Op
+        data class Keep(
+            val text: String,
+        ) : Op
+
+        data class Add(
+            val text: String,
+        ) : Op
+
+        data class Remove(
+            val text: String,
+        ) : Op
     }
 
     /**
@@ -78,7 +93,10 @@ object Diff {
      * 100 MB as `IntArray`. Realistic cap is 2 000 lines per file in
      * the file browser, so the worst case is 4 million cells / 16 MB.
      */
-    private fun computeOps(old: List<String>, new: List<String>): List<Op> {
+    private fun computeOps(
+        old: List<String>,
+        new: List<String>,
+    ): List<Op> {
         val n = old.size
         val m = new.size
         if (n == 0 && m == 0) return emptyList()
@@ -89,11 +107,12 @@ object Diff {
         val lcs = Array(n + 1) { IntArray(m + 1) }
         for (i in 1..n) {
             for (j in 1..m) {
-                lcs[i][j] = if (old[i - 1] == new[j - 1]) {
-                    lcs[i - 1][j - 1] + 1
-                } else {
-                    maxOf(lcs[i - 1][j], lcs[i][j - 1])
-                }
+                lcs[i][j] =
+                    if (old[i - 1] == new[j - 1]) {
+                        lcs[i - 1][j - 1] + 1
+                    } else {
+                        maxOf(lcs[i - 1][j], lcs[i][j - 1])
+                    }
             }
         }
         // Backtrack from (n, m) to (0, 0), building the op list in reverse.
@@ -131,7 +150,10 @@ object Diff {
      * around the change, the leading and trailing context are trimmed
      * to `contextLines` so the displayed hunk is compact.
      */
-    private fun buildHunks(ops: List<Op>, contextLines: Int): List<Hunk> {
+    private fun buildHunks(
+        ops: List<Op>,
+        contextLines: Int,
+    ): List<Hunk> {
         if (ops.isEmpty()) return emptyList()
         val hunks = ArrayList<Hunk>()
         var i = 0

@@ -22,7 +22,6 @@ sealed class UserspaceFailure(
     message: String,
     cause: Throwable? = null,
 ) : IOException(message, cause) {
-
     /** The device had no usable network when a step needed one. */
     class Offline(
         detail: String? = null,
@@ -40,12 +39,12 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "DNS does not resolve" +
-            (servers.takeIf { it.isNotEmpty() }?.let { " through the configured resolvers (${it.joinToString(", ")})" } ?: "") +
-            " - check the network or try a different connection" +
-            detail.inParentheses(),
-        cause,
-    )
+            "DNS does not resolve" +
+                (servers.takeIf { it.isNotEmpty() }?.let { " through the configured resolvers (${it.joinToString(", ")})" } ?: "") +
+                " - check the network or try a different connection" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /** Why one archive could not be reached — the distinction the old prose flattened. */
     sealed interface Kind {
@@ -59,7 +58,9 @@ sealed class UserspaceFailure(
         }
 
         /** An HTTP-level refusal from a host that answered; apt's 404 on a missing suite is the common one. */
-        data class Http(val code: Int) : Kind {
+        data class Http(
+            val code: Int,
+        ) : Kind {
             override val describe: String get() = "HTTP $code"
         }
 
@@ -84,9 +85,9 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the package repository $uri could not be verified - its signature is missing or invalid" + detail.inParentheses(),
-        cause,
-    )
+            "the package repository $uri could not be verified - its signature is missing or invalid" + detail.inParentheses(),
+            cause,
+        )
 
     /**
      * The pinned base system itself could not be obtained: every transfer attempt failed, or the
@@ -105,13 +106,13 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the Ubuntu base system could not be downloaded" +
-            (attempts.takeIf { it > 1 }?.let { " after $it attempts" } ?: "") +
-            " - check the connection and try again; the failure is in the download, not in what is " +
-            "already installed" +
-            detail.inParentheses(),
-        cause,
-    )
+            "the Ubuntu base system could not be downloaded" +
+                (attempts.takeIf { it > 1 }?.let { " after $it attempts" } ?: "") +
+                " - check the connection and try again; the failure is in the download, not in what is " +
+                "already installed" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * proot itself failed to launch — a missing loader, a ptrace refusal — which the historical
@@ -126,12 +127,12 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the Linux runtime (proot) failed to start" +
-            (exitCode.takeIf { it >= 0 }?.let { " - exit code $it" } ?: "") +
-            tailSummary(tail) +
-            detail.inParentheses(),
-        cause,
-    )
+            "the Linux runtime (proot) failed to start" +
+                (exitCode.takeIf { it >= 0 }?.let { " - exit code $it" } ?: "") +
+                tailSummary(tail) +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * Not enough disk for the install. When the disk-space gate in the installer layer already
@@ -144,19 +145,19 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        detail ?: "not enough free disk space - the install needs about ${neededBytes / MIB} MiB but only ${freeBytes / MIB} MiB is available",
-        cause,
-    )
+            detail ?: "not enough free disk space - the install needs about ${neededBytes / MIB} MiB but only ${freeBytes / MIB} MiB is available",
+            cause,
+        )
 
     /** dpkg's state is inconsistent; the repair pass (`dpkg --configure -a`) exists for exactly this. */
     class PackageDbBroken(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the package database is inconsistent - the repair pass will run; if this repeats, uninstall and reinstall Ubuntu" +
-            detail.inParentheses(),
-        cause,
-    )
+            "the package database is inconsistent - the repair pass will run; if this repeats, uninstall and reinstall Ubuntu" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /** A named setup step blew its whole budget without finishing. */
     class StepTimedOut(
@@ -164,10 +165,10 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "'$step' did not finish in time - the network may be too slow, or the step stopped making progress" +
-            detail.inParentheses(),
-        cause,
-    )
+            "'$step' did not finish in time - the network may be too slow, or the step stopped making progress" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * A program inside the userspace was killed by a signal instead of exiting.
@@ -204,12 +205,12 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the package manager failed while configuring a package" +
-            (exitCode?.let { " (exit $it)" } ?: "") +
-            " - Repair runs the repair pass again, and the package's own error is in the install log" +
-            detail.inParentheses(),
-        cause,
-    )
+            "the package manager failed while configuring a package" +
+                (exitCode?.let { " (exit $it)" } ?: "") +
+                " - Repair runs the repair pass again, and the package's own error is in the install log" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * A package command refused because the package manager's lock was not available, in one of the
@@ -246,20 +247,20 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        if (openFailed) {
-            "the package manager's lock cannot be opened" +
-                (locks.takeIf { it.isNotEmpty() }?.let { " (${it.joinToString(", ")})" } ?: "") +
-                " - Repair clears it" +
-                detail.inParentheses()
-        } else {
-            "another package operation is still holding the package manager's lock" +
-                (holderPid?.let { " (held by process $it)" } ?: "") +
-                (locks.takeIf { it.isNotEmpty() }?.let { " - ${it.joinToString(", ")}" } ?: "") +
-                " - wait for it to finish, then try again" +
-                detail.inParentheses()
-        },
-        cause,
-    )
+            if (openFailed) {
+                "the package manager's lock cannot be opened" +
+                    (locks.takeIf { it.isNotEmpty() }?.let { " (${it.joinToString(", ")})" } ?: "") +
+                    " - Repair clears it" +
+                    detail.inParentheses()
+            } else {
+                "another package operation is still holding the package manager's lock" +
+                    (holderPid?.let { " (held by process $it)" } ?: "") +
+                    (locks.takeIf { it.isNotEmpty() }?.let { " - ${it.joinToString(", ")}" } ?: "") +
+                    " - wait for it to finish, then try again" +
+                    detail.inParentheses()
+            },
+            cause,
+        )
 
     /**
      * The package database cannot be read and neither dpkg's own previous copy nor the archive's
@@ -287,12 +288,12 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the package database cannot be read and no intact copy is left on the device - " +
-            "Repair rebuilds Ubuntu from the archive, which removes the packages installed on top " +
-            "of it; your own files are kept" +
-            detail.inParentheses(),
-        cause,
-    )
+            "the package database cannot be read and no intact copy is left on the device - " +
+                "Repair rebuilds Ubuntu from the archive, which removes the packages installed on top " +
+                "of it; your own files are kept" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * A package index came back corrupted: apt's `Hash Sum mismatch`, or a file whose size is not
@@ -305,12 +306,14 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        (uri?.takeIf { it.isNotBlank() }?.let { "a package index from $it was corrupted in transit" }
-            ?: "a package index was corrupted in transit") +
-            " - the stale indexes are cleared and fetched again" +
-            detail.inParentheses(),
-        cause,
-    )
+            (
+                uri?.takeIf { it.isNotBlank() }?.let { "a package index from $it was corrupted in transit" }
+                    ?: "a package index was corrupted in transit"
+            ) +
+                " - the stale indexes are cleared and fetched again" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * The archive says its own metadata is not valid yet, or no longer is. The clock is the cause:
@@ -323,16 +326,16 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the device's clock disagrees with the package archive's timestamps" +
-            if (expired) {
-                " - its index reads as expired, which a wrong date makes it say"
-            } else {
-                " - its index is not valid yet"
-            } +
-            " - turn on automatic date and time, then try again" +
-            detail.inParentheses(),
-        cause,
-    )
+            "the device's clock disagrees with the package archive's timestamps" +
+                if (expired) {
+                    " - its index reads as expired, which a wrong date makes it say"
+                } else {
+                    " - its index is not valid yet"
+                } +
+                " - turn on automatic date and time, then try again" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * The userspace's own temporary directory is not a writable directory — deleted, replaced by a
@@ -350,10 +353,10 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "Ubuntu's temporary directory ($path) cannot be written to - Repair recreates it" +
-            detail.inParentheses(),
-        cause,
-    )
+            "Ubuntu's temporary directory ($path) cannot be written to - Repair recreates it" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * The Linux runtime this app *ships* is missing or unusable: the proot binary or its loader is
@@ -371,11 +374,11 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "the Linux runtime this app ships ($component) is missing or unusable in this installation" +
-            " - reinstall or update the app; the Ubuntu files are not the problem" +
-            detail.inParentheses(),
-        cause,
-    )
+            "the Linux runtime this app ships ($component) is missing or unusable in this installation" +
+                " - reinstall or update the app; the Ubuntu files are not the problem" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * Every terminal the app can hold open at once is already open — the native pty layer's own
@@ -387,10 +390,10 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-        "too many Ubuntu terminals are open at once ($limit) - close one and try again" +
-            detail.inParentheses(),
-        cause,
-    )
+            "too many Ubuntu terminals are open at once ($limit) - close one and try again" +
+                detail.inParentheses(),
+            cause,
+        )
 
     /**
      * The health probe found the userspace unable to do the one thing it exists for, after the
@@ -471,12 +474,16 @@ sealed class UserspaceFailure(
          * rewording them here would fork one sentence into two. Returns null for anything else —
          * the original exception stays the answer.
          */
-        fun fromMessage(message: String, cause: Throwable? = null): UserspaceFailure? = when {
-            message.startsWith(RUNTIME_STORAGE_PREFIX) ->
-                ProotLaunchFailed(-1, message.removePrefix(RUNTIME_STORAGE_PREFIX).trim(), cause = cause)
-            message.startsWith(DISK_FULL_PREFIX) -> DiskFull(0, 0, detail = message, cause = cause)
-            else -> null
-        }
+        fun fromMessage(
+            message: String,
+            cause: Throwable? = null,
+        ): UserspaceFailure? =
+            when {
+                message.startsWith(RUNTIME_STORAGE_PREFIX) ->
+                    ProotLaunchFailed(-1, message.removePrefix(RUNTIME_STORAGE_PREFIX).trim(), cause = cause)
+                message.startsWith(DISK_FULL_PREFIX) -> DiskFull(0, 0, detail = message, cause = cause)
+                else -> null
+            }
 
         /**
          * The typed failure for [failure], or null when it is not one this taxonomy knows — the
@@ -519,7 +526,10 @@ sealed class UserspaceFailure(
          * ability to start. 128 itself is not a signal death — it encodes signal zero — so it stays
          * on the launcher's side of the line, where it has always been read.
          */
-        private fun launcherFailure(exitCode: Int?, output: String): UserspaceFailure? {
+        private fun launcherFailure(
+            exitCode: Int?,
+            output: String,
+        ): UserspaceFailure? {
             if (exitCode != null && exitCode > 128) return KilledBySignal(exitCode - 128, output)
             val launcherExit = exitCode != null && (exitCode == 126 || exitCode == 127 || exitCode == 128)
             val prootSpoke = PROOT_ERROR.containsMatchIn(output) || output.contains("ptrace", ignoreCase = true)
@@ -532,7 +542,12 @@ sealed class UserspaceFailure(
          * resolver failure says nothing about a clock, and a lock file's name is better evidence
          * than the word "dpkg" appearing somewhere in the same output.
          */
-        private fun systemFailure(uri: String?, exitCode: Int?, output: String, dnsServers: List<String>): UserspaceFailure? {
+        private fun systemFailure(
+            uri: String?,
+            exitCode: Int?,
+            output: String,
+            dnsServers: List<String>,
+        ): UserspaceFailure? {
             if (DNS_PATTERNS.any { it.containsMatchIn(output) }) return DnsUnresolved(dnsServers, detail = firstErrorLine(output))
             if (DISK_FULL_PATTERNS.any { it.containsMatchIn(output) }) return DiskFull(0, 0, detail = firstErrorLine(output))
             // Before the lock and database families: apt's own words for a wrong clock name nothing
@@ -561,11 +576,12 @@ sealed class UserspaceFailure(
          * device whose date is behind, "expired" is one whose date is ahead, and only the first is
          * the common factory-reset case.
          */
-        private fun clockSkew(output: String): Boolean? = when {
-            NOT_YET_VALID_PATTERN.containsMatchIn(output) -> false
-            EXPIRED_PATTERN.containsMatchIn(output) -> true
-            else -> null
-        }
+        private fun clockSkew(output: String): Boolean? =
+            when {
+                NOT_YET_VALID_PATTERN.containsMatchIn(output) -> false
+                EXPIRED_PATTERN.containsMatchIn(output) -> true
+                else -> null
+            }
 
         /**
          * Every lock file the output named, deduplicated. Empty is a real answer — apt sometimes
@@ -573,10 +589,20 @@ sealed class UserspaceFailure(
          * separately by the caller rather than folded in here.
          */
         private fun locksNamedIn(output: String): List<String> =
-            LOCK_PATH_PATTERN.findAll(output).map { it.value }.distinct().take(MAX_LOCKS).toList()
+            LOCK_PATH_PATTERN
+                .findAll(output)
+                .map { it.value }
+                .distinct()
+                .take(MAX_LOCKS)
+                .toList()
 
         /** The pid a lock message named, or null when it named none. */
-        private fun dpkgLockHolder(output: String): Int? = LOCK_HOLDER_PATTERN.find(output)?.groupValues?.get(1)?.toIntOrNull()
+        private fun dpkgLockHolder(output: String): Int? =
+            LOCK_HOLDER_PATTERN
+                .find(output)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull()
 
         /**
          * The line dpkg printed naming the package it could not configure, which is the one fact a
@@ -584,7 +610,8 @@ sealed class UserspaceFailure(
          * to the `E:` line when dpkg named no package at all.
          */
         private fun dpkgSubprocessLine(output: String): String? =
-            output.lineSequence()
+            output
+                .lineSequence()
                 .map { it.trim() }
                 .firstOrNull { DPKG_PACKAGE_PATTERN.containsMatchIn(it) }
                 ?.take(MAX_TAIL)
@@ -600,11 +627,16 @@ sealed class UserspaceFailure(
 
         /** The first apt line that names the problem — the `Err:`/`E:` line, not a transcript. */
         private fun firstErrorLine(output: String): String? =
-            output.lineSequence()
+            output
+                .lineSequence()
                 .map { it.trim() }
                 .firstOrNull { it.startsWith("Err:") || it.startsWith("E:") }
                 ?.take(MAX_TAIL)
-                ?: output.lineSequence().map { it.trim() }.lastOrNull { it.isNotBlank() }?.take(MAX_TAIL)
+                ?: output
+                    .lineSequence()
+                    .map { it.trim() }
+                    .lastOrNull { it.isNotBlank() }
+                    ?.take(MAX_TAIL)
     }
 }
 
@@ -621,7 +653,10 @@ private fun String?.inParentheses(): String = this?.let { " ($it)" } ?: ""
  * wrong. The tail is appended by the same function every other type uses, because proot's own last
  * words are often the only evidence of *which* program died.
  */
-private fun killedSentence(signal: Int, tail: String): String =
+private fun killedSentence(
+    signal: Int,
+    tail: String,
+): String =
     when (signal) {
         9 -> "Ubuntu was killed by the system, which happens when the device runs out of memory - close other apps and try again"
         11 -> "a program in Ubuntu crashed - this is a bug in the program, not in Ubuntu's files"
@@ -632,7 +667,8 @@ private fun killedSentence(signal: Int, tail: String): String =
 
 /** The last thing the failed command said, as one line — proot's own error text lives here. */
 private fun tailSummary(tail: String): String =
-    tail.lineSequence()
+    tail
+        .lineSequence()
         .map { it.trim() }
         .lastOrNull { it.isNotBlank() }
         ?.take(MAX_TAIL)
@@ -659,43 +695,47 @@ internal const val DISK_FULL_PREFIX = "Ubuntu needs"
  */
 internal val PROOT_ERROR = Regex("""(?m)^\s*proot(\s+\w+)?\s*:""", RegexOption.IGNORE_CASE)
 
-private val DNS_PATTERNS = listOf(
-    Regex("Temporary failure resolving", RegexOption.IGNORE_CASE),
-    Regex("Temporary failure in resolution", RegexOption.IGNORE_CASE),
-    Regex("""\bCould not resolve\b""", RegexOption.IGNORE_CASE),
-    Regex("Name or service not known", RegexOption.IGNORE_CASE),
-)
+private val DNS_PATTERNS =
+    listOf(
+        Regex("Temporary failure resolving", RegexOption.IGNORE_CASE),
+        Regex("Temporary failure in resolution", RegexOption.IGNORE_CASE),
+        Regex("""\bCould not resolve\b""", RegexOption.IGNORE_CASE),
+        Regex("Name or service not known", RegexOption.IGNORE_CASE),
+    )
 
-private val DISK_FULL_PATTERNS = listOf(
-    Regex("No space left on device", RegexOption.IGNORE_CASE),
-    Regex("""\bdon'?t have enough free space\b""", RegexOption.IGNORE_CASE),
-    Regex("Not enough free disk space", RegexOption.IGNORE_CASE),
-)
+private val DISK_FULL_PATTERNS =
+    listOf(
+        Regex("No space left on device", RegexOption.IGNORE_CASE),
+        Regex("""\bdon'?t have enough free space\b""", RegexOption.IGNORE_CASE),
+        Regex("Not enough free disk space", RegexOption.IGNORE_CASE),
+    )
 
-private val PACKAGE_DB_PATTERNS = listOf(
-    Regex("""\bdpkg was interrupted\b""", RegexOption.IGNORE_CASE),
-    Regex("very bad inconsistent state", RegexOption.IGNORE_CASE),
-    Regex("unmet dependencies", RegexOption.IGNORE_CASE),
-    Regex("""\bdpkg status database\b""", RegexOption.IGNORE_CASE),
-    // The database file itself, not the state it describes: dpkg cannot open the very file every
-    // command reads, which the repair pass in the ladder exists to put back. Read as PackageDbBroken
-    // rather than as a dpkg exit code, because the word "repair" in its sentence is the true answer.
-    Regex("""failed to open package info file""", RegexOption.IGNORE_CASE),
-    Regex("""parse error, in file '?/var/lib/dpkg/status""", RegexOption.IGNORE_CASE),
-)
+private val PACKAGE_DB_PATTERNS =
+    listOf(
+        Regex("""\bdpkg was interrupted\b""", RegexOption.IGNORE_CASE),
+        Regex("very bad inconsistent state", RegexOption.IGNORE_CASE),
+        Regex("unmet dependencies", RegexOption.IGNORE_CASE),
+        Regex("""\bdpkg status database\b""", RegexOption.IGNORE_CASE),
+        // The database file itself, not the state it describes: dpkg cannot open the very file every
+        // command reads, which the repair pass in the ladder exists to put back. Read as PackageDbBroken
+        // rather than as a dpkg exit code, because the word "repair" in its sentence is the true answer.
+        Regex("""failed to open package info file""", RegexOption.IGNORE_CASE),
+        Regex("""parse error, in file '?/var/lib/dpkg/status""", RegexOption.IGNORE_CASE),
+    )
 
 /**
  * Every way apt and dpkg say that their lock is not available: the frontend lock (apt's), the dpkg
  * lock, the lists lock, the bare refusals that name no file at all, and the refusal that is not
  * about a holder at all — `Could not open lock file`, which names a path apt could not open.
  */
-private val LOCK_PATTERNS = listOf(
-    Regex("""Could not get lock""", RegexOption.IGNORE_CASE),
-    Regex("""Unable to acquire the dpkg frontend lock""", RegexOption.IGNORE_CASE),
-    Regex("""is another process using it""", RegexOption.IGNORE_CASE),
-    Regex("""lock file already used""", RegexOption.IGNORE_CASE),
-    Regex("""Could not open lock file""", RegexOption.IGNORE_CASE),
-)
+private val LOCK_PATTERNS =
+    listOf(
+        Regex("""Could not get lock""", RegexOption.IGNORE_CASE),
+        Regex("""Unable to acquire the dpkg frontend lock""", RegexOption.IGNORE_CASE),
+        Regex("""is another process using it""", RegexOption.IGNORE_CASE),
+        Regex("""lock file already used""", RegexOption.IGNORE_CASE),
+        Regex("""Could not open lock file""", RegexOption.IGNORE_CASE),
+    )
 
 /**
  * The refusal that is about the *path* rather than about a holder: apt could not open the file at all
@@ -712,53 +752,61 @@ private val LOCK_PATH_PATTERN = Regex("""(/[^\s,()]*?lock[^\s,().]*)""")
 private val LOCK_HOLDER_PATTERN = Regex("""held by process (\d+)""", RegexOption.IGNORE_CASE)
 
 /** apt's own words for dpkg refusing on a package's behalf. */
-private val DPKG_SUBPROCESS_PATTERN = Regex(
-    """Sub-process /usr/bin/dpkg returned an error code|Errors were encountered while processing""",
-    RegexOption.IGNORE_CASE,
-)
+private val DPKG_SUBPROCESS_PATTERN =
+    Regex(
+        """Sub-process /usr/bin/dpkg returned an error code|Errors were encountered while processing""",
+        RegexOption.IGNORE_CASE,
+    )
 
 /** The line that names the package dpkg could not configure. */
-private val DPKG_PACKAGE_PATTERN = Regex(
-    """dpkg: (error processing package|error: )|package is in a very bad inconsistent state""",
-    RegexOption.IGNORE_CASE,
-)
+private val DPKG_PACKAGE_PATTERN =
+    Regex(
+        """dpkg: (error processing package|error: )|package is in a very bad inconsistent state""",
+        RegexOption.IGNORE_CASE,
+    )
 
 /**
  * `Hash Sum mismatch` and the size complaint beside it. The download is the suspect: apt compares
  * what arrived against what the signed `Release` file promised, and a mismatch is a corrupted or
  * truncated transfer far more often than a tampered archive.
  */
-private val HASH_MISMATCH_PATTERN = Regex(
-    """Hash Sum mismatch|Size mismatch|Filesize \d+ differs""",
-    RegexOption.IGNORE_CASE,
-)
+private val HASH_MISMATCH_PATTERN =
+    Regex(
+        """Hash Sum mismatch|Size mismatch|Filesize \d+ differs""",
+        RegexOption.IGNORE_CASE,
+    )
 
 /** The clock, in the archive's own words: an index that is not valid yet, or one that expired. */
-private val NOT_YET_VALID_PATTERN = Regex(
-    """not valid yet|Release file .* is not valid""",
-    RegexOption.IGNORE_CASE,
-)
+private val NOT_YET_VALID_PATTERN =
+    Regex(
+        """not valid yet|Release file .* is not valid""",
+        RegexOption.IGNORE_CASE,
+    )
 
-private val EXPIRED_PATTERN = Regex(
-    """Release file .* is expired|has expired|Valid-Until""",
-    RegexOption.IGNORE_CASE,
-)
+private val EXPIRED_PATTERN =
+    Regex(
+        """Release file .* is expired|has expired|Valid-Until""",
+        RegexOption.IGNORE_CASE,
+    )
 
-private val UNSIGNED_PATTERN = Regex(
-    """NO_PUBKEY|is not signed|signatures? (?:were invalid|couldn'?t be verified)|GPG error""",
-    RegexOption.IGNORE_CASE,
-)
+private val UNSIGNED_PATTERN =
+    Regex(
+        """NO_PUBKEY|is not signed|signatures? (?:were invalid|couldn'?t be verified)|GPG error""",
+        RegexOption.IGNORE_CASE,
+    )
 
 private val REFUSED_PATTERN = Regex("""Connection refused|connect \(111""", RegexOption.IGNORE_CASE)
 
-private val TIMEOUT_PATTERN = Regex(
-    """Connection timed out|connect \(110|Could not connect|Unable to connect to""",
-    RegexOption.IGNORE_CASE,
-)
+private val TIMEOUT_PATTERN =
+    Regex(
+        """Connection timed out|connect \(110|Could not connect|Unable to connect to""",
+        RegexOption.IGNORE_CASE,
+    )
 
 private val NOT_FOUND_PATTERN = Regex("""\b(\d{3})\s+Not Found\b""")
 
-private val TLS_PATTERN = Regex(
-    """Certificate verification failed|certificate is not trusted|SSL certificate problem""",
-    RegexOption.IGNORE_CASE,
-)
+private val TLS_PATTERN =
+    Regex(
+        """Certificate verification failed|certificate is not trusted|SSL certificate problem""",
+        RegexOption.IGNORE_CASE,
+    )

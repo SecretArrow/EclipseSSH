@@ -48,7 +48,6 @@ enum class InstallPlan {
  * 100% standing — the screen replaces the whole row with the failure.
  */
 object LinuxInstallProgress {
-
     /**
      * The share of a [InstallPlan.FULL] install each phase owns, in the order [position] numbers
      * them: download, verify, extract, setup, health.
@@ -82,16 +81,17 @@ object LinuxInstallProgress {
      * step's percentage simply follows the previous one's, which is what "this step is not
      * happening" should look like.
      */
-    private fun setupWeight(step: SetupStep): Float = when (step) {
-        SetupStep.REGISTER_USER -> 0.02f
-        SetupStep.PREPARE_WORKSPACE -> 0.03f
-        SetupStep.CONFIGURE_DNS -> 0.02f
-        SetupStep.CONFIGURE_APT -> 0.03f
-        SetupStep.UPDATE_PACKAGES -> 0.28f
-        SetupStep.INSTALL_BASE_PACKAGES -> 0.36f
-        SetupStep.INSTALL_EXTRA_PACKAGES -> 0.19f
-        SetupStep.VERIFY -> 0.07f
-    }
+    private fun setupWeight(step: SetupStep): Float =
+        when (step) {
+            SetupStep.REGISTER_USER -> 0.02f
+            SetupStep.PREPARE_WORKSPACE -> 0.03f
+            SetupStep.CONFIGURE_DNS -> 0.02f
+            SetupStep.CONFIGURE_APT -> 0.03f
+            SetupStep.UPDATE_PACKAGES -> 0.28f
+            SetupStep.INSTALL_BASE_PACKAGES -> 0.36f
+            SetupStep.INSTALL_EXTRA_PACKAGES -> 0.19f
+            SetupStep.VERIFY -> 0.07f
+        }
 
     /**
      * The whole install's progress, 0 to 100, for a step of a run following [plan].
@@ -100,7 +100,10 @@ object LinuxInstallProgress {
      * the same fact: a bar drawn from its own float would read "43%" beside a bar that is 43.4%
      * full, which is the kind of disagreement nobody can name but everybody notices.
      */
-    fun percent(step: LinuxInstallStep, plan: InstallPlan = InstallPlan.FULL): Int {
+    fun percent(
+        step: LinuxInstallStep,
+        plan: InstallPlan = InstallPlan.FULL,
+    ): Int {
         val (phase, within) = position(step)
         return percentAt(phase, within, plan)
     }
@@ -112,25 +115,32 @@ object LinuxInstallProgress {
      * interior to report on, and a bar that moves once during it is a better account of a phase
      * than a bar that does not move at all.
      */
-    private fun position(step: LinuxInstallStep): Pair<Int, Float> = when (step) {
-        is LinuxInstallStep.Downloading -> 0 to downloadFraction(step)
-        LinuxInstallStep.Verifying -> 1 to 0.5f
-        is LinuxInstallStep.Extracting -> 2 to (step.fraction ?: 0f)
-        is LinuxInstallStep.SettingUp -> SETUP_PHASE to setupFraction(step.step, step.fraction)
-        LinuxInstallStep.VerifyingHealth -> 4 to 1f
-    }
+    private fun position(step: LinuxInstallStep): Pair<Int, Float> =
+        when (step) {
+            is LinuxInstallStep.Downloading -> 0 to downloadFraction(step)
+            LinuxInstallStep.Verifying -> 1 to 0.5f
+            is LinuxInstallStep.Extracting -> 2 to (step.fraction ?: 0f)
+            is LinuxInstallStep.SettingUp -> SETUP_PHASE to setupFraction(step.step, step.fraction)
+            LinuxInstallStep.VerifyingHealth -> 4 to 1f
+        }
 
-    private fun percentAt(phase: Int, within: Float, plan: InstallPlan): Int {
+    private fun percentAt(
+        phase: Int,
+        within: Float,
+        plan: InstallPlan,
+    ): Int {
         // A SETUP_ONLY run renormalizes the phases it will actually traverse: the rootfs half is
         // not a quarter of the work skipped, it is work that does not exist for this run.
-        val weights = when (plan) {
-            InstallPlan.FULL -> FULL_WEIGHTS
-            InstallPlan.SETUP_ONLY -> FULL_WEIGHTS.drop(SETUP_PHASE)
-        }
-        val index = when (plan) {
-            InstallPlan.FULL -> phase
-            InstallPlan.SETUP_ONLY -> phase - SETUP_PHASE
-        }
+        val weights =
+            when (plan) {
+                InstallPlan.FULL -> FULL_WEIGHTS
+                InstallPlan.SETUP_ONLY -> FULL_WEIGHTS.drop(SETUP_PHASE)
+            }
+        val index =
+            when (plan) {
+                InstallPlan.FULL -> phase
+                InstallPlan.SETUP_ONLY -> phase - SETUP_PHASE
+            }
         // Unreachable in practice — a SETUP_ONLY run never emits a rootfs step — and worth a
         // defined answer rather than an exception in a UI path: 0 is the honest reading of "this
         // run has nothing to show for that step".
@@ -143,11 +153,13 @@ object LinuxInstallProgress {
     }
 
     /** The download's own fraction: bytes arrived of bytes announced, or 0 when no total is known. */
-    private fun downloadFraction(step: LinuxInstallStep.Downloading): Float =
-        if (step.total > 0L) (step.received.toFloat() / step.total.toFloat()) else 0f
+    private fun downloadFraction(step: LinuxInstallStep.Downloading): Float = if (step.total > 0L) (step.received.toFloat() / step.total.toFloat()) else 0f
 
     /** Where a setup step's own progress places it inside the setup phase. */
-    private fun setupFraction(step: SetupStep, within: Float?): Float {
+    private fun setupFraction(
+        step: SetupStep,
+        within: Float?,
+    ): Float {
         var done = 0f
         for (candidate in SetupStep.entries) {
             if (candidate == step) break
@@ -172,7 +184,9 @@ object LinuxInstallProgress {
  * previous reading standing — the same answer as a step nothing can measure.
  */
 internal fun aptProgressFraction(line: String): Float? =
-    APT_PROGRESS.findAll(line).lastOrNull()
+    APT_PROGRESS
+        .findAll(line)
+        .lastOrNull()
         ?.groupValues
         ?.get(1)
         ?.toFloatOrNull()

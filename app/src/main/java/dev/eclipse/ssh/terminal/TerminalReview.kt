@@ -23,7 +23,10 @@ package dev.eclipse.ssh.terminal
  * every command after the cut to the wrong prompt. [AnsiTerminalBuffer.sessionLines] builds the pairs
  * under one lock for exactly that reason.
  */
-data class SessionLine(val text: String, val mark: PromptMark?)
+data class SessionLine(
+    val text: String,
+    val mark: PromptMark?,
+)
 
 /**
  * One command of a session: the line its prompt is on, what the user typed, what it printed, and how it
@@ -58,11 +61,12 @@ data class ReviewedCommand(
      * able to see which command failed.
      */
     val end: String
-        get() = when {
-            endLine == null -> "no end reported"
-            exitCode == null -> "finished, status not reported"
-            else -> "exited $exitCode"
-        }
+        get() =
+            when {
+                endLine == null -> "no end reported"
+                exitCode == null -> "finished, status not reported"
+                else -> "exited $exitCode"
+            }
 }
 
 /**
@@ -113,10 +117,11 @@ fun reviewOutputExcerpt(output: String): String {
     val lines = output.split('\n')
     if (lines.size <= REVIEW_OUTPUT_HEAD + REVIEW_OUTPUT_TAIL) return output
     val omitted = lines.size - REVIEW_OUTPUT_HEAD - REVIEW_OUTPUT_TAIL
-    return (lines.take(REVIEW_OUTPUT_HEAD) +
-        "… $omitted more ${if (omitted == 1) "line" else "lines"}" +
-        lines.takeLast(REVIEW_OUTPUT_TAIL))
-        .joinToString("\n")
+    return (
+        lines.take(REVIEW_OUTPUT_HEAD) +
+            "… $omitted more ${if (omitted == 1) "line" else "lines"}" +
+            lines.takeLast(REVIEW_OUTPUT_TAIL)
+    ).joinToString("\n")
 }
 
 private const val REVIEW_OUTPUT_HEAD = 8
@@ -130,8 +135,9 @@ private fun reviewCommand(
 ): ReviewedCommand {
     val mark = marks[promptLine]
     // The line the shell accepted the command line on, which is the first line its output can be on.
-    val accepted = (promptLine + 1 until next)
-        .firstOrNull { PromptMarkKind.OUTPUT in (marks[it]?.kinds ?: emptySet()) }
+    val accepted =
+        (promptLine + 1 until next)
+            .firstOrNull { PromptMarkKind.OUTPUT in (marks[it]?.kinds ?: emptySet()) }
     val outputFrom = maxOf(accepted ?: (promptLine + 1), promptLine + 1)
     val endLine = ownEndLine(marks, promptLine, next)
     return ReviewedCommand(
@@ -163,7 +169,11 @@ private fun reviewCommand(
  * prompt appears is one that never reported one - which is a different thing from a status of zero, and
  * is why the answer is a line or nothing rather than a number.
  */
-private fun ownEndLine(marks: List<PromptMark?>, promptLine: Int, next: Int): Int? {
+private fun ownEndLine(
+    marks: List<PromptMark?>,
+    promptLine: Int,
+    next: Int,
+): Int? {
     for (index in promptLine + 1..minOf(next, marks.lastIndex)) {
         if (PromptMarkKind.FINISHED in (marks[index]?.kinds ?: emptySet())) return index
     }
@@ -180,7 +190,10 @@ private fun ownEndLine(marks: List<PromptMark?>, promptLine: Int, next: Int): In
  * shell that announced its prompt but not where the typing starts leaves the prompt in the text, which
  * is honest and better than guessing a boundary out of the prompt's own characters.
  */
-private fun typed(block: String, inputColumn: Int?): String {
+private fun typed(
+    block: String,
+    inputColumn: Int?,
+): String {
     if (inputColumn == null) return block
     val breakAt = block.indexOf('\n').let { if (it < 0) block.length else it }
     return block.substring(inputColumn.coerceIn(0, breakAt))

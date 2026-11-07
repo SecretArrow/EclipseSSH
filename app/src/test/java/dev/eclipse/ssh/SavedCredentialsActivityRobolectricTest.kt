@@ -10,13 +10,13 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.ui.settings.SavedCredentialsActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * Saved credentials, in its own window.
@@ -38,7 +38,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SavedCredentialsActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<SavedCredentialsActivity>()
 
@@ -68,7 +67,11 @@ class SavedCredentialsActivityRobolectricTest {
      * flow whose first emission is not synchronous, so asserting after a fixed number of frames is
      * a race even when the frames are pumped.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -116,7 +119,8 @@ class SavedCredentialsActivityRobolectricTest {
         // than that the filter works. The filter's own evidence needs a vault with something in it,
         // which is exactly what this suite cannot build.
         assertWithMessage("a \"Forget\" row action was drawn with nothing saved")
-            .that(compose.onAllNodesWithText("Forget").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Forget").fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**

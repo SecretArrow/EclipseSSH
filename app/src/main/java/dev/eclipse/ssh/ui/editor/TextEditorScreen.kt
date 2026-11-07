@@ -89,15 +89,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.ui.editor.encoding.FileEncoding
 import dev.eclipse.ssh.ui.editor.highlight.SyntaxColors
 import dev.eclipse.ssh.ui.editor.highlight.debouncedSyntaxTransformationFor
 import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 /**
  * A request to open the full-screen text editor on one file, local or remote.
@@ -122,13 +122,14 @@ internal const val MAX_EDIT_BYTES = 512 * 1024
  * outside it still works, it just displays as "Custom" and either arrow steps from the 2 s
  * default rather than guessing which side of the list it fell off.
  */
-private val AUTO_SAVE_DELAY_CHOICES = listOf(
-    500L to "0.5 s",
-    1_000L to "1 s",
-    2_000L to "2 s",
-    5_000L to "5 s",
-    10_000L to "10 s",
-)
+private val AUTO_SAVE_DELAY_CHOICES =
+    listOf(
+        500L to "0.5 s",
+        1_000L to "1 s",
+        2_000L to "2 s",
+        5_000L to "5 s",
+        10_000L to "10 s",
+    )
 
 @Composable
 fun TextEditorScreen(
@@ -181,11 +182,12 @@ fun TextEditorScreen(
         // another. fromLabel's null is unreachable — the prefs codec only lets known labels
         // through — but a preference that could crash the load it seeds is not a default worth
         // trusting, so the belt stays.
-        val tab = EditorTabState(
-            nextTabId++,
-            request,
-            FileEncoding.fromLabel(prefs.encoding) ?: FileEncoding.UTF_8,
-        )
+        val tab =
+            EditorTabState(
+                nextTabId++,
+                request,
+                FileEncoding.fromLabel(prefs.encoding) ?: FileEncoding.UTF_8,
+            )
         tabs += tab
         selectedTabId = tab.id
         tab.startLoad(scope)
@@ -265,9 +267,15 @@ fun TextEditorScreen(
                 findOpen = !findOpen
                 if (!findOpen) matchIndex = 0
             },
-            onQuery = { findQuery = it; matchIndex = 0 },
+            onQuery = {
+                findQuery = it
+                matchIndex = 0
+            },
             onReplacement = { findReplacement = it },
-            onCaseToggle = { findCaseSensitive = !findCaseSensitive; matchIndex = 0 },
+            onCaseToggle = {
+                findCaseSensitive = !findCaseSensitive
+                matchIndex = 0
+            },
             onMatchIndex = { matchIndex = it },
             onRequestClose = { requestClose(tab) },
             tabStrip = {
@@ -346,109 +354,113 @@ private fun SingleFileEditor(
     var optionsOpen by remember { mutableStateOf(false) }
 
     when (val state = tab.loadState) {
-        is EditorLoad.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
+        is EditorLoad.Loading ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
 
-        is EditorLoad.Failed -> Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        ) {
-            Text(tab.request.entry.name, style = MaterialTheme.typography.titleMedium)
-            Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // The way out the message points at: pick another encoding and the tab re-reads its
-            // bytes, and a charset the file fits opens it on the spot.
-            TextButton(onClick = { optionsOpen = true }) { Text("Editor options") }
-            TextButton(onClick = onRequestClose) { Text("Close") }
-        }
+        is EditorLoad.Failed ->
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            ) {
+                Text(tab.request.entry.name, style = MaterialTheme.typography.titleMedium)
+                Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // The way out the message points at: pick another encoding and the tab re-reads its
+                // bytes, and a charset the file fits opens it on the spot.
+                TextButton(onClick = { optionsOpen = true }) { Text("Editor options") }
+                TextButton(onClick = onRequestClose) { Text("Close") }
+            }
 
-        is EditorLoad.TooLarge -> Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        ) {
-            Text(tab.request.entry.name, style = MaterialTheme.typography.titleMedium)
-            Text(
-                "This file is ${"%.1f".format(state.bytes / (1024.0 * 1024.0))} MB. The editor opens " +
-                    "files up to ${MAX_EDIT_BYTES / (1024 * 1024)} MB so the device does not run out " +
-                    "of memory holding it; it can still be downloaded, renamed or deleted.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        is EditorLoad.TooLarge ->
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            ) {
+                Text(tab.request.entry.name, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "This file is ${"%.1f".format(state.bytes / (1024.0 * 1024.0))} MB. The editor opens " +
+                        "files up to ${MAX_EDIT_BYTES / (1024 * 1024)} MB so the device does not run out " +
+                        "of memory holding it; it can still be downloaded, renamed or deleted.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onRequestClose) { Text("Close") }
+            }
+
+        is EditorLoad.Ready ->
+            EditorBody(
+                request = tab.request,
+                readOnly = tab.readOnly,
+                textValue = tab.textValue,
+                onTextChange = tab::applyEdit,
+                onSnapshot = tab::applySnapshot,
+                onClipboardCopy = onClipboardCopy,
+                onClipboardPaste = onClipboardPaste,
+                history = tab.history,
+                dirty = tab.dirty,
+                saving = tab.saving,
+                saveError = tab.saveError,
+                onSave = { tab.save(scope, false) },
+                onClose = onRequestClose,
+                prefs = prefs,
+                encoding = tab.encoding,
+                onOpenOptions = { optionsOpen = true },
+                onToggleFind = onToggleFind,
+                findOpen = findOpen,
+                findQuery = findQuery,
+                findReplacement = findReplacement,
+                findCaseSensitive = findCaseSensitive,
+                matchIndex = matchIndex,
+                onQuery = onQuery,
+                onReplacement = onReplacement,
+                onCaseToggle = onCaseToggle,
+                onPrevious = {
+                    val matches = findAllMatches(tab.textValue.text, findQuery, findCaseSensitive)
+                    if (matches.isNotEmpty()) {
+                        val next = (((matchIndex - 1) % matches.size) + matches.size) % matches.size
+                        onMatchIndex(next)
+                        tab.selectMatch(matches[next])
+                    }
+                },
+                onNext = {
+                    val matches = findAllMatches(tab.textValue.text, findQuery, findCaseSensitive)
+                    if (matches.isNotEmpty()) {
+                        val next = (matchIndex + 1) % matches.size
+                        onMatchIndex(next)
+                        tab.selectMatch(matches[next])
+                    }
+                },
+                onReplace = {
+                    val matches = findAllMatches(tab.textValue.text, findQuery, findCaseSensitive)
+                    if (matches.isNotEmpty()) {
+                        val current = matches[matchIndex.coerceIn(0, matches.size - 1)]
+                        tab.applyEdit(
+                            tab.textValue.copy(
+                                text = tab.textValue.text.replaceRange(current.start, current.end, findReplacement),
+                                selection = TextRange(current.start + findReplacement.length),
+                            ),
+                        )
+                    }
+                },
+                onReplaceAll = {
+                    if (findQuery.isNotEmpty()) {
+                        tab.applyEdit(
+                            tab.textValue.copy(
+                                text = replaceAllMatches(tab.textValue.text, findQuery, findReplacement, findCaseSensitive),
+                                selection = TextRange(0),
+                            ),
+                        )
+                    }
+                },
+                scrollRequest = tab.scrollRequest,
+                onScrollHandled = { tab.scrollRequest = null },
+                onGoToLine = { tab.goToLineOpen = true },
+                verticalScroll = tab.verticalScroll,
+                horizontalScroll = tab.horizontalScroll,
+                layout = tab.layout,
+                onLayout = { tab.layout = it },
+                tabStrip = tabStrip,
             )
-            TextButton(onClick = onRequestClose) { Text("Close") }
-        }
-
-        is EditorLoad.Ready -> EditorBody(
-            request = tab.request,
-            readOnly = tab.readOnly,
-            textValue = tab.textValue,
-            onTextChange = tab::applyEdit,
-            onSnapshot = tab::applySnapshot,
-            onClipboardCopy = onClipboardCopy,
-            onClipboardPaste = onClipboardPaste,
-            history = tab.history,
-            dirty = tab.dirty,
-            saving = tab.saving,
-            saveError = tab.saveError,
-            onSave = { tab.save(scope, false) },
-            onClose = onRequestClose,
-            prefs = prefs,
-            encoding = tab.encoding,
-            onOpenOptions = { optionsOpen = true },
-            onToggleFind = onToggleFind,
-            findOpen = findOpen,
-            findQuery = findQuery,
-            findReplacement = findReplacement,
-            findCaseSensitive = findCaseSensitive,
-            matchIndex = matchIndex,
-            onQuery = onQuery,
-            onReplacement = onReplacement,
-            onCaseToggle = onCaseToggle,
-            onPrevious = {
-                val matches = findAllMatches(tab.textValue.text, findQuery, findCaseSensitive)
-                if (matches.isNotEmpty()) {
-                    val next = (((matchIndex - 1) % matches.size) + matches.size) % matches.size
-                    onMatchIndex(next)
-                    tab.selectMatch(matches[next])
-                }
-            },
-            onNext = {
-                val matches = findAllMatches(tab.textValue.text, findQuery, findCaseSensitive)
-                if (matches.isNotEmpty()) {
-                    val next = (matchIndex + 1) % matches.size
-                    onMatchIndex(next)
-                    tab.selectMatch(matches[next])
-                }
-            },
-            onReplace = {
-                val matches = findAllMatches(tab.textValue.text, findQuery, findCaseSensitive)
-                if (matches.isNotEmpty()) {
-                    val current = matches[matchIndex.coerceIn(0, matches.size - 1)]
-                    tab.applyEdit(
-                        tab.textValue.copy(
-                            text = tab.textValue.text.replaceRange(current.start, current.end, findReplacement),
-                            selection = TextRange(current.start + findReplacement.length),
-                        ),
-                    )
-                }
-            },
-            onReplaceAll = {
-                if (findQuery.isNotEmpty()) {
-                    tab.applyEdit(
-                        tab.textValue.copy(
-                            text = replaceAllMatches(tab.textValue.text, findQuery, findReplacement, findCaseSensitive),
-                            selection = TextRange(0),
-                        ),
-                    )
-                }
-            },
-            scrollRequest = tab.scrollRequest,
-            onScrollHandled = { tab.scrollRequest = null },
-            onGoToLine = { tab.goToLineOpen = true },
-            verticalScroll = tab.verticalScroll,
-            horizontalScroll = tab.horizontalScroll,
-            layout = tab.layout,
-            onLayout = { tab.layout = it },
-            tabStrip = tabStrip,
-        )
     }
 
     if (tab.goToLineOpen) {
@@ -554,10 +566,11 @@ private fun ConflictCompareDialog(
         title = { Text("$fileName: yours vs on server") },
         text = {
             when (compare) {
-                ConflictCompare.Loading -> Box(
-                    Modifier.fillMaxWidth().height(48.dp),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                ConflictCompare.Loading ->
+                    Box(
+                        Modifier.fillMaxWidth().height(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
 
                 is ConflictCompare.Failed ->
                     // One line, not a stack trace: the fetch failed, the answer to the real
@@ -593,21 +606,23 @@ private fun ConflictCompareDialog(
                                 localText,
                                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                                 softWrap = false,
-                                style = TextStyle(
-                                    fontFamily = TerminalMonoFontFamily,
-                                    fontSize = 13.sp,
-                                    lineHeight = 19.sp,
-                                ),
+                                style =
+                                    TextStyle(
+                                        fontFamily = TerminalMonoFontFamily,
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp,
+                                    ),
                             )
                             Text(
                                 compare.serverText,
                                 Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                                 softWrap = false,
-                                style = TextStyle(
-                                    fontFamily = TerminalMonoFontFamily,
-                                    fontSize = 13.sp,
-                                    lineHeight = 19.sp,
-                                ),
+                                style =
+                                    TextStyle(
+                                        fontFamily = TerminalMonoFontFamily,
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp,
+                                    ),
                             )
                         }
                     }
@@ -681,12 +696,17 @@ private fun EditorTabStrip(
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         tabs.forEach { tab ->
             Surface(
-                modifier = Modifier
-                    .padding(top = 4.dp, start = 4.dp)
-                    .clickable(onClick = { onSelect(tab) }),
+                modifier =
+                    Modifier
+                        .padding(top = 4.dp, start = 4.dp)
+                        .clickable(onClick = { onSelect(tab) }),
                 shape = MaterialTheme.shapes.small,
-                color = if (tab.id == selectedTabId) MaterialTheme.colorScheme.secondaryContainer
-                else MaterialTheme.colorScheme.surface,
+                color =
+                    if (tab.id == selectedTabId) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
                 tonalElevation = 2.dp,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -695,24 +715,25 @@ private fun EditorTabStrip(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier
-                            .padding(start = 10.dp)
-                            // The label reserves a width of its own so the close button cannot eat
-                            // the chip's tap. Material expands any interactive component's *touch
-                            // target* to 48dp whatever its visual size, so the close button's 40dp
-                            // state layer reaches 4dp past its own edges on each side — far enough
-                            // left, on a chip whose name is short, to cover the middle of the chip.
-                            // Measured on this strip: with a label of L dp the close target starts
-                            // at L+6 and the chip's centre — the point a tap on the tab lands on —
-                            // sits at (L+50)/2, so any name narrower than 38dp sent a switch tap
-                            // into the close button and closed the tab instead. "notes.txt" is
-                            // short enough to have done exactly that. The terminal strip learned
-                            // this first (TerminalTabStrip in MainActivity); a 64dp minimum label
-                            // puts the centre 13dp clear of the close target, and a minimum is a
-                            // layout constraint, so no name and no font can shrink it back under.
-                            // The max and the ellipsis are the other end of the same problem: an
-                            // unbounded name made a single chip wider than the strip.
-                            .widthIn(min = 64.dp, max = 140.dp),
+                        modifier =
+                            Modifier
+                                .padding(start = 10.dp)
+                                // The label reserves a width of its own so the close button cannot eat
+                                // the chip's tap. Material expands any interactive component's *touch
+                                // target* to 48dp whatever its visual size, so the close button's 40dp
+                                // state layer reaches 4dp past its own edges on each side — far enough
+                                // left, on a chip whose name is short, to cover the middle of the chip.
+                                // Measured on this strip: with a label of L dp the close target starts
+                                // at L+6 and the chip's centre — the point a tap on the tab lands on —
+                                // sits at (L+50)/2, so any name narrower than 38dp sent a switch tap
+                                // into the close button and closed the tab instead. "notes.txt" is
+                                // short enough to have done exactly that. The terminal strip learned
+                                // this first (TerminalTabStrip in MainActivity); a 64dp minimum label
+                                // puts the centre 13dp clear of the close target, and a minimum is a
+                                // layout constraint, so no name and no font can shrink it back under.
+                                // The max and the ellipsis are the other end of the same problem: an
+                                // unbounded name made a single chip wider than the strip.
+                                .widthIn(min = 64.dp, max = 140.dp),
                     )
                     if (tab.dirty) {
                         // The same dot-language the toolbar subtitle already speaks: a dot means
@@ -788,19 +809,21 @@ private fun EditorBody(
     // The options sheet's open flag lives in SingleFileEditor, hoisted there so a Failed tab can
     // open the sheet too; the gear here only reports that it was pressed.
 
-    val textStyle = TextStyle(
-        fontFamily = TerminalMonoFontFamily,
-        fontSize = 13.sp,
-        lineHeight = 19.sp,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-    val gutterStyle = TextStyle(
-        fontFamily = TerminalMonoFontFamily,
-        fontSize = 13.sp,
-        lineHeight = 19.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.End,
-    )
+    val textStyle =
+        TextStyle(
+            fontFamily = TerminalMonoFontFamily,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    val gutterStyle =
+        TextStyle(
+            fontFamily = TerminalMonoFontFamily,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+        )
     // Read here in composition and handed to the transformation, which itself cannot ask the theme.
     val otherMatchColor = MaterialTheme.colorScheme.secondaryContainer
     val currentMatchColor = MaterialTheme.colorScheme.primaryContainer
@@ -813,19 +836,21 @@ private fun EditorBody(
     // Debounced and lexed off this thread, because it is the one piece of work here proportional to
     // the whole document: see [debouncedSyntaxTransformationFor]. Passing the document in is what
     // makes it per-keystroke work otherwise.
-    val syntaxTransformation = debouncedSyntaxTransformationFor(
-        request.entry.name,
-        SyntaxColors.fromScheme(MaterialTheme.colorScheme),
-        textValue.text,
-    )
+    val syntaxTransformation =
+        debouncedSyntaxTransformationFor(
+            request.entry.name,
+            SyntaxColors.fromScheme(MaterialTheme.colorScheme),
+            textValue.text,
+        )
 
     // Bring the requested offset into view — from go-to-line or from stepping through matches.
     LaunchedEffect(scrollRequest) {
         val offset = scrollRequest ?: return@LaunchedEffect
-        val currentLayout = layout ?: run {
-            onScrollHandled()
-            return@LaunchedEffect
-        }
+        val currentLayout =
+            layout ?: run {
+                onScrollHandled()
+                return@LaunchedEffect
+            }
         val visualLine = currentLayout.getLineForOffset(offset.coerceIn(0, textValue.text.length))
         val targetY = currentLayout.getLineTop(visualLine)
         val lead = with(density) { 96.dp.toPx() }
@@ -847,6 +872,7 @@ private fun EditorBody(
         onClipboardCopy(textValue.text.substring(selection.min, selection.max))
         return true
     }
+
     fun cutSelection(): Boolean {
         if (readOnly) return false
         val selection = textValue.selection
@@ -860,6 +886,7 @@ private fun EditorBody(
         )
         return true
     }
+
     fun pasteClipboard(): Boolean {
         if (readOnly) return false
         val pasted = onClipboardPaste() ?: return false
@@ -872,6 +899,7 @@ private fun EditorBody(
         )
         return true
     }
+
     // Select-all changes no text, only the selection, so it goes through onSnapshot: no undo entry
     // to record (EditorHistory ignores a no-text-change edit anyway) and no dirty flag to raise.
     fun selectAllText(): Boolean {
@@ -930,8 +958,12 @@ private fun EditorBody(
                                 else -> "Saved"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (dirty) MaterialTheme.colorScheme.tertiary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color =
+                                if (dirty) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             // One line, never wrapped: this is the label that stacked into a vertical
                             // "S/a/v/e/d" when the toolbar squeezed its column, and these three
                             // together make that impossible rather than merely unlikely.
@@ -1060,114 +1092,118 @@ private fun EditorBody(
                 // then refuses to write; the dirty dot that follows is the honest report of that.)
                 readOnly = readOnly,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                visualTransformation = if (findOpen && findQuery.isNotEmpty()) {
-                    MatchHighlightTransformation(findQuery, findCaseSensitive, matchIndex, otherMatchColor, currentMatchColor)
-                } else {
-                    syntaxTransformation
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    // Wrap off means the field's width must stop being the fold line. A horizontal
-                    // scroll hands the text unbounded width to lay out in, so long lines extend
-                    // right and the user scrolls to them instead of watching them fold; the field's
-                    // own footprint stays the weighted width either way, so the gutter keeps its
-                    // place at the left edge while the text slides under it. The scroll state is
-                    // the tab's and exists either way, so flipping word wrap never resurrects a
-                    // stale horizontal position: wrap back on discards it, wrap off starts at the
-                    // left edge.
-                    .then(if (prefs.wordWrap) Modifier else Modifier.horizontalScroll(horizontalScroll))
-                    .padding(start = 8.dp, top = 8.dp, bottom = 32.dp, end = 8.dp)
-                    // Preview, not plain onKeyEvent: the preview phase runs outer-modifier-first,
-                    // before the field's own machinery can consume the key, which is the only
-                    // reliable place to intercept keys on a focused text field — Tab below, and
-                    // the desktop-style Ctrl shortcuts this is an SSH client for (hardware and
-                    // Bluetooth keyboards are a real input method here, not a desktopism).
-                    // Returning true ends the dispatch — the field never sees the key, so it
-                    // cannot re-route it.
-                    //
-                    // Shortcuts fire on KeyDown only: KeyUp would run every action twice, and
-                    // holding a key re-fires KeyDown as a repeat, which is wanted for undo but
-                    // must not re-open anything — so the dialog-openers are idempotent calls and
-                    // save is gated on the same dirty/!saving guard as the toolbar button.
-                    // Everything else returns false so the field (and its own Ctrl handling, if
-                    // any) still works; modifiers are matched exactly — Ctrl+S with Shift held
-                    // is not "save" — and Tab keeps its unconditional slot below so plain
-                    // insertion does not regress.
-                    .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        // Exact Ctrl: no Shift/Alt/Meta riding along, or it is a different
-                        // shortcut than the one these branches implement.
-                        val ctrl = event.isCtrlPressed && !event.isShiftPressed &&
-                            !event.isAltPressed && !event.isMetaPressed
-                        when {
-                            ctrl && event.key == Key.S && dirty && !saving -> {
-                                onSave()
-                                true
-                            }
-                            // Open only: toggling would close a bar the user is reading, and the
-                            // desktop gesture they are repeating is "focus find", which the bar
-                            // being open already approximates.
-                            ctrl && event.key == Key.F && !findOpen -> {
-                                onToggleFind()
-                                true
-                            }
-                            ctrl && event.key == Key.G -> {
-                                onGoToLine()
-                                true
-                            }
-                            // Same guards as the toolbar buttons: a history that cannot move
-                            // falls through (false) rather than swallowing the key.
-                            ctrl && event.key == Key.Z && history.canUndo -> {
-                                history.undo(textValue)?.let(onSnapshot)
-                                true
-                            }
-                            ctrl && event.key == Key.Y && history.canRedo -> {
-                                history.redo(textValue)?.let(onSnapshot)
-                                true
-                            }
-                            // The other redo spelling; Ctrl is checked, Shift required — the
-                            // exact mirror of the plain-Ctrl branches above.
-                            event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed &&
-                                !event.isMetaPressed && event.key == Key.Z && history.canRedo -> {
-                                history.redo(textValue)?.let(onSnapshot)
-                                true
-                            }
-                            // Clipboard shortcuts for the hardware and Bluetooth keyboards this is an
-                            // SSH client for, routed through the same SecureClipboard-backed handlers
-                            // as the toolbar buttons so a copy is one copy either way. Each branch's
-                            // value is the handler's verdict: a copy or cut with nothing selected, a
-                            // paste of an empty clipboard, a select-all of an empty file — and, for the
-                            // two that write, a read-only tab — all return false, so the key falls
-                            // through to the field's own handling instead of being swallowed to no
-                            // effect.
-                            ctrl && event.key == Key.C -> copySelection()
-                            ctrl && event.key == Key.X -> cutSelection()
-                            ctrl && event.key == Key.V -> pasteClipboard()
-                            ctrl && event.key == Key.A -> selectAllText()
-                            event.key == Key.Tab -> {
-                                val insertion = tabInsertion(prefs)
-                                val start = textValue.selection.min
-                                val end = textValue.selection.max
-                                onTextChange(
-                                    textValue.copy(
-                                        text = textValue.text.replaceRange(start, end, insertion),
-                                        selection = TextRange(start + insertion.length),
-                                    ),
-                                )
-                                true
-                            }
-                            else -> false
-                        }
+                visualTransformation =
+                    if (findOpen && findQuery.isNotEmpty()) {
+                        MatchHighlightTransformation(findQuery, findCaseSensitive, matchIndex, otherMatchColor, currentMatchColor)
+                    } else {
+                        syntaxTransformation
                     },
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        // Wrap off means the field's width must stop being the fold line. A horizontal
+                        // scroll hands the text unbounded width to lay out in, so long lines extend
+                        // right and the user scrolls to them instead of watching them fold; the field's
+                        // own footprint stays the weighted width either way, so the gutter keeps its
+                        // place at the left edge while the text slides under it. The scroll state is
+                        // the tab's and exists either way, so flipping word wrap never resurrects a
+                        // stale horizontal position: wrap back on discards it, wrap off starts at the
+                        // left edge.
+                        .then(if (prefs.wordWrap) Modifier else Modifier.horizontalScroll(horizontalScroll))
+                        .padding(start = 8.dp, top = 8.dp, bottom = 32.dp, end = 8.dp)
+                        // Preview, not plain onKeyEvent: the preview phase runs outer-modifier-first,
+                        // before the field's own machinery can consume the key, which is the only
+                        // reliable place to intercept keys on a focused text field — Tab below, and
+                        // the desktop-style Ctrl shortcuts this is an SSH client for (hardware and
+                        // Bluetooth keyboards are a real input method here, not a desktopism).
+                        // Returning true ends the dispatch — the field never sees the key, so it
+                        // cannot re-route it.
+                        //
+                        // Shortcuts fire on KeyDown only: KeyUp would run every action twice, and
+                        // holding a key re-fires KeyDown as a repeat, which is wanted for undo but
+                        // must not re-open anything — so the dialog-openers are idempotent calls and
+                        // save is gated on the same dirty/!saving guard as the toolbar button.
+                        // Everything else returns false so the field (and its own Ctrl handling, if
+                        // any) still works; modifiers are matched exactly — Ctrl+S with Shift held
+                        // is not "save" — and Tab keeps its unconditional slot below so plain
+                        // insertion does not regress.
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            // Exact Ctrl: no Shift/Alt/Meta riding along, or it is a different
+                            // shortcut than the one these branches implement.
+                            val ctrl =
+                                event.isCtrlPressed && !event.isShiftPressed &&
+                                    !event.isAltPressed && !event.isMetaPressed
+                            when {
+                                ctrl && event.key == Key.S && dirty && !saving -> {
+                                    onSave()
+                                    true
+                                }
+                                // Open only: toggling would close a bar the user is reading, and the
+                                // desktop gesture they are repeating is "focus find", which the bar
+                                // being open already approximates.
+                                ctrl && event.key == Key.F && !findOpen -> {
+                                    onToggleFind()
+                                    true
+                                }
+                                ctrl && event.key == Key.G -> {
+                                    onGoToLine()
+                                    true
+                                }
+                                // Same guards as the toolbar buttons: a history that cannot move
+                                // falls through (false) rather than swallowing the key.
+                                ctrl && event.key == Key.Z && history.canUndo -> {
+                                    history.undo(textValue)?.let(onSnapshot)
+                                    true
+                                }
+                                ctrl && event.key == Key.Y && history.canRedo -> {
+                                    history.redo(textValue)?.let(onSnapshot)
+                                    true
+                                }
+                                // The other redo spelling; Ctrl is checked, Shift required — the
+                                // exact mirror of the plain-Ctrl branches above.
+                                event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed &&
+                                    !event.isMetaPressed && event.key == Key.Z && history.canRedo -> {
+                                    history.redo(textValue)?.let(onSnapshot)
+                                    true
+                                }
+                                // Clipboard shortcuts for the hardware and Bluetooth keyboards this is an
+                                // SSH client for, routed through the same SecureClipboard-backed handlers
+                                // as the toolbar buttons so a copy is one copy either way. Each branch's
+                                // value is the handler's verdict: a copy or cut with nothing selected, a
+                                // paste of an empty clipboard, a select-all of an empty file — and, for the
+                                // two that write, a read-only tab — all return false, so the key falls
+                                // through to the field's own handling instead of being swallowed to no
+                                // effect.
+                                ctrl && event.key == Key.C -> copySelection()
+                                ctrl && event.key == Key.X -> cutSelection()
+                                ctrl && event.key == Key.V -> pasteClipboard()
+                                ctrl && event.key == Key.A -> selectAllText()
+                                event.key == Key.Tab -> {
+                                    val insertion = tabInsertion(prefs)
+                                    val start = textValue.selection.min
+                                    val end = textValue.selection.max
+                                    onTextChange(
+                                        textValue.copy(
+                                            text = textValue.text.replaceRange(start, end, insertion),
+                                            selection = TextRange(start + insertion.length),
+                                        ),
+                                    )
+                                    true
+                                }
+                                else -> false
+                            }
+                        },
             )
         }
 
         // One walk of the document answers all three of the status line's questions, and it is keyed
         // on the text and the caret so a recomposition that changed neither - a theme flip, a sheet
         // opening, the highlight landing - does not walk the document again.
-        val position = remember(textValue.text, textValue.selection.start) {
-            documentPosition(textValue.text, textValue.selection.start)
-        }
+        val position =
+            remember(textValue.text, textValue.selection.start) {
+                documentPosition(textValue.text, textValue.selection.start)
+            }
         Surface(tonalElevation = 2.dp) {
             // The encoding label, not a hard-coded "UTF-8": the status line is where the eye
             // already sits, so a non-UTF-8 tab has to say so here — otherwise the only hint a
@@ -1230,9 +1266,10 @@ private fun LineNumberGutter(
     // Every logical line's top edge in the field's own coordinates, cumulative, so a line's height is
     // its top minus the next one's and the height of a run of them is a subtraction rather than a sum.
     val tops = remember(text, layout) { lineTops(text, layout) }
-    val window = remember(tops, scrollOffsetPx, viewportHeightPx) {
-        gutterWindow(tops, scrollOffsetPx.toFloat(), viewportHeightPx.toFloat())
-    }
+    val window =
+        remember(tops, scrollOffsetPx, viewportHeightPx) {
+            gutterWindow(tops, scrollOffsetPx.toFloat(), viewportHeightPx.toFloat())
+        }
     Column(Modifier.width(44.dp).padding(top = 8.dp, start = 8.dp, end = 4.dp)) {
         // The gutter's own top padding is inside the scrolled content, so it belongs to the first
         // line's offset and not to the spacer: a line skipped above has to carry its full height.
@@ -1271,7 +1308,10 @@ private fun LineNumberGutter(
  * No line is ever materialised as a string — only its start offset is recorded — which is what keeps
  * this off the allocator for a large file.
  */
-private fun lineTops(text: String, layout: TextLayoutResult): FloatArray {
+private fun lineTops(
+    text: String,
+    layout: TextLayoutResult,
+): FloatArray {
     val known = layout.layoutInput.text.length
     val starts = ArrayList<Int>()
     starts.add(0)
@@ -1407,7 +1447,11 @@ private fun FindReplaceBar(
 }
 
 @Composable
-private fun GoToLineDialog(lineCount: Int, onDismiss: () -> Unit, onGo: (Int) -> Unit) {
+private fun GoToLineDialog(
+    lineCount: Int,
+    onDismiss: () -> Unit,
+    onGo: (Int) -> Unit,
+) {
     var value by remember { mutableStateOf("") }
     val parsed = value.trim().toIntOrNull()
     AlertDialog(
@@ -1481,10 +1525,11 @@ private fun EditorOptionsDialog(
                         onClick = {
                             onPrefsChange(
                                 prefs.copy(
-                                    tabSize = (prefs.tabSize - 1).coerceIn(
-                                        EditorPrefsCodec.TAB_SIZE_MIN,
-                                        EditorPrefsCodec.TAB_SIZE_MAX,
-                                    ),
+                                    tabSize =
+                                        (prefs.tabSize - 1).coerceIn(
+                                            EditorPrefsCodec.TAB_SIZE_MIN,
+                                            EditorPrefsCodec.TAB_SIZE_MAX,
+                                        ),
                                 ),
                             )
                         },
@@ -1500,10 +1545,11 @@ private fun EditorOptionsDialog(
                         onClick = {
                             onPrefsChange(
                                 prefs.copy(
-                                    tabSize = (prefs.tabSize + 1).coerceIn(
-                                        EditorPrefsCodec.TAB_SIZE_MIN,
-                                        EditorPrefsCodec.TAB_SIZE_MAX,
-                                    ),
+                                    tabSize =
+                                        (prefs.tabSize + 1).coerceIn(
+                                            EditorPrefsCodec.TAB_SIZE_MIN,
+                                            EditorPrefsCodec.TAB_SIZE_MAX,
+                                        ),
                                 ),
                             )
                         },
@@ -1612,14 +1658,22 @@ private fun EncodingPickerDialog(
 
 /** One "label — switch" line of the options sheet; the sheet is little but rows of these. */
 @Composable
-private fun OptionsSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun OptionsSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
-private fun findAllMatches(text: String, query: String, caseSensitive: Boolean): List<TextRange> {
+private fun findAllMatches(
+    text: String,
+    query: String,
+    caseSensitive: Boolean,
+): List<TextRange> {
     if (query.isEmpty()) return emptyList()
     val haystack = if (caseSensitive) text else text.lowercase(Locale.ROOT)
     val needle = if (caseSensitive) query else query.lowercase(Locale.ROOT)
@@ -1634,16 +1688,21 @@ private fun findAllMatches(text: String, query: String, caseSensitive: Boolean):
     return ranges
 }
 
-private fun countMatches(text: String, query: String, caseSensitive: Boolean): Int =
-    findAllMatches(text, query, caseSensitive).size
+private fun countMatches(
+    text: String,
+    query: String,
+    caseSensitive: Boolean,
+): Int = findAllMatches(text, query, caseSensitive).size
 
 private fun replaceAllMatches(
     text: String,
     query: String,
     replacement: String,
     caseSensitive: Boolean,
-): String = findAllMatches(text, query, caseSensitive).asReversed()
-    .fold(text) { acc, range -> acc.replaceRange(range.start, range.end, replacement) }
+): String =
+    findAllMatches(text, query, caseSensitive)
+        .asReversed()
+        .fold(text) { acc, range -> acc.replaceRange(range.start, range.end, replacement) }
 
 /**
  * Where the caret is, and how many lines the file has, from a single walk of [text].
@@ -1656,9 +1715,16 @@ private fun replaceAllMatches(
  * [offset] past the end is clamped rather than refused, because a selection can briefly outlive the
  * text it indexed into — a replace that shortens the document is one keystroke and two states.
  */
-internal data class DocumentPosition(val line: Int, val column: Int, val lines: Int)
+internal data class DocumentPosition(
+    val line: Int,
+    val column: Int,
+    val lines: Int,
+)
 
-internal fun documentPosition(text: String, offset: Int): DocumentPosition {
+internal fun documentPosition(
+    text: String,
+    offset: Int,
+): DocumentPosition {
     val caret = offset.coerceAtMost(text.length)
     var line = 1
     var column = 1
@@ -1677,7 +1743,10 @@ internal fun documentPosition(text: String, offset: Int): DocumentPosition {
     return DocumentPosition(line, column, lines)
 }
 
-private fun lineStartOffset(text: String, line: Int): Int {
+private fun lineStartOffset(
+    text: String,
+    line: Int,
+): Int {
     var current = 1
     var offset = 0
     while (current < line && offset < text.length) {
@@ -1693,16 +1762,14 @@ private fun lineStartOffset(text: String, line: Int): Int {
  * worth pinning in a plain unit test — the key interception itself is Compose machinery that only
  * a device (or a fragile instrumented test) can exercise.
  */
-internal fun tabInsertion(prefs: EditorPrefs): String =
-    if (prefs.spacesInsteadOfTabs) " ".repeat(prefs.tabSize) else "\t"
+internal fun tabInsertion(prefs: EditorPrefs): String = if (prefs.spacesInsteadOfTabs) " ".repeat(prefs.tabSize) else "\t"
 
 /**
  * The options sheet's label for a delay: one of the offered choices' labels, or "Custom" for a
  * value the codec accepted but the sheet has never offered — shown as what it is rather than
  * rounded to the nearest offered lie, which would silently change the delay on the next save.
  */
-internal fun autoSaveDelayLabel(millis: Long): String =
-    AUTO_SAVE_DELAY_CHOICES.firstOrNull { it.first == millis }?.second ?: "Custom"
+internal fun autoSaveDelayLabel(millis: Long): String = AUTO_SAVE_DELAY_CHOICES.firstOrNull { it.first == millis }?.second ?: "Custom"
 
 /**
  * Steps [current] by [direction] (−1 or +1) through the offered delays, clamped to the list's ends.
@@ -1712,7 +1779,10 @@ internal fun autoSaveDelayLabel(millis: Long): String =
  * value fell off. The clamping makes the buttons' enabled/disabled state and the values they can
  * produce agree by construction.
  */
-internal fun stepAutoSaveDelay(current: Long, direction: Int): Long {
+internal fun stepAutoSaveDelay(
+    current: Long,
+    direction: Int,
+): Long {
     val currentIndex = AUTO_SAVE_DELAY_CHOICES.indexOfFirst { it.first == current }
     val from = if (currentIndex >= 0) currentIndex else DEFAULT_DELAY_CHOICE_INDEX
     return AUTO_SAVE_DELAY_CHOICES[(from + direction).coerceIn(0, AUTO_SAVE_DELAY_CHOICES.lastIndex)].first

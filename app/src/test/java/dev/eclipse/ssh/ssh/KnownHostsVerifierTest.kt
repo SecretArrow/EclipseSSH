@@ -2,14 +2,9 @@ package dev.eclipse.ssh.ssh
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.data.model.HostKeyChallenge
 import dev.eclipse.ssh.data.model.HostKeyPolicy
-import com.google.common.truth.Truth.assertThat
-import java.lang.reflect.Proxy
-import java.net.InetSocketAddress
-import java.net.SocketAddress
-import java.security.KeyPairGenerator
-import java.security.PublicKey
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.common.util.net.SshdSocketAddress
 import org.junit.Before
@@ -17,6 +12,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.lang.reflect.Proxy
+import java.net.InetSocketAddress
+import java.net.SocketAddress
+import java.security.KeyPairGenerator
+import java.security.PublicKey
 
 /**
  * What a host key gets pinned against.
@@ -104,10 +104,11 @@ class KnownHostsVerifierTest {
 
     @Test
     fun `two jump attempts by one user to different hosts are not guessed between`() {
-        val verifier = verifier(
-            TunnelledTarget(USER, "10.0.0.5", 22),
-            TunnelledTarget(USER, "10.0.0.6", 22),
-        )
+        val verifier =
+            verifier(
+                TunnelledTarget(USER, "10.0.0.5", 22),
+                TunnelledTarget(USER, "10.0.0.6", 22),
+            )
 
         verifier.verifyServerKey(session(address = InetSocketAddress("127.0.0.1", 41_235)), null, KEY)
 
@@ -224,23 +225,26 @@ class KnownHostsVerifierTest {
         // One verifier serves every dial, so the policy has to travel with the session rather than sit
         // in a field: two hosts connecting at once would otherwise each get the other's rules.
         val policies = mapOf("trusting.example" to HostKeyPolicy.ACCEPT_NEW, "careful.example" to HostKeyPolicy.ASK)
-        val verifier = KnownHostsVerifier(
-            store = store,
-            tunnelledTarget = { null },
-            hostKeyPolicy = { session -> policies.getValue(session!!.username) },
-            onChallenge = challenges::add,
-        )
+        val verifier =
+            KnownHostsVerifier(
+                store = store,
+                tunnelledTarget = { null },
+                hostKeyPolicy = { session -> policies.getValue(session!!.username) },
+                onChallenge = challenges::add,
+            )
 
-        val trusting = verifier.verifyServerKey(
-            session(address = unresolved("trusting.example", 22), username = "trusting.example"),
-            null,
-            KEY,
-        )
-        val careful = verifier.verifyServerKey(
-            session(address = unresolved("careful.example", 22), username = "careful.example"),
-            null,
-            KEY,
-        )
+        val trusting =
+            verifier.verifyServerKey(
+                session(address = unresolved("trusting.example", 22), username = "trusting.example"),
+                null,
+                KEY,
+            )
+        val careful =
+            verifier.verifyServerKey(
+                session(address = unresolved("careful.example", 22), username = "careful.example"),
+                null,
+                KEY,
+            )
 
         assertThat(trusting).isTrue()
         assertThat(careful).isFalse()
@@ -263,7 +267,8 @@ class KnownHostsVerifierTest {
     ) = KnownHostsVerifier(
         store = store,
         tunnelledTarget = { username ->
-            tunnelled.filter { it.username == username }
+            tunnelled
+                .filter { it.username == username }
                 .distinctBy { it.host to it.port }
                 .singleOrNull()
         },
@@ -271,11 +276,16 @@ class KnownHostsVerifierTest {
         onChallenge = challenges::add,
     )
 
-    private fun unresolved(host: String, port: Int): InetSocketAddress =
-        InetSocketAddress.createUnresolved(host, port)
+    private fun unresolved(
+        host: String,
+        port: Int,
+    ): InetSocketAddress = InetSocketAddress.createUnresolved(host, port)
 
     /** A [ClientSession] that answers the two questions the verifier asks and nothing else. */
-    private fun session(address: SocketAddress?, username: String = USER): ClientSession =
+    private fun session(
+        address: SocketAddress?,
+        username: String = USER,
+    ): ClientSession =
         Proxy.newProxyInstance(
             ClientSession::class.java.classLoader,
             arrayOf(ClientSession::class.java),
@@ -294,9 +304,11 @@ class KnownHostsVerifierTest {
         const val USER = "deploy"
 
         /** One key, reused: what is being tested is which host it gets filed under. */
-        val KEY: PublicKey = KeyPairGenerator.getInstance("EC")
-            .apply { initialize(256) }
-            .generateKeyPair()
-            .public
+        val KEY: PublicKey =
+            KeyPairGenerator
+                .getInstance("EC")
+                .apply { initialize(256) }
+                .generateKeyPair()
+                .public
     }
 }

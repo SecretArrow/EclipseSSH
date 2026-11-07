@@ -40,7 +40,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ShortcutBarActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<ShortcutBarActivity>()
 
@@ -62,7 +61,8 @@ class ShortcutBarActivityRobolectricTest {
     private fun AndroidComposeTestRule<*, *>.assertTitled(title: String) {
         val named = onAllNodesWithText(title)
         assertWithMessage("the window does not name itself twice: \"$title\"")
-            .that(named.fetchSemanticsNodes().size).isAtLeast(2)
+            .that(named.fetchSemanticsNodes().size)
+            .isAtLeast(2)
         repeat(named.fetchSemanticsNodes().size) { named[it].assertIsDisplayed() }
     }
 
@@ -160,7 +160,8 @@ class ShortcutBarActivityRobolectricTest {
         compose.waitForIdle()
 
         assertWithMessage("the window asks about discarding edits that have not been made")
-            .that(compose.onAllNodesWithText("Discard").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Discard").fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**

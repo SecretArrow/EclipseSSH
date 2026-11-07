@@ -7,8 +7,10 @@ import androidx.compose.ui.text.TextRange
  * tabs. [indentSize] is measured in spaces and only matters when [useSpaces] is true - a tab's
  * width is a property of whoever reads the file, so a tab-indented file records no width at all.
  */
-data class IndentConfig(val indentSize: Int, val useSpaces: Boolean) {
-
+data class IndentConfig(
+    val indentSize: Int,
+    val useSpaces: Boolean,
+) {
     companion object {
         /**
          * Four spaces: the median of what real-world editors ship with (2, 4, 8 are all
@@ -18,8 +20,7 @@ data class IndentConfig(val indentSize: Int, val useSpaces: Boolean) {
     }
 
     /** The material one indent level is made of: [indentSize] spaces, or a single tab. */
-    fun oneIndent(): String =
-        if (useSpaces) " ".repeat(indentSize.coerceAtLeast(0)) else "\t"
+    fun oneIndent(): String = if (useSpaces) " ".repeat(indentSize.coerceAtLeast(0)) else "\t"
 }
 
 /**
@@ -32,7 +33,10 @@ data class IndentConfig(val indentSize: Int, val useSpaces: Boolean) {
  * site. The class is a pure value holder and drags in no UI machinery, so it stays testable on
  * a bare JVM.
  */
-data class AutoCloseResult(val text: String, val selection: TextRange)
+data class AutoCloseResult(
+    val text: String,
+    val selection: TextRange,
+)
 
 /**
  * The editor's smart-indentation rules, as pure functions over strings.
@@ -43,16 +47,16 @@ data class AutoCloseResult(val text: String, val selection: TextRange)
  * [TextRange]) lets the tests run as plain JVM tests.
  */
 object IndentEngine {
-
     /** The opener/closer pairs the engine knows. Brackets pair with a different char; quotes self-pair. */
-    private val CLOSERS = mapOf(
-        '(' to ')',
-        '[' to ']',
-        '{' to '}',
-        '"' to '"',
-        '\'' to '\'',
-        '`' to '`',
-    )
+    private val CLOSERS =
+        mapOf(
+            '(' to ')',
+            '[' to ']',
+            '{' to '}',
+            '"' to '"',
+            '\'' to '\'',
+            '`' to '`',
+        )
 
     /**
      * The bracket openers alone. Where a rule applies to "{}" but not to "''" (pair-newline,
@@ -72,7 +76,10 @@ object IndentEngine {
     private val DEEPENERS = setOf('(', '[', '{', ':')
 
     /** One level of the configured indent material, repeated [level] times. */
-    fun indentFor(config: IndentConfig, level: Int): String {
+    fun indentFor(
+        config: IndentConfig,
+        level: Int,
+    ): String {
         // A dedent past column zero happens (odd caret moves, undo of an indent) and must mean
         // "no indent", not a negative-repeat crash in the engine.
         val depth = level.coerceAtLeast(0)
@@ -124,7 +131,11 @@ object IndentEngine {
      * Quotes never affect the level: a string's opening quote does not open a block, and
      * treating it as one would indent the continuation lines of every multi-line string.
      */
-    fun indentAfterNewline(config: IndentConfig, text: String, caret: Int): String {
+    fun indentAfterNewline(
+        config: IndentConfig,
+        text: String,
+        caret: Int,
+    ): String {
         // A stale selection can trail a programmatic edit out of range; clamping keeps the
         // engine total instead of throwing from inside a keypress handler.
         val at = caret.coerceIn(0, text.length)
@@ -162,7 +173,11 @@ object IndentEngine {
      * - the matching closer already sitting after the caret is a type-over: the user is closing
      *   an existing pair, and the screen just moves over it.
      */
-    fun autoClose(text: String, caret: Int, opener: Char): AutoCloseResult? {
+    fun autoClose(
+        text: String,
+        caret: Int,
+        opener: Char,
+    ): AutoCloseResult? {
         val closer = CLOSERS[opener] ?: return null
         val at = caret.coerceIn(0, text.length)
         val before = if (at > 0) text[at - 1] else null
@@ -184,7 +199,11 @@ object IndentEngine {
      * there is no block to lay out, so Enter should simply break the line. Null when the
      * characters around the caret are not a pair.
      */
-    fun pairNewline(config: IndentConfig, text: String, caret: Int): AutoCloseResult? {
+    fun pairNewline(
+        config: IndentConfig,
+        text: String,
+        caret: Int,
+    ): AutoCloseResult? {
         val at = caret.coerceIn(0, text.length)
         if (at <= 0 || at >= text.length) return null
         val opener = text[at - 1]

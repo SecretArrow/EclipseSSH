@@ -3,9 +3,9 @@ package dev.eclipse.ssh.data.fs
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
-import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /**
  * One picked document, as a [FileSystemProvider].
@@ -31,7 +31,6 @@ class SingleDocumentProvider(
     /** The one document this provider can read. A [path] argument equal to this is the only valid one. */
     val uri: Uri,
 ) : FileSystemProvider {
-
     override val providerId: String = "local"
 
     override val supportsPermissions: Boolean = false
@@ -41,78 +40,90 @@ class SingleDocumentProvider(
     /** A single document has nothing above it this provider can name — SAF owns that question. */
     override suspend fun parentPath(path: String): String? = null
 
-    override suspend fun stat(path: String): FsEntry? = withContext(Dispatchers.IO) {
-        document(path)?.takeIf { it.exists() }?.let { document ->
-            FsEntry(
-                name = document.name ?: uri.lastPathSegment ?: "document",
-                path = uri.toString(),
-                isDirectory = false,
-                size = document.length().takeIf { it >= 0 },
-                modifiedEpochMillis = document.lastModified().takeIf { it > 0 },
-                permissions = null,
-                mimeType = document.type,
-            )
-        }
-    }
-
-    override suspend fun read(path: String): ByteArray = withContext(Dispatchers.IO) {
-        document(path)
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IOException("Could not read ${uri.lastPathSegment ?: "this document"}")
-    }
-
-    override suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long?) =
+    override suspend fun stat(path: String): FsEntry? =
         withContext(Dispatchers.IO) {
-            val document = document(path)
-            if (onlyIfUnmodifiedSince != null) {
-                val current = document.lastModified()
-                if (current > 0 && current > onlyIfUnmodifiedSince) {
-                    throw FsModificationConflictException(path)
-                }
+            document(path)?.takeIf { it.exists() }?.let { document ->
+                FsEntry(
+                    name = document.name ?: uri.lastPathSegment ?: "document",
+                    path = uri.toString(),
+                    isDirectory = false,
+                    size = document.length().takeIf { it >= 0 },
+                    modifiedEpochMillis = document.lastModified().takeIf { it > 0 },
+                    permissions = null,
+                    mimeType = document.type,
+                )
             }
-            // "wt" for the same reason the tree provider writes with it: "w" is an overlay on some
-            // providers and would leave the old tail behind when the new content is shorter.
-            context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
-                output.write(data)
-                output.flush()
-            } ?: throw IOException("Could not write ${uri.lastPathSegment ?: "this document"}")
         }
+
+    override suspend fun read(path: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            document(path)
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: throw IOException("Could not read ${uri.lastPathSegment ?: "this document"}")
+        }
+
+    override suspend fun write(
+        path: String,
+        data: ByteArray,
+        onlyIfUnmodifiedSince: Long?,
+    ) = withContext(Dispatchers.IO) {
+        val document = document(path)
+        if (onlyIfUnmodifiedSince != null) {
+            val current = document.lastModified()
+            if (current > 0 && current > onlyIfUnmodifiedSince) {
+                throw FsModificationConflictException(path)
+            }
+        }
+        // "wt" for the same reason the tree provider writes with it: "w" is an overlay on some
+        // providers and would leave the old tail behind when the new content is shorter.
+        context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+            output.write(data)
+            output.flush()
+        } ?: throw IOException("Could not write ${uri.lastPathSegment ?: "this document"}")
+    }
 
     override suspend fun list(path: String): List<FsEntry> {
         document(path)
         throw UnsupportedOperationException("This is one picked document, not a folder to browse")
     }
 
-    override suspend fun createFile(parentPath: String, name: String): FsEntry =
-        throw UnsupportedOperationException("A single picked document cannot create files")
+    override suspend fun createFile(
+        parentPath: String,
+        name: String,
+    ): FsEntry = throw UnsupportedOperationException("A single picked document cannot create files")
 
-    override suspend fun createDirectory(parentPath: String, name: String) {
-        throw UnsupportedOperationException("A single picked document cannot create folders")
-    }
+    override suspend fun createDirectory(
+        parentPath: String,
+        name: String,
+    ): Unit = throw UnsupportedOperationException("A single picked document cannot create folders")
 
-    override suspend fun rename(path: String, newName: String) {
-        throw UnsupportedOperationException("Renaming is not offered for a transfer's file")
-    }
+    override suspend fun rename(
+        path: String,
+        newName: String,
+    ): Unit = throw UnsupportedOperationException("Renaming is not offered for a transfer's file")
 
-    override suspend fun copy(sourcePath: String, targetDirectoryPath: String) {
-        throw UnsupportedOperationException("Copying is not offered for a transfer's file")
-    }
+    override suspend fun copy(
+        sourcePath: String,
+        targetDirectoryPath: String,
+    ): Unit = throw UnsupportedOperationException("Copying is not offered for a transfer's file")
 
-    override suspend fun move(sourcePath: String, targetDirectoryPath: String) {
-        throw UnsupportedOperationException("Moving is not offered for a transfer's file")
-    }
+    override suspend fun move(
+        sourcePath: String,
+        targetDirectoryPath: String,
+    ): Unit = throw UnsupportedOperationException("Moving is not offered for a transfer's file")
 
-    override suspend fun delete(path: String) {
-        throw UnsupportedOperationException("Deleting is not offered for a transfer's file")
-    }
+    override suspend fun delete(path: String): Unit = throw UnsupportedOperationException("Deleting is not offered for a transfer's file")
 
-    override suspend fun setPermissions(path: String, mode: Int) {
-        throw UnsupportedOperationException("A single picked document has no permission bits to set")
-    }
+    override suspend fun setPermissions(
+        path: String,
+        mode: Int,
+    ): Unit = throw UnsupportedOperationException("A single picked document has no permission bits to set")
 
-    override suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry> {
-        throw UnsupportedOperationException("A single picked document cannot be searched")
-    }
+    override suspend fun search(
+        root: String,
+        query: String,
+        maxEntries: Int,
+    ): List<FsEntry> = throw UnsupportedOperationException("A single picked document cannot be searched")
 
     /**
      * The document, after checking the caller asked for the one URI this provider holds.

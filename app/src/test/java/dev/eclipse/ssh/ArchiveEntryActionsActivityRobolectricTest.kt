@@ -20,7 +20,6 @@ import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.ActionSubject
 import dev.eclipse.ssh.ui.actions.ArchiveEntryActionKind
 import dev.eclipse.ssh.ui.archive.ArchiveEntryActionsActivity
-import java.time.Duration
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +27,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The archive entry window, as a window: what one entry inside an archive is offered, and what
@@ -56,7 +56,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ArchiveEntryActionsActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -71,28 +70,30 @@ class ArchiveEntryActionsActivityRobolectricTest {
     }
 
     /** A file inside the archive, small enough that its size line is the plain one. */
-    private fun file(name: String = "readme.txt") = ArchiveEntry(
-        path = "docs/$name",
-        isDirectory = false,
-        size = 512,
-        compressedSize = 218,
-        modifiedEpochMillis = 1_755_000_000_000,
-        method = 8,
-        dataOffset = 1_024,
-        encrypted = false,
-    )
+    private fun file(name: String = "readme.txt") =
+        ArchiveEntry(
+            path = "docs/$name",
+            isDirectory = false,
+            size = 512,
+            compressedSize = 218,
+            modifiedEpochMillis = 1_755_000_000_000,
+            method = 8,
+            dataOffset = 1_024,
+            encrypted = false,
+        )
 
     /** A directory entry, which the container reports a size for whether or not anyone means it. */
-    private fun folder(name: String = "docs") = ArchiveEntry(
-        path = name,
-        isDirectory = true,
-        size = 0,
-        compressedSize = null,
-        modifiedEpochMillis = 1_755_000_000_000,
-        method = null,
-        dataOffset = null,
-        encrypted = false,
-    )
+    private fun folder(name: String = "docs") =
+        ArchiveEntry(
+            path = name,
+            isDirectory = true,
+            size = 0,
+            compressedSize = null,
+            modifiedEpochMillis = 1_755_000_000_000,
+            method = null,
+            dataOffset = null,
+            encrypted = false,
+        )
 
     /**
      * A file whose bytes can be fetched by range - ZIP - is offered Preview *and* Download.
@@ -110,7 +111,8 @@ class ArchiveEntryActionsActivityRobolectricTest {
             awaitRow("Copy path")
             awaitRow("Properties")
             assertThat(labelsOnScreen())
-                .containsExactly("Preview", "Download", "Copy path", "Properties").inOrder()
+                .containsExactly("Preview", "Download", "Copy path", "Properties")
+                .inOrder()
         }
     }
 
@@ -217,21 +219,24 @@ class ArchiveEntryActionsActivityRobolectricTest {
         val spent = ActionRequests.put(ActionSubject.ArchiveEntryActions(file()))
         ActionRequests.take(spent)
 
-        ActivityScenario.launch<ArchiveEntryActionsActivity>(
-            ArchiveEntryActionsActivity.intent(context, file(), canReadEntry = true)
-                .putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, spent),
-        ).use { scenario ->
-            pumpUntil(describe = { "a spent subject token opened a window anyway" }) {
-                scenario.state == Lifecycle.State.DESTROYED
+        ActivityScenario
+            .launch<ArchiveEntryActionsActivity>(
+                ArchiveEntryActionsActivity
+                    .intent(context, file(), canReadEntry = true)
+                    .putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, spent),
+            ).use { scenario ->
+                pumpUntil(describe = { "a spent subject token opened a window anyway" }) {
+                    scenario.state == Lifecycle.State.DESTROYED
+                }
             }
-        }
     }
 
     /** An intent with no token at all opens nothing, the same way. */
     @Test
     fun anIntentWithNoTokenOpensNothing() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        ActivityScenario.launch<ArchiveEntryActionsActivity>(Intent(context, ArchiveEntryActionsActivity::class.java))
+        ActivityScenario
+            .launch<ArchiveEntryActionsActivity>(Intent(context, ArchiveEntryActionsActivity::class.java))
             .use { scenario ->
                 pumpUntil(describe = { "an intent with no subject token opened a window anyway" }) {
                     scenario.state == Lifecycle.State.DESTROYED
@@ -242,7 +247,10 @@ class ArchiveEntryActionsActivityRobolectricTest {
     // ---------------------------------------------------------------- driving the app
 
     /** The intent the app itself builds, so the handoff's two halves are the shipped ones. */
-    private fun launch(entry: ArchiveEntry, canReadEntry: Boolean): ActivityScenario<ArchiveEntryActionsActivity> {
+    private fun launch(
+        entry: ArchiveEntry,
+        canReadEntry: Boolean,
+    ): ActivityScenario<ArchiveEntryActionsActivity> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return ActivityScenario.launch<ArchiveEntryActionsActivity>(
             ArchiveEntryActionsActivity.intent(context, entry, canReadEntry),
@@ -259,8 +267,11 @@ class ArchiveEntryActionsActivityRobolectricTest {
     private fun labelsOnScreen(): List<String> {
         val known = setOf("Preview", "Download", "Extract", "Extract folder", "Copy path", "Properties")
         return compose.onAllNodes(hasClickAction()).fetchSemanticsNodes().mapNotNull { node ->
-            node.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
-                ?.firstOrNull()?.text?.takeIf(known::contains)
+            node.config
+                .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
+                ?.firstOrNull()
+                ?.text
+                ?.takeIf(known::contains)
         }
     }
 
@@ -283,7 +294,11 @@ class ArchiveEntryActionsActivityRobolectricTest {
      * The shape the suites that drive live state all share — see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -301,7 +316,10 @@ class ArchiveEntryActionsActivityRobolectricTest {
      * the next, and [pumpUntil] asks twice — once to leave the loop and once to decide whether it
      * timed out. Read straight, an answer that did arrive is reported as one that never did.
      */
-    private fun awaitAnswer(expected: ActionAnswer, describe: () -> String): ActionAnswer {
+    private fun awaitAnswer(
+        expected: ActionAnswer,
+        describe: () -> String,
+    ): ActionAnswer {
         var answer: ActionAnswer? = null
         pumpUntil(describe = describe) {
             answer = answer ?: ActionRequests.takeAnswer()
@@ -325,7 +343,10 @@ class ArchiveEntryActionsActivityRobolectricTest {
      * closes *before* it is ever resumed — a spent token, no token — still assert the state directly:
      * that one closes during the launch, and it is a different fact.
      */
-    private fun awaitClosing(scenario: ActivityScenario<ArchiveEntryActionsActivity>, describe: () -> String) {
+    private fun awaitClosing(
+        scenario: ActivityScenario<ArchiveEntryActionsActivity>,
+        describe: () -> String,
+    ) {
         var closing = false
         pumpUntil(describe = describe) {
             runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }

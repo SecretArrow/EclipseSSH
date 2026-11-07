@@ -18,20 +18,6 @@ import dev.eclipse.ssh.data.model.decodeForwardRules
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.security.StandInAndroidKeyStore
 import dev.eclipse.ssh.ssh.SshSessionStore
-import java.io.Closeable
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.nio.file.Files
-import java.security.MessageDigest
-import java.time.Duration
-import java.util.Base64
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import org.apache.sshd.common.channel.RequestHandler
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.common.session.ConnectionService
@@ -59,6 +45,20 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.Closeable
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.nio.file.Files
+import java.security.MessageDigest
+import java.time.Duration
+import java.util.Base64
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Port forwarding end to end: a host's saved rules, started by the engine that a connect sets running,
@@ -93,7 +93,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class PortForwardingRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -136,13 +135,14 @@ class PortForwardingRobolectricTest {
             val lPort = freePort()
             val dPort = freePort()
             val rPort = freePort()
-            val host = saveHostWithRules(
-                """
-                L:$lPort:${LOOPBACK}:${lEcho.port}
-                D:$dPort
-                R:$rPort:${rEcho.port}
-                """.trimIndent(),
-            )
+            val host =
+                saveHostWithRules(
+                    """
+                    L:$lPort:$LOOPBACK:${lEcho.port}
+                    D:$dPort
+                    R:$rPort:${rEcho.port}
+                    """.trimIndent(),
+                )
             connectSaved(host.id, password = PASSWORD)
 
             // Size first, then state: an empty map passes "all running" vacuously, and the rows are
@@ -150,7 +150,8 @@ class PortForwardingRobolectricTest {
             // the counters are refreshed after the last row lands.
             pumpUntil(describe = { "the three rules never came up: " + diagnose(host.id) }) {
                 val states = statusesOf(host.id)
-                states.size == 3 && states.values.all { it.state == ForwardRuntime.RUNNING } &&
+                states.size == 3 &&
+                    states.values.all { it.state == ForwardRuntime.RUNNING } &&
                     tabFor(host.id)?.let { it.forwardsOpen == 3 && it.forwardsTotal == 3 } == true
             }
             // 3/3 is the ratio the tab renders; anything less means a rule was left behind silently.
@@ -185,20 +186,22 @@ class PortForwardingRobolectricTest {
             val firstPort = freePort()
             val secondPort = freePort()
             val socksPort = freePort()
-            val host = saveHostWithRules(
-                """
-                L:$firstPort:${LOOPBACK}:${firstEcho.port}
-                L:$secondPort:${LOOPBACK}:${secondEcho.port}
-                D:$socksPort
-                """.trimIndent(),
-            )
+            val host =
+                saveHostWithRules(
+                    """
+                    L:$firstPort:$LOOPBACK:${firstEcho.port}
+                    L:$secondPort:$LOOPBACK:${secondEcho.port}
+                    D:$socksPort
+                    """.trimIndent(),
+                )
             connectSaved(host.id, password = PASSWORD)
 
             // Size first, then state - an empty map passes "all running" vacuously, and the tab's
             // counters are refreshed after the last row lands.
             pumpUntil(describe = { "the three rules never came up: " + diagnose(host.id) }) {
                 val states = statusesOf(host.id)
-                states.size == 3 && states.values.all { it.state == ForwardRuntime.RUNNING } &&
+                states.size == 3 &&
+                    states.values.all { it.state == ForwardRuntime.RUNNING } &&
                     tabFor(host.id)?.let { it.forwardsOpen == 3 && it.forwardsTotal == 3 } == true
             }
             val tab = checkNotNull(tabFor(host.id))
@@ -233,12 +236,13 @@ class PortForwardingRobolectricTest {
         try {
             val disabledPort = freePort()
             val manualPort = freePort()
-            val host = saveHostWithRules(
-                """
-                #L:$disabledPort:${LOOPBACK}:${echo.port}
-                -L:$manualPort:${LOOPBACK}:${echo.port}
-                """.trimIndent(),
-            )
+            val host =
+                saveHostWithRules(
+                    """
+                    #L:$disabledPort:$LOOPBACK:${echo.port}
+                    -L:$manualPort:$LOOPBACK:${echo.port}
+                    """.trimIndent(),
+                )
             connectSaved(host.id, password = PASSWORD)
 
             val rules = savedRules(host)
@@ -250,7 +254,8 @@ class PortForwardingRobolectricTest {
                 states[rules[0].id]?.state == ForwardRuntime.DISABLED &&
                     states[rules[1].id]?.state == ForwardRuntime.STOPPED &&
                     // The counters land a dispatch behind the rows, so they are waited on too.
-                    tabFor(host.id)?.forwardsTotal == 1 && tabFor(host.id)?.forwardsOpen == 0
+                    tabFor(host.id)?.forwardsTotal == 1 &&
+                    tabFor(host.id)?.forwardsOpen == 0
             }
             // Neither port was taken: both are still bindable by anyone else while the shell is up.
             assertThat(portIsFree(disabledPort)).isTrue()
@@ -276,7 +281,7 @@ class PortForwardingRobolectricTest {
         val echo = EchoServer()
         try {
             val port = freePort()
-            val host = saveHostWithRules("-L:$port:${LOOPBACK}:${echo.port}")
+            val host = saveHostWithRules("-L:$port:$LOOPBACK:${echo.port}")
             connectSaved(host.id, password = PASSWORD)
             val ruleId = savedRules(host).single().id
             // Pumped for the same reason as the flags test: the row arrives just behind CONNECTED.
@@ -322,12 +327,13 @@ class PortForwardingRobolectricTest {
         val echo = EchoServer()
         try {
             val port = freePort()
-            val host = saveHostWithRules(
-                """
-                L:$port:${LOOPBACK}:${echo.port}
-                L:$port:${LOOPBACK}:${echo.port}
-                """.trimIndent(),
-            )
+            val host =
+                saveHostWithRules(
+                    """
+                    L:$port:$LOOPBACK:${echo.port}
+                    L:$port:$LOOPBACK:${echo.port}
+                    """.trimIndent(),
+                )
             connectSaved(host.id, password = PASSWORD)
 
             val rules = savedRules(host)
@@ -394,7 +400,9 @@ class PortForwardingRobolectricTest {
             assertThat(tab.state).isEqualTo(SessionConnectionState.CONNECTED)
             compose.runOnUiThread { viewModel().sendInput(host.id, "still-here\n") }
             pumpUntil(describe = { "the shell stopped echoing after a forward failure" }) {
-                viewModel().uiState.value.terminalOutput[host.id]?.contains("still-here") == true
+                viewModel()
+                    .uiState.value.terminalOutput[host.id]
+                    ?.contains("still-here") == true
             }
             assertThat(tabFor(host.id)?.state).isEqualTo(SessionConnectionState.CONNECTED)
         } finally {
@@ -423,10 +431,11 @@ class PortForwardingRobolectricTest {
         try {
             val lPort = freePort()
             val socksPort = freePort()
-            val host = saveHostWithRules(
-                "L:$lPort:${LOOPBACK}:${echo.port}",
-                credentials = HostCredentialUpdate(password = SecretEdit.Replace(PASSWORD)),
-            )
+            val host =
+                saveHostWithRules(
+                    "L:$lPort:$LOOPBACK:${echo.port}",
+                    credentials = HostCredentialUpdate(password = SecretEdit.Replace(PASSWORD)),
+                )
             awaitCredentialSaved(host.id)
             connectSaved(host.id, password = null)
             val ruleId = savedRules(host).single().id
@@ -472,7 +481,9 @@ class PortForwardingRobolectricTest {
             // Exactly one handle per saved rule, the hand-opened forward absent, and the running
             // list free of duplicate ids - a reconnect that left the dead transport's tracker behind
             // would answer with two entries for one port.
-            val running = viewModel.uiState.value.forwardings.filter { it.hostId == host.id }
+            val running =
+                viewModel.uiState.value.forwardings
+                    .filter { it.hostId == host.id }
             assertThat(running.map(ForwardEntry::id)).containsNoDuplicates()
             assertThat(running.map(ForwardEntry::id)).containsExactly(ruleId)
             val handles = injected(viewModel, "forwardHandles", ConcurrentHashMap::class.java)
@@ -504,7 +515,7 @@ class PortForwardingRobolectricTest {
         val echo = EchoServer()
         try {
             val port = freePort()
-            val a = saveHostWithRules("L:$port:${LOOPBACK}:${echo.port}")
+            val a = saveHostWithRules("L:$port:$LOOPBACK:${echo.port}")
             connectSaved(a.id, password = PASSWORD)
             val ruleId = savedRules(a).single().id
             pumpUntil(describe = { "the rule never came up: " + diagnose(a.id) }) {
@@ -520,7 +531,11 @@ class PortForwardingRobolectricTest {
             assertThat(bTab.forwardsOpen).isEqualTo(0)
             assertThat(bTab.forwardsTotal).isEqualTo(0)
             assertThat(statusesOf(b.id)).isEmpty()
-            assertThat(viewModel().uiState.value.forwardings.none { it.hostId == b.id }).isTrue()
+            assertThat(
+                viewModel()
+                    .uiState.value.forwardings
+                    .none { it.hostId == b.id },
+            ).isTrue()
             // And A's rule is untouched by B's arrival.
             assertThat(statusesOf(a.id)[ruleId]?.state).isEqualTo(ForwardRuntime.RUNNING)
 
@@ -548,7 +563,7 @@ class PortForwardingRobolectricTest {
         val echo = EchoServer()
         try {
             val firstPort = freePort()
-            val host = saveHostWithRules("L:$firstPort:${LOOPBACK}:${echo.port}")
+            val host = saveHostWithRules("L:$firstPort:$LOOPBACK:${echo.port}")
             connectSaved(host.id, password = PASSWORD)
             val original = savedRules(host).single()
             pumpUntil(describe = { "the rule never came up: " + diagnose(host.id) }) {
@@ -569,7 +584,11 @@ class PortForwardingRobolectricTest {
             pumpUntil(describe = { "the old port was never released by the edit" }) { portIsFree(firstPort) }
             // The changed rule's old id is gone from both the rows and the running list.
             assertThat(statusesOf(host.id)).doesNotContainKey(original.id)
-            assertThat(viewModel().uiState.value.forwardings.map(ForwardEntry::id)).doesNotContain(original.id)
+            assertThat(
+                viewModel()
+                    .uiState.value.forwardings
+                    .map(ForwardEntry::id),
+            ).doesNotContain(original.id)
 
             // Off: still a rule, listed as Disabled, bound to nothing. Looked up from the saved
             // column rather than by the enabled rule's id, because ids derive from the rule's *text*
@@ -590,7 +609,11 @@ class PortForwardingRobolectricTest {
             pumpUntil(describe = { "the deleted rule's row never left: " + diagnose(host.id) }) {
                 statusesOf(host.id).isEmpty()
             }
-            assertThat(viewModel().uiState.value.forwardings.none { it.hostId == host.id }).isTrue()
+            assertThat(
+                viewModel()
+                    .uiState.value.forwardings
+                    .none { it.hostId == host.id },
+            ).isTrue()
         } finally {
             runCatching { echo.close() }
         }
@@ -617,7 +640,7 @@ class PortForwardingRobolectricTest {
         val echo = EchoServer()
         try {
             val port = freePort()
-            val host = saveHostWithRules("L:$port:${LOOPBACK}:${echo.port}")
+            val host = saveHostWithRules("L:$port:$LOOPBACK:${echo.port}")
             connectSaved(host.id, password = PASSWORD)
             val ruleId = savedRules(host).single().id
             pumpUntil(describe = { "the rule never came up: " + diagnose(host.id) }) {
@@ -628,7 +651,9 @@ class PortForwardingRobolectricTest {
             // first terminal's - because that is the session a host's tunnels ride.
             compose.runOnUiThread { viewModel().duplicateSession(checkNotNull(tabFor(host.id))) }
             pumpUntil(describe = { "the duplicate never connected: " + diagnose(host.id) }) {
-                viewModel().uiState.value.tabs.count { it.hostId == host.id && it.state == SessionConnectionState.CONNECTED } == 2
+                viewModel()
+                    .uiState.value.tabs
+                    .count { it.hostId == host.id && it.state == SessionConnectionState.CONNECTED } == 2
             }
             val viewModel = viewModel()
             val store = injected(viewModel, "sessionStore", SshSessionStore::class.java)
@@ -646,7 +671,10 @@ class PortForwardingRobolectricTest {
             }
             // Exactly one handle for the rule: the dead transport's tracker must not linger beside
             // the survivor's.
-            assertThat(viewModel.uiState.value.forwardings.map(ForwardEntry::id)).containsExactly(ruleId)
+            assertThat(
+                viewModel.uiState.value.forwardings
+                    .map(ForwardEntry::id),
+            ).containsExactly(ruleId)
             val handles = injected(viewModel, "forwardHandles", ConcurrentHashMap::class.java)
             assertThat(handles.keys().toList().filter { it == ruleId }).hasSize(1)
 
@@ -656,7 +684,10 @@ class PortForwardingRobolectricTest {
             }
             pumpUntil(describe = { "the host's tabs never closed" }) { tabFor(host.id) == null }
             pumpUntil(describe = { "the host's rows outlived its last session" }) { statusesOf(host.id).isEmpty() }
-            assertThat(viewModel.uiState.value.forwardings.none { it.hostId == host.id }).isTrue()
+            assertThat(
+                viewModel.uiState.value.forwardings
+                    .none { it.hostId == host.id },
+            ).isTrue()
             pumpUntil(describe = { "the forward's port was never released at teardown" }) { portIsFree(port) }
         } finally {
             runCatching { echo.close() }
@@ -674,16 +705,29 @@ class PortForwardingRobolectricTest {
      * thing that cannot be made any other way - the running list and the counters can both look
      * right while a dead transport's handle is still on the books.
      */
-    private fun <T> injected(viewModel: MainViewModel, name: String, type: Class<T>): T =
+    private fun <T> injected(
+        viewModel: MainViewModel,
+        name: String,
+        type: Class<T>,
+    ): T =
         type.cast(
-            MainViewModel::class.java.getDeclaredField(name).apply { isAccessible = true }.get(viewModel),
+            MainViewModel::class.java
+                .getDeclaredField(name)
+                .apply { isAccessible = true }
+                .get(viewModel),
         )!!
 
     private fun tabFor(hostId: String): SessionTab? =
-        viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     private fun currentHost(hostId: String): HostProfile =
-        checkNotNull(viewModel().uiState.value.hosts.firstOrNull { it.id == hostId }) {
+        checkNotNull(
+            viewModel()
+                .uiState.value.hosts
+                .firstOrNull { it.id == hostId },
+        ) {
             "host $hostId is not in the list"
         }
 
@@ -691,7 +735,10 @@ class PortForwardingRobolectricTest {
     private fun savedRules(host: HostProfile): List<ForwardEntry> = decodeForwardRules(host.savedForwards, host.id)
 
     /** Waits for the saved column to carry a rule matching [matching], and answers it. */
-    private fun savedRulesAfter(hostId: String, matching: (ForwardEntry) -> Boolean): ForwardEntry {
+    private fun savedRulesAfter(
+        hostId: String,
+        matching: (ForwardEntry) -> Boolean,
+    ): ForwardEntry {
         var found: ForwardEntry? = null
         pumpUntil(describe = { "the saved rules never reflected the edit: " + diagnose(hostId) }) {
             found = decodeForwardRules(currentHost(hostId).savedForwards, hostId).firstOrNull(matching)
@@ -702,7 +749,9 @@ class PortForwardingRobolectricTest {
 
     /** This host's forward rows, as the sheet sees them (displayed states included). */
     private fun statusesOf(hostId: String): Map<String, ForwardStatus> =
-        viewModel().uiState.value.forwardStatuses.filterValues { it.entry.hostId == hostId }
+        viewModel()
+            .uiState.value.forwardStatuses
+            .filterValues { it.entry.hostId == hostId }
 
     /**
      * Writes a profile with [rules] as its saved-forwards column - the syntax the forwarding sheet
@@ -715,21 +764,23 @@ class PortForwardingRobolectricTest {
     ): HostProfile {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "pf-" + nextHostId++,
-            name = HOST_NAME,
-            host = LOOPBACK,
-            username = USER,
-            port = serverPort,
-            authMethod = AuthMethod.PASSWORD,
-            connectTimeoutSeconds = 60,
-            autoLoginSftp = false,
-            fingerprint = serverFingerprint,
-            savedForwards = rules,
-        )
+        val profile =
+            HostProfile(
+                id = "pf-" + nextHostId++,
+                name = HOST_NAME,
+                host = LOOPBACK,
+                username = USER,
+                port = serverPort,
+                authMethod = AuthMethod.PASSWORD,
+                connectTimeoutSeconds = 60,
+                autoLoginSftp = false,
+                fingerprint = serverFingerprint,
+                savedForwards = rules,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile, credentials) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
         return profile
     }
@@ -737,7 +788,9 @@ class PortForwardingRobolectricTest {
     /** Waits for a vaulted password to be recorded, so a ladder redial can authenticate with it. */
     private fun awaitCredentialSaved(hostId: String) {
         pumpUntil(describe = { "the credential was never recorded as saved: " + diagnose(hostId) }) {
-            viewModel().uiState.value.savedCredentials[hostId]?.hasPassword == true
+            viewModel()
+                .uiState.value.savedCredentials[hostId]
+                ?.hasPassword == true
         }
     }
 
@@ -745,7 +798,11 @@ class PortForwardingRobolectricTest {
      * Connects an already-saved host and waits for CONNECTED, accepting a host-key challenge on the
      * way if one appears - copied from `ConnectionMatrixRobolectricTest.connectSaved`.
      */
-    private fun connectSaved(hostId: String, password: String?, timeoutMs: Long = SSH_TIMEOUT_MS) {
+    private fun connectSaved(
+        hostId: String,
+        password: String?,
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+    ) {
         val viewModel = viewModel()
         val saved = currentHost(hostId)
         compose.runOnUiThread { viewModel.connect(saved, password = password) }
@@ -766,10 +823,15 @@ class PortForwardingRobolectricTest {
     private fun pumpForForwardOn(localPort: Int): String {
         var id: String? = null
         pumpUntil(describe = { "the hand-opened forward on $localPort never came up" }) {
-            val entry = viewModel().uiState.value.forwardings.firstOrNull { it.localPort == localPort }
+            val entry =
+                viewModel()
+                    .uiState.value.forwardings
+                    .firstOrNull { it.localPort == localPort }
             id = entry?.id
             entry != null &&
-                viewModel().uiState.value.forwardStatuses[entry.id]?.state == ForwardRuntime.RUNNING
+                viewModel()
+                    .uiState.value.forwardStatuses[entry.id]
+                    ?.state == ForwardRuntime.RUNNING
         }
         return checkNotNull(id)
     }
@@ -780,11 +842,17 @@ class PortForwardingRobolectricTest {
      * Writes [payload] to a local port and answers what came back. Any exception - a refused dial, a
      * reset, a stall past the socket timeout - fails the test with the socket's own story.
      */
-    private fun echoThrough(port: Int, payload: String): String {
+    private fun echoThrough(
+        port: Int,
+        payload: String,
+    ): String {
         Socket().use { socket ->
             socket.soTimeout = TRAFFIC_TIMEOUT_MS.toInt()
             socket.connect(InetSocketAddress(LOOPBACK, port), TRAFFIC_TIMEOUT_MS.toInt())
-            socket.getOutputStream().apply { write(payload.toByteArray()); flush() }
+            socket.getOutputStream().apply {
+                write(payload.toByteArray())
+                flush()
+            }
             val expected = payload.toByteArray()
             val read = ByteArray(expected.size)
             var got = 0
@@ -806,21 +874,25 @@ class PortForwardingRobolectricTest {
      * connect to. A refused or stalling port answers false, which is exactly the assertion the
      * not-resurrected half of the reconnect test needs.
      */
-    private fun socks5GreetingAnswer(port: Int): Boolean = runCatching {
-        Socket().use { socket ->
-            socket.soTimeout = TRAFFIC_TIMEOUT_MS.toInt()
-            socket.connect(InetSocketAddress(LOOPBACK, port), TRAFFIC_TIMEOUT_MS.toInt())
-            socket.getOutputStream().apply { write(byteArrayOf(0x05, 0x01, 0x00)); flush() }
-            val answer = ByteArray(2)
-            var got = 0
-            while (got < answer.size) {
-                val n = socket.getInputStream().read(answer, got, answer.size - got)
-                if (n < 0) return@use false
-                got += n
+    private fun socks5GreetingAnswer(port: Int): Boolean =
+        runCatching {
+            Socket().use { socket ->
+                socket.soTimeout = TRAFFIC_TIMEOUT_MS.toInt()
+                socket.connect(InetSocketAddress(LOOPBACK, port), TRAFFIC_TIMEOUT_MS.toInt())
+                socket.getOutputStream().apply {
+                    write(byteArrayOf(0x05, 0x01, 0x00))
+                    flush()
+                }
+                val answer = ByteArray(2)
+                var got = 0
+                while (got < answer.size) {
+                    val n = socket.getInputStream().read(answer, got, answer.size - got)
+                    if (n < 0) return@use false
+                    got += n
+                }
+                answer[0] == 0x05.toByte() && answer[1] == 0x00.toByte()
             }
-            answer[0] == 0x05.toByte() && answer[1] == 0x00.toByte()
-        }
-    }.getOrDefault(false)
+        }.getOrDefault(false)
 
     /**
      * Whether [port] can be bound right now - the honest measure of "released", because a forward
@@ -832,14 +904,17 @@ class PortForwardingRobolectricTest {
         }.isSuccess
 
     /** A port number nothing is holding at the moment, learned by borrowing it and giving it back. */
-    private fun freePort(): Int =
-        ServerSocket(0, 1, InetAddress.getByName(LOOPBACK)).use { it.localPort }
+    private fun freePort(): Int = ServerSocket(0, 1, InetAddress.getByName(LOOPBACK)).use { it.localPort }
 
     /**
      * Drives frames and main-looper work until [condition] holds - copied from
      * `ConnectionMatrixRobolectricTest.pumpUntil`, which explains each line.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -899,40 +974,50 @@ class PortForwardingRobolectricTest {
             StandInAndroidKeyStore.install()
 
             val root = Files.createTempDirectory("eclipse-port-forwarding")
-            server = SshServer.setUpDefaultServer().apply {
-                // Port 0: the debug and release unit-test JVMs overlap, and a fixed port would give
-                // the loser of the bind a server that never started.
-                port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("pf-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    authAttempts.incrementAndGet()
-                    user == USER && password == PASSWORD
+            server =
+                SshServer.setUpDefaultServer().apply {
+                    // Port 0: the debug and release unit-test JVMs overlap, and a fixed port would give
+                    // the loser of the bind a server that never started.
+                    port = 0
+                    keyPairProvider =
+                        SimpleGeneratorHostKeyProvider(
+                            Files.createTempDirectory("pf-hostkey").resolve("hostkey.ser"),
+                        )
+                    passwordAuthenticator =
+                        PasswordAuthenticator { user, password, _ ->
+                            authAttempts.incrementAndGet()
+                            user == USER && password == PASSWORD
+                        }
+                    // Password only, so `authAttempts` is an exact count - see the connection matrix.
+                    userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
+                    // The builder's default filter rejects every forward - direct-tcpip with
+                    // SSH_OPEN_ADMINISTRATIVELY_PROHIBITED and tcpip-forward with a plain refusal - and a
+                    // suite whose subject is tunnels would then measure only the client's bind succeeding
+                    // while every byte never left the phone. Accept-all here: the one refusal this suite
+                    // needs is produced on purpose by [forwardGate], which sits in front of MINA's own
+                    // handler and can deny a single request without touching anything else.
+                    forwardingFilter = AcceptAllForwardingFilter.INSTANCE
+                    subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
+                    fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
+                    shellFactory = ShellFactory { CountingShell(shellsStarted) }
+                    // In front of MINA's own handler, so a test can make the server say no to a remote
+                    // forward - the one refusal this suite cannot produce any other way.
+                    globalRequestHandlers =
+                        listOf<RequestHandler<ConnectionService>>(forwardGate) + globalRequestHandlers.orEmpty()
+                    start()
                 }
-                // Password only, so `authAttempts` is an exact count - see the connection matrix.
-                userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
-                // The builder's default filter rejects every forward - direct-tcpip with
-                // SSH_OPEN_ADMINISTRATIVELY_PROHIBITED and tcpip-forward with a plain refusal - and a
-                // suite whose subject is tunnels would then measure only the client's bind succeeding
-                // while every byte never left the phone. Accept-all here: the one refusal this suite
-                // needs is produced on purpose by [forwardGate], which sits in front of MINA's own
-                // handler and can deny a single request without touching anything else.
-                forwardingFilter = AcceptAllForwardingFilter.INSTANCE
-                subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
-                fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
-                shellFactory = ShellFactory { CountingShell(shellsStarted) }
-                // In front of MINA's own handler, so a test can make the server say no to a remote
-                // forward - the one refusal this suite cannot produce any other way.
-                globalRequestHandlers =
-                    listOf<RequestHandler<ConnectionService>>(forwardGate) + globalRequestHandlers.orEmpty()
-                start()
-            }
             serverPort = (server.boundAddresses.first() as InetSocketAddress).port
-            serverFingerprint = "SHA256:" + Base64.getEncoder().withoutPadding().encodeToString(
-                MessageDigest.getInstance("SHA-256")
-                    .digest(server.keyPairProvider.loadKeys(null).first().public.encoded),
-            )
+            serverFingerprint = "SHA256:" +
+                Base64.getEncoder().withoutPadding().encodeToString(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(
+                            server.keyPairProvider
+                                .loadKeys(null)
+                                .first()
+                                .public.encoded,
+                        ),
+                )
         }
 
         @JvmStatic
@@ -963,8 +1048,11 @@ private class TcpipForwardGate : ConnectionServiceRequestHandler {
         wantReply: Boolean,
         buffer: Buffer,
     ): RequestHandler.Result =
-        if (request == "tcpip-forward" && denied) RequestHandler.Result.ReplyFailure
-        else RequestHandler.Result.Unsupported
+        if (request == "tcpip-forward" && denied) {
+            RequestHandler.Result.ReplyFailure
+        } else {
+            RequestHandler.Result.Unsupported
+        }
 }
 
 /**
@@ -976,23 +1064,33 @@ private class EchoServer : Closeable {
 
     val port: Int get() = server.localPort
 
-    private val acceptor = Thread {
-        while (true) {
-            val client = runCatching { server.accept() }.getOrNull() ?: return@Thread
-            Thread {
-                runCatching {
-                    client.use { socket ->
-                        val buffer = ByteArray(4096)
-                        while (true) {
-                            val read = socket.getInputStream().read(buffer)
-                            if (read < 0) break
-                            socket.getOutputStream().apply { write(buffer, 0, read); flush() }
+    private val acceptor =
+        Thread {
+            while (true) {
+                val client = runCatching { server.accept() }.getOrNull() ?: return@Thread
+                Thread {
+                    runCatching {
+                        client.use { socket ->
+                            val buffer = ByteArray(4096)
+                            while (true) {
+                                val read = socket.getInputStream().read(buffer)
+                                if (read < 0) break
+                                socket.getOutputStream().apply {
+                                    write(buffer, 0, read)
+                                    flush()
+                                }
+                            }
                         }
                     }
+                }.apply {
+                    isDaemon = true
+                    start()
                 }
-            }.apply { isDaemon = true; start() }
+            }
+        }.apply {
+            isDaemon = true
+            start()
         }
-    }.apply { isDaemon = true; start() }
 
     override fun close() {
         runCatching { server.close() }
@@ -1005,40 +1103,58 @@ private class EchoServer : Closeable {
  * the app's opinion and the number of shells the server started is the fact.
  */
 // Top-level, so it cannot reach the test class's companion: the counter is handed in instead.
-private class CountingShell(private val shellsStarted: AtomicInteger) : Command {
+private class CountingShell(
+    private val shellsStarted: AtomicInteger,
+) : Command {
     private var input: InputStream? = null
     private var output: OutputStream? = null
     private var exit: ExitCallback? = null
     private var worker: Thread? = null
 
-    override fun setInputStream(input: InputStream) { this.input = input }
-    override fun setOutputStream(output: OutputStream) { this.output = output }
-    override fun setErrorStream(error: OutputStream) = Unit
-    override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+    override fun setInputStream(input: InputStream) {
+        this.input = input
+    }
 
-    override fun start(channel: ChannelSession, env: Environment) {
+    override fun setOutputStream(output: OutputStream) {
+        this.output = output
+    }
+
+    override fun setErrorStream(error: OutputStream) = Unit
+
+    override fun setExitCallback(callback: ExitCallback) {
+        this.exit = callback
+    }
+
+    override fun start(
+        channel: ChannelSession,
+        env: Environment,
+    ) {
         shellsStarted.incrementAndGet()
         val source = input ?: return
         val sink = output ?: return
-        worker = Thread {
-            runCatching {
-                sink.write("eclipse-pf-shell\r\n$ ".toByteArray())
-                sink.flush()
-                val line = StringBuilder()
-                while (true) {
-                    val byte = source.read()
-                    if (byte < 0) break
-                    if (byte == '\n'.code || byte == '\r'.code) {
-                        sink.write("echo: $line\r\n$ ".toByteArray())
-                        sink.flush()
-                        line.setLength(0)
-                    } else {
-                        line.append(byte.toChar())
+        worker =
+            Thread {
+                runCatching {
+                    sink.write("eclipse-pf-shell\r\n$ ".toByteArray())
+                    sink.flush()
+                    val line = StringBuilder()
+                    while (true) {
+                        val byte = source.read()
+                        if (byte < 0) break
+                        if (byte == '\n'.code || byte == '\r'.code) {
+                            sink.write("echo: $line\r\n$ ".toByteArray())
+                            sink.flush()
+                            line.setLength(0)
+                        } else {
+                            line.append(byte.toChar())
+                        }
                     }
                 }
+                exit?.onExit(0)
+            }.apply {
+                isDaemon = true
+                start()
             }
-            exit?.onExit(0)
-        }.apply { isDaemon = true; start() }
     }
 
     override fun destroy(channel: ChannelSession) {

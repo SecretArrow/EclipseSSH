@@ -13,29 +13,13 @@ import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import dev.eclipse.ssh.terminal.TERMINAL_COLUMN_RANGE
 import dev.eclipse.ssh.terminal.TERMINAL_ROW_RANGE
 import dev.eclipse.ssh.terminal.Utf8StreamDecoder
-import java.io.ByteArrayOutputStream
-import java.io.Closeable
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.net.StandardSocketOptions
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.Collections
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -65,6 +49,22 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.ByteArrayOutputStream
+import java.io.Closeable
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.StandardSocketOptions
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Collections
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The properties that decide whether a session *feels* like a terminal and whether it stays up:
@@ -85,7 +85,6 @@ import org.robolectric.RuntimeEnvironment
  */
 @RunWith(RobolectricTestRunner::class)
 class SessionStabilityTest {
-
     companion object {
         private const val LOOPBACK = "127.0.0.1"
         private const val USER = "stability"
@@ -167,11 +166,12 @@ class SessionStabilityTest {
             server = SshServer.setUpDefaultServer()
             server.port = 0
             server.keyPairProvider = SimpleGeneratorHostKeyProvider(root.resolve("hostkey.ser"))
-            server.passwordAuthenticator = PasswordAuthenticator { username, password, _ ->
-                val ok = username == USER && password == PASSWORD
-                if (ok) logins.incrementAndGet()
-                ok
-            }
+            server.passwordAuthenticator =
+                PasswordAuthenticator { username, password, _ ->
+                    val ok = username == USER && password == PASSWORD
+                    if (ok) logins.incrementAndGet()
+                    ok
+                }
             server.shellFactory = ShellFactory { RecordingShell().also(shells::add) }
             server.globalRequestHandlers =
                 listOf<RequestHandler<ConnectionService>>(keepalives) + server.globalRequestHandlers.orEmpty()
@@ -186,7 +186,10 @@ class SessionStabilityTest {
         }
     }
 
-    private fun hostProfile(port: Int = serverPort, keepAlive: Int? = null) = HostProfile(
+    private fun hostProfile(
+        port: Int = serverPort,
+        keepAlive: Int? = null,
+    ) = HostProfile(
         name = "stability",
         host = LOOPBACK,
         username = USER,
@@ -204,7 +207,10 @@ class SessionStabilityTest {
     }
 
     /** Connects, trusting the server key the first time it is offered - the app's own flow. */
-    private suspend fun trustedConnect(manager: SshConnectionManager, profile: HostProfile): ClientSession =
+    private suspend fun trustedConnect(
+        manager: SshConnectionManager,
+        profile: HostProfile,
+    ): ClientSession =
         coroutineScope {
             val challengeRef = AtomicReference<HostKeyChallenge?>()
             val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
@@ -212,8 +218,9 @@ class SessionStabilityTest {
             delay(300)
             collector.cancel()
             if (attempt.isSuccess) return@coroutineScope attempt.getOrThrow()
-            val challenge = challengeRef.get()
-                ?: throw attempt.exceptionOrNull() ?: IllegalStateException("connect failed with no challenge")
+            val challenge =
+                challengeRef.get()
+                    ?: throw attempt.exceptionOrNull() ?: IllegalStateException("connect failed with no challenge")
             manager.trustHost(challenge)
             manager.connect(profile, PASSWORD, null)
         }
@@ -232,13 +239,18 @@ class SessionStabilityTest {
     private fun CoroutineScope.collectText(terminal: TerminalChannel): Pair<StringBuilder, Job> {
         val sink = StringBuilder()
         val decoder = Utf8StreamDecoder()
-        val job = launch(Dispatchers.IO) {
-            terminal.output.collect { chunk -> synchronized(sink) { sink.append(decoder.decode(chunk)) } }
-        }
+        val job =
+            launch(Dispatchers.IO) {
+                terminal.output.collect { chunk -> synchronized(sink) { sink.append(decoder.decode(chunk)) } }
+            }
         return sink to job
     }
 
-    private suspend fun awaitText(sink: StringBuilder, timeoutMs: Long = WAIT_MS, predicate: (String) -> Boolean): String {
+    private suspend fun awaitText(
+        sink: StringBuilder,
+        timeoutMs: Long = WAIT_MS,
+        predicate: (String) -> Boolean,
+    ): String {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline) {
             val text = synchronized(sink) { sink.toString() }
@@ -248,7 +260,10 @@ class SessionStabilityTest {
         return synchronized(sink) { sink.toString() }
     }
 
-    private suspend fun awaitTrue(timeoutMs: Long = WAIT_MS, condition: () -> Boolean): Boolean {
+    private suspend fun awaitTrue(
+        timeoutMs: Long = WAIT_MS,
+        condition: () -> Boolean,
+    ): Boolean {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline) {
             if (condition()) return true
@@ -258,130 +273,134 @@ class SessionStabilityTest {
     }
 
     @Test
-    fun `the socket the session runs on has nagle off and keepalive on`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                // The kernel's answer, not the client's intention. TCP_NODELAY is the difference
-                // between a keystroke leaving immediately and waiting for the delayed ACK of the
-                // previous one - about 40ms per character on a normal link, which is exactly the
-                // "typing feels laggy" report this fixes.
-                val io = session.ioSession
-                assertThat(io).isInstanceOf(Nio2Session::class.java)
-                val socket = (io as Nio2Session).socket
-                assertThat(socket.getOption(StandardSocketOptions.TCP_NODELAY)).isTrue()
-                assertThat(socket.getOption(StandardSocketOptions.SO_KEEPALIVE)).isTrue()
+    fun `the socket the session runs on has nagle off and keepalive on`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    // The kernel's answer, not the client's intention. TCP_NODELAY is the difference
+                    // between a keystroke leaving immediately and waiting for the delayed ACK of the
+                    // previous one - about 40ms per character on a normal link, which is exactly the
+                    // "typing feels laggy" report this fixes.
+                    val io = session.ioSession
+                    assertThat(io).isInstanceOf(Nio2Session::class.java)
+                    val socket = (io as Nio2Session).socket
+                    assertThat(socket.getOption(StandardSocketOptions.TCP_NODELAY)).isTrue()
+                    assertThat(socket.getOption(StandardSocketOptions.SO_KEEPALIVE)).isTrue()
 
-                // And the properties the session resolves, so a future MINA upgrade that stops
-                // honouring them fails here rather than silently restoring Nagle.
-                assertThat(CoreModuleProperties.TCP_NODELAY.getRequired(session)).isTrue()
-                assertThat(CoreModuleProperties.SOCKET_KEEPALIVE.getRequired(session)).isTrue()
+                    // And the properties the session resolves, so a future MINA upgrade that stops
+                    // honouring them fails here rather than silently restoring Nagle.
+                    assertThat(CoreModuleProperties.TCP_NODELAY.getRequired(session)).isTrue()
+                    assertThat(CoreModuleProperties.SOCKET_KEEPALIVE.getRequired(session)).isTrue()
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `the heartbeat is one the peer must answer and silence has room to be noticed`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile(keepAlive = 20))
-            session.use {
-                // HEARTBEAT_INTERVAL is the knob ClientConnectionService reads to schedule anything at
-                // all; the SESSION_HEARTBEAT_* pair behind setSessionHeartbeat() drives only the
-                // generic SSH_MSG_IGNORE heartbeat, which is unanswerable and therefore cannot detect
-                // a dead peer. Configuring the wrong one of those armed no heartbeat whatsoever, and
-                // every property still read back exactly as intended - which is why this asserts the
-                // one MINA acts on.
-                assertThat(CoreModuleProperties.HEARTBEAT_INTERVAL.getRequired(session).seconds)
-                    .isEqualTo(20L)
-                assertThat(CoreModuleProperties.HEARTBEAT_REQUEST.getRequired(session))
-                    .isEqualTo("keepalive@openssh.com")
-                assertThat(CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.getRequired(session)).isGreaterThan(0)
+    fun `the heartbeat is one the peer must answer and silence has room to be noticed`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile(keepAlive = 20))
+                session.use {
+                    // HEARTBEAT_INTERVAL is the knob ClientConnectionService reads to schedule anything at
+                    // all; the SESSION_HEARTBEAT_* pair behind setSessionHeartbeat() drives only the
+                    // generic SSH_MSG_IGNORE heartbeat, which is unanswerable and therefore cannot detect
+                    // a dead peer. Configuring the wrong one of those armed no heartbeat whatsoever, and
+                    // every property still read back exactly as intended - which is why this asserts the
+                    // one MINA acts on.
+                    assertThat(CoreModuleProperties.HEARTBEAT_INTERVAL.getRequired(session).seconds)
+                        .isEqualTo(20L)
+                    assertThat(CoreModuleProperties.HEARTBEAT_REQUEST.getRequired(session))
+                        .isEqualTo("keepalive@openssh.com")
+                    assertThat(CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.getRequired(session)).isGreaterThan(0)
 
-                // The idle timeout has to outlast the heartbeats, or MINA's own 10-minute default
-                // closes a perfectly healthy session before the dead-peer counter can ever reach its
-                // limit - which is what a 600-second keep-alive used to do.
-                val noReplyMax = CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.getRequired(session)
-                val idle = CoreModuleProperties.IDLE_TIMEOUT.getRequired(session)
-                assertThat(idle.seconds).isGreaterThan(20L * noReplyMax)
+                    // The idle timeout has to outlast the heartbeats, or MINA's own 10-minute default
+                    // closes a perfectly healthy session before the dead-peer counter can ever reach its
+                    // limit - which is what a 600-second keep-alive used to do.
+                    val noReplyMax = CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.getRequired(session)
+                    val idle = CoreModuleProperties.IDLE_TIMEOUT.getRequired(session)
+                    assertThat(idle.seconds).isGreaterThan(20L * noReplyMax)
 
-                // HEARTBEAT_REPLY_WAIT is deliberately not asserted here, and must not be added back.
-                // `ClientConnectionService.configureMaxNoReply()` returns HEARTBEAT_NO_REPLY_MAX
-                // outright whenever it is set explicitly, which it is above, so the reply-wait is dead
-                // configuration on this session. The assertion that used to be here read it back with
-                // `getRequired` and compared it against 15 seconds - which MINA's own default of five
-                // minutes satisfies whether or not the app ever sets it, so it passed while proving
-                // nothing. What the app actually does on the wire is asserted by the next test, at the
-                // server.
+                    // HEARTBEAT_REPLY_WAIT is deliberately not asserted here, and must not be added back.
+                    // `ClientConnectionService.configureMaxNoReply()` returns HEARTBEAT_NO_REPLY_MAX
+                    // outright whenever it is set explicitly, which it is above, so the reply-wait is dead
+                    // configuration on this session. The assertion that used to be here read it back with
+                    // `getRequired` and compared it against 15 seconds - which MINA's own default of five
+                    // minutes satisfies whether or not the app ever sets it, so it passed while proving
+                    // nothing. What the app actually does on the wire is asserted by the next test, at the
+                    // server.
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `the client really sends answerable keepalives at the configured interval`() = runBlocking {
-        val manager = newManager()
-        try {
-            val before = keepalives.count()
-            val session = trustedConnect(manager, hostProfile(keepAlive = HEARTBEAT_SECONDS))
-            session.use {
-                // Measured at the server, which is the only place that can prove a keep-alive was
-                // sent, was addressed to a request name the peer can answer, and was answered. Two of
-                // them, so this cannot pass on a single request sent at connect time.
-                val deadline = HEARTBEAT_SECONDS * 1_000L * 3 + WAIT_MS
-                assertThat(awaitTrue(deadline) { keepalives.count() - before >= 2 }).isTrue()
-                // Answered keep-alives are not allowed to end the session, which is the other half of
-                // the mechanism: the unanswered counter must be resetting.
-                assertThat(session.isOpen).isTrue()
-                assertThat(session.isAuthenticated).isTrue()
+    fun `the client really sends answerable keepalives at the configured interval`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val before = keepalives.count()
+                val session = trustedConnect(manager, hostProfile(keepAlive = HEARTBEAT_SECONDS))
+                session.use {
+                    // Measured at the server, which is the only place that can prove a keep-alive was
+                    // sent, was addressed to a request name the peer can answer, and was answered. Two of
+                    // them, so this cannot pass on a single request sent at connect time.
+                    val deadline = HEARTBEAT_SECONDS * 1_000L * 3 + WAIT_MS
+                    assertThat(awaitTrue(deadline) { keepalives.count() - before >= 2 }).isTrue()
+                    // Answered keep-alives are not allowed to end the session, which is the other half of
+                    // the mechanism: the unanswered counter must be resetting.
+                    assertThat(session.isOpen).isTrue()
+                    assertThat(session.isAuthenticated).isTrue()
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `a keystroke reaches the shell on its own without waiting for a newline`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session)
-                val shell = awaitShell(started)
-                coroutineScope {
-                    val (sink, pump) = collectText(terminal)
-                    try {
-                        // One character, no Enter. This is what an interactive shell needs and what a
-                        // line-buffered client cannot do: readline redraws on every keystroke, and
-                        // vim, top and htop never see a newline at all.
-                        terminal.write("a")
-                        val echoed = awaitText(sink) { it.contains("a") }
-                        assertThat(echoed).contains("a")
+    fun `a keystroke reaches the shell on its own without waiting for a newline`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session)
+                    val shell = awaitShell(started)
+                    coroutineScope {
+                        val (sink, pump) = collectText(terminal)
+                        try {
+                            // One character, no Enter. This is what an interactive shell needs and what a
+                            // line-buffered client cannot do: readline redraws on every keystroke, and
+                            // vim, top and htop never see a newline at all.
+                            terminal.write("a")
+                            val echoed = awaitText(sink) { it.contains("a") }
+                            assertThat(echoed).contains("a")
 
-                        // Control bytes must survive the channel verbatim - Ctrl-C is a single 0x03
-                        // that the remote pty turns into SIGINT, and anything that re-encoded it
-                        // would break interrupting a runaway command.
-                        terminal.writeBytes(byteArrayOf(CTRL_C))
-                        assertThat(awaitTrue { shell.received().contains(CTRL_C) }).isTrue()
+                            // Control bytes must survive the channel verbatim - Ctrl-C is a single 0x03
+                            // that the remote pty turns into SIGINT, and anything that re-encoded it
+                            // would break interrupting a runaway command.
+                            terminal.writeBytes(byteArrayOf(CTRL_C))
+                            assertThat(awaitTrue { shell.received().contains(CTRL_C) }).isTrue()
 
-                        // Nothing was dropped on the way back, so the display cannot be out of step
-                        // with the shell.
-                        assertThat(terminal.droppedChunks).isEqualTo(0L)
-                    } finally {
-                        pump.cancel()
-                        terminal.close()
+                            // Nothing was dropped on the way back, so the display cannot be out of step
+                            // with the shell.
+                            assertThat(terminal.droppedChunks).isEqualTo(0L)
+                        } finally {
+                            pump.cancel()
+                            terminal.close()
+                        }
                     }
                 }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     /**
      * What the diagnostic trace is able to say about a channel it is handed.
@@ -394,45 +413,46 @@ class SessionStabilityTest {
      * gets diagnosed from.
      */
     @Test
-    fun `the trace reads a live channel, the pty it holds and how long the far end has been quiet`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session)
-                awaitShell(started)
-                coroutineScope {
-                    val (sink, pump) = collectText(terminal)
-                    try {
-                        assertThat(terminal.channelLabel).isEqualTo("open")
-                        // Nothing has been said by the far end yet, and "no output ever" is not the
-                        // same answer as "output a very long time ago": the trace prints no `idle`
-                        // field at all rather than an age measured from an epoch nobody set.
-                        assertThat(terminal.idleForMs()).isNull()
+    fun `the trace reads a live channel, the pty it holds and how long the far end has been quiet`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session)
+                    awaitShell(started)
+                    coroutineScope {
+                        val (sink, pump) = collectText(terminal)
+                        try {
+                            assertThat(terminal.channelLabel).isEqualTo("open")
+                            // Nothing has been said by the far end yet, and "no output ever" is not the
+                            // same answer as "output a very long time ago": the trace prints no `idle`
+                            // field at all rather than an age measured from an epoch nobody set.
+                            assertThat(terminal.idleForMs()).isNull()
 
-                        // The label follows the pty rather than being fixed at the size it opened at,
-                        // which is what makes it usable after a resize - the geometry a reconnect
-                        // carries forward is the one the user's screen decided.
-                        terminal.resize(100, 30)
-                        assertThat(terminal.ptyLabel).isEqualTo("100x30")
+                            // The label follows the pty rather than being fixed at the size it opened at,
+                            // which is what makes it usable after a resize - the geometry a reconnect
+                            // carries forward is the one the user's screen decided.
+                            terminal.resize(100, 30)
+                            assertThat(terminal.ptyLabel).isEqualTo("100x30")
 
-                        terminal.write("a")
-                        assertThat(awaitText(sink) { it.contains("a") }).contains("a")
-                        // Only *server* bytes move this clock, and one has now arrived.
-                        assertThat(terminal.idleForMs()).isNotNull()
-                        assertThat(terminal.idleForMs()!!).isLessThan(WAIT_MS)
-                    } finally {
-                        pump.cancel()
-                        terminal.close()
+                            terminal.write("a")
+                            assertThat(awaitText(sink) { it.contains("a") }).contains("a")
+                            // Only *server* bytes move this clock, and one has now arrived.
+                            assertThat(terminal.idleForMs()).isNotNull()
+                            assertThat(terminal.idleForMs()!!).isLessThan(WAIT_MS)
+                        } finally {
+                            pump.cancel()
+                            terminal.close()
+                        }
                     }
+                    assertThat(awaitTrue { terminal.channelLabel == "closed" }).isTrue()
                 }
-                assertThat(awaitTrue { terminal.channelLabel == "closed" }).isTrue()
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     /**
      * A channel opened without a pty says so, instead of printing a size nobody applied.
@@ -443,89 +463,92 @@ class SessionStabilityTest {
      * shell with no prompt. See [HostProfile.usePty].
      */
     @Test
-    fun `a channel with no pty reports none rather than a geometry`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session, profile = hostProfile().copy(usePty = false))
-                awaitShell(started)
-                try {
-                    assertThat(terminal.ptyLabel).isEqualTo("none")
-                    // Still tracked underneath, which is why the label cannot be derived from these.
-                    assertThat(terminal.ptyColumns).isGreaterThan(0)
-                } finally {
-                    terminal.close()
+    fun `a channel with no pty reports none rather than a geometry`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session, profile = hostProfile().copy(usePty = false))
+                    awaitShell(started)
+                    try {
+                        assertThat(terminal.ptyLabel).isEqualTo("none")
+                        // Still tracked underneath, which is why the label cannot be derived from these.
+                        assertThat(terminal.ptyColumns).isGreaterThan(0)
+                    } finally {
+                        terminal.close()
+                    }
                 }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `a pasted command longer than the buffer arrives whole and in order`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session)
-                val shell = awaitShell(started)
-                try {
-                    // Longer than the channel's own read buffer, so a paste that is chunked anywhere
-                    // in the path shows up as reordered or truncated bytes rather than as this
-                    // assertion passing.
-                    val line = (1..600).joinToString(" ") { "arg$it" }
-                    terminal.write(line + "\r")
-                    assertThat(awaitTrue { shell.received().size >= line.length }).isTrue()
-                    val delivered = String(shell.received(), Charsets.UTF_8)
-                    assertThat(delivered).contains(line)
-                } finally {
-                    terminal.close()
+    fun `a pasted command longer than the buffer arrives whole and in order`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session)
+                    val shell = awaitShell(started)
+                    try {
+                        // Longer than the channel's own read buffer, so a paste that is chunked anywhere
+                        // in the path shows up as reordered or truncated bytes rather than as this
+                        // assertion passing.
+                        val line = (1..600).joinToString(" ") { "arg$it" }
+                        terminal.write(line + "\r")
+                        assertThat(awaitTrue { shell.received().size >= line.length }).isTrue()
+                        val delivered = String(shell.received(), Charsets.UTF_8)
+                        assertThat(delivered).contains(line)
+                    } finally {
+                        terminal.close()
+                    }
                 }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `the pty is a colour terminal and a resize reaches the shell as a window change`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session)
-                val shell = awaitShell(started)
-                try {
-                    // What the remote side reads to decide whether it may use colour and cursor
-                    // addressing at all. Without a pty request there is no TERM, and vim, nano, top
-                    // and htop all refuse to draw.
-                    assertThat(awaitTrue { shell.env()?.get(Environment.ENV_TERM) != null }).isTrue()
-                    assertThat(shell.env()?.get(Environment.ENV_TERM)).isEqualTo("xterm-256color")
+    fun `the pty is a colour terminal and a resize reaches the shell as a window change`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session)
+                    val shell = awaitShell(started)
+                    try {
+                        // What the remote side reads to decide whether it may use colour and cursor
+                        // addressing at all. Without a pty request there is no TERM, and vim, nano, top
+                        // and htop all refuse to draw.
+                        assertThat(awaitTrue { shell.env()?.get(Environment.ENV_TERM) != null }).isTrue()
+                        assertThat(shell.env()?.get(Environment.ENV_TERM)).isEqualTo("xterm-256color")
 
-                    terminal.resize(100, 30)
-                    assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == "100" }).isTrue()
-                    assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo("30")
-                    // A full-screen program only redraws when it is told; the size alone is not enough.
-                    assertThat(shell.winchCount()).isAtLeast(1)
+                        terminal.resize(100, 30)
+                        assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == "100" }).isTrue()
+                        assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo("30")
+                        // A full-screen program only redraws when it is told; the size alone is not enough.
+                        assertThat(shell.winchCount()).isAtLeast(1)
 
-                    // Absurd sizes are clamped to what the display can render rather than sent on,
-                    // because a 1-column pty makes any remote program unusable.
-                    terminal.resize(1, 1)
-                    assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == TERMINAL_COLUMN_RANGE.first.toString() }).isTrue()
-                    assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo(TERMINAL_ROW_RANGE.first.toString())
-                } finally {
-                    terminal.close()
+                        // Absurd sizes are clamped to what the display can render rather than sent on,
+                        // because a 1-column pty makes any remote program unusable.
+                        terminal.resize(1, 1)
+                        assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == TERMINAL_COLUMN_RANGE.first.toString() }).isTrue()
+                        assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo(TERMINAL_ROW_RANGE.first.toString())
+                    } finally {
+                        terminal.close()
+                    }
                 }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     /**
      * A pty asked for at a size no display can render is opened at one that can, and both sides agree.
@@ -539,121 +562,124 @@ class SessionStabilityTest {
      * converge again for the life of the session, and every full-screen program wrapped.
      */
     @Test
-    fun `a pty asked for at an impossible size is opened at one the display can match`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session, columns = 4_000, rows = 2)
-                val shell = awaitShell(started)
-                try {
-                    val columns = TERMINAL_COLUMN_RANGE.last
-                    val rows = TERMINAL_ROW_RANGE.first
-                    assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == "$columns" }).isTrue()
-                    assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo("$rows")
-                    // What the app believes, which is the geometry a reconnect carries across.
-                    assertThat(terminal.ptyColumns).isEqualTo(columns)
-                    assertThat(terminal.ptyRows).isEqualTo(rows)
+    fun `a pty asked for at an impossible size is opened at one the display can match`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session, columns = 4_000, rows = 2)
+                    val shell = awaitShell(started)
+                    try {
+                        val columns = TERMINAL_COLUMN_RANGE.last
+                        val rows = TERMINAL_ROW_RANGE.first
+                        assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == "$columns" }).isTrue()
+                        assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo("$rows")
+                        // What the app believes, which is the geometry a reconnect carries across.
+                        assertThat(terminal.ptyColumns).isEqualTo(columns)
+                        assertThat(terminal.ptyRows).isEqualTo(rows)
 
-                    // And a size inside the range still reaches the pty afterwards.
-                    terminal.resize(90, 25)
-                    assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == "90" }).isTrue()
-                    assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo("25")
-                } finally {
-                    terminal.close()
+                        // And a size inside the range still reaches the pty afterwards.
+                        terminal.resize(90, 25)
+                        assertThat(awaitTrue { shell.env()?.get(Environment.ENV_COLUMNS) == "90" }).isTrue()
+                        assertThat(shell.env()?.get(Environment.ENV_LINES)).isEqualTo("25")
+                    } finally {
+                        terminal.close()
+                    }
                 }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `a shell the user ends reports a status so nothing reconnects it`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
+    fun `a shell the user ends reports a status so nothing reconnects it`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session)
+                    awaitShell(started)
+                    // Ctrl-D at a prompt is how a shell is closed on purpose. It must come back with a
+                    // status, because the status is what stops the reconnect logic resurrecting it.
+                    terminal.writeBytes(byteArrayOf(CTRL_D))
+                    val end = withTimeoutOrNull(WAIT_MS) { terminal.awaitClosed() }
+                    assertThat(end).isEqualTo(SessionEnd.ShellEnded(status = 0, signal = null))
+                    assertThat(shouldAutoReconnect(end!!, tabIsOpen = true, endedDeliberately = false)).isFalse()
+                    // And it reads as an ending rather than as a fault of the network.
+                    assertThat(describeSessionEnd(end)).isEqualTo("Session ended")
+                }
+            } finally {
+                manager.close()
+            }
+        }
+
+    @Test
+    fun `a transport that silently stops delivering is noticed closed and offered for reconnect`() =
+        runBlocking {
+            val relay = FreezableRelay(serverPort)
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile(port = relay.port, keepAlive = HEARTBEAT_SECONDS)
+                assertThat(HEARTBEAT_SECONDS).isAtLeast(KEEP_ALIVE_RANGE.first)
+                val session = trustedConnect(manager, profile)
                 val started = shells.size
                 val terminal = manager.openTerminal(session)
                 awaitShell(started)
-                // Ctrl-D at a prompt is how a shell is closed on purpose. It must come back with a
-                // status, because the status is what stops the reconnect logic resurrecting it.
-                terminal.writeBytes(byteArrayOf(CTRL_D))
-                val end = withTimeoutOrNull(WAIT_MS) { terminal.awaitClosed() }
-                assertThat(end).isEqualTo(SessionEnd.ShellEnded(status = 0, signal = null))
-                assertThat(shouldAutoReconnect(end!!, tabIsOpen = true, endedDeliberately = false)).isFalse()
-                // And it reads as an ending rather than as a fault of the network.
-                assertThat(describeSessionEnd(end)).isEqualTo("Session ended")
+                // install() rather than raw map writes: the sweep and every host-scoped question reach
+                // sessions through the hostOf index install() writes, so a session filed straight into
+                // the maps is invisible to the probe — the liveness half of this test would pass with
+                // the probe never having run, and the liveHostIds() assertion below would never have
+                // had a live host to stop offering.
+                store.install(profile.id, session, profile.id)
+                store.channels[profile.id] = terminal
+                assertThat(store.isLive(profile.id)).isTrue()
+
+                // The phone walks out of Wi-Fi range: the socket is still open at both ends, and not one
+                // byte crosses it again. Nothing is reported - which is why this needs a heartbeat that
+                // is answered rather than a read that fails.
+                val frozenAt = System.nanoTime()
+                relay.freeze()
+
+                // Wrapped in a list so a timeout (null) cannot be mistaken for a channel that closed
+                // without an exit status (listOf(null)) - the distinction this whole test turns on, and
+                // one an earlier version of it got wrong: the assertion passed while nothing had been
+                // detected at all.
+                val closed = withTimeoutOrNull(DEAD_PEER_WAIT_MS) { listOf(terminal.awaitClosed()) }
+                val elapsedSeconds = (System.nanoTime() - frozenAt) / 1_000_000_000L
+                assertThat(closed).isNotNull()
+                val end = closed!!.single()
+                // The transport, named as such. Not "the shell ended with no status", which is what this
+                // used to be indistinguishable from and is the one ending that must not be reconnected.
+                assertThat(end).isInstanceOf(SessionEnd.TransportFailed::class.java)
+                // And the reason reaches the user instead of being replaced by a generic sentence.
+                assertThat(describeSessionEnd(end)).startsWith("Connection lost: ")
+                assertThat(awaitTrue { !session.isOpen }).isTrue()
+
+                // And it was the heartbeat that noticed, not the idle-timeout backstop: detection is
+                // expected after HEARTBEAT_NO_REPLY_MAX unanswered requests, which is far sooner than the
+                // idle timeout configured alongside it. Without this bound the test passes even when no
+                // keep-alive is ever sent.
+                val idleTimeout = CoreModuleProperties.IDLE_TIMEOUT.getRequired(session).seconds
+                assertThat(elapsedSeconds).isLessThan(idleTimeout)
+                // And the two consequences: the shared store stops offering it, so the service dials a
+                // fresh one instead of adopting a corpse, and the tab asks for a reconnect.
+                assertThat(store.isLive(profile.id)).isFalse()
+                assertThat(store.liveHostIds()).isEmpty()
+                assertThat(shouldAutoReconnect(end, tabIsOpen = true, endedDeliberately = terminal.endedDeliberately)).isTrue()
+                // Nothing on this side asked for it, so the flag that suppresses a reconnect is clear -
+                // the transport really did die, and this is the case that must still come back.
+                assertThat(terminal.endedDeliberately).isFalse()
+            } finally {
+                runCatching { store.closeAll() }
+                manager.close()
+                relay.close()
             }
-        } finally {
-            manager.close()
         }
-    }
-
-    @Test
-    fun `a transport that silently stops delivering is noticed closed and offered for reconnect`() = runBlocking {
-        val relay = FreezableRelay(serverPort)
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile(port = relay.port, keepAlive = HEARTBEAT_SECONDS)
-            assertThat(HEARTBEAT_SECONDS).isAtLeast(KEEP_ALIVE_RANGE.first)
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            awaitShell(started)
-            // install() rather than raw map writes: the sweep and every host-scoped question reach
-            // sessions through the hostOf index install() writes, so a session filed straight into
-            // the maps is invisible to the probe — the liveness half of this test would pass with
-            // the probe never having run, and the liveHostIds() assertion below would never have
-            // had a live host to stop offering.
-            store.install(profile.id, session, profile.id)
-            store.channels[profile.id] = terminal
-            assertThat(store.isLive(profile.id)).isTrue()
-
-            // The phone walks out of Wi-Fi range: the socket is still open at both ends, and not one
-            // byte crosses it again. Nothing is reported - which is why this needs a heartbeat that
-            // is answered rather than a read that fails.
-            val frozenAt = System.nanoTime()
-            relay.freeze()
-
-            // Wrapped in a list so a timeout (null) cannot be mistaken for a channel that closed
-            // without an exit status (listOf(null)) - the distinction this whole test turns on, and
-            // one an earlier version of it got wrong: the assertion passed while nothing had been
-            // detected at all.
-            val closed = withTimeoutOrNull(DEAD_PEER_WAIT_MS) { listOf(terminal.awaitClosed()) }
-            val elapsedSeconds = (System.nanoTime() - frozenAt) / 1_000_000_000L
-            assertThat(closed).isNotNull()
-            val end = closed!!.single()
-            // The transport, named as such. Not "the shell ended with no status", which is what this
-            // used to be indistinguishable from and is the one ending that must not be reconnected.
-            assertThat(end).isInstanceOf(SessionEnd.TransportFailed::class.java)
-            // And the reason reaches the user instead of being replaced by a generic sentence.
-            assertThat(describeSessionEnd(end)).startsWith("Connection lost: ")
-            assertThat(awaitTrue { !session.isOpen }).isTrue()
-
-            // And it was the heartbeat that noticed, not the idle-timeout backstop: detection is
-            // expected after HEARTBEAT_NO_REPLY_MAX unanswered requests, which is far sooner than the
-            // idle timeout configured alongside it. Without this bound the test passes even when no
-            // keep-alive is ever sent.
-            val idleTimeout = CoreModuleProperties.IDLE_TIMEOUT.getRequired(session).seconds
-            assertThat(elapsedSeconds).isLessThan(idleTimeout)
-            // And the two consequences: the shared store stops offering it, so the service dials a
-            // fresh one instead of adopting a corpse, and the tab asks for a reconnect.
-            assertThat(store.isLive(profile.id)).isFalse()
-            assertThat(store.liveHostIds()).isEmpty()
-            assertThat(shouldAutoReconnect(end, tabIsOpen = true, endedDeliberately = terminal.endedDeliberately)).isTrue()
-            // Nothing on this side asked for it, so the flag that suppresses a reconnect is clear -
-            // the transport really did die, and this is the case that must still come back.
-            assertThat(terminal.endedDeliberately).isFalse()
-        } finally {
-            runCatching { store.closeAll() }
-            manager.close()
-            relay.close()
-        }
-    }
 
     /**
      * The network moving is not, by itself, a reason to drop a session that still answers.
@@ -671,38 +697,39 @@ class SessionStabilityTest {
      * well with the collector wired to nothing.
      */
     @Test
-    fun `a session that still answers survives the network moving underneath it`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile(keepAlive = PROBE_ONLY_KEEP_ALIVE)
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            val shell = awaitShell(started)
-            // install() for the same reason as the keep-alive test above: a session the probe cannot
-            // see is a session this test can never prove was spared rather than overlooked.
-            store.install(profile.id, session, profile.id)
-            store.channels[profile.id] = terminal
-            assertThat(store.isLive(profile.id)).isTrue()
+    fun `a session that still answers survives the network moving underneath it`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile(keepAlive = PROBE_ONLY_KEEP_ALIVE)
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                val shell = awaitShell(started)
+                // install() for the same reason as the keep-alive test above: a session the probe cannot
+                // see is a session this test can never prove was spared rather than overlooked.
+                store.install(profile.id, session, profile.id)
+                store.channels[profile.id] = terminal
+                assertThat(store.isLive(profile.id)).isTrue()
 
-            probe(store, manager).sweep()
+                probe(store, manager).sweep()
 
-            // Kept, and kept as the same session: a probe that answered must not cost a login.
-            assertThat(store.isLive(profile.id)).isTrue()
-            assertThat(store.liveSession(profile.id)).isSameInstanceAs(session)
-            assertThat(session.isOpen).isTrue()
-            assertThat(terminal.isOpen).isTrue()
-            // And it is a working shell, not one that survived on paper. This is the assertion a
-            // half-torn-down session fails.
-            val line = "still-here-after-the-handover\n"
-            terminal.write(line)
-            assertThat(awaitTrue { shell.received().size >= line.length }).isTrue()
-        } finally {
-            runCatching { store.closeAll() }
-            manager.close()
+                // Kept, and kept as the same session: a probe that answered must not cost a login.
+                assertThat(store.isLive(profile.id)).isTrue()
+                assertThat(store.liveSession(profile.id)).isSameInstanceAs(session)
+                assertThat(session.isOpen).isTrue()
+                assertThat(terminal.isOpen).isTrue()
+                // And it is a working shell, not one that survived on paper. This is the assertion a
+                // half-torn-down session fails.
+                val line = "still-here-after-the-handover\n"
+                terminal.write(line)
+                assertThat(awaitTrue { shell.received().size >= line.length }).isTrue()
+            } finally {
+                runCatching { store.closeAll() }
+                manager.close()
+            }
         }
-    }
 
     /**
      * A session the handover killed is found in seconds, and found in a way that reconnects.
@@ -722,45 +749,46 @@ class SessionStabilityTest {
      * session was gone from the store.
      */
     @Test
-    fun `a session the handover killed is dropped by the probe and asks to come back`() = runBlocking {
-        val relay = FreezableRelay(serverPort)
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile(port = relay.port, keepAlive = PROBE_ONLY_KEEP_ALIVE)
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            awaitShell(started)
-            // install(), or the sweep below is a no-op and the session "survives" because nobody
-            // asked it anything - the exact vacuous pass the elapsed-time assertion exists to rule out.
-            store.install(profile.id, session, profile.id)
-            store.channels[profile.id] = terminal
+    fun `a session the handover killed is dropped by the probe and asks to come back`() =
+        runBlocking {
+            val relay = FreezableRelay(serverPort)
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile(port = relay.port, keepAlive = PROBE_ONLY_KEEP_ALIVE)
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                awaitShell(started)
+                // install(), or the sweep below is a no-op and the session "survives" because nobody
+                // asked it anything - the exact vacuous pass the elapsed-time assertion exists to rule out.
+                store.install(profile.id, session, profile.id)
+                store.channels[profile.id] = terminal
 
-            // The handover: both sockets stay open, nothing crosses them again.
-            relay.freeze()
-            val frozenAt = System.nanoTime()
-            probe(store, manager).sweep()
-            val elapsedSeconds = (System.nanoTime() - frozenAt) / 1_000_000_000L
+                // The handover: both sockets stay open, nothing crosses them again.
+                relay.freeze()
+                val frozenAt = System.nanoTime()
+                probe(store, manager).sweep()
+                val elapsedSeconds = (System.nanoTime() - frozenAt) / 1_000_000_000L
 
-            assertThat(store.isLive(profile.id)).isFalse()
-            assertThat(store.liveHostIds()).isEmpty()
-            // Sooner than the keep-alive could possibly have managed, which is the whole point.
-            assertThat(elapsedSeconds).isLessThan(PROBE_ONLY_KEEP_ALIVE.toLong())
+                assertThat(store.isLive(profile.id)).isFalse()
+                assertThat(store.liveHostIds()).isEmpty()
+                // Sooner than the keep-alive could possibly have managed, which is the whole point.
+                assertThat(elapsedSeconds).isLessThan(PROBE_ONLY_KEEP_ALIVE.toLong())
 
-            // Dropped as found-dead: the tab reports an outage and the ladder brings it back.
-            val closed = withTimeoutOrNull(WAIT_MS) { listOf(terminal.awaitClosed()) }
-            assertThat(closed).isNotNull()
-            assertThat(terminal.endedDeliberately).isFalse()
-            assertThat(
-                shouldAutoReconnect(closed!!.single(), tabIsOpen = true, endedDeliberately = terminal.endedDeliberately),
-            ).isTrue()
-        } finally {
-            runCatching { store.closeAll() }
-            manager.close()
-            relay.close()
+                // Dropped as found-dead: the tab reports an outage and the ladder brings it back.
+                val closed = withTimeoutOrNull(WAIT_MS) { listOf(terminal.awaitClosed()) }
+                assertThat(closed).isNotNull()
+                assertThat(terminal.endedDeliberately).isFalse()
+                assertThat(
+                    shouldAutoReconnect(closed!!.single(), tabIsOpen = true, endedDeliberately = terminal.endedDeliberately),
+                ).isTrue()
+            } finally {
+                runCatching { store.closeAll() }
+                manager.close()
+                relay.close()
+            }
         }
-    }
 
     /**
      * The reaper cannot be the old bug wearing a new name.
@@ -772,30 +800,31 @@ class SessionStabilityTest {
      * bytes" - a half-released channel passes the first and fails the second.
      */
     @Test
-    fun `the reaper leaves a live session alone`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile()
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            val shell = awaitShell(started)
-            store.sessions[profile.id] = session
-            store.channels[profile.id] = terminal
+    fun `the reaper leaves a live session alone`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile()
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                val shell = awaitShell(started)
+                store.sessions[profile.id] = session
+                store.channels[profile.id] = terminal
 
-            assertThat(store.reap(profile.id)).isFalse()
-            assertThat(store.liveSession(profile.id)).isSameInstanceAs(session)
-            assertThat(store.channels[profile.id]).isSameInstanceAs(terminal)
+                assertThat(store.reap(profile.id)).isFalse()
+                assertThat(store.liveSession(profile.id)).isSameInstanceAs(session)
+                assertThat(store.channels[profile.id]).isSameInstanceAs(terminal)
 
-            val line = "still-here-after-the-reaper\n"
-            terminal.write(line)
-            assertThat(awaitTrue { shell.received().size >= line.length }).isTrue()
-        } finally {
-            runCatching { store.closeAll() }
-            manager.close()
+                val line = "still-here-after-the-reaper\n"
+                terminal.write(line)
+                assertThat(awaitTrue { shell.received().size >= line.length }).isTrue()
+            } finally {
+                runCatching { store.closeAll() }
+                manager.close()
+            }
         }
-    }
 
     /**
      * A session whose transport genuinely died leaves the registry, and leaves it *after* saying why.
@@ -807,41 +836,45 @@ class SessionStabilityTest {
      * asserted: the ending the user acts on, then the empty registry.
      */
     @Test
-    fun `the registry stops holding a session whose transport died`() = runBlocking {
-        val relay = FreezableRelay(serverPort)
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile(port = relay.port)
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            awaitShell(started)
-            store.sessions[profile.id] = session
-            store.channels[profile.id] = terminal
+    fun `the registry stops holding a session whose transport died`() =
+        runBlocking {
+            val relay = FreezableRelay(serverPort)
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile(port = relay.port)
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                awaitShell(started)
+                store.sessions[profile.id] = session
+                store.channels[profile.id] = terminal
 
-            // Taken away rather than closed: the sockets vanish under a session nobody asked to end.
-            relay.close()
-            val end = withTimeoutOrNull(WAIT_MS) { terminal.awaitClosed() }
-            assertThat(end).isNotNull()
-            assertThat(terminal.endedDeliberately).isFalse()
-            assertThat(shouldAutoReconnect(end!!, tabIsOpen = true, endedDeliberately = false)).isTrue()
+                // Taken away rather than closed: the sockets vanish under a session nobody asked to end.
+                relay.close()
+                val end = withTimeoutOrNull(WAIT_MS) { terminal.awaitClosed() }
+                assertThat(end).isNotNull()
+                assertThat(terminal.endedDeliberately).isFalse()
+                assertThat(shouldAutoReconnect(end!!, tabIsOpen = true, endedDeliberately = false)).isTrue()
 
-            assertThat(awaitTrue { !session.isOpen }).isTrue()
-            assertThat(store.reap(profile.id)).isTrue()
-            assertThat(store.sessions).doesNotContainKey(profile.id)
-            assertThat(store.channels).doesNotContainKey(profile.id)
-            // Nothing left to reap, and saying so is how a caller on every ending stays cheap.
-            assertThat(store.reap(profile.id)).isFalse()
-        } finally {
-            runCatching { store.closeAll() }
-            manager.close()
-            relay.close()
+                assertThat(awaitTrue { !session.isOpen }).isTrue()
+                assertThat(store.reap(profile.id)).isTrue()
+                assertThat(store.sessions).doesNotContainKey(profile.id)
+                assertThat(store.channels).doesNotContainKey(profile.id)
+                // Nothing left to reap, and saying so is how a caller on every ending stays cheap.
+                assertThat(store.reap(profile.id)).isFalse()
+            } finally {
+                runCatching { store.closeAll() }
+                manager.close()
+                relay.close()
+            }
         }
-    }
 
     /** A probe wired to the real store and manager, with nothing stubbed but the trigger. */
-    private fun probe(store: SshSessionStore, manager: SshConnectionManager) = SessionLivenessProbe(
+    private fun probe(
+        store: SshSessionStore,
+        manager: SshConnectionManager,
+    ) = SessionLivenessProbe(
         sessionStore = store,
         connectionManager = manager,
         networkMonitor = NetworkMonitor(RuntimeEnvironment.getApplication()),
@@ -849,43 +882,44 @@ class SessionStabilityTest {
     )
 
     @Test
-    fun `the store offers a live session for adoption instead of a second login`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile()
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            awaitShell(started)
-            store.install(profile.id, session, profile.id)
-            store.channels[profile.id] = terminal
-            store.buffers[profile.id] = AnsiTerminalBuffer()
+    fun `the store offers a live session for adoption instead of a second login`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile()
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                awaitShell(started)
+                store.install(profile.id, session, profile.id)
+                store.channels[profile.id] = terminal
+                store.buffers[profile.id] = AnsiTerminalBuffer()
 
-            // What a rebuilt activity asks: is there a session and a channel I can attach a tab to?
-            assertThat(store.liveSession(profile.id)).isSameInstanceAs(session)
-            assertThat(store.adoptableHostIds()).containsExactly(profile.id)
+                // What a rebuilt activity asks: is there a session and a channel I can attach a tab to?
+                assertThat(store.liveSession(profile.id)).isSameInstanceAs(session)
+                assertThat(store.adoptableHostIds()).containsExactly(profile.id)
 
-            // A session whose channel has gone is still live - it can open another - but it is not
-            // adoptable, because there is no stream left to attach to.
-            terminal.close()
-            assertThat(awaitTrue { !terminal.isOpen }).isTrue()
-            assertThat(store.isLive(profile.id)).isTrue()
-            assertThat(store.adoptableHostIds()).isEmpty()
+                // A session whose channel has gone is still live - it can open another - but it is not
+                // adoptable, because there is no stream left to attach to.
+                terminal.close()
+                assertThat(awaitTrue { !terminal.isOpen }).isTrue()
+                assertThat(store.isLive(profile.id)).isTrue()
+                assertThat(store.adoptableHostIds()).isEmpty()
 
-            store.close(profile.id)
-            assertThat(store.isLive(profile.id)).isFalse()
-            assertThat(awaitTrue { !session.isOpen }).isTrue()
-            // close() keeps the scrollback so a reconnect resumes the same tab; forget() is what
-            // closing the tab does.
-            assertThat(store.buffers).containsKey(profile.id)
-            store.forget(profile.id)
-            assertThat(store.buffers).doesNotContainKey(profile.id)
-        } finally {
-            store.closeAll()
-            manager.close()
+                store.close(profile.id)
+                assertThat(store.isLive(profile.id)).isFalse()
+                assertThat(awaitTrue { !session.isOpen }).isTrue()
+                // close() keeps the scrollback so a reconnect resumes the same tab; forget() is what
+                // closing the tab does.
+                assertThat(store.buffers).containsKey(profile.id)
+                store.forget(profile.id)
+                assertThat(store.buffers).doesNotContainKey(profile.id)
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
         }
-    }
 
     /**
      * A session with a transport and no pty is offered a shell rather than being redialled.
@@ -906,52 +940,53 @@ class SessionStabilityTest {
      * the shell but still authenticates first would pass every state assertion here.
      */
     @Test
-    fun `a session with no shell is offered one instead of a second login`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile()
-            val loginsBefore = logins.get()
-            // Exactly what the restore pass leaves behind: install(), and no openTerminal().
-            val session = trustedConnect(manager, profile)
-            assertThat(store.install(profile.id, session, profile.id)).isSameInstanceAs(session)
+    fun `a session with no shell is offered one instead of a second login`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile()
+                val loginsBefore = logins.get()
+                // Exactly what the restore pass leaves behind: install(), and no openTerminal().
+                val session = trustedConnect(manager, profile)
+                assertThat(store.install(profile.id, session, profile.id)).isSameInstanceAs(session)
 
-            // The terminal cannot adopt this: there is no stream to attach a tab to. That much was
-            // always true and is deliberate.
-            assertThat(store.isLive(profile.id)).isTrue()
-            assertThat(store.adoptable(profile.id)).isNull()
-            assertThat(store.adoptableHostIds()).isEmpty()
-            // What was missing is the other answer - the session is still the one to use, it just
-            // needs a pty on it.
-            assertWithMessage("a live session with no shell must be offered for one")
-                .that(store.sessionAwaitingShell(profile.id))
-                .isSameInstanceAs(session)
+                // The terminal cannot adopt this: there is no stream to attach a tab to. That much was
+                // always true and is deliberate.
+                assertThat(store.isLive(profile.id)).isTrue()
+                assertThat(store.adoptable(profile.id)).isNull()
+                assertThat(store.adoptableHostIds()).isEmpty()
+                // What was missing is the other answer - the session is still the one to use, it just
+                // needs a pty on it.
+                assertWithMessage("a live session with no shell must be offered for one")
+                    .that(store.sessionAwaitingShell(profile.id))
+                    .isSameInstanceAs(session)
 
-            val started = shells.size
-            val terminal = manager.openTerminal(session, 100, 30)
-            awaitShell(started)
-            store.channels[profile.id] = terminal
-            // The shell arrived on the session that was already there, so the server saw one login for
-            // the whole exchange - not one per attempt.
-            assertThat(logins.get() - loginsBefore).isEqualTo(1)
-            assertThat(store.adoptable(profile.id)?.second).isSameInstanceAs(terminal)
-            // And with a shell on it there is nothing awaiting one, so the next connect adopts the
-            // channel instead of opening a second pty on the same session.
-            assertThat(store.sessionAwaitingShell(profile.id)).isNull()
+                val started = shells.size
+                val terminal = manager.openTerminal(session, 100, 30)
+                awaitShell(started)
+                store.channels[profile.id] = terminal
+                // The shell arrived on the session that was already there, so the server saw one login for
+                // the whole exchange - not one per attempt.
+                assertThat(logins.get() - loginsBefore).isEqualTo(1)
+                assertThat(store.adoptable(profile.id)?.second).isSameInstanceAs(terminal)
+                // And with a shell on it there is nothing awaiting one, so the next connect adopts the
+                // channel instead of opening a second pty on the same session.
+                assertThat(store.sessionAwaitingShell(profile.id)).isNull()
 
-            // A shell that ends leaves the transport perfectly usable. The store offers it again and
-            // drops the dead channel on the way out, so the host is not stuck behind a stream nobody
-            // can read - which is the same dead end reached from the other direction.
-            terminal.close()
-            assertThat(awaitTrue { !terminal.isOpen }).isTrue()
-            assertThat(store.sessionAwaitingShell(profile.id)).isSameInstanceAs(session)
-            assertThat(store.channels).doesNotContainKey(profile.id)
-            assertThat(logins.get() - loginsBefore).isEqualTo(1)
-        } finally {
-            store.closeAll()
-            manager.close()
+                // A shell that ends leaves the transport perfectly usable. The store offers it again and
+                // drops the dead channel on the way out, so the host is not stuck behind a stream nobody
+                // can read - which is the same dead end reached from the other direction.
+                terminal.close()
+                assertThat(awaitTrue { !terminal.isOpen }).isTrue()
+                assertThat(store.sessionAwaitingShell(profile.id)).isSameInstanceAs(session)
+                assertThat(store.channels).doesNotContainKey(profile.id)
+                assertThat(logins.get() - loginsBefore).isEqualTo(1)
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
         }
-    }
 
     /**
      * Two components dialling the same host at once cost one login and leave one session.
@@ -969,56 +1004,59 @@ class SessionStabilityTest {
      * (the loser adopted rather than replacing it).
      */
     @Test
-    fun `two components dialling one host at the same time cost one login and one session`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        val profile = hostProfile()
-        // First contact is what the app's own connect path does: trust the key once, then dial.
-        trustedConnect(manager, profile).close(false)
-        try {
-            val loginsBefore = logins.get()
-            val shellsBefore = shells.size
+    fun `two components dialling one host at the same time cost one login and one session`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            val profile = hostProfile()
+            // First contact is what the app's own connect path does: trust the key once, then dial.
+            trustedConnect(manager, profile).close(false)
+            try {
+                val loginsBefore = logins.get()
+                val shellsBefore = shells.size
 
-            // Exactly the app's dial path, as MainViewModel and EclipseSessionService both run it.
-            suspend fun dialOrAdopt(): ClientSession = store.dialing(profile.id) {
-                store.adoptable(profile.id)?.first ?: run {
-                    val dialled = manager.connect(profile, PASSWORD, null)
-                    val installed = store.install(profile.id, dialled, profile.id)
-                    if (installed === dialled) store.channels[profile.id] = manager.openTerminal(dialled)
-                    installed
-                }
+                // Exactly the app's dial path, as MainViewModel and EclipseSessionService both run it.
+                suspend fun dialOrAdopt(): ClientSession =
+                    store.dialing(profile.id) {
+                        store.adoptable(profile.id)?.first ?: run {
+                            val dialled = manager.connect(profile, PASSWORD, null)
+                            val installed = store.install(profile.id, dialled, profile.id)
+                            if (installed === dialled) store.channels[profile.id] = manager.openTerminal(dialled)
+                            installed
+                        }
+                    }
+
+                val (fromUi, fromService) =
+                    coroutineScope {
+                        val ui = async(Dispatchers.IO) { dialOrAdopt() }
+                        val service = async(Dispatchers.IO) { dialOrAdopt() }
+                        ui.await() to service.await()
+                    }
+
+                assertThat(fromUi).isSameInstanceAs(fromService)
+                assertThat(logins.get() - loginsBefore).isEqualTo(1)
+                // Waited for rather than sampled. `openTerminal` returns when the channel is open, and the
+                // server runs its ShellFactory a moment later when the `shell` request arrives - so reading
+                // the count immediately is a race that reports zero shells on a loaded machine. The exact
+                // count is still asserted, and it is still meaningful: one login was already proved above,
+                // and one session cannot produce two shells here.
+                assertThat(awaitTrue { shells.size - shellsBefore >= 1 }).isTrue()
+                assertThat(shells.size - shellsBefore).isEqualTo(1)
+                // And what the second caller was handed is the working session, not a corpse.
+                assertThat(fromService.isOpen).isTrue()
+                assertThat(fromService.isAuthenticated).isTrue()
+                assertThat(store.adoptableHostIds()).containsExactly(profile.id)
+                val channel = store.channels.getValue(profile.id)
+                assertThat(channel.isOpen).isTrue()
+                // The shell still answers, which is the user-visible claim: nothing was reconnected.
+                val shell = shells.last()
+                channel.write("echo alive\r")
+                assertThat(awaitTrue { shell.received().isNotEmpty() }).isTrue()
+            } finally {
+                store.closeAll()
+                manager.close()
             }
-
-            val (fromUi, fromService) = coroutineScope {
-                val ui = async(Dispatchers.IO) { dialOrAdopt() }
-                val service = async(Dispatchers.IO) { dialOrAdopt() }
-                ui.await() to service.await()
-            }
-
-            assertThat(fromUi).isSameInstanceAs(fromService)
-            assertThat(logins.get() - loginsBefore).isEqualTo(1)
-            // Waited for rather than sampled. `openTerminal` returns when the channel is open, and the
-            // server runs its ShellFactory a moment later when the `shell` request arrives - so reading
-            // the count immediately is a race that reports zero shells on a loaded machine. The exact
-            // count is still asserted, and it is still meaningful: one login was already proved above,
-            // and one session cannot produce two shells here.
-            assertThat(awaitTrue { shells.size - shellsBefore >= 1 }).isTrue()
-            assertThat(shells.size - shellsBefore).isEqualTo(1)
-            // And what the second caller was handed is the working session, not a corpse.
-            assertThat(fromService.isOpen).isTrue()
-            assertThat(fromService.isAuthenticated).isTrue()
-            assertThat(store.adoptableHostIds()).containsExactly(profile.id)
-            val channel = store.channels.getValue(profile.id)
-            assertThat(channel.isOpen).isTrue()
-            // The shell still answers, which is the user-visible claim: nothing was reconnected.
-            val shell = shells.last()
-            channel.write("echo alive\r")
-            assertThat(awaitTrue { shell.received().isNotEmpty() }).isTrue()
-        } finally {
-            store.closeAll()
-            manager.close()
         }
-    }
 
     /**
      * A redundant session loses to the live one, and takes nothing of the live one's with it.
@@ -1029,42 +1067,43 @@ class SessionStabilityTest {
      * next UI would dial all over again.
      */
     @Test
-    fun `installing a second session keeps the one that already has a shell`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        val profile = hostProfile()
-        try {
-            val live = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(live)
-            val shell = awaitShell(started)
-            assertThat(store.install(profile.id, live, profile.id)).isSameInstanceAs(live)
-            store.channels[profile.id] = terminal
+    fun `installing a second session keeps the one that already has a shell`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            val profile = hostProfile()
+            try {
+                val live = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(live)
+                val shell = awaitShell(started)
+                assertThat(store.install(profile.id, live, profile.id)).isSameInstanceAs(live)
+                store.channels[profile.id] = terminal
 
-            val redundant = trustedConnect(manager, profile)
-            assertThat(store.install(profile.id, redundant, profile.id)).isSameInstanceAs(live)
+                val redundant = trustedConnect(manager, profile)
+                assertThat(store.install(profile.id, redundant, profile.id)).isSameInstanceAs(live)
 
-            // The newcomer is the one that closes.
-            assertThat(awaitTrue { !redundant.isOpen }).isTrue()
-            // The incumbent, its shell and its registry entry are all untouched.
-            assertThat(live.isOpen).isTrue()
-            assertThat(live.isAuthenticated).isTrue()
-            assertThat(terminal.isOpen).isTrue()
-            assertThat(terminal.endedDeliberately).isFalse()
-            assertThat(store.channels[profile.id]).isSameInstanceAs(terminal)
-            terminal.write("still here\r")
-            assertThat(awaitTrue { shell.received().isNotEmpty() }).isTrue()
+                // The newcomer is the one that closes.
+                assertThat(awaitTrue { !redundant.isOpen }).isTrue()
+                // The incumbent, its shell and its registry entry are all untouched.
+                assertThat(live.isOpen).isTrue()
+                assertThat(live.isAuthenticated).isTrue()
+                assertThat(terminal.isOpen).isTrue()
+                assertThat(terminal.endedDeliberately).isFalse()
+                assertThat(store.channels[profile.id]).isSameInstanceAs(terminal)
+                terminal.write("still here\r")
+                assertThat(awaitTrue { shell.received().isNotEmpty() }).isTrue()
 
-            // Installing the same instance twice is what a restore pass does; it must be a no-op and
-            // must not close the session it was asked to keep.
-            assertThat(store.install(profile.id, live, profile.id)).isSameInstanceAs(live)
-            assertThat(live.isOpen).isTrue()
-            assertThat(terminal.isOpen).isTrue()
-        } finally {
-            store.closeAll()
-            manager.close()
+                // Installing the same instance twice is what a restore pass does; it must be a no-op and
+                // must not close the session it was asked to keep.
+                assertThat(store.install(profile.id, live, profile.id)).isSameInstanceAs(live)
+                assertThat(live.isOpen).isTrue()
+                assertThat(terminal.isOpen).isTrue()
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
         }
-    }
 
     /**
      * A session nobody types into stays Connected across several heartbeat periods.
@@ -1076,115 +1115,119 @@ class SessionStabilityTest {
      * heartbeat exists; this proves the heartbeat is the *only* thing that happens while idle.
      */
     @Test
-    fun `an idle session is not a broken one`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        val profile = hostProfile(keepAlive = HEARTBEAT_SECONDS)
-        try {
-            val keepalivesBefore = keepalives.count()
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            awaitShell(started)
-            store.install(profile.id, session, profile.id)
-            store.channels[profile.id] = terminal
-            val (sink, collector) = collectText(terminal)
+    fun `an idle session is not a broken one`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            val profile = hostProfile(keepAlive = HEARTBEAT_SECONDS)
             try {
-                // Not one byte typed for several heartbeat periods - the app's shortest keep-alive, so
-                // this covers the same ground as a ten-minute idle at the default of 60s.
-                val idleFor = HEARTBEAT_SECONDS * 1_000L * 4
-                assertThat(awaitTrue(idleFor + WAIT_MS) { keepalives.count() - keepalivesBefore >= 3 }).isTrue()
+                val keepalivesBefore = keepalives.count()
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                awaitShell(started)
+                store.install(profile.id, session, profile.id)
+                store.channels[profile.id] = terminal
+                val (sink, collector) = collectText(terminal)
+                try {
+                    // Not one byte typed for several heartbeat periods - the app's shortest keep-alive, so
+                    // this covers the same ground as a ten-minute idle at the default of 60s.
+                    val idleFor = HEARTBEAT_SECONDS * 1_000L * 4
+                    assertThat(awaitTrue(idleFor + WAIT_MS) { keepalives.count() - keepalivesBefore >= 3 }).isTrue()
 
-                assertThat(session.isOpen).isTrue()
-                assertThat(session.isAuthenticated).isTrue()
-                assertThat(terminal.isOpen).isTrue()
-                assertThat(store.isLive(profile.id)).isTrue()
-                assertThat(store.adoptableHostIds()).containsExactly(profile.id)
-                // Nothing ended, so there is nothing to report: awaitClosed is still waiting.
-                assertThat(withTimeoutOrNull(200) { terminal.awaitClosed() }).isNull()
-                assertThat(terminal.droppedChunks).isEqualTo(0L)
-                // And the shell is still there to prove it, after all that silence.
-                synchronized(sink) { sink.setLength(0) }
-                terminal.write("awake\r")
-                assertThat(awaitText(sink) { it.contains("awake") }).contains("awake")
-            } finally {
-                collector.cancel()
-            }
-        } finally {
-            store.closeAll()
-            manager.close()
-        }
-    }
-
-    @Test
-    fun `two hosts stay up at once and closing one leaves the other alone`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val first = hostProfile()
-            val second = hostProfile()
-            store.install(first.id, trustedConnect(manager, first), first.id)
-            store.install(second.id, trustedConnect(manager, second), second.id)
-
-            assertThat(store.liveHostIds()).containsExactly(first.id, second.id)
-
-            store.close(first.id)
-            assertThat(store.isLive(first.id)).isFalse()
-            assertThat(store.isLive(second.id)).isTrue()
-        } finally {
-            store.closeAll()
-            manager.close()
-        }
-    }
-
-    @Test
-    fun `moving between screens reuses one session however often the channel is reopened`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                // Leaving the terminal screen and coming back closes and reopens the channel. It must
-                // never cost another authentication: the session object is the connection.
-                repeat(5) {
-                    val started = shells.size
-                    val terminal = manager.openTerminal(session)
-                    val shell = awaitShell(started)
-                    terminal.write("hello\r")
-                    assertThat(awaitTrue { shell.received().isNotEmpty() }).isTrue()
-                    assertThat(terminal.droppedChunks).isEqualTo(0L)
-                    terminal.close()
                     assertThat(session.isOpen).isTrue()
                     assertThat(session.isAuthenticated).isTrue()
+                    assertThat(terminal.isOpen).isTrue()
+                    assertThat(store.isLive(profile.id)).isTrue()
+                    assertThat(store.adoptableHostIds()).containsExactly(profile.id)
+                    // Nothing ended, so there is nothing to report: awaitClosed is still waiting.
+                    assertThat(withTimeoutOrNull(200) { terminal.awaitClosed() }).isNull()
+                    assertThat(terminal.droppedChunks).isEqualTo(0L)
+                    // And the shell is still there to prove it, after all that silence.
+                    synchronized(sink) { sink.setLength(0) }
+                    terminal.write("awake\r")
+                    assertThat(awaitText(sink) { it.contains("awake") }).contains("awake")
+                } finally {
+                    collector.cancel()
                 }
+            } finally {
+                store.closeAll()
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     @Test
-    fun `repeated connect and disconnect leaves nothing behind`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            repeat(4) {
-                val profile = hostProfile()
-                val session = trustedConnect(manager, profile)
-                store.sessions[profile.id] = session
-                assertThat(store.isLive(profile.id)).isTrue()
-                store.close(profile.id)
-                assertThat(store.isLive(profile.id)).isFalse()
+    fun `two hosts stay up at once and closing one leaves the other alone`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val first = hostProfile()
+                val second = hostProfile()
+                store.install(first.id, trustedConnect(manager, first), first.id)
+                store.install(second.id, trustedConnect(manager, second), second.id)
+
+                assertThat(store.liveHostIds()).containsExactly(first.id, second.id)
+
+                store.close(first.id)
+                assertThat(store.isLive(first.id)).isFalse()
+                assertThat(store.isLive(second.id)).isTrue()
+            } finally {
+                store.closeAll()
+                manager.close()
             }
-            // No half-closed sessions accumulate across cycles, which is the leak a reconnect loop
-            // would turn into an outage of its own.
-            assertThat(store.liveHostIds()).isEmpty()
-            assertThat(store.sessions).isEmpty()
-            assertThat(store.channels).isEmpty()
-        } finally {
-            store.closeAll()
-            manager.close()
         }
-    }
+
+    @Test
+    fun `moving between screens reuses one session however often the channel is reopened`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    // Leaving the terminal screen and coming back closes and reopens the channel. It must
+                    // never cost another authentication: the session object is the connection.
+                    repeat(5) {
+                        val started = shells.size
+                        val terminal = manager.openTerminal(session)
+                        val shell = awaitShell(started)
+                        terminal.write("hello\r")
+                        assertThat(awaitTrue { shell.received().isNotEmpty() }).isTrue()
+                        assertThat(terminal.droppedChunks).isEqualTo(0L)
+                        terminal.close()
+                        assertThat(session.isOpen).isTrue()
+                        assertThat(session.isAuthenticated).isTrue()
+                    }
+                }
+            } finally {
+                manager.close()
+            }
+        }
+
+    @Test
+    fun `repeated connect and disconnect leaves nothing behind`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                repeat(4) {
+                    val profile = hostProfile()
+                    val session = trustedConnect(manager, profile)
+                    store.sessions[profile.id] = session
+                    assertThat(store.isLive(profile.id)).isTrue()
+                    store.close(profile.id)
+                    assertThat(store.isLive(profile.id)).isFalse()
+                }
+                // No half-closed sessions accumulate across cycles, which is the leak a reconnect loop
+                // would turn into an outage of its own.
+                assertThat(store.liveHostIds()).isEmpty()
+                assertThat(store.sessions).isEmpty()
+                assertThat(store.channels).isEmpty()
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
+        }
 
     /**
      * A live session answers the probe, and a server that has never heard of the request still counts.
@@ -1200,26 +1243,27 @@ class SessionStabilityTest {
      * the client and was refused, rather than passing on a probe that was never sent.
      */
     @Test
-    fun `a live session answers the liveness probe even when the server refuses the request`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val before = keepalives.count()
+    fun `a live session answers the liveness probe even when the server refuses the request`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val before = keepalives.count()
 
-                assertThat(manager.probeLiveness(session)).isTrue()
+                    assertThat(manager.probeLiveness(session)).isTrue()
 
-                // It really went on the wire, under the name OpenSSH uses.
-                assertThat(keepalives.count()).isGreaterThan(before)
-                // And it cost the session nothing: a probe that disturbed the shell would be worse
-                // than the delay it removes.
-                assertThat(session.isOpen).isTrue()
-                assertThat(session.isAuthenticated).isTrue()
+                    // It really went on the wire, under the name OpenSSH uses.
+                    assertThat(keepalives.count()).isGreaterThan(before)
+                    // And it cost the session nothing: a probe that disturbed the shell would be worse
+                    // than the delay it removes.
+                    assertThat(session.isOpen).isTrue()
+                    assertThat(session.isAuthenticated).isTrue()
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     /**
      * The probe finds a black-holed transport that `isOpen` cannot, and finds it in seconds.
@@ -1236,29 +1280,30 @@ class SessionStabilityTest {
      * session answers - this cannot be satisfied by a probe that simply always fails.
      */
     @Test
-    fun `a session behind a black holed transport fails the probe long before the heartbeat would`() = runBlocking {
-        val relay = FreezableRelay(serverPort)
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile(port = relay.port, keepAlive = HEARTBEAT_SECONDS))
-            session.use {
-                relay.freeze()
-                // Nothing here is false, which is the whole problem.
-                assertThat(session.isOpen).isTrue()
-                assertThat(session.isAuthenticated).isTrue()
+    fun `a session behind a black holed transport fails the probe long before the heartbeat would`() =
+        runBlocking {
+            val relay = FreezableRelay(serverPort)
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile(port = relay.port, keepAlive = HEARTBEAT_SECONDS))
+                session.use {
+                    relay.freeze()
+                    // Nothing here is false, which is the whole problem.
+                    assertThat(session.isOpen).isTrue()
+                    assertThat(session.isAuthenticated).isTrue()
 
-                val startedAt = System.nanoTime()
-                assertThat(manager.probeLiveness(session, timeoutSeconds = PROBE_TIMEOUT_SECONDS)).isFalse()
-                val elapsedSeconds = (System.nanoTime() - startedAt) / 1_000_000_000L
+                    val startedAt = System.nanoTime()
+                    assertThat(manager.probeLiveness(session, timeoutSeconds = PROBE_TIMEOUT_SECONDS)).isFalse()
+                    val elapsedSeconds = (System.nanoTime() - startedAt) / 1_000_000_000L
 
-                // Sooner than the heartbeat would have concluded anything - the reason the probe exists.
-                assertThat(elapsedSeconds).isLessThan(HEARTBEAT_SECONDS.toLong() * 4)
+                    // Sooner than the heartbeat would have concluded anything - the reason the probe exists.
+                    assertThat(elapsedSeconds).isLessThan(HEARTBEAT_SECONDS.toLong() * 4)
+                }
+            } finally {
+                manager.close()
+                relay.close()
             }
-        } finally {
-            manager.close()
-            relay.close()
         }
-    }
 
     /**
      * A session that has already been closed answers "dead" instead of throwing.
@@ -1269,18 +1314,19 @@ class SessionStabilityTest {
      * unexamined until the heartbeat noticed, which is the delay this machinery removes.
      */
     @Test
-    fun `a closed session fails the probe without throwing`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.close(true)
-            assertThat(awaitTrue { !session.isOpen }).isTrue()
+    fun `a closed session fails the probe without throwing`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.close(true)
+                assertThat(awaitTrue { !session.isOpen }).isTrue()
 
-            assertThat(manager.probeLiveness(session, timeoutSeconds = PROBE_TIMEOUT_SECONDS)).isFalse()
-        } finally {
-            manager.close()
+                assertThat(manager.probeLiveness(session, timeoutSeconds = PROBE_TIMEOUT_SECONDS)).isFalse()
+            } finally {
+                manager.close()
+            }
         }
-    }
 
     /**
      * The non-blocking dial gate: busy is reported, not waited for, and it is per host.
@@ -1297,39 +1343,41 @@ class SessionStabilityTest {
      * what stops the report from being "busy" for hosts nobody is dialling at all.
      */
     @Test
-    fun `the dial gate reports busy rather than queueing behind another component`() = runBlocking {
-        val store = SshSessionStore()
-        val slowHost = "host-being-dialled"
-        val otherHost = "host-nobody-is-dialling"
-        val inside = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        withTimeout(WAIT_MS) {
-            val holder = launch(Dispatchers.IO) {
-                store.dialing(slowHost) {
-                    inside.complete(Unit)
-                    release.await()
-                }
+    fun `the dial gate reports busy rather than queueing behind another component`() =
+        runBlocking {
+            val store = SshSessionStore()
+            val slowHost = "host-being-dialled"
+            val otherHost = "host-nobody-is-dialling"
+            val inside = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            withTimeout(WAIT_MS) {
+                val holder =
+                    launch(Dispatchers.IO) {
+                        store.dialing(slowHost) {
+                            inside.complete(Unit)
+                            release.await()
+                        }
+                    }
+                inside.await()
+
+                var ran = false
+                val outcome = store.tryDialing(slowHost) { ran = true }
+
+                assertThat(outcome).isEqualTo(DialAttempt.Busy)
+                // Not merely reported busy: the attempt itself must not run, or the login the gate exists
+                // to deduplicate happens anyway.
+                assertThat(ran).isFalse()
+
+                // A different host is dialled immediately, which is the head-of-line block being absent.
+                assertThat(store.tryDialing(otherHost) { "dialled" }).isEqualTo(DialAttempt.Ran("dialled"))
+
+                release.complete(Unit)
+                holder.join()
+
+                // And the gate is free again the moment the holder is done.
+                assertThat(store.tryDialing(slowHost) { "free" }).isEqualTo(DialAttempt.Ran("free"))
             }
-            inside.await()
-
-            var ran = false
-            val outcome = store.tryDialing(slowHost) { ran = true }
-
-            assertThat(outcome).isEqualTo(DialAttempt.Busy)
-            // Not merely reported busy: the attempt itself must not run, or the login the gate exists
-            // to deduplicate happens anyway.
-            assertThat(ran).isFalse()
-
-            // A different host is dialled immediately, which is the head-of-line block being absent.
-            assertThat(store.tryDialing(otherHost) { "dialled" }).isEqualTo(DialAttempt.Ran("dialled"))
-
-            release.complete(Unit)
-            holder.join()
-
-            // And the gate is free again the moment the holder is done.
-            assertThat(store.tryDialing(slowHost) { "free" }).isEqualTo(DialAttempt.Ran("free"))
         }
-    }
 
     /**
      * A dial that fails, throws or is cancelled leaves the gate open.
@@ -1341,30 +1389,32 @@ class SessionStabilityTest {
      * produces.
      */
     @Test
-    fun `a dial that fails or is cancelled releases the gate instead of wedging the host`() = runBlocking {
-        val store = SshSessionStore()
-        val hostId = "host-that-fails"
+    fun `a dial that fails or is cancelled releases the gate instead of wedging the host`() =
+        runBlocking {
+            val store = SshSessionStore()
+            val hostId = "host-that-fails"
 
-        assertThat(runCatching { store.dialing<Unit>(hostId) { throw IOException("refused") } }.isFailure).isTrue()
-        assertThat(store.tryDialing(hostId) { "after failure" }).isEqualTo(DialAttempt.Ran("after failure"))
+            assertThat(runCatching { store.dialing<Unit>(hostId) { throw IOException("refused") } }.isFailure).isTrue()
+            assertThat(store.tryDialing(hostId) { "after failure" }).isEqualTo(DialAttempt.Ran("after failure"))
 
-        assertThat(runCatching { store.tryDialing<Unit>(hostId) { throw IOException("refused") } }.isFailure).isTrue()
-        assertThat(store.tryDialing(hostId) { "after try failure" }).isEqualTo(DialAttempt.Ran("after try failure"))
+            assertThat(runCatching { store.tryDialing<Unit>(hostId) { throw IOException("refused") } }.isFailure).isTrue()
+            assertThat(store.tryDialing(hostId) { "after try failure" }).isEqualTo(DialAttempt.Ran("after try failure"))
 
-        withTimeout(WAIT_MS) {
-            val started = CompletableDeferred<Unit>()
-            val job = launch(Dispatchers.IO) {
-                store.dialing(hostId) {
-                    started.complete(Unit)
-                    awaitCancellation()
-                }
+            withTimeout(WAIT_MS) {
+                val started = CompletableDeferred<Unit>()
+                val job =
+                    launch(Dispatchers.IO) {
+                        store.dialing(hostId) {
+                            started.complete(Unit)
+                            awaitCancellation()
+                        }
+                    }
+                started.await()
+                job.cancelAndJoin()
+
+                assertThat(store.tryDialing(hostId) { "after cancel" }).isEqualTo(DialAttempt.Ran("after cancel"))
             }
-            started.await()
-            job.cancelAndJoin()
-
-            assertThat(store.tryDialing(hostId) { "after cancel" }).isEqualTo(DialAttempt.Ran("after cancel"))
         }
-    }
 
     /**
      * A flood of output arrives whole, in order, and does not grow the buffer without bound.
@@ -1383,52 +1433,56 @@ class SessionStabilityTest {
      * reordering and duplication, which a `contains` assertion cannot.
      */
     @Test
-    fun `a flood of output arrives whole and in order and the scrollback stays bounded`() = runBlocking {
-        val manager = newManager()
-        try {
-            val session = trustedConnect(manager, hostProfile())
-            session.use {
-                val started = shells.size
-                val terminal = manager.openTerminal(session)
-                awaitShell(started)
-                val (sink, collector) = collectText(terminal)
-                try {
-                    val payload = buildString(FLOOD_LINES * 12) {
-                        repeat(FLOOD_LINES) { append("line ").append(it).append('\n') }
+    fun `a flood of output arrives whole and in order and the scrollback stays bounded`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val session = trustedConnect(manager, hostProfile())
+                session.use {
+                    val started = shells.size
+                    val terminal = manager.openTerminal(session)
+                    awaitShell(started)
+                    val (sink, collector) = collectText(terminal)
+                    try {
+                        val payload =
+                            buildString(FLOOD_LINES * 12) {
+                                repeat(FLOOD_LINES) { append("line ").append(it).append('\n') }
+                            }
+                        assertThat(payload.length).isGreaterThan(FLOOD_MIN_BYTES)
+
+                        terminal.write(payload)
+
+                        // Length rather than content while waiting: this sink holds more than a megabyte,
+                        // and copying it out every 25ms to test a predicate would cost more than the
+                        // transfer being measured.
+                        val arrived =
+                            awaitTrue(FLOOD_WAIT_MS) {
+                                synchronized(sink) { sink.length } >= payload.length
+                            }
+                        val text = synchronized(sink) { sink.toString() }
+                        assertWithMessage("only %s of %s bytes arrived", text.length, payload.length)
+                            .that(arrived)
+                            .isTrue()
+
+                        val numbers = Regex("line (\\d+)").findAll(text).map { it.groupValues[1].toInt() }.toList()
+                        assertThat(numbers).hasSize(FLOOD_LINES)
+                        // Every line, exactly once, in the order it was written.
+                        assertThat(numbers).isEqualTo(List(FLOOD_LINES) { it })
+                        assertThat(terminal.droppedChunks).isEqualTo(0L)
+
+                        // And the emulator that renders it holds a bounded amount of it.
+                        val buffer = AnsiTerminalBuffer()
+                        buffer.feed(text)
+                        assertThat(buffer.lineCount()).isAtMost(buffer.viewportRows + MAX_SCROLLBACK_LINES)
+                    } finally {
+                        collector.cancel()
+                        terminal.close()
                     }
-                    assertThat(payload.length).isGreaterThan(FLOOD_MIN_BYTES)
-
-                    terminal.write(payload)
-
-                    // Length rather than content while waiting: this sink holds more than a megabyte,
-                    // and copying it out every 25ms to test a predicate would cost more than the
-                    // transfer being measured.
-                    val arrived = awaitTrue(FLOOD_WAIT_MS) {
-                        synchronized(sink) { sink.length } >= payload.length
-                    }
-                    val text = synchronized(sink) { sink.toString() }
-                    assertWithMessage("only %s of %s bytes arrived", text.length, payload.length)
-                        .that(arrived).isTrue()
-
-                    val numbers = Regex("line (\\d+)").findAll(text).map { it.groupValues[1].toInt() }.toList()
-                    assertThat(numbers).hasSize(FLOOD_LINES)
-                    // Every line, exactly once, in the order it was written.
-                    assertThat(numbers).isEqualTo(List(FLOOD_LINES) { it })
-                    assertThat(terminal.droppedChunks).isEqualTo(0L)
-
-                    // And the emulator that renders it holds a bounded amount of it.
-                    val buffer = AnsiTerminalBuffer()
-                    buffer.feed(text)
-                    assertThat(buffer.lineCount()).isAtMost(buffer.viewportRows + MAX_SCROLLBACK_LINES)
-                } finally {
-                    collector.cancel()
-                    terminal.close()
                 }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     /**
      * Three sessions run at once, each seeing only its own output, and closing one leaves the rest.
@@ -1440,70 +1494,74 @@ class SessionStabilityTest {
      * everything to the *first* or the *last* host rather than to the right one.
      */
     @Test
-    fun `three sessions run at once without mixing their output`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val opened = (1..3).map { index ->
-                val profile = hostProfile()
-                // Sequential, so each shell can be identified by position rather than by a race.
-                val session = trustedConnect(manager, profile)
-                val startedShells = shells.size
-                val terminal = manager.openTerminal(session)
-                awaitShell(startedShells)
-                store.install(profile.id, session, profile.id)
-                store.channels[profile.id] = terminal
-                store.buffers[profile.id] = AnsiTerminalBuffer()
-                Triple(profile, terminal, "host$index")
-            }
-
-            assertThat(store.liveHostIds()).containsExactlyElementsIn(opened.map { it.first.id })
-            assertThat(store.adoptableHostIds()).containsExactlyElementsIn(opened.map { it.first.id })
-
-            coroutineScope {
-                val sinks = opened.map { (_, terminal, _) -> collectText(terminal) }
-                try {
-                    // Written concurrently, because that is how three open tabs behave.
-                    opened.forEachIndexed { index, (_, terminal, marker) ->
-                        launch(Dispatchers.IO) {
-                            repeat(40) { line -> terminal.write("$marker-$line\r") }
-                        }
-                        // Kept distinct so a mix-up cannot be hidden by identical payloads.
-                        assertThat(marker).isEqualTo("host${index + 1}")
+    fun `three sessions run at once without mixing their output`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val opened =
+                    (1..3).map { index ->
+                        val profile = hostProfile()
+                        // Sequential, so each shell can be identified by position rather than by a race.
+                        val session = trustedConnect(manager, profile)
+                        val startedShells = shells.size
+                        val terminal = manager.openTerminal(session)
+                        awaitShell(startedShells)
+                        store.install(profile.id, session, profile.id)
+                        store.channels[profile.id] = terminal
+                        store.buffers[profile.id] = AnsiTerminalBuffer()
+                        Triple(profile, terminal, "host$index")
                     }
 
-                    opened.forEachIndexed { index, (profile, _, marker) ->
-                        val (sink, _) = sinks[index]
-                        val ownText = awaitText(sink, FLOOD_WAIT_MS) { it.contains("$marker-39") }
-                        assertWithMessage("host %s never saw its own last line", marker)
-                            .that(ownText).contains("$marker-39")
-                        // And nothing that belongs to a sibling.
-                        opened.map { it.third }.filter { it != marker }.forEach { other ->
-                            assertWithMessage("%s's output appeared in %s's terminal", other, marker)
-                                .that(ownText).doesNotContain(other)
+                assertThat(store.liveHostIds()).containsExactlyElementsIn(opened.map { it.first.id })
+                assertThat(store.adoptableHostIds()).containsExactlyElementsIn(opened.map { it.first.id })
+
+                coroutineScope {
+                    val sinks = opened.map { (_, terminal, _) -> collectText(terminal) }
+                    try {
+                        // Written concurrently, because that is how three open tabs behave.
+                        opened.forEachIndexed { index, (_, terminal, marker) ->
+                            launch(Dispatchers.IO) {
+                                repeat(40) { line -> terminal.write("$marker-$line\r") }
+                            }
+                            // Kept distinct so a mix-up cannot be hidden by identical payloads.
+                            assertThat(marker).isEqualTo("host${index + 1}")
                         }
-                        store.buffers.getValue(profile.id).feed(ownText)
+
+                        opened.forEachIndexed { index, (profile, _, marker) ->
+                            val (sink, _) = sinks[index]
+                            val ownText = awaitText(sink, FLOOD_WAIT_MS) { it.contains("$marker-39") }
+                            assertWithMessage("host %s never saw its own last line", marker)
+                                .that(ownText)
+                                .contains("$marker-39")
+                            // And nothing that belongs to a sibling.
+                            opened.map { it.third }.filter { it != marker }.forEach { other ->
+                                assertWithMessage("%s's output appeared in %s's terminal", other, marker)
+                                    .that(ownText)
+                                    .doesNotContain(other)
+                            }
+                            store.buffers.getValue(profile.id).feed(ownText)
+                        }
+                    } finally {
+                        sinks.forEach { (_, job) -> job.cancel() }
                     }
-                } finally {
-                    sinks.forEach { (_, job) -> job.cancel() }
                 }
-            }
 
-            // One tab closed leaves the other two exactly as they were, which is the property a shared
-            // store makes easy to break: a close that reached the wrong entry, or all of them.
-            val (closed, _, _) = opened.first()
-            store.close(closed.id)
-            assertThat(store.isLive(closed.id)).isFalse()
-            opened.drop(1).forEach { (profile, terminal, _) ->
-                assertThat(store.isLive(profile.id)).isTrue()
-                assertThat(terminal.isOpen).isTrue()
-                assertThat(terminal.endedDeliberately).isFalse()
+                // One tab closed leaves the other two exactly as they were, which is the property a shared
+                // store makes easy to break: a close that reached the wrong entry, or all of them.
+                val (closed, _, _) = opened.first()
+                store.close(closed.id)
+                assertThat(store.isLive(closed.id)).isFalse()
+                opened.drop(1).forEach { (profile, terminal, _) ->
+                    assertThat(store.isLive(profile.id)).isTrue()
+                    assertThat(terminal.isOpen).isTrue()
+                    assertThat(terminal.endedDeliberately).isFalse()
+                }
+            } finally {
+                store.closeAll()
+                manager.close()
             }
-        } finally {
-            store.closeAll()
-            manager.close()
         }
-    }
 
     /**
      * A service-restored session moves to the tab that adopts it, whole and still usable.
@@ -1515,63 +1573,64 @@ class SessionStabilityTest {
      * session that had merely changed names.
      */
     @Test
-    fun `rekey moves a restored session to its tab without a second login`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile()
-            val loginsBefore = logins.get()
-            // Exactly what the service leaves behind: install() under the host's own id, and a shell
-            // the UI opens when it claims the session.
-            val session = trustedConnect(manager, profile)
-            val started = shells.size
-            val terminal = manager.openTerminal(session)
-            awaitShell(started)
-            store.install(profile.id, session, profile.id)
-            store.channels[profile.id] = terminal
-            store.buffers[profile.id] = AnsiTerminalBuffer()
-
-            // The UI's tab id is a UUID that shares nothing with the host id.
-            val tabKey = "tab-${profile.id}"
-            assertThat(store.rekey(profile.id, tabKey)).isTrue()
-
-            // Everything moved, and nothing is left under the old name.
-            assertThat(store.liveSession(tabKey)).isSameInstanceAs(session)
-            assertThat(store.channels[tabKey]).isSameInstanceAs(terminal)
-            assertThat(store.buffers).containsKey(tabKey)
-            assertThat(store.sessions).doesNotContainKey(profile.id)
-            assertThat(store.channels).doesNotContainKey(profile.id)
-            // The host-scoped questions follow the session, which is the whole point of hostOf.
-            assertThat(store.liveHostIds()).containsExactly(profile.id)
-            assertThat(store.adoptableHostIds()).containsExactly(profile.id)
-            assertThat(store.liveForHost(profile.id)).containsExactly(tabKey)
-            assertThat(store.primarySessionFor(profile.id)).isEqualTo(tabKey)
-            assertThat(store.sessionKeysForHost(profile.id)).containsExactly(tabKey)
-
-            // And the moved shell still works - the session object is the connection, and a re-key
-            // that lost it would leave a tab attached to nothing.
-            val (sink, collector) = collectText(terminal)
+    fun `rekey moves a restored session to its tab without a second login`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
             try {
-                terminal.write("still-here\r")
-                assertThat(awaitText(sink) { it.contains("still-here") }).contains("still-here")
-            } finally {
-                collector.cancel()
-            }
-            // Exactly the one login this test's own connect made - a re-key that worked is free, and
-            // a re-key that quietly redialled is a second one. [loginsBefore] is read before that
-            // connect, so the difference is counted rather than the total.
-            assertThat(logins.get() - loginsBefore).isEqualTo(1)
+                val profile = hostProfile()
+                val loginsBefore = logins.get()
+                // Exactly what the service leaves behind: install() under the host's own id, and a shell
+                // the UI opens when it claims the session.
+                val session = trustedConnect(manager, profile)
+                val started = shells.size
+                val terminal = manager.openTerminal(session)
+                awaitShell(started)
+                store.install(profile.id, session, profile.id)
+                store.channels[profile.id] = terminal
+                store.buffers[profile.id] = AnsiTerminalBuffer()
 
-            // Teardown by the new key reaches the session; by the old key there is nothing to reach.
-            store.forget(tabKey)
-            assertThat(store.isLive(tabKey)).isFalse()
-            assertThat(store.liveForHost(profile.id)).isEmpty()
-            assertThat(awaitTrue { !session.isOpen }).isTrue()
-        } finally {
-            store.closeAll()
-            manager.close()
+                // The UI's tab id is a UUID that shares nothing with the host id.
+                val tabKey = "tab-${profile.id}"
+                assertThat(store.rekey(profile.id, tabKey)).isTrue()
+
+                // Everything moved, and nothing is left under the old name.
+                assertThat(store.liveSession(tabKey)).isSameInstanceAs(session)
+                assertThat(store.channels[tabKey]).isSameInstanceAs(terminal)
+                assertThat(store.buffers).containsKey(tabKey)
+                assertThat(store.sessions).doesNotContainKey(profile.id)
+                assertThat(store.channels).doesNotContainKey(profile.id)
+                // The host-scoped questions follow the session, which is the whole point of hostOf.
+                assertThat(store.liveHostIds()).containsExactly(profile.id)
+                assertThat(store.adoptableHostIds()).containsExactly(profile.id)
+                assertThat(store.liveForHost(profile.id)).containsExactly(tabKey)
+                assertThat(store.primarySessionFor(profile.id)).isEqualTo(tabKey)
+                assertThat(store.sessionKeysForHost(profile.id)).containsExactly(tabKey)
+
+                // And the moved shell still works - the session object is the connection, and a re-key
+                // that lost it would leave a tab attached to nothing.
+                val (sink, collector) = collectText(terminal)
+                try {
+                    terminal.write("still-here\r")
+                    assertThat(awaitText(sink) { it.contains("still-here") }).contains("still-here")
+                } finally {
+                    collector.cancel()
+                }
+                // Exactly the one login this test's own connect made - a re-key that worked is free, and
+                // a re-key that quietly redialled is a second one. [loginsBefore] is read before that
+                // connect, so the difference is counted rather than the total.
+                assertThat(logins.get() - loginsBefore).isEqualTo(1)
+
+                // Teardown by the new key reaches the session; by the old key there is nothing to reach.
+                store.forget(tabKey)
+                assertThat(store.isLive(tabKey)).isFalse()
+                assertThat(store.liveForHost(profile.id)).isEmpty()
+                assertThat(awaitTrue { !session.isOpen }).isTrue()
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
         }
-    }
 
     /**
      * A re-key onto a key that already holds something is refused, moving nothing.
@@ -1580,33 +1639,34 @@ class SessionStabilityTest {
      * is using, and a re-key that displaced it would be exactly the "the shell I was typing into
      * died" bug the per-key rules exist to make impossible.
      */
-    @Test
     // The explicit Unit is load-bearing: the body ends in a containsExactly, which returns Truth's
     // Ordered, and a @Test that returns anything at all makes JUnit reject the whole class with
     // InvalidTestClassError before a single test runs.
-    fun `rekey refuses a key that already holds a session and moves nothing`(): Unit = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile()
-            val restored = trustedConnect(manager, profile)
-            store.install(profile.id, restored, profile.id)
-            val claimed = trustedConnect(manager, profile)
-            val claimedKey = "tab-claimed"
-            store.install(claimedKey, claimed, profile.id)
+    @Test
+    fun `rekey refuses a key that already holds a session and moves nothing`(): Unit =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile()
+                val restored = trustedConnect(manager, profile)
+                store.install(profile.id, restored, profile.id)
+                val claimed = trustedConnect(manager, profile)
+                val claimedKey = "tab-claimed"
+                store.install(claimedKey, claimed, profile.id)
 
-            assertThat(store.rekey(profile.id, claimedKey)).isFalse()
+                assertThat(store.rekey(profile.id, claimedKey)).isFalse()
 
-            // Neither entry moved: the restored session is still under its slot and the claimed one
-            // still under its own key, and both are still live.
-            assertThat(store.liveSession(profile.id)).isSameInstanceAs(restored)
-            assertThat(store.liveSession(claimedKey)).isSameInstanceAs(claimed)
-            assertThat(store.liveForHost(profile.id)).containsExactly(profile.id, claimedKey)
-        } finally {
-            store.closeAll()
-            manager.close()
+                // Neither entry moved: the restored session is still under its slot and the claimed one
+                // still under its own key, and both are still live.
+                assertThat(store.liveSession(profile.id)).isSameInstanceAs(restored)
+                assertThat(store.liveSession(claimedKey)).isSameInstanceAs(claimed)
+                assertThat(store.liveForHost(profile.id)).containsExactly(profile.id, claimedKey)
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
         }
-    }
 
     /**
      * Two live sessions may share a host, and neither install nor close reaches across keys.
@@ -1618,33 +1678,34 @@ class SessionStabilityTest {
      * sessions was always "a duplicate dial" and was closed, whoever installed second.
      */
     @Test
-    fun `a second session under its own key is a sibling, not a duplicate to close`() = runBlocking {
-        val manager = newManager()
-        val store = SshSessionStore()
-        try {
-            val profile = hostProfile()
-            val first = trustedConnect(manager, profile)
-            assertThat(store.install("tab-one", first, profile.id)).isSameInstanceAs(first)
-            val second = trustedConnect(manager, profile)
-            assertThat(store.install("tab-two", second, profile.id)).isSameInstanceAs(second)
+    fun `a second session under its own key is a sibling, not a duplicate to close`() =
+        runBlocking {
+            val manager = newManager()
+            val store = SshSessionStore()
+            try {
+                val profile = hostProfile()
+                val first = trustedConnect(manager, profile)
+                assertThat(store.install("tab-one", first, profile.id)).isSameInstanceAs(first)
+                val second = trustedConnect(manager, profile)
+                assertThat(store.install("tab-two", second, profile.id)).isSameInstanceAs(second)
 
-            // Both live, both usable, both answering for the host.
-            assertThat(store.isLive("tab-one")).isTrue()
-            assertThat(store.isLive("tab-two")).isTrue()
-            assertThat(store.liveForHost(profile.id)).containsExactly("tab-one", "tab-two")
-            assertThat(store.liveHostIds()).containsExactly(profile.id)
+                // Both live, both usable, both answering for the host.
+                assertThat(store.isLive("tab-one")).isTrue()
+                assertThat(store.isLive("tab-two")).isTrue()
+                assertThat(store.liveForHost(profile.id)).containsExactly("tab-one", "tab-two")
+                assertThat(store.liveHostIds()).containsExactly(profile.id)
 
-            // Closing one tab leaves the other's session alone.
-            store.forget("tab-one")
-            assertThat(store.isLive("tab-two")).isTrue()
-            assertThat(store.liveForHost(profile.id)).containsExactly("tab-two")
-            assertThat(awaitTrue { !first.isOpen }).isTrue()
-            assertThat(second.isOpen).isTrue()
-        } finally {
-            store.closeAll()
-            manager.close()
+                // Closing one tab leaves the other's session alone.
+                store.forget("tab-one")
+                assertThat(store.isLive("tab-two")).isTrue()
+                assertThat(store.liveForHost(profile.id)).containsExactly("tab-two")
+                assertThat(awaitTrue { !first.isOpen }).isTrue()
+                assertThat(second.isOpen).isTrue()
+            } finally {
+                store.closeAll()
+                manager.close()
+            }
         }
-    }
 }
 
 /**
@@ -1664,8 +1725,7 @@ private class RecordingShell : Command {
 
     fun received(): ByteArray = synchronized(receivedBytes) { receivedBytes.toByteArray() }
 
-    fun env(): Map<String, String>? =
-        environment?.env?.let { runCatching { HashMap(it) }.getOrNull() }
+    fun env(): Map<String, String>? = environment?.env?.let { runCatching { HashMap(it) }.getOrNull() }
 
     fun winchCount(): Int = winch.get()
 
@@ -1683,7 +1743,10 @@ private class RecordingShell : Command {
         this.exit = callback
     }
 
-    override fun start(channel: ChannelSession, env: Environment) {
+    override fun start(
+        channel: ChannelSession,
+        env: Environment,
+    ) {
         environment = env
         env.addSignalListener(SignalListener { _, _ -> winch.incrementAndGet() }, Signal.WINCH)
         val inn = input ?: return
@@ -1726,11 +1789,14 @@ private class RecordingShell : Command {
  * told. Closing a socket instead would test a completely different path - a clean FIN, which the app
  * has always handled - and would prove nothing about dead-peer detection.
  */
-private class FreezableRelay(private val targetPort: Int) : Closeable {
+private class FreezableRelay(
+    private val targetPort: Int,
+) : Closeable {
     private val listener = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
     private val closeables = Collections.synchronizedList(mutableListOf<Closeable>())
 
     @Volatile private var frozen = false
+
     @Volatile private var running = true
 
     val port: Int get() = listener.localPort
@@ -1760,7 +1826,11 @@ private class FreezableRelay(private val targetPort: Int) : Closeable {
         frozen = true
     }
 
-    private fun pump(name: String, from: Socket, to: Socket) = thread(name) {
+    private fun pump(
+        name: String,
+        from: Socket,
+        to: Socket,
+    ) = thread(name) {
         val buffer = ByteArray(8192)
         val input = runCatching { from.getInputStream() }.getOrNull() ?: return@thread
         val output = runCatching { to.getOutputStream() }.getOrNull() ?: return@thread
@@ -1780,11 +1850,15 @@ private class FreezableRelay(private val targetPort: Int) : Closeable {
         }
     }
 
-    private fun thread(name: String, body: () -> Unit) {
-        Thread(body).apply {
-            isDaemon = true
-            this.name = name
-        }.start()
+    private fun thread(
+        name: String,
+        body: () -> Unit,
+    ) {
+        Thread(body)
+            .apply {
+                isDaemon = true
+                this.name = name
+            }.start()
     }
 
     override fun close() {
@@ -1807,7 +1881,12 @@ private class CountingKeepaliveHandler : ConnectionServiceRequestHandler {
 
     fun count(): Int = seen.get()
 
-    override fun process(service: ConnectionService, request: String, wantReply: Boolean, buffer: Buffer): RequestHandler.Result {
+    override fun process(
+        service: ConnectionService,
+        request: String,
+        wantReply: Boolean,
+        buffer: Buffer,
+    ): RequestHandler.Result {
         if (request == "keepalive@openssh.com") seen.incrementAndGet()
         return RequestHandler.Result.Unsupported
     }

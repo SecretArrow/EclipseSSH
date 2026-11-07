@@ -17,7 +17,6 @@ import org.junit.Test
  * the alternative corrupts a file that still looks fine in the editor.
  */
 class FileEncodingTest {
-
     @Test
     fun `a utf 8 bom selects the bom variant and is consumed rather than kept as text`() {
         val decoded = FileEncodingCodec.decode(BOM_UTF8 + "héllo".toByteArray(Charsets.UTF_8))
@@ -160,9 +159,10 @@ class FileEncodingTest {
 
     @Test
     fun `saving as ascii refuses a non ascii character instead of corrupting it`() {
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            FileEncodingCodec.encode("café", FileEncoding.ASCII)
-        }
+        val error =
+            assertThrows(IllegalArgumentException::class.java) {
+                FileEncodingCodec.encode("café", FileEncoding.ASCII)
+            }
         // The message is the whole feature: it must name the encoding and the character so the
         // user can act on it from the dialog alone.
         assertThat(error).hasMessageThat().contains("ASCII")
@@ -171,9 +171,10 @@ class FileEncodingTest {
 
     @Test
     fun `saving as windows 1252 refuses an emoji`() {
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            FileEncodingCodec.encode("launch 🚀", FileEncoding.WINDOWS_1252)
-        }
+        val error =
+            assertThrows(IllegalArgumentException::class.java) {
+                FileEncodingCodec.encode("launch 🚀", FileEncoding.WINDOWS_1252)
+            }
         assertThat(error).hasMessageThat().contains("Windows-1252")
         assertThat(error).hasMessageThat().contains("U+1F680")
     }
@@ -222,17 +223,18 @@ class FileEncodingTest {
         // Each arm must read back what its own encode wrote, BOMs consumed — otherwise the
         // selector's choices would be write-only.
         FileEncoding.entries.forEach { encoding ->
-            val text = when (encoding) {
-                FileEncoding.UTF_16_LE, FileEncoding.UTF_16_BE -> "héllo ☃"
-                FileEncoding.ASCII -> "plain ascii 42"
-                // The shared sample is Windows-1252 text: the em dash and curly quotes live in
-                // the 0x80..0x9F window that Latin-1 leaves as control characters, so handing it
-                // to ISO-8859-1 would be refused by the very strictness encode exists to have -
-                // a refusal that has its own test above. Latin-1's sample stays inside the 256
-                // code points the encoding can actually hold.
-                FileEncoding.ISO_8859_1 -> "café £ ± ñ"
-                else -> "café £ — “quoted”"
-            }
+            val text =
+                when (encoding) {
+                    FileEncoding.UTF_16_LE, FileEncoding.UTF_16_BE -> "héllo ☃"
+                    FileEncoding.ASCII -> "plain ascii 42"
+                    // The shared sample is Windows-1252 text: the em dash and curly quotes live in
+                    // the 0x80..0x9F window that Latin-1 leaves as control characters, so handing it
+                    // to ISO-8859-1 would be refused by the very strictness encode exists to have -
+                    // a refusal that has its own test above. Latin-1's sample stays inside the 256
+                    // code points the encoding can actually hold.
+                    FileEncoding.ISO_8859_1 -> "café £ ± ñ"
+                    else -> "café £ — “quoted”"
+                }
             val bytes = FileEncodingCodec.encode(text, encoding)
             assertThat(FileEncodingCodec.decodeStrict(bytes, encoding)).isEqualTo(text)
         }

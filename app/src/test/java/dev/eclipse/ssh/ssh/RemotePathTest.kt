@@ -9,7 +9,6 @@ import org.junit.Test
  * "Unable to open" failure the user cannot diagnose.
  */
 class RemotePathTest {
-
     @Test
     fun `root user gets slash root, not slash home slash root`() {
         // /home/root does not exist on a conventional Unix system.

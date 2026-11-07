@@ -17,7 +17,6 @@ import org.junit.Test
  * `autoCorrectEnabled` alone, which does not.
  */
 class TerminalImeOptionsTest {
-
     @Test
     fun `the terminal asks for the type whose flags suppress suggestions`() {
         assertThat(TERMINAL_KEYBOARD_OPTIONS.keyboardType).isEqualTo(KeyboardType.PasswordVisible)

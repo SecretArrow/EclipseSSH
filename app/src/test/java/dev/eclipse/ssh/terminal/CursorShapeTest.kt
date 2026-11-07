@@ -26,22 +26,24 @@ class CursorShapeTest {
     fun `each parameter is the shape and the blink the standard says it is`() {
         // The parameter's own low bit is the blink: 0 and 1 are the same blinking block, and every
         // shape above them comes in a blinking and a steady form.
-        val expected = listOf(
-            0 to (TerminalCursorShape.BLOCK to true),
-            1 to (TerminalCursorShape.BLOCK to true),
-            2 to (TerminalCursorShape.BLOCK to false),
-            3 to (TerminalCursorShape.UNDERLINE to true),
-            4 to (TerminalCursorShape.UNDERLINE to false),
-            5 to (TerminalCursorShape.BAR to true),
-            6 to (TerminalCursorShape.BAR to false),
-        )
+        val expected =
+            listOf(
+                0 to (TerminalCursorShape.BLOCK to true),
+                1 to (TerminalCursorShape.BLOCK to true),
+                2 to (TerminalCursorShape.BLOCK to false),
+                3 to (TerminalCursorShape.UNDERLINE to true),
+                4 to (TerminalCursorShape.UNDERLINE to false),
+                5 to (TerminalCursorShape.BAR to true),
+                6 to (TerminalCursorShape.BAR to false),
+            )
 
         expected.forEach { (ps, want) ->
             val buffer = buffer()
             buffer.feed("$ESC[$ps q")
             val frame = buffer.frame()
             assertWithMessage("ESC [ $ps SP q")
-                .that(frame.cursorShape to frame.cursorBlink).isEqualTo(want)
+                .that(frame.cursorShape to frame.cursorBlink)
+                .isEqualTo(want)
         }
     }
 
@@ -65,7 +67,8 @@ class CursorShapeTest {
         listOf(7, 8, 9, 99, 1000).forEach { ps ->
             buffer.feed("$ESC[$ps q")
             assertWithMessage("ESC [ $ps SP q")
-                .that(buffer.frame().cursorShape).isEqualTo(TerminalCursorShape.BAR)
+                .that(buffer.frame().cursorShape)
+                .isEqualTo(TerminalCursorShape.BAR)
             assertThat(buffer.frame().cursorBlink).isTrue()
         }
     }

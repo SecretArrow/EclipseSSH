@@ -3,11 +3,11 @@ package dev.eclipse.ssh.ssh
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.data.model.SessionConnectionState
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * The one place in this app that writes a log line, held to the promise its KDoc makes: a trace
@@ -23,7 +23,6 @@ import org.robolectric.RobolectricTestRunner
  */
 @RunWith(RobolectricTestRunner::class)
 class SessionDiagnosticsTest {
-
     private fun diagnostics() = SessionDiagnostics()
 
     private val hostId = "b7c1f0e2-8a44-4d1b-9f3e-1c2d3e4f5a6b"
@@ -36,11 +35,12 @@ class SessionDiagnosticsTest {
      */
     @Test
     fun `a private key in an exception message is replaced whole`() {
-        val key = buildString {
-            append("-----BEGIN OPENSSH PRIVATE KEY-----\n")
-            repeat(6) { append("b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt\n") }
-            append("-----END OPENSSH PRIVATE KEY-----")
-        }
+        val key =
+            buildString {
+                append("-----BEGIN OPENSSH PRIVATE KEY-----\n")
+                repeat(6) { append("b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gt\n") }
+                append("-----END OPENSSH PRIVATE KEY-----")
+            }
         val diagnostics = diagnostics()
 
         diagnostics.record(hostId, SessionEvent.CONNECT_FAILED, detail = "invalid key: $key")
@@ -166,12 +166,16 @@ class SessionDiagnosticsTest {
     @Test
     fun `an oversized detail is truncated instead of being stored whole`() {
         val diagnostics = diagnostics()
-        val long = "the server closed the channel while the shell was still draining output, "
-            .repeat(60)
+        val long =
+            "the server closed the channel while the shell was still draining output, "
+                .repeat(60)
 
         diagnostics.record(hostId, SessionEvent.ENDED, detail = long)
 
-        val detail = diagnostics.events.value.single().detail
+        val detail =
+            diagnostics.events.value
+                .single()
+                .detail
         assertThat(detail).hasLength(SessionDiagnostics.MAX_DETAIL)
         // Truncated from the end, so the part a reader needs - what happened - is the part kept.
         assertThat(long).startsWith(detail)
@@ -189,7 +193,10 @@ class SessionDiagnosticsTest {
 
         diagnostics.record(hostId, SessionEvent.ENDED, detail = "AAAAB3NzaC1yc2E".repeat(300))
 
-        val detail = diagnostics.events.value.single().detail
+        val detail =
+            diagnostics.events.value
+                .single()
+                .detail
         assertThat(detail).isEqualTo("«redacted»")
         assertThat(detail).doesNotContain("AAAAB3NzaC1yc2E")
     }
@@ -216,7 +223,10 @@ class SessionDiagnosticsTest {
             attempt = 2,
             upForMs = 125_000,
         )
-        val full = diagnostics.events.value.single().line()
+        val full =
+            diagnostics.events.value
+                .single()
+                .line()
 
         assertThat(full).contains("RECONNECT_ATTEMPT")
         assertThat(full).contains("state=RECONNECTING")
@@ -230,11 +240,15 @@ class SessionDiagnosticsTest {
 
         diagnostics.clear()
         diagnostics.record(hostId, SessionEvent.CLOSED_BY_USER)
-        val bare = diagnostics.events.value.single().line()
+        val bare =
+            diagnostics.events.value
+                .single()
+                .line()
 
         assertThat(bare).contains("CLOSED_BY_USER")
         assertWithMessage("absent fields must not be printed as null: %s", bare)
-            .that(bare.lowercase()).doesNotContain("null")
+            .that(bare.lowercase())
+            .doesNotContain("null")
         assertThat(bare).doesNotContain("attempt=")
         assertThat(bare).doesNotContain("detail=")
     }
@@ -251,7 +265,10 @@ class SessionDiagnosticsTest {
 
         diagnostics.record(hostId, SessionEvent.ENDED, detail = """no such file: "/etc/ssh/ssh_host_key"""")
 
-        val line = diagnostics.events.value.single().line()
+        val line =
+            diagnostics.events.value
+                .single()
+                .line()
         assertThat(line.count { it == '"' }).isEqualTo(2)
         assertThat(line).endsWith("\"")
     }
@@ -398,8 +415,16 @@ class SessionDiagnosticsTest {
 
         diagnostics.record(hostId, SessionEvent.HANDSHAKE)
 
-        assertThat(diagnostics.events.value.single().reconnects).isEqualTo(0L)
-        assertThat(diagnostics.events.value.single().line()).doesNotContain("reconnects=")
+        assertThat(
+            diagnostics.events.value
+                .single()
+                .reconnects,
+        ).isEqualTo(0L)
+        assertThat(
+            diagnostics.events.value
+                .single()
+                .line(),
+        ).doesNotContain("reconnects=")
     }
 
     /**
@@ -423,7 +448,10 @@ class SessionDiagnosticsTest {
             idleForMs = 7_400,
             pty = "100x30",
         )
-        val line = diagnostics.events.value.single().line()
+        val line =
+            diagnostics.events.value
+                .single()
+                .line()
 
         assertThat(line).contains("chan=closed")
         // Seconds, like every other duration on the line.
@@ -434,12 +462,19 @@ class SessionDiagnosticsTest {
         // Sub-second rounds down to zero, which is the answer that matters: output was arriving as
         // this happened, so whatever ended the session, it was not the far end going quiet.
         diagnostics.record(hostId, SessionEvent.ENDED, channel = "open", idleForMs = 120)
-        assertThat(diagnostics.events.value.single().line()).contains("idle=0s")
+        assertThat(
+            diagnostics.events.value
+                .single()
+                .line(),
+        ).contains("idle=0s")
 
         diagnostics.clear()
         // And a recorder with no channel to look at prints neither field rather than guessing.
         diagnostics.record(hostId, SessionEvent.ENDED)
-        val bare = diagnostics.events.value.single().line()
+        val bare =
+            diagnostics.events.value
+                .single()
+                .line()
         assertThat(bare).doesNotContain("chan=")
         assertThat(bare).doesNotContain("idle=")
     }
@@ -490,7 +525,11 @@ class SessionDiagnosticsTest {
         diagnostics.record(hostId, SessionEvent.RECONNECT_ATTEMPT)
 
         assertThat(diagnostics.sessionLabels.getValue(hostId)).isEqualTo(first)
-        assertThat(diagnostics.events.value.single().session).isEqualTo(first)
+        assertThat(
+            diagnostics.events.value
+                .single()
+                .session,
+        ).isEqualTo(first)
     }
 
     @Test

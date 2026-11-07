@@ -4,13 +4,14 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class HostSearchTest {
-    private val host = HostProfile(
-        name = "Production edge",
-        host = "edge.example.com",
-        username = "deploy",
-        group = "Work",
-        tags = listOf("production", "priority"),
-    )
+    private val host =
+        HostProfile(
+            name = "Production edge",
+            host = "edge.example.com",
+            username = "deploy",
+            group = "Work",
+            tags = listOf("production", "priority"),
+        )
 
     @Test
     fun `matches name host username group and tags`() {

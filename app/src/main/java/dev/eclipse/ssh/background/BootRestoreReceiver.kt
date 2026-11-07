@@ -10,11 +10,15 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 
 class BootRestoreReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED && intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        val request = OneTimeWorkRequestBuilder<RetryTransferWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .build()
+        val request =
+            OneTimeWorkRequestBuilder<RetryTransferWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .build()
         WorkManager.getInstance(context).enqueueUniqueWork("eclipse-restore", ExistingWorkPolicy.REPLACE, request)
     }
 }

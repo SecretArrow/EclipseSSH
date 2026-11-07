@@ -1,16 +1,16 @@
 package dev.eclipse.ssh
 
 import com.google.common.truth.Truth.assertThat
+import org.apache.sshd.common.cipher.ECCurves
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.junit.Assert.assertThrows
+import org.junit.Test
 import java.security.AlgorithmParameters
 import java.security.NoSuchAlgorithmException
 import java.security.Provider
 import java.security.Security
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
-import org.apache.sshd.common.cipher.ECCurves
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.junit.Assert.assertThrows
-import org.junit.Test
 
 /**
  * Regression cover for the crash-on-open that shipped from v1.1.12 through v1.1.16.
@@ -33,10 +33,8 @@ import org.junit.Test
  * working through the name.
  */
 class SshdBouncyCastleSwapTest {
-
     /** Squats on the `BC` name with no services — the shape of Android's stripped platform copy. */
-    private class StrippedPlatformBc :
-        Provider(BouncyCastleProvider.PROVIDER_NAME, 1.0, "simulated stripped platform provider")
+    private class StrippedPlatformBc : Provider(BouncyCastleProvider.PROVIDER_NAME, 1.0, "simulated stripped platform provider")
 
     @Test
     fun `the bundled provider replaces a name squatter in its slot`() {
@@ -106,7 +104,15 @@ class SshdBouncyCastleSwapTest {
         // JVM it exercises sshd's own fallback (or the swapped provider, if the swap test ran
         // first); either way the assertion pins that curve parameters resolve rather than
         // throwing from inside the static initializer.
-        assertThat(ECCurves.nistp256.getParameters().curve.field.fieldSize).isEqualTo(256)
-        assertThat(ECCurves.nistp521.getParameters().curve.field.fieldSize).isEqualTo(521)
+        assertThat(
+            ECCurves.nistp256
+                .getParameters()
+                .curve.field.fieldSize,
+        ).isEqualTo(256)
+        assertThat(
+            ECCurves.nistp521
+                .getParameters()
+                .curve.field.fieldSize,
+        ).isEqualTo(521)
     }
 }

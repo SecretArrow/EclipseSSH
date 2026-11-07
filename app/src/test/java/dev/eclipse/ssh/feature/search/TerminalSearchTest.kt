@@ -4,13 +4,13 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class TerminalSearchTest {
-
-    private val lines = listOf(
-        "the quick brown fox",
-        "jumps over the lazy dog",
-        "the second the of the day",
-        "no match here",
-    )
+    private val lines =
+        listOf(
+            "the quick brown fox",
+            "jumps over the lazy dog",
+            "the second the of the day",
+            "no match here",
+        )
 
     @Test
     fun `findNext from line 1 returns the first match`() {

@@ -16,8 +16,10 @@ import org.junit.Test
  * `TransferCoordinator` and `TransferRestorer` where nothing could reach them.
  */
 class TransferRetryPolicyTest {
-
-    private fun item(retryCount: Int = 0, status: TransferStatus = TransferStatus.RUNNING) = TransferItem(
+    private fun item(
+        retryCount: Int = 0,
+        status: TransferStatus = TransferStatus.RUNNING,
+    ) = TransferItem(
         id = "t1",
         name = "release.tar.gz",
         direction = TransferDirection.DOWNLOAD,
@@ -107,39 +109,42 @@ class TransferRetryPolicyTest {
      * pass even without [kotlinx.coroutines.NonCancellable].
      */
     @Test
-    fun `a cancelled transfer is written as paused even though the caller is already cancelled`() = runTest {
-        val saved = mutableListOf<TransferItem>()
-        val gate = CompletableDeferred<Unit>()
+    fun `a cancelled transfer is written as paused even though the caller is already cancelled`() =
+        runTest {
+            val saved = mutableListOf<TransferItem>()
+            val gate = CompletableDeferred<Unit>()
 
-        val job = launch {
-            try {
-                gate.await()
-            } catch (cancelled: CancellationException) {
-                persistCancelledTransfer(item()) { updated ->
-                    // Suspends, so a cancelled context would abandon the write right here.
-                    yield()
-                    saved += updated
+            val job =
+                launch {
+                    try {
+                        gate.await()
+                    } catch (cancelled: CancellationException) {
+                        persistCancelledTransfer(item()) { updated ->
+                            // Suspends, so a cancelled context would abandon the write right here.
+                            yield()
+                            saved += updated
+                        }
+                        throw cancelled
+                    }
                 }
-                throw cancelled
-            }
-        }
-        yield()
-        job.cancel()
-        job.join()
+            yield()
+            job.cancel()
+            job.join()
 
-        assertThat(saved.map { it.status }).containsExactly(TransferStatus.PAUSED)
-        // And it is a pause, not an attempt: no retry is counted and nothing is rescheduled.
-        assertThat(saved.single().retryCount).isEqualTo(0)
-    }
+            assertThat(saved.map { it.status }).containsExactly(TransferStatus.PAUSED)
+            // And it is a pause, not an attempt: no retry is counted and nothing is rescheduled.
+            assertThat(saved.single().retryCount).isEqualTo(0)
+        }
 
     /**
      * A database failure during teardown must not replace the cancellation the caller is about to
      * rethrow — that would turn a paused transfer into an unhandled exception in a service shutdown.
      */
     @Test
-    fun `a save that throws does not escape`() = runTest {
-        persistCancelledTransfer(item()) { error("Room is closed") }
-    }
+    fun `a save that throws does not escape`() =
+        runTest {
+            persistCancelledTransfer(item()) { error("Room is closed") }
+        }
 
     private companion object {
         /** Mirrors `TransferRestorer.RESUMABLE_STATUSES`, which is private to it. */

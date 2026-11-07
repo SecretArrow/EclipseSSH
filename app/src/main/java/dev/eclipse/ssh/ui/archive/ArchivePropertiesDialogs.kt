@@ -76,7 +76,10 @@ fun ArchiveEntryPropertiesDialog(
 }
 
 @Composable
-private fun ArchivePropertyRow(label: String, value: String) {
+private fun ArchivePropertyRow(
+    label: String,
+    value: String,
+) {
     Row(Modifier.fillMaxWidth()) {
         Text(
             label,

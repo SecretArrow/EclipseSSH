@@ -10,8 +10,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dagger.hilt.android.AndroidEntryPoint
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.ui.editor.EditorRequest
 import dev.eclipse.ssh.ui.editor.EditorRequests
@@ -47,7 +47,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class FilePreviewActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     /** The file on screen. A property, so a second preview delivered here can replace the first. */
@@ -109,7 +108,10 @@ class FilePreviewActivity : ComponentActivity() {
      * result travels back — this app's windows hand nothing back, and a file the editor saved is read
      * again by whoever lists it, not by the surface that handed it over.
      */
-    private fun openEditor(entry: FsEntry, current: FilePreviewRequest) {
+    private fun openEditor(
+        entry: FsEntry,
+        current: FilePreviewRequest,
+    ) {
         val token = EditorRequests.put(EditorRequest(entry, current.provider))
         startActivity(
             Intent(this, TextEditorActivity::class.java)
@@ -129,7 +131,11 @@ class FilePreviewActivity : ComponentActivity() {
          * places open this window (the explorer, the explorer's own file sheet, and a finished
          * transfer's local file), and one of them getting the order wrong would show the wrong file.
          */
-        fun intent(context: Context, entry: FsEntry, provider: FileSystemProvider): Intent =
+        fun intent(
+            context: Context,
+            entry: FsEntry,
+            provider: FileSystemProvider,
+        ): Intent =
             Intent(context, FilePreviewActivity::class.java).putExtra(
                 EXTRA_REQUEST_TOKEN,
                 PreviewRequests.putFile(FilePreviewRequest(entry, provider)),

@@ -71,8 +71,9 @@ enum class OptionalPackage(
 ) {
     NODE(
         label = "Node.js and npm",
-        summary = "node, npm and npx · the archive's, upgraded to the current LTS when that is " +
-            "older than 20",
+        summary =
+            "node, npm and npx · the archive's, upgraded to the current LTS when that is " +
+                "older than 20",
         aptPackages = listOf("nodejs", "npm"),
         needsModernNode = true,
     ),
@@ -80,48 +81,52 @@ enum class OptionalPackage(
     PYTHON(
         label = "Python 3",
         summary = "python3, python, pip and venv · python is the same interpreter by another name",
-        aptPackages = listOf(
-            "python3",
-            "python3-pip",
-            "python3-venv",
-            "python3-dev",
-            "python-is-python3",
-        ),
+        aptPackages =
+            listOf(
+                "python3",
+                "python3-pip",
+                "python3-venv",
+                "python3-dev",
+                "python-is-python3",
+            ),
     ),
 
     BUILD_TOOLS(
         label = "Build tools",
         summary = "make, cmake, gcc, g++, pkg-config, autoconf, automake and libtool",
-        aptPackages = listOf(
-            "build-essential",
-            "cmake",
-            "pkg-config",
-            "autoconf",
-            "automake",
-            "libtool",
-        ),
+        aptPackages =
+            listOf(
+                "build-essential",
+                "cmake",
+                "pkg-config",
+                "autoconf",
+                "automake",
+                "libtool",
+            ),
     ),
 
     TERMINAL_TOOLS(
         label = "Terminal utilities",
-        summary = "ripgrep, fd-find, jq, tree, tmux, vim, nano, rsync, less, man, lsof, strace, " +
-            "dig and netstat",
-        aptPackages = listOf(
-            "ripgrep",
-            "fd-find",
-            "jq",
-            "tree",
-            "tmux",
-            "vim",
-            "nano",
-            "rsync",
-            "less",
-            "man-db",
-            "lsof",
-            "strace",
-            "dnsutils",
-            "net-tools",
-        ),
+        summary =
+            "ripgrep, fd-find, jq, tree, tmux, vim, nano, rsync, less, man, lsof, strace, " +
+                "dig and netstat",
+        aptPackages =
+            listOf(
+                "ripgrep",
+                "fd-find",
+                "jq",
+                "tree",
+                "tmux",
+                "vim",
+                "nano",
+                "rsync",
+                "less",
+                "man-db",
+                "lsof",
+                "strace",
+                "dnsutils",
+                "net-tools",
+            ),
     ),
 
     OPENCODE(
@@ -133,8 +138,9 @@ enum class OptionalPackage(
 
     CLINE(
         label = "cline",
-        summary = "the Cline coding agent, run as the cline command · an npm global, and the one " +
-            "that needs Node.js 20 or newer",
+        summary =
+            "the Cline coding agent, run as the cline command · an npm global, and the one " +
+                "that needs Node.js 20 or newer",
         npmGlobals = listOf("cline"),
         requires = listOf(NODE),
     ),
@@ -148,15 +154,17 @@ enum class OptionalPackage(
 
     CLAUDE_CODE(
         label = "Claude Code CLI",
-        summary = "the Claude Code CLI, run as the claude command · installed by Anthropic's own " +
-            "installer, which ships amd64 and arm64 builds and none for 32-bit ARM",
-        vendorInstallers = listOf(
-            VendorInstaller(
-                url = "https://claude.ai/install.sh",
-                supportedArches = listOf("amd64", "arm64"),
-                command = "claude",
+        summary =
+            "the Claude Code CLI, run as the claude command · installed by Anthropic's own " +
+                "installer, which ships amd64 and arm64 builds and none for 32-bit ARM",
+        vendorInstallers =
+            listOf(
+                VendorInstaller(
+                    url = "https://claude.ai/install.sh",
+                    supportedArches = listOf("amd64", "arm64"),
+                    command = "claude",
+                ),
             ),
-        ),
     ),
 }
 
@@ -193,7 +201,6 @@ data class VendorInstaller(
  * to "what does ticking cline do" has to be one answer rather than three derivations of one.
  */
 object OptionalPackages {
-
     /** Every entry, in the order the dialog shows them — the enum's own declaration order. */
     val all: List<OptionalPackage> get() = OptionalPackage.entries
 
@@ -208,6 +215,7 @@ object OptionalPackages {
      */
     fun resolve(selected: Collection<OptionalPackage>): List<OptionalPackage> {
         val wanted = mutableSetOf<OptionalPackage>()
+
         fun add(entry: OptionalPackage) {
             if (wanted.add(entry)) entry.requires.forEach(::add)
         }
@@ -219,20 +227,16 @@ object OptionalPackages {
      * What the tick pulls in that the user did not tick — the dialog's "this also installs Node.js"
      * line, and the reason [resolve] is not a private detail of the pipeline.
      */
-    fun implied(selected: Collection<OptionalPackage>): List<OptionalPackage> =
-        resolve(selected).minus(selected.toSet())
+    fun implied(selected: Collection<OptionalPackage>): List<OptionalPackage> = resolve(selected).minus(selected.toSet())
 
     /** Every apt package the selection needs, deduplicated, in declaration order. */
-    fun aptPackages(selected: Collection<OptionalPackage>): List<String> =
-        resolve(selected).flatMap { it.aptPackages }.distinct()
+    fun aptPackages(selected: Collection<OptionalPackage>): List<String> = resolve(selected).flatMap { it.aptPackages }.distinct()
 
     /** Every npm global the selection needs, deduplicated, in declaration order. */
-    fun npmGlobals(selected: Collection<OptionalPackage>): List<String> =
-        resolve(selected).flatMap { it.npmGlobals }.distinct()
+    fun npmGlobals(selected: Collection<OptionalPackage>): List<String> = resolve(selected).flatMap { it.npmGlobals }.distinct()
 
     /** Whether the selection needs a Node.js newer than the one the archive may carry. */
-    fun needsModernNode(selected: Collection<OptionalPackage>): Boolean =
-        resolve(selected).any { it.needsModernNode }
+    fun needsModernNode(selected: Collection<OptionalPackage>): Boolean = resolve(selected).any { it.needsModernNode }
 
     /**
      * Whether every mechanism [entry] names has something to run on [ubuntuArch].
@@ -246,6 +250,8 @@ object OptionalPackages {
      * it with a warning naming the architecture, so a row cannot look tickable where the pipeline would
      * refuse. The pipeline is the authority; this exists so the dialog can say so first.
      */
-    fun runsOn(entry: OptionalPackage, ubuntuArch: String): Boolean =
-        entry.vendorInstallers.all { ubuntuArch in it.supportedArches }
+    fun runsOn(
+        entry: OptionalPackage,
+        ubuntuArch: String,
+    ): Boolean = entry.vendorInstallers.all { ubuntuArch in it.supportedArches }
 }

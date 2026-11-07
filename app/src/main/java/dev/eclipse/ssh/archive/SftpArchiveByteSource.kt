@@ -36,9 +36,9 @@ class SftpArchiveByteSource(
     /** The archive's size as the caller's stat reported it - avoids a stat round-trip here. */
     override val size: Long,
 ) : ArchiveByteSource {
-
-    private val session = sessionStore.primarySession(hostId)
-        ?: throw IllegalStateException("$hostName is not connected")
+    private val session =
+        sessionStore.primarySession(hostId)
+            ?: throw IllegalStateException("$hostName is not connected")
 
     /** The lazily opened channel pair. Guarded by [mutex] so concurrent reads serialize on it. */
     private var channel: SftpClient? = null
@@ -54,7 +54,12 @@ class SftpArchiveByteSource(
      */
     private val sftpReadChunkBytes = 32 * 1024
 
-    private suspend fun readChunk(offset: Long, dst: ByteArray, dstOffset: Int, length: Int): Int =
+    private suspend fun readChunk(
+        offset: Long,
+        dst: ByteArray,
+        dstOffset: Int,
+        length: Int,
+    ): Int =
         mutex.withLock {
             withContext(Dispatchers.IO) {
                 val existing = channel
@@ -68,19 +73,20 @@ class SftpArchiveByteSource(
                     // why withSftp's use{} is wrong for this shape); here the lifetime is this
                     // source's own, ended in [close].
                     client = connectionManager.openSftp(session)
-                    h = try {
-                        client.open(remotePath, OpenMode.Read)
-                    } catch (error: Throwable) {
-                        // The archive was deleted, replaced or refused between the stat that
-                        // produced [size] and this open - a real race with anything that rewrites
-                        // files on the host. [close] only closes what the fields hold, and this
-                        // client never reaches them, so it is closed here or not at all: a live
-                        // SFTP channel per failed attempt, one more server-side slot gone each
-                        // time the user retries the browse. Already on IO, inside this block's
-                        // withContext - an SFTP close writes to the socket and belongs here.
-                        runCatching(client::close)
-                        throw error
-                    }
+                    h =
+                        try {
+                            client.open(remotePath, OpenMode.Read)
+                        } catch (error: Throwable) {
+                            // The archive was deleted, replaced or refused between the stat that
+                            // produced [size] and this open - a real race with anything that rewrites
+                            // files on the host. [close] only closes what the fields hold, and this
+                            // client never reaches them, so it is closed here or not at all: a live
+                            // SFTP channel per failed attempt, one more server-side slot gone each
+                            // time the user retries the browse. Already on IO, inside this block's
+                            // withContext - an SFTP close writes to the socket and belongs here.
+                            runCatching(client::close)
+                            throw error
+                        }
                     channel = client
                     handle = h
                 }
@@ -95,7 +101,10 @@ class SftpArchiveByteSource(
         return result
     }
 
-    override suspend fun readAt(offset: Long, length: Int): ByteArray {
+    override suspend fun readAt(
+        offset: Long,
+        length: Int,
+    ): ByteArray {
         if (offset >= size) return ByteArray(0)
         require(length >= 0) { "Negative length $length" }
         if (length == 0) return ByteArray(0)

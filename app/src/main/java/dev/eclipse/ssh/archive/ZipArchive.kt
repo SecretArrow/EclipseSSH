@@ -26,8 +26,9 @@ import java.util.TimeZone
  * can only be learned from the local header, and paying that (small) read for every entry at
  * listing time would waste traffic on entries the user never opens.
  */
-class ZipArchive(private val source: ArchiveByteSource) {
-
+class ZipArchive(
+    private val source: ArchiveByteSource,
+) {
     companion object {
         /** Size of the fixed part of the EOCD record, signature through comment length. */
         const val EOCD_MIN_BYTES = 22
@@ -150,19 +151,19 @@ class ZipArchive(private val source: ArchiveByteSource) {
             // with the sign bit set would make the loop below finish instantly and present a
             // broken archive as an empty one - the worst available answer.
             throw ArchiveCorruptException(
-                "Entry count ${eocd.entryCount} is negative"
+                "Entry count ${eocd.entryCount} is negative",
             )
         }
         if (eocd.cdSize > CENTRAL_DIRECTORY_MAX_SEARCH_BYTES) {
             throw ArchiveCorruptException(
                 "Central directory claims ${eocd.cdSize} bytes, above the " +
-                    "$CENTRAL_DIRECTORY_MAX_SEARCH_BYTES-byte ceiling"
+                    "$CENTRAL_DIRECTORY_MAX_SEARCH_BYTES-byte ceiling",
             )
         }
         if (eocd.cdOffset < 0 || eocd.cdSize < 0 || eocd.cdOffset + eocd.cdSize > source.size) {
             throw ArchiveCorruptException(
                 "Central directory at ${eocd.cdOffset}+${eocd.cdSize} runs past end of " +
-                    "archive (${source.size} bytes)"
+                    "archive (${source.size} bytes)",
             )
         }
 
@@ -188,8 +189,13 @@ class ZipArchive(private val source: ArchiveByteSource) {
         // smaller than one chunk, every per-chunk beat fires before a single entry has been
         // parsed, and a UI that only ever saw entriesScanned == 0 would render an empty
         // progress state for an archive it had just finished listing.
-        onProgress(ArchiveScanProgress(bytesScanned = bytesReadFromSource,
-            totalBytes = source.size, entriesScanned = reader.entriesScanned))
+        onProgress(
+            ArchiveScanProgress(
+                bytesScanned = bytesReadFromSource,
+                totalBytes = source.size,
+                entriesScanned = reader.entriesScanned,
+            ),
+        )
         return entriesByPath.values.toList()
     }
 
@@ -211,10 +217,11 @@ class ZipArchive(private val source: ArchiveByteSource) {
         if (entry.isDirectory) {
             throw ArchiveCorruptException("Entry '${entry.path}' is a directory and has no data")
         }
-        val headerOffset = localHeaderOffsets[entry.path]
-            ?: throw ArchiveCorruptException(
-                "Entry '${entry.path}' was not produced by a listEntries scan on this archive"
-            )
+        val headerOffset =
+            localHeaderOffsets[entry.path]
+                ?: throw ArchiveCorruptException(
+                    "Entry '${entry.path}' was not produced by a listEntries scan on this archive",
+                )
 
         // Exactly the fixed record: the name and extra that follow are sized by this record's
         // own two length fields, and reading them would be wasted traffic - only the lengths
@@ -224,14 +231,14 @@ class ZipArchive(private val source: ArchiveByteSource) {
         if (fixed.size < LOCAL_HEADER_FIXED_BYTES) {
             throw ArchiveCorruptException(
                 "Local file header at $headerOffset is truncated (${fixed.size} of " +
-                    "$LOCAL_HEADER_FIXED_BYTES bytes)"
+                    "$LOCAL_HEADER_FIXED_BYTES bytes)",
             )
         }
         val signature = u32(fixed, 0, headerOffset, "local file header signature")
         if (signature != LOCAL_HEADER_SIGNATURE) {
             throw ArchiveCorruptException(
                 "Local file header at $headerOffset has signature 0x" +
-                    signature.toString(16) + ", not 0x04034b50"
+                    signature.toString(16) + ", not 0x04034b50",
             )
         }
         val nameLength = u16(fixed, 26, headerOffset, "local file name length")
@@ -240,7 +247,7 @@ class ZipArchive(private val source: ArchiveByteSource) {
         if (dataOffset > source.size) {
             throw ArchiveCorruptException(
                 "Local file header at $headerOffset claims data at $dataOffset, past end of " +
-                    "archive (${source.size} bytes)"
+                    "archive (${source.size} bytes)",
             )
         }
         return dataOffset
@@ -256,7 +263,7 @@ class ZipArchive(private val source: ArchiveByteSource) {
     ): EndOfCentralDirectory {
         if (source.size < EOCD_MIN_BYTES) {
             throw ArchiveCorruptException(
-                "Archive is ${source.size} bytes, too small to contain an EOCD record"
+                "Archive is ${source.size} bytes, too small to contain an EOCD record",
             )
         }
 
@@ -266,8 +273,13 @@ class ZipArchive(private val source: ArchiveByteSource) {
         val windowOffset = source.size - windowLength
         val window = source.readAt(windowOffset, windowLength)
         bytesReadFromSource += windowLength
-        onProgress(ArchiveScanProgress(bytesScanned = bytesReadFromSource,
-            totalBytes = source.size, entriesScanned = 0))
+        onProgress(
+            ArchiveScanProgress(
+                bytesScanned = bytesReadFromSource,
+                totalBytes = source.size,
+                entriesScanned = 0,
+            ),
+        )
 
         // Search backwards so a signature-like byte run inside a file or a comment cannot
         // shadow the real record - the real EOCD is the last one that fits with its comment.
@@ -284,12 +296,13 @@ class ZipArchive(private val source: ArchiveByteSource) {
         }
         if (eocdAt < 0) {
             throw ArchiveCorruptException(
-                "No end-of-central-directory record in the last $EOCD_MAX_SEARCH_BYTES bytes"
+                "No end-of-central-directory record in the last $EOCD_MAX_SEARCH_BYTES bytes",
             )
         }
 
-        val entryCount = u16(window, eocdAt + 10, windowOffset + eocdAt, "EOCD entry count")
-            .toLong()
+        val entryCount =
+            u16(window, eocdAt + 10, windowOffset + eocdAt, "EOCD entry count")
+                .toLong()
         val cdSize = u32(window, eocdAt + 12, windowOffset + eocdAt, "EOCD central directory size")
         val cdOffset = u32(window, eocdAt + 16, windowOffset + eocdAt, "EOCD central directory offset")
         val eocdOffset = windowOffset + eocdAt
@@ -316,7 +329,7 @@ class ZipArchive(private val source: ArchiveByteSource) {
     ): EndOfCentralDirectory {
         if (classicEocdOffset < EOCD_LOCATOR_SIZE) {
             throw ArchiveCorruptException(
-                "Saturated EOCD fields but no room at $classicEocdOffset for a ZIP64 locator"
+                "Saturated EOCD fields but no room at $classicEocdOffset for a ZIP64 locator",
             )
         }
         val locatorOffset = classicEocdOffset - EOCD_LOCATOR_SIZE
@@ -326,7 +339,7 @@ class ZipArchive(private val source: ArchiveByteSource) {
         if (locatorSignature != ZIP64_LOCATOR_SIGNATURE) {
             throw ArchiveCorruptException(
                 "Saturated EOCD fields but no ZIP64 locator at $locatorOffset (found 0x" +
-                    locatorSignature.toString(16) + ")"
+                    locatorSignature.toString(16) + ")",
             )
         }
         val zip64Offset = u64(locator, 8, locatorOffset, "ZIP64 EOCD offset")
@@ -334,16 +347,21 @@ class ZipArchive(private val source: ArchiveByteSource) {
         // longer (extensible data), but nothing past byte 56 is defined or needed here.
         if (zip64Offset < 0 || zip64Offset + 56 > source.size) {
             throw ArchiveCorruptException(
-                "ZIP64 EOCD at $zip64Offset runs past end of archive (${source.size} bytes)"
+                "ZIP64 EOCD at $zip64Offset runs past end of archive (${source.size} bytes)",
             )
         }
         val zip64 = source.readAt(zip64Offset, 56)
         bytesReadFromSource += EOCD_LOCATOR_SIZE + 56
-        onProgress(ArchiveScanProgress(bytesScanned = bytesReadFromSource,
-            totalBytes = source.size, entriesScanned = 0))
+        onProgress(
+            ArchiveScanProgress(
+                bytesScanned = bytesReadFromSource,
+                totalBytes = source.size,
+                entriesScanned = 0,
+            ),
+        )
         if (u32(zip64, 0, zip64Offset, "ZIP64 EOCD signature") != ZIP64_EOCD_SIGNATURE) {
             throw ArchiveCorruptException(
-                "ZIP64 EOCD at $zip64Offset has a foreign signature"
+                "ZIP64 EOCD at $zip64Offset has a foreign signature",
             )
         }
         return EndOfCentralDirectory(
@@ -421,7 +439,7 @@ class ZipArchive(private val source: ArchiveByteSource) {
             if (signature != CENTRAL_ENTRY_SIGNATURE) {
                 throw ArchiveCorruptException(
                     "Central directory entry at $recordOffset has signature 0x" +
-                        signature.toString(16) + ", not 0x02014b50"
+                        signature.toString(16) + ", not 0x02014b50",
                 )
             }
             val flags = u16(fixed, 8, recordOffset, "entry flags")
@@ -443,7 +461,8 @@ class ZipArchive(private val source: ArchiveByteSource) {
             // Saturated 32-bit fields defer to the ZIP64 extra field, whose payload carries the
             // 64-bit replacements in a fixed order (uncompressed, compressed, offset) - only the
             // saturated ones are present, so the cursor advances past exactly those.
-            if (uncompressedSize == 0xFFFFFFFFL || compressedSize == 0xFFFFFFFFL ||
+            if (uncompressedSize == 0xFFFFFFFFL ||
+                compressedSize == 0xFFFFFFFFL ||
                 localHeaderOffset == 0xFFFFFFFFL
             ) {
                 var resolvedZip64 = false
@@ -456,21 +475,33 @@ class ZipArchive(private val source: ArchiveByteSource) {
                         resolvedZip64 = true
                         var fieldCursor = dataStart
                         if (uncompressedSize == 0xFFFFFFFFL) {
-                            uncompressedSize = u64(
-                                extraBytes, fieldCursor, recordOffset, "ZIP64 entry size",
-                            )
+                            uncompressedSize =
+                                u64(
+                                    extraBytes,
+                                    fieldCursor,
+                                    recordOffset,
+                                    "ZIP64 entry size",
+                                )
                             fieldCursor += 8
                         }
                         if (compressedSize == 0xFFFFFFFFL) {
-                            compressedSize = u64(
-                                extraBytes, fieldCursor, recordOffset, "ZIP64 compressed size",
-                            )
+                            compressedSize =
+                                u64(
+                                    extraBytes,
+                                    fieldCursor,
+                                    recordOffset,
+                                    "ZIP64 compressed size",
+                                )
                             fieldCursor += 8
                         }
                         if (localHeaderOffset == 0xFFFFFFFFL) {
-                            localHeaderOffset = u64(
-                                extraBytes, fieldCursor, recordOffset, "ZIP64 local header offset",
-                            )
+                            localHeaderOffset =
+                                u64(
+                                    extraBytes,
+                                    fieldCursor,
+                                    recordOffset,
+                                    "ZIP64 local header offset",
+                                )
                         }
                         break
                     }
@@ -480,12 +511,14 @@ class ZipArchive(private val source: ArchiveByteSource) {
                 // missing or truncated. Carrying the saturation on as a literal value would
                 // present a 4 GB file where the writer meant something else entirely, so the
                 // archive is refused instead.
-                if (!resolvedZip64 || uncompressedSize == 0xFFFFFFFFL ||
-                    compressedSize == 0xFFFFFFFFL || localHeaderOffset == 0xFFFFFFFFL
+                if (!resolvedZip64 ||
+                    uncompressedSize == 0xFFFFFFFFL ||
+                    compressedSize == 0xFFFFFFFFL ||
+                    localHeaderOffset == 0xFFFFFFFFL
                 ) {
                     throw ArchiveCorruptException(
                         "Entry at $recordOffset saturates its 32-bit fields but the ZIP64 " +
-                            "extra field does not carry the replacements"
+                            "extra field does not carry the replacements",
                     )
                 }
             }
@@ -493,29 +526,31 @@ class ZipArchive(private val source: ArchiveByteSource) {
             // here keeps a corrupt value from flowing into the UI as a huge negative length.
             if (uncompressedSize < 0 || compressedSize < 0 || localHeaderOffset < 0) {
                 throw ArchiveCorruptException(
-                    "Entry at $recordOffset carries an impossible negative size or offset"
+                    "Entry at $recordOffset carries an impossible negative size or offset",
                 )
             }
 
             val rawName = decodeName(nameBytes, flags)
-            val path = normalizeArchivePath(rawName)
-                // A path is returned as null only when the name is pure punctuation; falling
-                // through to the CD's next record is the only sane response to an entry that
-                // names nothing.
-                ?: return null
+            val path =
+                normalizeArchivePath(rawName)
+                    // A path is returned as null only when the name is pure punctuation; falling
+                    // through to the CD's next record is the only sane response to an entry that
+                    // names nothing.
+                    ?: return null
             // ".." survives normalizeArchivePath on purpose (it is a real segment, not
             // punctuation), which makes it this reader's job to refuse it: a member that
             // would escape the extraction root is a traversal attempt, and hiding it in the
             // listing would only move the failure to the moment someone extracts it.
             if (path.split('/').any { it == ".." }) {
                 throw ArchiveCorruptException(
-                    "Entry name '$rawName' contains a '..' segment"
+                    "Entry name '$rawName' contains a '..' segment",
                 )
             }
 
-            val isDirectory = rawName.endsWith("/") ||
-                (externalAttributes and DOS_DIRECTORY_ATTR) != 0L ||
-                ((externalAttributes ushr 16) and 0xF000) == UNIX_DIRECTORY_MODE
+            val isDirectory =
+                rawName.endsWith("/") ||
+                    (externalAttributes and DOS_DIRECTORY_ATTR) != 0L ||
+                    ((externalAttributes ushr 16) and 0xF000) == UNIX_DIRECTORY_MODE
 
             // Remembered per parsed record (not per returned entry) so that duplicate paths
             // leave the LAST occurrence's header offset behind - matching the entry the
@@ -545,7 +580,7 @@ class ZipArchive(private val source: ArchiveByteSource) {
             if (remainingInCd <= 0) {
                 throw ArchiveCorruptException(
                     "Central directory exhausted at CD offset $nextStart of $cdSize bytes " +
-                        "while an entry record was still being read"
+                        "while an entry record was still being read",
                 )
             }
             val want = minOf(CD_CHUNK_BYTES.toLong(), remainingInCd).toInt()
@@ -555,8 +590,13 @@ class ZipArchive(private val source: ArchiveByteSource) {
             buffer = source.readAt(cdOffset + nextStart, want)
             bufferStart = nextStart
             bytesReadFromSource += want
-            onProgress(ArchiveScanProgress(bytesScanned = bytesReadFromSource,
-                totalBytes = source.size, entriesScanned = entriesScanned))
+            onProgress(
+                ArchiveScanProgress(
+                    bytesScanned = bytesReadFromSource,
+                    totalBytes = source.size,
+                    entriesScanned = entriesScanned,
+                ),
+            )
         }
     }
 
@@ -565,7 +605,10 @@ class ZipArchive(private val source: ArchiveByteSource) {
      * is), CP437 otherwise. Invalid UTF-8 degrades to replacement characters rather than
      * throwing - a listing must still appear for an archive some other tool mislabeled.
      */
-    private fun decodeName(bytes: ByteArray, flags: Int): String {
+    private fun decodeName(
+        bytes: ByteArray,
+        flags: Int,
+    ): String {
         if ((flags and FLAG_UTF8) != 0) {
             return String(bytes, Charsets.UTF_8)
         }
@@ -584,7 +627,10 @@ class ZipArchive(private val source: ArchiveByteSource) {
      * timestamp beats a listing that fails over a date field. An all-zero pair is the format's
      * "no timestamp", which stays null rather than being laundered into 1980.
      */
-    private fun dosDateTimeToEpochMillis(dosDate: Int, dosTime: Int): Long? {
+    private fun dosDateTimeToEpochMillis(
+        dosDate: Int,
+        dosTime: Int,
+    ): Long? {
         if (dosDate == 0 && dosTime == 0) return null
         val year = ((dosDate ushr 9) and 0x7F) + 1980
         val month = (dosDate ushr 5) and 0x0F
@@ -601,8 +647,14 @@ class ZipArchive(private val source: ArchiveByteSource) {
         // March, which would show the user a date the archive never contained.
         calendar.isLenient = false
         return try {
-            calendar.set(year, month - 1, day, hour.coerceAtMost(23), minute.coerceAtMost(59),
-                second.coerceAtMost(59))
+            calendar.set(
+                year,
+                month - 1,
+                day,
+                hour.coerceAtMost(23),
+                minute.coerceAtMost(59),
+                second.coerceAtMost(59),
+            )
             calendar.timeInMillis
         } catch (_: IllegalArgumentException) {
             DOS_EPOCH_MILLIS
@@ -614,14 +666,24 @@ class ZipArchive(private val source: ArchiveByteSource) {
      * the record it was handed and names the absolute archive offset plus what was being read,
      * because "short read at 4812" is diagnosable and "index out of bounds" is not.
      */
-    private fun u16(bytes: ByteArray, at: Int, absoluteOffset: Long, what: String): Int {
+    private fun u16(
+        bytes: ByteArray,
+        at: Int,
+        absoluteOffset: Long,
+        what: String,
+    ): Int {
         if (at < 0 || at + 2 > bytes.size) {
             throw fieldOutOfBounds(at, absoluteOffset, what, 2, bytes.size)
         }
         return (bytes[at].toInt() and 0xFF) or ((bytes[at + 1].toInt() and 0xFF) shl 8)
     }
 
-    private fun u32(bytes: ByteArray, at: Int, absoluteOffset: Long, what: String): Long {
+    private fun u32(
+        bytes: ByteArray,
+        at: Int,
+        absoluteOffset: Long,
+        what: String,
+    ): Long {
         if (at < 0 || at + 4 > bytes.size) {
             throw fieldOutOfBounds(at, absoluteOffset, what, 4, bytes.size)
         }
@@ -631,7 +693,12 @@ class ZipArchive(private val source: ArchiveByteSource) {
             ((bytes[at + 3].toInt() and 0xFF).toLong() shl 24)
     }
 
-    private fun u64(bytes: ByteArray, at: Int, absoluteOffset: Long, what: String): Long {
+    private fun u64(
+        bytes: ByteArray,
+        at: Int,
+        absoluteOffset: Long,
+        what: String,
+    ): Long {
         if (at < 0 || at + 8 > bytes.size) {
             throw fieldOutOfBounds(at, absoluteOffset, what, 8, bytes.size)
         }
@@ -650,6 +717,6 @@ class ZipArchive(private val source: ArchiveByteSource) {
         recordSize: Int,
     ) = ArchiveCorruptException(
         "Reading $what at offset $absoluteOffset needs $width bytes but only " +
-            "${recordSize - at.coerceAtLeast(0)} remain in its $recordSize-byte record"
+            "${recordSize - at.coerceAtLeast(0)} remain in its $recordSize-byte record",
     )
 }

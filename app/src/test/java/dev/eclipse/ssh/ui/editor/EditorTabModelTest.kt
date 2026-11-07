@@ -14,7 +14,6 @@ import org.junit.Test
  * an assertion instead of a hope.
  */
 class EditorTabModelTest {
-
     private fun tab(
         text: String = "original",
         modified: Long? = 1_000L,
@@ -138,39 +137,49 @@ class EditorTabModelTest {
     }
 
     @Test
-    fun `auto-save fires only on idle past the debounce, with changes, when safe`() = runTest {
-        val tab = tab()
-        val saves = mutableListOf<Unit>()
-        val ticks = flowOf(
-            AutoSaveTick.Idle(AUTO_SAVE_DEBOUNCE_MS - 1),
-            AutoSaveTick.Idle(AUTO_SAVE_DEBOUNCE_MS),
-            AutoSaveTick.Idle(AUTO_SAVE_DEBOUNCE_MS + 5_000),
-        )
-        tab.setText("edited")
-        autoSaveTicks(ticks, { tab }, { true }).collect { saves += it }
-        // Twice, not three times: the first tick is inside the debounce window, so typing had
-        // not stopped yet and no upload happens. This is the requirement that auto-save must
-        // not upload on every character, held by the smallest case that shows it.
-        assertThat(saves).hasSize(2)
-    }
+    fun `auto-save fires only on idle past the debounce, with changes, when safe`() =
+        runTest {
+            val tab = tab()
+            val saves = mutableListOf<Unit>()
+            val ticks =
+                flowOf(
+                    AutoSaveTick.Idle(AUTO_SAVE_DEBOUNCE_MS - 1),
+                    AutoSaveTick.Idle(AUTO_SAVE_DEBOUNCE_MS),
+                    AutoSaveTick.Idle(AUTO_SAVE_DEBOUNCE_MS + 5_000),
+                )
+            tab.setText("edited")
+            autoSaveTicks(ticks, { tab }, { true }).collect { saves += it }
+            // Twice, not three times: the first tick is inside the debounce window, so typing had
+            // not stopped yet and no upload happens. This is the requirement that auto-save must
+            // not upload on every character, held by the smallest case that shows it.
+            assertThat(saves).hasSize(2)
+        }
 
     @Test
-    fun `auto-save never fires for an unmodified, saving, conflicted, read-only or disabled tab`() = runTest {
-        val cases = listOf(
-            tab(),                                                    // unmodified
-            tab().apply { setText("e"); saveStarted() },               // upload in flight
-            tab().apply { setText("e"); serverChanged() },             // server moved: conflict, not save
-            tab(readOnly = true).apply { setText("e") },               // cannot write
-        )
-        cases.forEachIndexed { index, case ->
-            val saves = mutableListOf<Unit>()
-            autoSaveTicks(flowOf(AutoSaveTick.Idle(60_000)), { case }, { true }).collect { saves += it }
-            assertThat(saves).isEmpty()
+    fun `auto-save never fires for an unmodified, saving, conflicted, read-only or disabled tab`() =
+        runTest {
+            val cases =
+                listOf(
+                    tab(), // unmodified
+                    tab().apply {
+                        setText("e")
+                        saveStarted()
+                    }, // upload in flight
+                    tab().apply {
+                        setText("e")
+                        serverChanged()
+                    }, // server moved: conflict, not save
+                    tab(readOnly = true).apply { setText("e") }, // cannot write
+                )
+            cases.forEachIndexed { index, case ->
+                val saves = mutableListOf<Unit>()
+                autoSaveTicks(flowOf(AutoSaveTick.Idle(60_000)), { case }, { true }).collect { saves += it }
+                assertThat(saves).isEmpty()
+            }
+            // And the switch itself:
+            val on = tab().apply { setText("e") }
+            val savesOn = mutableListOf<Unit>()
+            autoSaveTicks(flowOf(AutoSaveTick.Idle(60_000)), { on }, { false }).collect { savesOn += it }
+            assertThat(savesOn).isEmpty()
         }
-        // And the switch itself:
-        val on = tab().apply { setText("e") }
-        val savesOn = mutableListOf<Unit>()
-        autoSaveTicks(flowOf(AutoSaveTick.Idle(60_000)), { on }, { false }).collect { savesOn += it }
-        assertThat(savesOn).isEmpty()
-    }
 }

@@ -13,7 +13,6 @@ import org.junit.Test
  * packet timing and could never be reproduced.
  */
 class Utf8StreamDecoderTest {
-
     @Test
     fun `plain ascii passes through unchanged`() {
         val decoder = Utf8StreamDecoder()

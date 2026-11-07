@@ -26,7 +26,6 @@ class SilenceDetector(
     private val silenceMs: Long = SILENCE_MS,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-
     private val lock = Any()
     private var armed = false
     private var sawOutputAfterArm = false
@@ -63,13 +62,14 @@ class SilenceDetector(
      * arrived for [silenceMs]. True at most once per arming - the firing latches, so a polling
      * caller cannot be told twice about one command.
      */
-    fun poll(nowMs: Long = clock()): Boolean = synchronized(lock) {
-        if (!armed || fired || !sawOutputAfterArm) return@synchronized false
-        if (nowMs - lastOutputAt < silenceMs) return@synchronized false
-        fired = true
-        armed = false
-        true
-    }
+    fun poll(nowMs: Long = clock()): Boolean =
+        synchronized(lock) {
+            if (!armed || fired || !sawOutputAfterArm) return@synchronized false
+            if (nowMs - lastOutputAt < silenceMs) return@synchronized false
+            fired = true
+            armed = false
+            true
+        }
 
     /** Cancels any arming. A later [poll] reports nothing until [arm] is called again. */
     fun disarm() {

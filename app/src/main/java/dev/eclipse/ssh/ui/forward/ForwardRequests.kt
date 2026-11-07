@@ -42,7 +42,6 @@ data class ForwardRequest(
  * costs one null check.
  */
 object ForwardRequests {
-
     private val confirmed = AtomicReference<ForwardRequest?>(null)
 
     /** Records the form's answer, replacing any earlier one the workspace never came back for. */
@@ -77,28 +76,32 @@ internal data class ForwardFormState(
     val remoteHost: String = "",
     val remotePort: String = "",
 ) {
-
     private val localPortNum = localPort.toPortOrNull()
     private val remotePortNum = remotePort.toPortOrNull()
     private val remoteHostName = remoteHost.trim()
 
     /** A port, in range, with nothing else in the field. Null when the field is fine. */
-    private fun portError(value: String, number: Int?): String? = when {
-        value.isBlank() -> "Enter a port"
-        number == null -> "A port between ${PORT_RANGE.first} and ${PORT_RANGE.last}"
-        else -> null
-    }
+    private fun portError(
+        value: String,
+        number: Int?,
+    ): String? =
+        when {
+            value.isBlank() -> "Enter a port"
+            number == null -> "A port between ${PORT_RANGE.first} and ${PORT_RANGE.last}"
+            else -> null
+        }
 
     val localPortError: String? get() = portError(localPort, localPortNum)
 
     /** Only a Local forward has a destination host; the other two leave this null and the field hidden. */
     val remoteHostError: String?
-        get() = when {
-            type != ForwardType.LOCAL -> null
-            remoteHostName.isEmpty() -> "Enter the host to forward to"
-            !remoteHostName.isForwardHostName() -> "A host name or address, with no spaces"
-            else -> null
-        }
+        get() =
+            when {
+                type != ForwardType.LOCAL -> null
+                remoteHostName.isEmpty() -> "Enter the host to forward to"
+                !remoteHostName.isForwardHostName() -> "A host name or address, with no spaces"
+                else -> null
+            }
 
     /** The destination port for a Local forward, the server's bind port for a Remote one. */
     val remotePortError: String?

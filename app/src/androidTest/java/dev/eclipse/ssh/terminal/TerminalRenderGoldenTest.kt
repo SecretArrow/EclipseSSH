@@ -44,7 +44,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class TerminalRenderGoldenTest {
-
     @get:Rule
     val rule = createComposeRule()
 
@@ -129,7 +128,10 @@ class TerminalRenderGoldenTest {
      * 24 px left over are then split either side of the grid, which is why the cells start at
      * [GRID_X] and [GRID_Y].
      */
-    private fun show(frame: TerminalFrame, onViewportChange: (TerminalViewport) -> Unit = {}) {
+    private fun show(
+        frame: TerminalFrame,
+        onViewportChange: (TerminalViewport) -> Unit = {},
+    ) {
         rule.setContent {
             TerminalView(
                 frame = frame,
@@ -137,12 +139,13 @@ class TerminalRenderGoldenTest {
                 background = BACKGROUND,
                 foreground = FOREGROUND,
                 metrics = METRICS,
-                modifier = Modifier
-                    .testTag(TAG)
-                    .layout { measurable, _ ->
-                        val placeable = measurable.measure(Constraints.fixed(NODE_WIDTH, NODE_HEIGHT))
-                        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-                    },
+                modifier =
+                    Modifier
+                        .testTag(TAG)
+                        .layout { measurable, _ ->
+                            val placeable = measurable.measure(Constraints.fixed(NODE_WIDTH, NODE_HEIGHT))
+                            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                        },
                 onViewportChange = onViewportChange,
             )
         }
@@ -174,21 +177,27 @@ class TerminalRenderGoldenTest {
 }
 
 /** One capture's pixels, ARGB and row-major, with the width needed to index them. */
-private class Shot(val pixels: IntArray, val width: Int)
+private class Shot(
+    val pixels: IntArray,
+    val width: Int,
+)
 
 private fun ImageBitmap.shot(): Shot = Shot(IntArray(width * height).also { readPixels(it) }, width)
 
 private fun blankLine() = List(COLUMNS) { TerminalCell() }
 
-private fun textLine(text: String) =
-    List(COLUMNS) { index -> TerminalCell(value = text.getOrElse(index) { ' ' }) }
+private fun textLine(text: String) = List(COLUMNS) { index -> TerminalCell(value = text.getOrElse(index) { ' ' }) }
 
 private fun cellX(column: Int) = GRID_X + column * CELL_PX
 
 private fun cellY(row: Int) = GRID_Y + row * CELL_PY
 
 /** Whether any pixel of the cell at [row], [column] differs from the background. */
-private fun inkAt(shot: Shot, row: Int, column: Int): Boolean {
+private fun inkAt(
+    shot: Shot,
+    row: Int,
+    column: Int,
+): Boolean {
     for (y in cellY(row) until cellY(row) + CELL_PY) {
         for (x in cellX(column) until cellX(column) + CELL_PX) {
             if (shot.pixels[y * shot.width + x] != BACKGROUND_ARGB) return true
@@ -204,7 +213,12 @@ private fun inkAt(shot: Shot, row: Int, column: Int): Boolean {
  * along it, and those pixels are a blend of the cell's colour and its neighbour's rather than a
  * statement about either.
  */
-private fun cellIs(shot: Shot, row: Int, column: Int, colour: Int): Boolean {
+private fun cellIs(
+    shot: Shot,
+    row: Int,
+    column: Int,
+    colour: Int,
+): Boolean {
     for (y in cellY(row) + EDGE until cellY(row) + CELL_PY - EDGE) {
         for (x in cellX(column) + EDGE until cellX(column) + CELL_PX - EDGE) {
             if (shot.pixels[y * shot.width + x] != colour) return false

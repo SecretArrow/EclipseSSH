@@ -21,13 +21,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35])
 class MainActivityLaunchTest {
-
     @Test
     fun `fresh install opens and reaches resumed state with rendered UI`() {
-        val controller = Robolectric.buildActivity(
-            MainActivity::class.java,
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
-        )
+        val controller =
+            Robolectric.buildActivity(
+                MainActivity::class.java,
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),
+            )
         val activity = controller.setup().get()
         // Let Compose composition frames and viewModelScope init run.
         shadowOf(Looper.getMainLooper()).idle()
@@ -58,10 +58,11 @@ class MainActivityLaunchTest {
 
     @Test
     fun `launching from an ssh deep link opens without crashing`() {
-        val controller = Robolectric.buildActivity(
-            MainActivity::class.java,
-            Intent(Intent.ACTION_VIEW, "ssh://deploy@example.com:2222".toUri()),
-        )
+        val controller =
+            Robolectric.buildActivity(
+                MainActivity::class.java,
+                Intent(Intent.ACTION_VIEW, "ssh://deploy@example.com:2222".toUri()),
+            )
         val activity = controller.setup().get()
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -74,21 +75,23 @@ class MainActivityLaunchTest {
         // The manifest exports ssh/sftp to BROWSABLE intents, so any web page can deliver these.
         // singleTask means a second link arrives through onNewIntent on the live instance, so both
         // entry points are exercised.
-        val hostile = listOf(
-            "ssh://",
-            "ssh://@",
-            "ssh://example.com:notaport",
-            "ssh://example.com:99999",
-            "ssh://" + "a".repeat(5_000),
-            "http://example.com",
-            "sftp://root@[2001:db8::1]:22",
-        )
+        val hostile =
+            listOf(
+                "ssh://",
+                "ssh://@",
+                "ssh://example.com:notaport",
+                "ssh://example.com:99999",
+                "ssh://" + "a".repeat(5_000),
+                "http://example.com",
+                "sftp://root@[2001:db8::1]:22",
+            )
 
         hostile.forEach { raw ->
-            val controller = Robolectric.buildActivity(
-                MainActivity::class.java,
-                Intent(Intent.ACTION_VIEW, raw.toUri()),
-            )
+            val controller =
+                Robolectric.buildActivity(
+                    MainActivity::class.java,
+                    Intent(Intent.ACTION_VIEW, raw.toUri()),
+                )
             val activity = controller.setup().get()
             shadowOf(Looper.getMainLooper()).idle()
             assertThat(activity.isFinishing).isFalse()
@@ -104,10 +107,11 @@ class MainActivityLaunchTest {
     @Test
     fun `a view intent with no data does not crash`() {
         // ACTION_VIEW with a null Uri is reachable from a badly built external intent.
-        val controller = Robolectric.buildActivity(
-            MainActivity::class.java,
-            Intent(Intent.ACTION_VIEW),
-        )
+        val controller =
+            Robolectric.buildActivity(
+                MainActivity::class.java,
+                Intent(Intent.ACTION_VIEW),
+            )
         val activity = controller.setup().get()
         shadowOf(Looper.getMainLooper()).idle()
 

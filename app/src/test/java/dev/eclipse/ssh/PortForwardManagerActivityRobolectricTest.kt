@@ -28,7 +28,6 @@ import dev.eclipse.ssh.ui.actions.ActionAnswer
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.ForwardRuleKind
 import dev.eclipse.ssh.ui.forward.PortForwardManagerActivity
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
@@ -37,6 +36,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The port-forwarding manager, as a window: the host's saved rules, what each one is doing, and what a
@@ -64,7 +64,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class PortForwardManagerActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -256,7 +255,8 @@ class PortForwardManagerActivityRobolectricTest {
         launchWindow(host).use {
             awaitText("Add rule")
             assertThat(
-                compose.onAllNodes(hasText("Port forwarding tunnels connections", substring = true))
+                compose
+                    .onAllNodes(hasText("Port forwarding tunnels connections", substring = true))
                     .fetchSemanticsNodes(),
             ).isNotEmpty()
         }
@@ -272,13 +272,14 @@ class PortForwardManagerActivityRobolectricTest {
     @Test
     fun anIntentWithNoTokenOpensNothing() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        ActivityScenario.launch<PortForwardManagerActivity>(
-            Intent(context, PortForwardManagerActivity::class.java),
-        ).use { scenario ->
-            pumpUntil(describe = { "an intent with no subject token opened a window anyway" }) {
-                scenario.state == Lifecycle.State.DESTROYED
+        ActivityScenario
+            .launch<PortForwardManagerActivity>(
+                Intent(context, PortForwardManagerActivity::class.java),
+            ).use { scenario ->
+                pumpUntil(describe = { "an intent with no subject token opened a window anyway" }) {
+                    scenario.state == Lifecycle.State.DESTROYED
+                }
             }
-        }
     }
 
     // ---------------------------------------------------------------- driving the app
@@ -309,19 +310,22 @@ class PortForwardManagerActivityRobolectricTest {
      */
     private fun seedHost(savedForwards: String): HostProfile {
         val id = "b2-forwards-${nextId++}"
-        val host = HostProfile(
-            id = id,
-            name = "Forwarder $id",
-            host = "fwd.example.test",
-            username = "forwarder",
-            savedForwards = savedForwards,
-        )
+        val host =
+            HostProfile(
+                id = id,
+                name = "Forwarder $id",
+                host = "fwd.example.test",
+                username = "forwarder",
+                savedForwards = savedForwards,
+            )
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val viewModel = ViewModelProvider(activity)[MainViewModel::class.java]
-                val repository = MainViewModel::class.java.getDeclaredField("hostRepository")
-                    .apply { isAccessible = true }
-                    .get(viewModel) as HostRepository
+                val repository =
+                    MainViewModel::class.java
+                        .getDeclaredField("hostRepository")
+                        .apply { isAccessible = true }
+                        .get(viewModel) as HostRepository
                 runBlocking { repository.save(host) }
             }
         }
@@ -341,7 +345,10 @@ class PortForwardManagerActivityRobolectricTest {
      * per window. The rule list is one row per saved rule, so a two-rule host has two Deletes and the
      * single-node form finds two and fails on the ambiguity rather than on anything being wrong.
      */
-    private fun awaitRows(label: String, count: Int) {
+    private fun awaitRows(
+        label: String,
+        count: Int,
+    ) {
         awaitText(label)
         pumpUntil(describe = { "the window never drew $count rows named \"$label\"" }) {
             compose.onAllNodes(hasText(label) and hasClickAction()).fetchSemanticsNodes().size == count
@@ -361,7 +368,11 @@ class PortForwardManagerActivityRobolectricTest {
      * The shape the suites that drive live state all share - see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -379,7 +390,10 @@ class PortForwardManagerActivityRobolectricTest {
      * the next, and [pumpUntil] asks twice — once to leave the loop and once to decide whether it
      * timed out. Read straight, an answer that did arrive is reported as one that never did.
      */
-    private fun awaitAnswer(expected: ActionAnswer, describe: () -> String): ActionAnswer {
+    private fun awaitAnswer(
+        expected: ActionAnswer,
+        describe: () -> String,
+    ): ActionAnswer {
         var answer: ActionAnswer? = null
         pumpUntil(describe = describe) {
             answer = answer ?: ActionRequests.takeAnswer()
@@ -405,7 +419,10 @@ class PortForwardManagerActivityRobolectricTest {
      * closes *before* it is ever resumed — no token — still asserts the state directly: that one
      * closes during the launch, and it is a different fact.
      */
-    private fun awaitClosing(scenario: ActivityScenario<PortForwardManagerActivity>, describe: () -> String) {
+    private fun awaitClosing(
+        scenario: ActivityScenario<PortForwardManagerActivity>,
+        describe: () -> String,
+    ) {
         var closing = false
         pumpUntil(describe = describe) {
             runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }

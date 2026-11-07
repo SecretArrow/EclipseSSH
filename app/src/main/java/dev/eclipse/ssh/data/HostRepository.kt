@@ -8,13 +8,15 @@ import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.linux.LocalLinuxHost
 import dev.eclipse.ssh.security.SecureVault
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 interface HostRepository {
     val hosts: Flow<List<HostProfile>>
+
     suspend fun save(host: HostProfile)
+
     suspend fun delete(host: HostProfile)
+
     suspend fun seedIfEmpty()
 }
 
@@ -24,12 +26,16 @@ class RoomHostRepository(
 ) : HostRepository {
     // The SOCKS5 proxy password is stored encrypted at rest (AES-256-GCM via Android
     // Keystore); the in-memory domain model carries the plaintext only while in use.
-    override val hosts: Flow<List<HostProfile>> = dao.observeAll().asDomain().map { profiles ->
-        profiles.map { profile ->
-            if (profile.socksPassword == null) profile
-            else profile.copy(socksPassword = decryptSafe(profile.socksPassword))
+    override val hosts: Flow<List<HostProfile>> =
+        dao.observeAll().asDomain().map { profiles ->
+            profiles.map { profile ->
+                if (profile.socksPassword == null) {
+                    profile
+                } else {
+                    profile.copy(socksPassword = decryptSafe(profile.socksPassword))
+                }
+            }
         }
-    }
 
     override suspend fun save(host: HostProfile) {
         // The local Ubuntu environment is synthesized from the userspace's live state, never
@@ -40,16 +46,16 @@ class RoomHostRepository(
         check(!LocalLinuxHost.isLocalHost(host.id)) {
             "The local Ubuntu environment is not a savable host"
         }
-        val encrypted = host.copy(
-            socksPassword = host.socksPassword?.takeIf(String::isNotBlank)?.let(vault::encrypt),
-        )
+        val encrypted =
+            host.copy(
+                socksPassword = host.socksPassword?.takeIf(String::isNotBlank)?.let(vault::encrypt),
+            )
         dao.upsert(encrypted.toEntity())
     }
 
     override suspend fun delete(host: HostProfile) = dao.delete(host.toEntity())
 
-    private fun decryptSafe(encrypted: String): String? =
-        runCatching { vault.decrypt(encrypted) }.getOrNull()
+    private fun decryptSafe(encrypted: String): String? = runCatching { vault.decrypt(encrypted) }.getOrNull()
 
     override suspend fun seedIfEmpty() {
         if (dao.count() == 0) {

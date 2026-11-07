@@ -20,8 +20,8 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Computer
@@ -79,14 +79,14 @@ import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
 import dev.eclipse.ssh.presentation.linux.LinuxUserspaceUiState
 import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ui.rememberDialogBodyMaxHeight
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * The Linux userspace, in a window of its own: the whole feature's control panel and, for most users,
@@ -138,7 +138,6 @@ import kotlinx.coroutines.withContext
  */
 @AndroidEntryPoint
 class UbuntuActivity : SettingsDestinationActivity() {
-
     /**
      * The userspace's state, actions and trace, injected rather than reached through the Settings view
      * model.
@@ -167,7 +166,10 @@ class UbuntuActivity : SettingsDestinationActivity() {
     override val screenTitle = "Ubuntu on this device"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         val ui by linuxUserspace.uiState.collectAsStateWithLifecycle()
         val installLog by linuxUserspace.installLog.collectAsStateWithLifecycle(emptyList())
         var confirmInstall by remember { mutableStateOf(false) }
@@ -187,9 +189,11 @@ class UbuntuActivity : SettingsDestinationActivity() {
          * install, and a `Repair` months later must not re-download a toolchain nobody re-asked for.
          */
         var extraIds by rememberSaveable { mutableStateOf(listOf<String>()) }
-        val selectedExtras = remember(extraIds) {
-            OptionalPackage.entries.filter { it.name in extraIds }
-        }
+        val selectedExtras =
+            remember(extraIds) {
+                OptionalPackage.entries.filter { it.name in extraIds }
+            }
+
         /**
          * The entries this device's architecture cannot install, by name — the dialog's half of the
          * same decision the pipeline makes for itself. An entry whose installer ships no build for
@@ -203,13 +207,15 @@ class UbuntuActivity : SettingsDestinationActivity() {
          * empty set is the honest answer — the Install button that opens the picker cannot exist
          * without a distro either.
          */
-        val unsupportedExtraIds = remember(ui.distro) {
-            ui.distro?.ubuntuArch?.let { arch ->
-                OptionalPackage.entries.filterNot { OptionalPackages.runsOn(it, arch) }
-                    .map { it.name }
-                    .toSet()
-            } ?: emptySet()
-        }
+        val unsupportedExtraIds =
+            remember(ui.distro) {
+                ui.distro?.ubuntuArch?.let { arch ->
+                    OptionalPackage.entries
+                        .filterNot { OptionalPackages.runsOn(it, arch) }
+                        .map { it.name }
+                        .toSet()
+                } ?: emptySet()
+            }
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val report = LocalSettingsReport.current
@@ -227,28 +233,30 @@ class UbuntuActivity : SettingsDestinationActivity() {
          * something else.
          */
         var pendingExport by remember { mutableStateOf<String?>(null) }
-        val logSavePicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("text/plain"),
-        ) { uri: Uri? ->
-            // Released first and unconditionally, including for a cancelled picker: the callback is
-            // the moment the other app's activity is gone, and leaving the flag held would suspend the
-            // auto-lock countdown for the rest of the process's life. Nothing here chains into a
-            // second picker, so this is the only release point.
-            vaultUnlockGate.release()
-            val text = pendingExport
-            pendingExport = null
-            when {
-                // Cancelled. Nothing was chosen, so there is nothing to report.
-                uri == null -> Unit
-                text == null -> report("Could not save the install log")
-                else -> scope.launch {
-                    // Off the main thread: this is a binder round trip into whichever provider owns the
-                    // URI, and it can be a cloud backend that syncs before the stream closes.
-                    writeDocument(context, uri, text.toByteArray(Charsets.UTF_8))
-                        .onFailure { reportWriteFailure(report, "the install log", it) }
+        val logSavePicker =
+            rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("text/plain"),
+            ) { uri: Uri? ->
+                // Released first and unconditionally, including for a cancelled picker: the callback is
+                // the moment the other app's activity is gone, and leaving the flag held would suspend the
+                // auto-lock countdown for the rest of the process's life. Nothing here chains into a
+                // second picker, so this is the only release point.
+                vaultUnlockGate.release()
+                val text = pendingExport
+                pendingExport = null
+                when {
+                    // Cancelled. Nothing was chosen, so there is nothing to report.
+                    uri == null -> Unit
+                    text == null -> report("Could not save the install log")
+                    else ->
+                        scope.launch {
+                            // Off the main thread: this is a binder round trip into whichever provider owns the
+                            // URI, and it can be a cloud backend that syncs before the stream closes.
+                            writeDocument(context, uri, text.toByteArray(Charsets.UTF_8))
+                                .onFailure { reportWriteFailure(report, "the install log", it) }
+                        }
                 }
             }
-        }
 
         /**
          * The chosen archive, held until the confirmation dialog's answer.
@@ -262,33 +270,35 @@ class UbuntuActivity : SettingsDestinationActivity() {
         var pendingImportName by remember { mutableStateOf<String?>(null) }
         var confirmImport by remember { mutableStateOf(false) }
 
-        val exportPicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/gzip"),
-        ) { uri: Uri? ->
-            // Released first and unconditionally, like the log's picker and for the same reason: this
-            // is the moment the other app's activity is gone, and a flag left held suspends the
-            // auto-lock countdown for the rest of the process's life.
-            vaultUnlockGate.release()
-            if (uri != null) linuxUserspace.exportRootfs(uri)
-        }
-        val importPicker = rememberLauncherForActivityResult(
-            // OpenDocument rather than GetContent: this is a file the user already has, and the
-            // difference that matters here is that OpenDocument's grant is what lets the read
-            // happen in the same session the archive was chosen in.
-            ActivityResultContracts.OpenDocument(),
-        ) { uri: Uri? ->
-            vaultUnlockGate.release()
-            if (uri != null) {
-                pendingImportUri = uri
-                // Best effort, and never guessed from the URI's last segment unless the provider
-                // gives nothing better: it is only ever shown back to the user as the name of the
-                // file they picked, and "document:1234" would be a worse answer than null.
-                pendingImportName = runCatching {
-                    DocumentFile.fromSingleUri(context, uri)?.name
-                }.getOrNull() ?: uri.lastPathSegment
-                confirmImport = true
+        val exportPicker =
+            rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/gzip"),
+            ) { uri: Uri? ->
+                // Released first and unconditionally, like the log's picker and for the same reason: this
+                // is the moment the other app's activity is gone, and a flag left held suspends the
+                // auto-lock countdown for the rest of the process's life.
+                vaultUnlockGate.release()
+                if (uri != null) linuxUserspace.exportRootfs(uri)
             }
-        }
+        val importPicker =
+            rememberLauncherForActivityResult(
+                // OpenDocument rather than GetContent: this is a file the user already has, and the
+                // difference that matters here is that OpenDocument's grant is what lets the read
+                // happen in the same session the archive was chosen in.
+                ActivityResultContracts.OpenDocument(),
+            ) { uri: Uri? ->
+                vaultUnlockGate.release()
+                if (uri != null) {
+                    pendingImportUri = uri
+                    // Best effort, and never guessed from the URI's last segment unless the provider
+                    // gives nothing better: it is only ever shown back to the user as the name of the
+                    // file they picked, and "document:1234" would be a worse answer than null.
+                    pendingImportName = runCatching {
+                        DocumentFile.fromSingleUri(context, uri)?.name
+                    }.getOrNull() ?: uri.lastPathSegment
+                    confirmImport = true
+                }
+            }
 
         // The card header is the window's title rather than the list's "Linux userspace" heading. That
         // heading labelled a section *of the Settings list*, and this window is not a section of
@@ -331,47 +341,51 @@ class UbuntuActivity : SettingsDestinationActivity() {
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(8.dp)),
                     )
                 }
-                is LinuxUserspaceState.NotInstalled -> SettingRow(
-                    Icons.Default.Computer,
-                    "Ubuntu on this device",
-                    if (ui.hasPendingWorkspaceBackup) {
-                        "Not installed · a saved workspace will be restored"
-                    } else {
-                        "Not installed · real bash, apt and git, on the device"
-                    },
-                ) {
-                    // The version chooser lives here and only here: once anything is on disk the
-                    // installed version is the only relevant one (Repair and Start operate on it), so
-                    // the dropdown disappears with the Not Installed state that gave it a choice to
-                    // make. Selecting swaps the graph, and the Install dialog below names whatever
-                    // the dropdown left selected.
-                    SettingDropdown(
-                        label = "Ubuntu version",
-                        options = ui.availableVersions,
-                        selected = distro,
-                        optionLabel = { it.displayName },
-                        onSelect = { linuxUserspace.selectDistro(it.id) },
-                    )
-                }
-                is LinuxUserspaceState.Stopped -> SettingRow(
-                    Icons.Default.Terminal,
-                    "Ubuntu on this device",
-                    "Installed and verified · stopped",
-                ) { }
+                is LinuxUserspaceState.NotInstalled ->
+                    SettingRow(
+                        Icons.Default.Computer,
+                        "Ubuntu on this device",
+                        if (ui.hasPendingWorkspaceBackup) {
+                            "Not installed · a saved workspace will be restored"
+                        } else {
+                            "Not installed · real bash, apt and git, on the device"
+                        },
+                    ) {
+                        // The version chooser lives here and only here: once anything is on disk the
+                        // installed version is the only relevant one (Repair and Start operate on it), so
+                        // the dropdown disappears with the Not Installed state that gave it a choice to
+                        // make. Selecting swaps the graph, and the Install dialog below names whatever
+                        // the dropdown left selected.
+                        SettingDropdown(
+                            label = "Ubuntu version",
+                            options = ui.availableVersions,
+                            selected = distro,
+                            optionLabel = { it.displayName },
+                            onSelect = { linuxUserspace.selectDistro(it.id) },
+                        )
+                    }
+                is LinuxUserspaceState.Stopped ->
+                    SettingRow(
+                        Icons.Default.Terminal,
+                        "Ubuntu on this device",
+                        "Installed and verified · stopped",
+                    ) { }
                 is LinuxUserspaceState.Starting -> SettingRow(Icons.Default.Terminal, "Ubuntu on this device", "Starting…") { }
-                is LinuxUserspaceState.Running -> SettingRow(
-                    Icons.Default.Terminal,
-                    "Ubuntu on this device",
-                    // Held open, not merely alive: closing the last terminal does not end this, and
-                    // the count is what tells the user there are shells to come back to.
-                    "Running · ${ui.sessionCount} terminal session(s) held open",
-                ) { }
+                is LinuxUserspaceState.Running ->
+                    SettingRow(
+                        Icons.Default.Terminal,
+                        "Ubuntu on this device",
+                        // Held open, not merely alive: closing the last terminal does not end this, and
+                        // the count is what tells the user there are shells to come back to.
+                        "Running · ${ui.sessionCount} terminal session(s) held open",
+                    ) { }
                 is LinuxUserspaceState.Stopping -> SettingRow(Icons.Default.Terminal, "Ubuntu on this device", "Stopping…") { }
-                is LinuxUserspaceState.NeedsRepair -> SettingRow(
-                    Icons.Default.Warning,
-                    "Ubuntu on this device",
-                    "Needs repair · ${state.detail}",
-                ) { }
+                is LinuxUserspaceState.NeedsRepair ->
+                    SettingRow(
+                        Icons.Default.Warning,
+                        "Ubuntu on this device",
+                        "Needs repair · ${state.detail}",
+                    ) { }
             }
 
             // The facts that only an installed userspace can answer, absent while it is not — a
@@ -406,11 +420,12 @@ class UbuntuActivity : SettingsDestinationActivity() {
             // could disagree, and the tap that got through the gap would be the one that matters.
             // (`state == null` is the compiler's proof that a graph exists, not a state a device
             // reaches — see the `when` above.)
-            val busy = state == null ||
-                ui.transfer !is RootfsTransferState.Idle ||
-                state is LinuxUserspaceState.Installing ||
-                state is LinuxUserspaceState.Starting ||
-                state is LinuxUserspaceState.Stopping
+            val busy =
+                state == null ||
+                    ui.transfer !is RootfsTransferState.Idle ||
+                    state is LinuxUserspaceState.Installing ||
+                    state is LinuxUserspaceState.Starting ||
+                    state is LinuxUserspaceState.Stopping
 
             // The action row. Kept out of SettingRow's width-capped trailing slot on purpose: Start,
             // Restart and Uninstall are three coequal controls and capping the third to fit a label
@@ -608,9 +623,10 @@ class UbuntuActivity : SettingsDestinationActivity() {
                         // paragraph plus one checkbox per entry with two lines each, which is taller
                         // than a phone's dialog can show. A body that grew past the screen would put
                         // the Install button out of reach of the very control that asked the question.
-                        modifier = Modifier
-                            .heightIn(max = rememberDialogBodyMaxHeight(0.60f))
-                            .verticalScroll(rememberScrollState()),
+                        modifier =
+                            Modifier
+                                .heightIn(max = rememberDialogBodyMaxHeight(0.60f))
+                                .verticalScroll(rememberScrollState()),
                     ) {
                         Text(
                             "A verified ${distroTitle(ui)} root filesystem (~30 MB) is downloaded and " +
@@ -635,7 +651,10 @@ class UbuntuActivity : SettingsDestinationActivity() {
                 },
                 confirmButton = {
                     TextButton(
-                        onClick = { confirmInstall = false; linuxUserspace.install(selectedExtras) },
+                        onClick = {
+                            confirmInstall = false
+                            linuxUserspace.install(selectedExtras)
+                        },
                     ) { Text("Install") }
                 },
                 dismissButton = { TextButton(onClick = { confirmInstall = false }) { Text("Cancel") } },
@@ -658,13 +677,19 @@ class UbuntuActivity : SettingsDestinationActivity() {
                 },
                 confirmButton = {
                     TextButton(
-                        onClick = { confirmUninstall = false; linuxUserspace.uninstall(keepWorkspace = false) },
+                        onClick = {
+                            confirmUninstall = false
+                            linuxUserspace.uninstall(keepWorkspace = false)
+                        },
                     ) { Text("Delete everything", color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
                     Row {
                         if (ui.workspaceFileCount > 0) {
-                            TextButton(onClick = { confirmUninstall = false; linuxUserspace.uninstall(keepWorkspace = true) }) {
+                            TextButton(onClick = {
+                                confirmUninstall = false
+                                linuxUserspace.uninstall(keepWorkspace = true)
+                            }) {
                                 Text("Keep workspace")
                             }
                         }
@@ -795,9 +820,10 @@ private fun InstallLogDialog(
     onClear: () -> Unit,
 ) {
     val ordered = remember(events) { events.asReversed() }
-    val clock = remember {
-        DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
-    }
+    val clock =
+        remember {
+            DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+        }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Install log") },
@@ -916,10 +942,11 @@ private fun PreinstallPicker(
                 // Named for what it does to the selection rather than for its own label: "All" and
                 // "None" are the same control in two states, and a screen reader hears a bare "All"
                 // with no way to tell which list it applies to.
-                modifier = Modifier.semantics {
-                    contentDescription =
-                        if (allSelected) "Clear the preinstall selection" else "Select every preinstall package"
-                },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            if (allSelected) "Clear the preinstall selection" else "Select every preinstall package"
+                    },
             ) { Text(if (allSelected) "None" else "All") }
         }
         Text(
@@ -936,18 +963,19 @@ private fun PreinstallPicker(
             val checked = supported && entry in selected
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = checked,
-                        enabled = supported,
-                        role = Role.Checkbox,
-                        onValueChange = { ticked ->
-                            onSelectionChange(
-                                if (ticked) selectedIds + entry.name else selectedIds - entry.name,
-                            )
-                        },
-                    ),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = checked,
+                            enabled = supported,
+                            role = Role.Checkbox,
+                            onValueChange = { ticked ->
+                                onSelectionChange(
+                                    if (ticked) selectedIds + entry.name else selectedIds - entry.name,
+                                )
+                            },
+                        ),
             ) {
                 Checkbox(checked = checked, onCheckedChange = null, enabled = supported)
                 Column(Modifier.padding(start = 8.dp)) {
@@ -984,39 +1012,44 @@ private fun PreinstallPicker(
 /**
  * The distro's display name, or a neutral title on a device where none is supported.
  */
-private fun distroTitle(ui: LinuxUserspaceUiState): String =
-    ui.distro?.displayName ?: "Ubuntu"
+private fun distroTitle(ui: LinuxUserspaceUiState): String = ui.distro?.displayName ?: "Ubuntu"
 
 /**
  * One install phase as the progress line renders it: the label, and the download's fraction when
  * the phase has one (only the download does — verification, extraction and setup are steps whose
  * length the pipeline honestly cannot know, and a fake progress bar is worse than none).
  */
+
 /**
  * One install phase as the progress line renders it. The percentage that goes beside it is the
  * state's, not the phase's: what a watcher wants is how far the install has got, and a phase-local
  * number would read 0% again at each new step.
  */
-private fun describeInstallStep(step: LinuxInstallStep): String = when (step) {
-    is LinuxInstallStep.Downloading ->
-        "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
-    LinuxInstallStep.Verifying -> "Verifying the download"
-    is LinuxInstallStep.Extracting -> "Extracting · ${step.entries} files"
-    is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)
-    LinuxInstallStep.VerifyingHealth -> "Running the health check"
-}
-
-private fun describeSetupStep(step: SetupStep, detail: String?): String {
-    val label = when (step) {
-        SetupStep.REGISTER_USER -> "Creating the ubuntu account"
-        SetupStep.PREPARE_WORKSPACE -> "Preparing the workspace"
-        SetupStep.CONFIGURE_DNS -> "Configuring DNS"
-        SetupStep.CONFIGURE_APT -> "Configuring package sources"
-        SetupStep.UPDATE_PACKAGES -> "Updating package lists"
-        SetupStep.INSTALL_BASE_PACKAGES -> "Installing the base packages"
-        SetupStep.INSTALL_EXTRA_PACKAGES -> "Installing the extra packages"
-        SetupStep.VERIFY -> "Verifying"
+private fun describeInstallStep(step: LinuxInstallStep): String =
+    when (step) {
+        is LinuxInstallStep.Downloading ->
+            "Downloading · ${formatTransferBytes(step.received)} of ${formatTransferBytes(step.total)}"
+        LinuxInstallStep.Verifying -> "Verifying the download"
+        is LinuxInstallStep.Extracting -> "Extracting · ${step.entries} files"
+        is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)
+        LinuxInstallStep.VerifyingHealth -> "Running the health check"
     }
+
+private fun describeSetupStep(
+    step: SetupStep,
+    detail: String?,
+): String {
+    val label =
+        when (step) {
+            SetupStep.REGISTER_USER -> "Creating the ubuntu account"
+            SetupStep.PREPARE_WORKSPACE -> "Preparing the workspace"
+            SetupStep.CONFIGURE_DNS -> "Configuring DNS"
+            SetupStep.CONFIGURE_APT -> "Configuring package sources"
+            SetupStep.UPDATE_PACKAGES -> "Updating package lists"
+            SetupStep.INSTALL_BASE_PACKAGES -> "Installing the base packages"
+            SetupStep.INSTALL_EXTRA_PACKAGES -> "Installing the extra packages"
+            SetupStep.VERIFY -> "Verifying"
+        }
     // The newest command output beside the step's label: a slow-but-alive `apt-get update` shows
     // "Get: 47 …" crawling instead of a label that could be wedged for all the user can tell.
     // Capped because an apt line is unbounded prose, and this sits in a settings row's subtitle.
@@ -1024,25 +1057,27 @@ private fun describeSetupStep(step: SetupStep, detail: String?): String {
 }
 
 /** The transfer progress row's heading: what is being moved, in the direction it is moving. */
-private fun transferTitle(state: RootfsTransferState): String = when (state) {
-    RootfsTransferState.Idle -> "Root filesystem"
-    is RootfsTransferState.Exporting -> "Exporting the root filesystem"
-    is RootfsTransferState.Importing -> "Importing the root filesystem"
-    RootfsTransferState.Swapping -> "Replacing the root filesystem"
-}
+private fun transferTitle(state: RootfsTransferState): String =
+    when (state) {
+        RootfsTransferState.Idle -> "Root filesystem"
+        is RootfsTransferState.Exporting -> "Exporting the root filesystem"
+        is RootfsTransferState.Importing -> "Importing the root filesystem"
+        RootfsTransferState.Swapping -> "Replacing the root filesystem"
+    }
 
 /**
  * The icon of the transfer row, pointing the way the bytes are going — the same two icons the rows
  * that start a transfer carry, so the progress line is recognisably the continuation of the tap.
  */
-private fun transferIcon(state: RootfsTransferState): ImageVector = when (state) {
-    RootfsTransferState.Idle,
-    is RootfsTransferState.Exporting,
-    -> Icons.Default.Upload
-    is RootfsTransferState.Importing,
-    RootfsTransferState.Swapping,
-    -> Icons.Default.ArrowDownward
-}
+private fun transferIcon(state: RootfsTransferState): ImageVector =
+    when (state) {
+        RootfsTransferState.Idle,
+        is RootfsTransferState.Exporting,
+        -> Icons.Default.Upload
+        is RootfsTransferState.Importing,
+        RootfsTransferState.Swapping,
+        -> Icons.Default.ArrowDownward
+    }
 
 /**
  * A transfer's progress as its row's subtitle: the phase, then the same percentage the bar under it
@@ -1053,23 +1088,30 @@ private fun transferIcon(state: RootfsTransferState): ImageVector = when (state)
  * percentage is absent while its total is unknown (a provider that will not report the size of the
  * document it handed over), and the bytes moved are what it has instead.
  */
-private fun describeTransfer(state: RootfsTransferState): String = when (state) {
-    RootfsTransferState.Idle -> ""
-    is RootfsTransferState.Exporting ->
-        "Written ${transferBytes(state.bytes, state.totalBytes)} · ${state.entries} entries" +
-            percentSuffix(state.percentDone)
-    is RootfsTransferState.Importing ->
-        "Read ${transferBytes(state.bytes, state.totalBytes)} · ${state.entries} entries" +
-            percentSuffix(state.percentDone)
-    // Deliberately no byte count and no percentage: this phase reads nothing and its length is a
-    // rename, so a number here would be a number about the phase before it.
-    RootfsTransferState.Swapping -> "Verified · swapping it in"
-}
+private fun describeTransfer(state: RootfsTransferState): String =
+    when (state) {
+        RootfsTransferState.Idle -> ""
+        is RootfsTransferState.Exporting ->
+            "Written ${transferBytes(state.bytes, state.totalBytes)} · ${state.entries} entries" +
+                percentSuffix(state.percentDone)
+        is RootfsTransferState.Importing ->
+            "Read ${transferBytes(state.bytes, state.totalBytes)} · ${state.entries} entries" +
+                percentSuffix(state.percentDone)
+        // Deliberately no byte count and no percentage: this phase reads nothing and its length is a
+        // rename, so a number here would be a number about the phase before it.
+        RootfsTransferState.Swapping -> "Verified · swapping it in"
+    }
 
 /** "12.4 MB of 118.0 MB", or only the first when what it is a fraction of is unknown. */
-private fun transferBytes(bytes: Long, totalBytes: Long): String =
-    if (totalBytes > 0) "${formatTransferBytes(bytes)} of ${formatTransferBytes(totalBytes)}"
-    else formatTransferBytes(bytes)
+private fun transferBytes(
+    bytes: Long,
+    totalBytes: Long,
+): String =
+    if (totalBytes > 0) {
+        "${formatTransferBytes(bytes)} of ${formatTransferBytes(totalBytes)}"
+    } else {
+        formatTransferBytes(bytes)
+    }
 
 private fun percentSuffix(percent: Int?): String = if (percent == null) "" else " · $percent%"
 
@@ -1106,11 +1148,16 @@ private fun formatTransferBytes(bytes: Long): String {
  * Opened with `"w"`: the picker has already asked the user about replacing an existing document, so
  * this is the write that answer referred to.
  */
-private suspend fun writeDocument(context: Context, uri: Uri, bytes: ByteArray): Result<Unit> =
+private suspend fun writeDocument(
+    context: Context,
+    uri: Uri,
+    bytes: ByteArray,
+): Result<Unit> =
     withContext(Dispatchers.IO) {
         runCatching {
-            val stream = context.contentResolver.openOutputStream(uri, "w")
-                ?: throw IOException("The selected location could not be opened for writing")
+            val stream =
+                context.contentResolver.openOutputStream(uri, "w")
+                    ?: throw IOException("The selected location could not be opened for writing")
             stream.use { it.write(bytes) }
         }
     }

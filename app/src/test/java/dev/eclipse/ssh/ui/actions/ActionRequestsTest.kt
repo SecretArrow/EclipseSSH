@@ -16,14 +16,14 @@ import org.junit.Test
  * a UI test: the UI can only ever show the first delivery.
  */
 class ActionRequestsTest {
-
-    private fun tab(id: String = "tab-1") = SessionTab(
-        id = id,
-        hostId = "host-1",
-        title = "Edge",
-        state = SessionConnectionState.ERROR,
-        lastError = "Connection refused",
-    )
+    private fun tab(id: String = "tab-1") =
+        SessionTab(
+            id = id,
+            hostId = "host-1",
+            title = "Edge",
+            state = SessionConnectionState.ERROR,
+            lastError = "Connection refused",
+        )
 
     /** A token names what was stored under it, and only that. */
     @Test

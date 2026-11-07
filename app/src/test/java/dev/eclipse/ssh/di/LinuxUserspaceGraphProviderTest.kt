@@ -11,27 +11,28 @@ import org.junit.Test
  * which is exactly the bug this order exists to prevent.
  */
 class LinuxUserspaceGraphProviderTest {
-
     private val versions = LinuxDistroCatalog.versionsFor(listOf("arm64-v8a", "armeabi-v7a"))
 
     @Test
     fun `the installed distro wins over the pick and the default`() {
-        val resolved = LinuxUserspaceGraphProvider.resolveDistro(
-            versions = versions,
-            installedDistroId = "ubuntu-20.04",
-            selectedDistroId = "ubuntu-26.04",
-        )
+        val resolved =
+            LinuxUserspaceGraphProvider.resolveDistro(
+                versions = versions,
+                installedDistroId = "ubuntu-20.04",
+                selectedDistroId = "ubuntu-26.04",
+            )
 
         assertThat(resolved!!.id).isEqualTo("ubuntu-20.04")
     }
 
     @Test
     fun `the user's pick wins over the default`() {
-        val resolved = LinuxUserspaceGraphProvider.resolveDistro(
-            versions = versions,
-            installedDistroId = null,
-            selectedDistroId = "ubuntu-24.04",
-        )
+        val resolved =
+            LinuxUserspaceGraphProvider.resolveDistro(
+                versions = versions,
+                installedDistroId = null,
+                selectedDistroId = "ubuntu-24.04",
+            )
 
         assertThat(resolved!!.id).isEqualTo("ubuntu-24.04")
     }
@@ -48,11 +49,12 @@ class LinuxUserspaceGraphProviderTest {
         // "Installed" on an id the catalogue no longer carries (or never had for this arch) must
         // not fail the graph — the next rung answers, and the manager's state check remains the
         // authority on whether anything is actually installed.
-        val staleInstalled = LinuxUserspaceGraphProvider.resolveDistro(
-            versions = versions,
-            installedDistroId = "ubuntu-18.04",
-            selectedDistroId = "ubuntu-26.04",
-        )
+        val staleInstalled =
+            LinuxUserspaceGraphProvider.resolveDistro(
+                versions = versions,
+                installedDistroId = "ubuntu-18.04",
+                selectedDistroId = "ubuntu-26.04",
+            )
         assertThat(staleInstalled!!.id).isEqualTo("ubuntu-26.04")
 
         val stalePick = LinuxUserspaceGraphProvider.resolveDistro(versions, null, "ubuntu-18.04")

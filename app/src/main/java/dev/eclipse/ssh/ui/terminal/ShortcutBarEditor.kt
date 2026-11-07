@@ -1,6 +1,7 @@
 package dev.eclipse.ssh.ui.terminal
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -78,8 +78,9 @@ import androidx.compose.ui.unit.dp
  * [rememberShortcutBarEditorState], which is where the caller also states what the copy is keyed on.
  */
 @Stable
-class ShortcutBarEditorState(initial: KeyBarPrefs) {
-
+class ShortcutBarEditorState(
+    initial: KeyBarPrefs,
+) {
     /**
      * The configuration the editor opened on, normalised the same way the working copy is.
      *
@@ -151,14 +152,17 @@ class ShortcutBarEditorState(initial: KeyBarPrefs) {
      * they see when the dialog closes.
      */
     fun saveCap(saved: KeyBarCap) {
-        prefs = prefs.copy(caps =
-            if (prefs.caps.any { it.id == saved.id }) {
-                prefs.caps.map { if (it.id == saved.id) saved else it }
-            } else {
-                val lastRow = prefs.caps.maxOfOrNull { it.row } ?: 0
-                val lastOrder = prefs.caps.filter { it.row == lastRow }.maxOfOrNull { it.order } ?: -1
-                prefs.caps + saved.copy(row = lastRow, order = lastOrder + 1)
-            })
+        prefs =
+            prefs.copy(
+                caps =
+                    if (prefs.caps.any { it.id == saved.id }) {
+                        prefs.caps.map { if (it.id == saved.id) saved else it }
+                    } else {
+                        val lastRow = prefs.caps.maxOfOrNull { it.row } ?: 0
+                        val lastOrder = prefs.caps.filter { it.row == lastRow }.maxOfOrNull { it.order } ?: -1
+                        prefs.caps + saved.copy(row = lastRow, order = lastOrder + 1)
+                    },
+            )
         editing = null
     }
 }
@@ -258,7 +262,10 @@ fun ShortcutBarEditorDialogs(state: ShortcutBarEditorState) {
 
 /** Layout mode, custom row count, and cap size. */
 @Composable
-private fun LayoutSection(prefs: KeyBarPrefs, onChange: (KeyBarPrefs) -> Unit) {
+private fun LayoutSection(
+    prefs: KeyBarPrefs,
+    onChange: (KeyBarPrefs) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Layout", style = MaterialTheme.typography.titleSmall)
         Row(
@@ -318,14 +325,21 @@ private fun LayoutSection(prefs: KeyBarPrefs, onChange: (KeyBarPrefs) -> Unit) {
                     onClick = { sizeMenuOpen = true },
                     modifier = Modifier.semantics { contentDescription = "Cap size" },
                 ) {
-                    Text(prefs.size.name.lowercase().replaceFirstChar(Char::uppercase))
+                    Text(
+                        prefs.size.name
+                            .lowercase()
+                            .replaceFirstChar(Char::uppercase),
+                    )
                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
                 }
                 DropdownMenu(expanded = sizeMenuOpen, onDismissRequest = { sizeMenuOpen = false }) {
                     KeyBarSize.entries.forEach { size ->
                         DropdownMenuItem(
                             text = { Text(size.name.lowercase().replaceFirstChar(Char::uppercase)) },
-                            onClick = { onChange(prefs.copy(size = size)); sizeMenuOpen = false },
+                            onClick = {
+                                onChange(prefs.copy(size = size))
+                                sizeMenuOpen = false
+                            },
                         )
                     }
                 }
@@ -370,6 +384,7 @@ private fun CapsSection(
         PresetSection(onPick = onPreset)
     }
 }
+
 @Composable
 private fun CapRow(
     cap: KeyBarCap,
@@ -460,7 +475,11 @@ private fun OrderArrows(
 }
 
 /** Swaps [cap] with its neighbour in reading order, or no-op at the edge. */
-internal fun move(prefs: KeyBarPrefs, cap: KeyBarCap, delta: Int): KeyBarPrefs {
+internal fun move(
+    prefs: KeyBarPrefs,
+    cap: KeyBarCap,
+    delta: Int,
+): KeyBarPrefs {
     val sorted = prefs.caps.sortedWith(compareBy({ it.row }, { it.order }))
     val index = sorted.indexOfFirst { it.id == cap.id }
     if (index < 0) return prefs
@@ -478,7 +497,11 @@ internal fun move(prefs: KeyBarPrefs, cap: KeyBarCap, delta: Int): KeyBarPrefs {
  * Moves [cap] to the end of the adjacent row (CUSTOM mode's cross-row arrow). Moving up from row 0
  * or down from the last row is a no-op, matching what the buttons can visibly do.
  */
-internal fun moveRow(prefs: KeyBarPrefs, cap: KeyBarCap, delta: Int): KeyBarPrefs {
+internal fun moveRow(
+    prefs: KeyBarPrefs,
+    cap: KeyBarCap,
+    delta: Int,
+): KeyBarPrefs {
     val target = cap.row + delta
     if (target < 0 || target >= prefs.rows.coerceIn(1, KeyBarPrefsCodec.MAX_ROWS)) return prefs
     val without = prefs.caps.filterNot { it.id == cap.id }
@@ -491,7 +514,12 @@ private fun renumber(caps: List<KeyBarCap>): List<KeyBarCap> {
     var row = -1
     var order = -1
     return caps.map { cap ->
-        if (cap.row != row) { row = cap.row; order = 0 } else order++
+        if (cap.row != row) {
+            row = cap.row
+            order = 0
+        } else {
+            order++
+        }
         cap.copy(row = row, order = order)
     }
 }
@@ -520,7 +548,10 @@ private fun PresetSection(onPick: (() -> KeyBarPrefs) -> Unit) {
 }
 
 @Composable
-private fun PresetChip(label: String, onClick: () -> Unit) {
+private fun PresetChip(
+    label: String,
+    onClick: () -> Unit,
+) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,

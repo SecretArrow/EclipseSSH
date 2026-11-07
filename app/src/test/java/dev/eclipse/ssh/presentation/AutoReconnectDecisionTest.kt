@@ -3,17 +3,17 @@ package dev.eclipse.ssh.presentation
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.background.MAX_BACKOFF_MS
 import dev.eclipse.ssh.background.ReconnectPolicy
-import dev.eclipse.ssh.background.reconnectPolicyOf
 import dev.eclipse.ssh.background.backoffWindowMs
+import dev.eclipse.ssh.background.reconnectPolicyOf
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.model.INHERIT_RECONNECT_BACKOFF
 import dev.eclipse.ssh.data.model.MAX_RECONNECT_ATTEMPTS_RANGE
 import dev.eclipse.ssh.data.model.RECONNECT_BACKOFF_RANGE
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.ssh.SessionEnd
-import java.io.IOException
 import org.apache.sshd.common.SshConstants
 import org.junit.Test
+import java.io.IOException
 
 /**
  * The rule that decides whether a session comes back by itself, and the shape of the ladder it
@@ -24,7 +24,6 @@ import org.junit.Test
  * pure functions and are tested here directly.
  */
 class AutoReconnectDecisionTest {
-
     @Test
     fun `a transport that failed is reconnected`() {
         // The heartbeat giving up, a socket resetting, a packet that would not parse: the session was
@@ -53,16 +52,18 @@ class AutoReconnectDecisionTest {
 
     @Test
     fun `a server that hung up is reconnected and so is a protocol failure`() {
-        val byServer = SessionEnd.Disconnected(
-            reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION,
-            message = "Timeout, your session not responding.",
-            byPeer = true,
-        )
-        val byUs = SessionEnd.Disconnected(
-            reason = SshConstants.SSH2_DISCONNECT_MAC_ERROR,
-            message = null,
-            byPeer = false,
-        )
+        val byServer =
+            SessionEnd.Disconnected(
+                reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION,
+                message = "Timeout, your session not responding.",
+                byPeer = true,
+            )
+        val byUs =
+            SessionEnd.Disconnected(
+                reason = SshConstants.SSH2_DISCONNECT_MAC_ERROR,
+                message = null,
+                byPeer = false,
+            )
         assertThat(shouldAutoReconnect(byServer, tabIsOpen = true, endedDeliberately = false)).isTrue()
         assertThat(shouldAutoReconnect(byUs, tabIsOpen = true, endedDeliberately = false)).isTrue()
     }
@@ -123,17 +124,18 @@ class AutoReconnectDecisionTest {
     }
 
     /** Every way a session can end, so the two blanket rules above are tested against all of them. */
-    private fun endings(): List<SessionEnd> = listOf(
-        SessionEnd.ShellEnded(status = 0, signal = null),
-        SessionEnd.ShellEnded(status = 1, signal = null),
-        SessionEnd.ShellEnded(status = null, signal = "TERM"),
-        SessionEnd.ShellEnded(status = null, signal = null),
-        SessionEnd.Disconnected(reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION, message = "bye", byPeer = true),
-        SessionEnd.TransportFailed(IOException("Broken pipe")),
-        SessionEnd.NetworkLost,
-        SessionEnd.TransportClosed,
-        SessionEnd.Released,
-    )
+    private fun endings(): List<SessionEnd> =
+        listOf(
+            SessionEnd.ShellEnded(status = 0, signal = null),
+            SessionEnd.ShellEnded(status = 1, signal = null),
+            SessionEnd.ShellEnded(status = null, signal = "TERM"),
+            SessionEnd.ShellEnded(status = null, signal = null),
+            SessionEnd.Disconnected(reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION, message = "bye", byPeer = true),
+            SessionEnd.TransportFailed(IOException("Broken pipe")),
+            SessionEnd.NetworkLost,
+            SessionEnd.TransportClosed,
+            SessionEnd.Released,
+        )
 
     @Test
     fun `a connection closed before it said anything is not an outage to wait out`() {
@@ -219,11 +221,12 @@ class AutoReconnectDecisionTest {
         // accepts the login and then sends SSH_MSG_DISCONNECT did not drop - it refused. `endedBeforeItRan`
         // cannot see this because a disconnect is not a zero-output refusal, so this predicate catches
         // it, and the tab must land in ERROR with the server's words rather than looping.
-        val byServer = SessionEnd.Disconnected(
-            reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION,
-            message = "your session is not responding",
-            byPeer = true,
-        )
+        val byServer =
+            SessionEnd.Disconnected(
+                reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION,
+                message = "your session is not responding",
+                byPeer = true,
+            )
         assertThat(serverRefusedYoungSession(byServer, upForMs = 900)).isTrue()
         // The combined decision the collector actually uses refuses it too.
         assertThat(endedBeforeItRan(byServer, upForMs = 900, idleForMs = 120) || serverRefusedYoungSession(byServer, upForMs = 900)).isTrue()
@@ -319,13 +322,14 @@ class AutoReconnectDecisionTest {
      */
     @Test
     fun `a host with auto reconnect off is never reconnected`() {
-        val faults = listOf(
-            SessionEnd.TransportFailed(IOException("reset")),
-            SessionEnd.Disconnected(SshConstants.SSH2_DISCONNECT_BY_APPLICATION, "bye", byPeer = true),
-            SessionEnd.NetworkLost,
-            SessionEnd.TransportClosed,
-            SessionEnd.Released,
-        )
+        val faults =
+            listOf(
+                SessionEnd.TransportFailed(IOException("reset")),
+                SessionEnd.Disconnected(SshConstants.SSH2_DISCONNECT_BY_APPLICATION, "bye", byPeer = true),
+                SessionEnd.NetworkLost,
+                SessionEnd.TransportClosed,
+                SessionEnd.Released,
+            )
 
         for (end in faults) {
             assertThat(
@@ -341,11 +345,12 @@ class AutoReconnectDecisionTest {
 
     @Test
     fun `a host policy takes its attempt ceiling and delay from the profile`() {
-        val profile = hostProfile().copy(
-            autoReconnect = true,
-            maxReconnectAttempts = 12,
-            reconnectBackoffSeconds = 9,
-        )
+        val profile =
+            hostProfile().copy(
+                autoReconnect = true,
+                maxReconnectAttempts = 12,
+                reconnectBackoffSeconds = 9,
+            )
 
         val policy = reconnectPolicyOf(profile)
 
@@ -373,9 +378,10 @@ class AutoReconnectDecisionTest {
     /** A profile carrying an out-of-range number - an old backup, a hand-written import - is clamped. */
     @Test
     fun `a policy clamps values a profile should not have held`() {
-        val policy = reconnectPolicyOf(
-            hostProfile().copy(maxReconnectAttempts = 9_999, reconnectBackoffSeconds = 9_999),
-        )
+        val policy =
+            reconnectPolicyOf(
+                hostProfile().copy(maxReconnectAttempts = 9_999, reconnectBackoffSeconds = 9_999),
+            )
 
         assertThat(policy.maxAttempts).isEqualTo(MAX_RECONNECT_ATTEMPTS_RANGE.last)
         assertThat(policy.backoffSeconds(globalSeconds = 5)).isEqualTo(RECONNECT_BACKOFF_RANGE.last)
@@ -426,10 +432,11 @@ class AutoReconnectDecisionTest {
             .isNotEqualTo(ReconnectAction.GIVE_UP)
     }
 
-    private fun hostProfile() = HostProfile(
-        id = "policy-host",
-        name = "Policy",
-        host = "policy.example.com",
-        username = "root",
-    )
+    private fun hostProfile() =
+        HostProfile(
+            id = "policy-host",
+            name = "Policy",
+            host = "policy.example.com",
+            username = "root",
+        )
 }

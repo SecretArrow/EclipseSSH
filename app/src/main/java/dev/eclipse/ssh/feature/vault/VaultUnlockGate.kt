@@ -32,25 +32,26 @@ import javax.inject.Singleton
  * which makes the worst case a single mistimed lock rather than a disabled one.
  */
 @Singleton
-class VaultUnlockGate @Inject constructor() {
+class VaultUnlockGate
+    @Inject
+    constructor() {
+        /** True while a picker opened from any window of this app is on screen. */
+        @Volatile
+        var pickerActive: Boolean = false
 
-    /** True while a picker opened from any window of this app is on screen. */
-    @Volatile
-    var pickerActive: Boolean = false
+        /** A picker is being launched, or a chain of them is still running. */
+        fun hold() {
+            pickerActive = true
+        }
 
-    /** A picker is being launched, or a chain of them is still running. */
-    fun hold() {
-        pickerActive = true
+        /**
+         * The picker came back, or its chain finished.
+         *
+         * Called from the launcher callback rather than from `onResume`: the callback is the moment the
+         * result exists, and the write it triggers may itself open the next picker in a chain, which
+         * holds the flag again before this release can be observed.
+         */
+        fun release() {
+            pickerActive = false
+        }
     }
-
-    /**
-     * The picker came back, or its chain finished.
-     *
-     * Called from the launcher callback rather than from `onResume`: the callback is the moment the
-     * result exists, and the write it triggers may itself open the next picker in a chain, which
-     * holds the flag again before this release can be observed.
-     */
-    fun release() {
-        pickerActive = false
-    }
-}

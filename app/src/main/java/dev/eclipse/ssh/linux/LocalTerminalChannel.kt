@@ -4,14 +4,14 @@ import dev.eclipse.ssh.ssh.SessionEnd
 import dev.eclipse.ssh.ssh.TerminalChannel
 import dev.eclipse.ssh.terminal.TERMINAL_COLUMN_RANGE
 import dev.eclipse.ssh.terminal.TERMINAL_ROW_RANGE
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The interactive-session half of the userspace: a [TerminalChannel] whose far side is a locally
@@ -44,7 +44,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 class LocalTerminalChannel(
     private val process: PtyProcess,
 ) : TerminalChannel {
-
     private val outputEvents = MutableSharedFlow<ByteArray>(replay = REPLAY_CHUNKS, extraBufferCapacity = BUFFERED_CHUNKS)
     override val output: SharedFlow<ByteArray> = outputEvents
 
@@ -87,9 +86,11 @@ class LocalTerminalChannel(
     private val closed = CompletableDeferred<SessionEnd>()
 
     private val writes = LinkedBlockingQueue<ByteArray>()
+
     @Volatile private var writesClosed = false
 
     @Volatile private var columns = DEFAULT_COLUMNS
+
     @Volatile private var rows = DEFAULT_ROWS
 
     private val reader = Thread(::pumpOutput, "linux-terminal-reader").apply { isDaemon = true }
@@ -110,8 +111,7 @@ class LocalTerminalChannel(
 
     override val openedAtMs: Long get() = openedAt
 
-    override fun idleForMs(nowMs: Long): Long? =
-        lastActivityAtMs.takeIf { it > 0L }?.let { (nowMs - it).coerceAtLeast(0L) }
+    override fun idleForMs(nowMs: Long): Long? = lastActivityAtMs.takeIf { it > 0L }?.let { (nowMs - it).coerceAtLeast(0L) }
 
     override val ptyColumns: Int get() = columns
     override val ptyRows: Int get() = rows
@@ -140,7 +140,10 @@ class LocalTerminalChannel(
         writeBytes(value.toByteArray(Charsets.UTF_8))
     }
 
-    override fun resize(newColumns: Int, newRows: Int) {
+    override fun resize(
+        newColumns: Int,
+        newRows: Int,
+    ) {
         // A released channel has no pty to resize: the master fd is closed and possibly reused,
         // and the native bridge would refuse the ioctl anyway.
         if (released.get()) return
@@ -240,23 +243,25 @@ class LocalTerminalChannel(
                 finish(SessionEnd.Released)
                 return
             }
-            val status = if (ptyGivenUp.compareAndSet(false, true)) {
-                runCatching { process.awaitExit() }.getOrDefault(-1)
-            } else {
-                // A release closed the pty out from under this loop — which is what woke it. There
-                // is nothing here to reap, and an awaitExit on a freed handle would reap whatever
-                // the descriptor number names now.
-                -1
-            }
+            val status =
+                if (ptyGivenUp.compareAndSet(false, true)) {
+                    runCatching { process.awaitExit() }.getOrDefault(-1)
+                } else {
+                    // A release closed the pty out from under this loop — which is what woke it. There
+                    // is nothing here to reap, and an awaitExit on a freed handle would reap whatever
+                    // the descriptor number names now.
+                    -1
+                }
             finish(
                 when {
-                    status in 129..255 -> SessionEnd.ShellEnded(
-                        status = null,
-                        // 128+N is the pty bridge's convention for "killed by signal N"; a real
-                        // name makes the tab's error line read like every other line that names a
-                        // signal.
-                        signal = signalName(status - 128),
-                    )
+                    status in 129..255 ->
+                        SessionEnd.ShellEnded(
+                            status = null,
+                            // 128+N is the pty bridge's convention for "killed by signal N"; a real
+                            // name makes the tab's error line read like every other line that names a
+                            // signal.
+                            signal = signalName(status - 128),
+                        )
                     else -> SessionEnd.ShellEnded(status = status, signal = null)
                 },
             )
@@ -297,12 +302,13 @@ class LocalTerminalChannel(
     private fun publish(chunk: ByteArray) {
         lastActivityAt.set(System.currentTimeMillis())
         if (outputEvents.tryEmit(chunk)) return
-        val delivered = runBlocking {
-            withTimeoutOrNull(PUBLISH_WAIT_MS) {
-                outputEvents.emit(chunk)
-                true
-            }
-        } ?: false
+        val delivered =
+            runBlocking {
+                withTimeoutOrNull(PUBLISH_WAIT_MS) {
+                    outputEvents.emit(chunk)
+                    true
+                }
+            } ?: false
         if (!delivered) droppedChunkCount.incrementAndGet()
     }
 
@@ -312,17 +318,18 @@ class LocalTerminalChannel(
          * `SIG<n>` — because a raw number in a sentence the user reads is a question, not an
          * answer.
          */
-        private fun signalName(number: Int): String = when (number) {
-            1 -> "HUP"
-            2 -> "INT"
-            3 -> "QUIT"
-            6 -> "ABRT"
-            9 -> "KILL"
-            11 -> "SEGV"
-            13 -> "PIPE"
-            15 -> "TERM"
-            else -> number.toString()
-        }
+        private fun signalName(number: Int): String =
+            when (number) {
+                1 -> "HUP"
+                2 -> "INT"
+                3 -> "QUIT"
+                6 -> "ABRT"
+                9 -> "KILL"
+                11 -> "SEGV"
+                13 -> "PIPE"
+                15 -> "TERM"
+                else -> number.toString()
+            }
 
         private const val DEFAULT_COLUMNS = 120
         private const val DEFAULT_ROWS = 40

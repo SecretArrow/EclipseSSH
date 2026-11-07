@@ -24,52 +24,58 @@ private val EclipseMuted = Color(0xFF9BA7BC)
 private val EclipseGreen = Color(0xFF6DE0B0)
 private val EclipseOrange = Color(0xFFFFB86B)
 
-private val DarkColors = darkColorScheme(
-    primary = EclipseBlue,
-    onPrimary = EclipseInk,
-    primaryContainer = Color(0xFF283B70),
-    onPrimaryContainer = EclipseBlueBright,
-    secondary = Color(0xFFB9C6E7),
-    background = EclipseInk,
-    onBackground = EclipseText,
-    surface = EclipseSurface,
-    onSurface = EclipseText,
-    surfaceVariant = EclipseSurfaceHigh,
-    onSurfaceVariant = EclipseMuted,
-    outline = Color(0xFF34405A),
-    tertiary = EclipseGreen,
-    error = Color(0xFFFF8E9E),
-)
-
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF3559B7),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCE2FF),
-    onPrimaryContainer = Color(0xFF07164A),
-    secondary = Color(0xFF53617D),
-    background = Color(0xFFF7F8FC),
-    onBackground = Color(0xFF171A22),
-    surface = Color.White,
-    onSurface = Color(0xFF171A22),
-    surfaceVariant = Color(0xFFECEFF7),
-    onSurfaceVariant = Color(0xFF596174),
-    outline = Color(0xFFC5CAD8),
-    tertiary = Color(0xFF087A52),
-    error = Color(0xFFB3263E),
-)
-
-private val EclipseTypography = Typography().run {
-    copy(
-        headlineLarge = headlineLarge.copy(fontWeight = FontWeight.Bold),
-        headlineMedium = headlineMedium.copy(fontWeight = FontWeight.Bold),
-        titleLarge = titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        labelLarge = labelLarge.copy(fontWeight = FontWeight.SemiBold),
+private val DarkColors =
+    darkColorScheme(
+        primary = EclipseBlue,
+        onPrimary = EclipseInk,
+        primaryContainer = Color(0xFF283B70),
+        onPrimaryContainer = EclipseBlueBright,
+        secondary = Color(0xFFB9C6E7),
+        background = EclipseInk,
+        onBackground = EclipseText,
+        surface = EclipseSurface,
+        onSurface = EclipseText,
+        surfaceVariant = EclipseSurfaceHigh,
+        onSurfaceVariant = EclipseMuted,
+        outline = Color(0xFF34405A),
+        tertiary = EclipseGreen,
+        error = Color(0xFFFF8E9E),
     )
-}
+
+private val LightColors =
+    lightColorScheme(
+        primary = Color(0xFF3559B7),
+        onPrimary = Color.White,
+        primaryContainer = Color(0xFFDCE2FF),
+        onPrimaryContainer = Color(0xFF07164A),
+        secondary = Color(0xFF53617D),
+        background = Color(0xFFF7F8FC),
+        onBackground = Color(0xFF171A22),
+        surface = Color.White,
+        onSurface = Color(0xFF171A22),
+        surfaceVariant = Color(0xFFECEFF7),
+        onSurfaceVariant = Color(0xFF596174),
+        outline = Color(0xFFC5CAD8),
+        tertiary = Color(0xFF087A52),
+        error = Color(0xFFB3263E),
+    )
+
+private val EclipseTypography =
+    Typography().run {
+        copy(
+            headlineLarge = headlineLarge.copy(fontWeight = FontWeight.Bold),
+            headlineMedium = headlineMedium.copy(fontWeight = FontWeight.Bold),
+            titleLarge = titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            titleMedium = titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            labelLarge = labelLarge.copy(fontWeight = FontWeight.SemiBold),
+        )
+    }
 
 @Composable
-fun EclipseTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun EclipseTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
     val view = LocalView.current
     // Edge-to-edge draws the status and navigation bars over a transparent background, so their
     // icons have to contrast with whatever this app painted behind them. That background follows
@@ -91,10 +97,12 @@ fun EclipseTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composabl
     // decoration, and every screen behind them stays perfectly usable without them.
     SideEffect {
         val window = (view.context as? android.app.Activity)?.window
-        if (window != null) runCatching {
-            val controller = WindowCompat.getInsetsController(window, view)
-            controller.isAppearanceLightStatusBars = !darkTheme
-            controller.isAppearanceLightNavigationBars = !darkTheme
+        if (window != null) {
+            runCatching {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
     MaterialTheme(

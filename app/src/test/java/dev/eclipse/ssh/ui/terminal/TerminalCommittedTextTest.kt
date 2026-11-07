@@ -14,8 +14,13 @@ import org.junit.Test
  */
 class TerminalCommittedTextTest {
     private sealed interface Sent {
-        data class Text(val value: String) : Sent
-        data class Key(val key: TerminalKey) : Sent
+        data class Text(
+            val value: String,
+        ) : Sent
+
+        data class Key(
+            val key: TerminalKey,
+        ) : Sent
     }
 
     private val sent = mutableListOf<Sent>()
@@ -72,8 +77,7 @@ class TerminalCommittedTextTest {
                 Sent.Text("ls -la"),
                 Sent.Key(TerminalKey.ENTER),
                 Sent.Text("pwd"),
-            )
-            .inOrder()
+            ).inOrder()
     }
 
     @Test
@@ -90,8 +94,7 @@ class TerminalCommittedTextTest {
                 Sent.Text("  indented"),
                 Sent.Key(TerminalKey.ENTER),
                 Sent.Text("  again  "),
-            )
-            .inOrder()
+            ).inOrder()
     }
 
     @Test

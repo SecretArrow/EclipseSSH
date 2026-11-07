@@ -33,5 +33,4 @@ internal const val MAX_LISTED_ENTRIES = 500
  *
  * [List.sortedBy] is stable, so the queue's own order survives inside each of the two groups.
  */
-internal fun transfersForDisplay(transfers: List<TransferItem>): List<TransferItem> =
-    transfers.sortedBy { if (it.status == TransferStatus.COMPLETE) 1 else 0 }.take(MAX_LISTED_ENTRIES)
+internal fun transfersForDisplay(transfers: List<TransferItem>): List<TransferItem> = transfers.sortedBy { if (it.status == TransferStatus.COMPLETE) 1 else 0 }.take(MAX_LISTED_ENTRIES)

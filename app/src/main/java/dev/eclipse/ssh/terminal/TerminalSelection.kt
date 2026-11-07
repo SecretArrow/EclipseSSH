@@ -38,7 +38,10 @@ data class TerminalSelection(
     val isSingleCell: Boolean get() = startLine == endLine && startColumn == endColumn
 
     /** Whether ([line], [column]) is inside the selection, for drawing the highlight. */
-    fun contains(line: Int, column: Int): Boolean {
+    fun contains(
+        line: Int,
+        column: Int,
+    ): Boolean {
         if (line < startLine || line > endLine) return false
         if (line == startLine && column < startColumn) return false
         if (line == endLine && column > endColumn) return false
@@ -46,21 +49,29 @@ data class TerminalSelection(
     }
 
     /** The first selected column on [line], or -1 if [line] has none. Lets a renderer skip whole rows. */
-    fun firstColumnOn(line: Int): Int = when {
-        line < startLine || line > endLine -> -1
-        line == startLine -> startColumn
-        else -> 0
-    }
+    fun firstColumnOn(line: Int): Int =
+        when {
+            line < startLine || line > endLine -> -1
+            line == startLine -> startColumn
+            else -> 0
+        }
 
     /** The last selected column on [line] given its width, or -1 if [line] has none. */
-    fun lastColumnOn(line: Int, columns: Int): Int = when {
-        line < startLine || line > endLine -> -1
-        line == endLine -> minOf(endColumn, columns - 1)
-        else -> columns - 1
-    }
+    fun lastColumnOn(
+        line: Int,
+        columns: Int,
+    ): Int =
+        when {
+            line < startLine || line > endLine -> -1
+            line == endLine -> minOf(endColumn, columns - 1)
+            else -> columns - 1
+        }
 
     /** The same selection with its focus moved, which is what a drag does. */
-    fun movedTo(line: Int, column: Int): TerminalSelection = copy(focusLine = line, focusColumn = column)
+    fun movedTo(
+        line: Int,
+        column: Int,
+    ): TerminalSelection = copy(focusLine = line, focusColumn = column)
 
     /**
      * The half-open range [AnsiTerminalBuffer.textIn] expects: the end column becomes exclusive.
@@ -70,11 +81,19 @@ data class TerminalSelection(
      */
     fun toTextRange(): TextRange = TextRange(startLine, startColumn, endLine, endColumn + 1)
 
-    data class TextRange(val fromLine: Int, val fromColumn: Int, val toLine: Int, val toColumn: Int)
+    data class TextRange(
+        val fromLine: Int,
+        val fromColumn: Int,
+        val toLine: Int,
+        val toColumn: Int,
+    )
 
     companion object {
         /** A selection of exactly the cell at ([line], [column]) - where every drag begins. */
-        fun at(line: Int, column: Int): TerminalSelection = TerminalSelection(line, column, line, column)
+        fun at(
+            line: Int,
+            column: Int,
+        ): TerminalSelection = TerminalSelection(line, column, line, column)
 
         /**
          * The selection covering the word under [column] in [text], or null if that cell is blank.
@@ -95,7 +114,11 @@ data class TerminalSelection(
          * and `:` - because selecting `usr` out of `/usr/local/bin` is never what was wanted, and
          * selecting `192` out of an IP address even less so.
          */
-        fun wordAt(line: Int, column: Int, text: String): TerminalSelection? {
+        fun wordAt(
+            line: Int,
+            column: Int,
+            text: String,
+        ): TerminalSelection? {
             if (column < 0 || column >= text.length) return null
             if (!isWordCharacter(text[column])) return null
             var start = column
@@ -106,8 +129,10 @@ data class TerminalSelection(
         }
 
         /** The selection covering all of [line], given a row [columns] wide. */
-        fun wholeLine(line: Int, columns: Int): TerminalSelection =
-            TerminalSelection(line, 0, line, (columns - 1).coerceAtLeast(0))
+        fun wholeLine(
+            line: Int,
+            columns: Int,
+        ): TerminalSelection = TerminalSelection(line, 0, line, (columns - 1).coerceAtLeast(0))
 
         /**
          * What counts as part of one word, here and in [terminalLayout].
@@ -116,8 +141,7 @@ data class TerminalSelection(
          * token ends, or the display contradicts itself - a path the user long-presses and gets whole,
          * broken across two rows by the wrap.
          */
-        internal fun isWordCharacter(char: Char): Boolean =
-            char.isLetterOrDigit() || char in WORD_PUNCTUATION
+        internal fun isWordCharacter(char: Char): Boolean = char.isLetterOrDigit() || char in WORD_PUNCTUATION
 
         private const val WORD_PUNCTUATION = "/._-~:+@=%#$"
     }

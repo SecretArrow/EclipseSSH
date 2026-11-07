@@ -28,13 +28,6 @@ import dev.eclipse.ssh.security.StandInAndroidKeyStore
 import dev.eclipse.ssh.ssh.SessionEvent
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalKey
-import java.io.InputStream
-import java.net.InetSocketAddress
-import java.io.OutputStream
-import java.nio.file.Files
-import java.time.Duration
-import java.util.Collections
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -61,6 +54,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.time.Duration
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The whole session lifecycle, from Connect to a live pty and back out again, against a real SSH
@@ -90,7 +90,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TerminalSessionLifecycleRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -192,7 +191,11 @@ class TerminalSessionLifecycleRobolectricTest {
         assertThat(frame.cursorColumn).isEqualTo(PROMPT.length)
         // Nothing was sent, so nothing above can have been a reply to us.
         assertThat(sentText()).isEmpty()
-        assertThat(viewModel().uiState.value.commandHistory[hostId].orEmpty()).isEmpty()
+        assertThat(
+            viewModel()
+                .uiState.value.commandHistory[hostId]
+                .orEmpty(),
+        ).isEmpty()
     }
 
     /**
@@ -216,7 +219,9 @@ class TerminalSessionLifecycleRobolectricTest {
         waitForFrameText(hostId, "echo: whoami")
         // Reconstructed from the keystrokes, which is the only way the recent-commands list can know.
         pumpUntil(describe = { "the command was never recorded" }) {
-            viewModel.uiState.value.commandHistory[hostId].orEmpty().contains("whoami")
+            viewModel.uiState.value.commandHistory[hostId]
+                .orEmpty()
+                .contains("whoami")
         }
         assertThat(sentText()).contains("whoami")
     }
@@ -241,7 +246,9 @@ class TerminalSessionLifecycleRobolectricTest {
 
         waitForFrameText(hostId, "echo: transcript")
         pumpUntil(describe = { "the transcript never caught up with the frame" }) {
-            viewModel.uiState.value.terminalOutput[hostId].orEmpty().contains("echo: transcript")
+            viewModel.uiState.value.terminalOutput[hostId]
+                .orEmpty()
+                .contains("echo: transcript")
         }
     }
 
@@ -276,7 +283,9 @@ class TerminalSessionLifecycleRobolectricTest {
 
         compose.runOnUiThread { viewModel.sendInput(hostId, "spam 30\n") }
         pumpUntil(describe = { "the shell kept no output while the terminal was off screen" }) {
-            viewModel.uiState.value.terminalOutput[hostId].orEmpty().contains("line 30")
+            viewModel.uiState.value.terminalOutput[hostId]
+                .orEmpty()
+                .contains("line 30")
         }
         assertThat(frameFor(hostId).revision).isEqualTo(settled)
         assertThat(frameFor(hostId).text()).doesNotContain("line 30")
@@ -319,7 +328,10 @@ class TerminalSessionLifecycleRobolectricTest {
         val scrolled = frameFor(hostId)
         assertWithMessage(
             "nothing to scroll back into: firstLine=%s totalLines=%s rows=%s spammed=%s",
-            scrolled.firstLine, scrolled.totalLines, scrolled.rows, spammed,
+            scrolled.firstLine,
+            scrolled.totalLines,
+            scrolled.rows,
+            spammed,
         ).that(scrolled.firstLine).isGreaterThan(0)
         val topLine = scrolled.lines.first().text()
         val linesBefore = scrolled.totalLines
@@ -415,11 +427,14 @@ class TerminalSessionLifecycleRobolectricTest {
         waitForFrameText(hostId, PROMPT)
         val viewModel = viewModel()
 
-        val tab = viewModel.uiState.value.tabs.first { it.hostId == hostId }
+        val tab =
+            viewModel.uiState.value.tabs
+                .first { it.hostId == hostId }
         compose.runOnUiThread { viewModel.closeTab(tab) }
 
         pumpUntil(describe = { "the tab or its frame outlived the session" }) {
-            viewModel.uiState.value.tabs.none { it.hostId == hostId } &&
+            viewModel.uiState.value.tabs
+                .none { it.hostId == hostId } &&
                 viewModel.frames.value[hostId] == null
         }
         // And the empty state is what is on screen, rather than a terminal with no session behind it.
@@ -457,7 +472,9 @@ class TerminalSessionLifecycleRobolectricTest {
         pumpUntil(describe = { "the live session was never registered as active" }) {
             hostId in runBlocking { registry.activeHostIds.first() }
         }
-        val tab = viewModel.uiState.value.tabs.first { it.hostId == hostId }
+        val tab =
+            viewModel.uiState.value.tabs
+                .first { it.hostId == hostId }
 
         compose.runOnUiThread { compose.activity.viewModelStore.clear() }
         compose.runOnUiThread { viewModel.closeTab(tab) }
@@ -501,7 +518,9 @@ class TerminalSessionLifecycleRobolectricTest {
         // Still readable and still saveable: ending a session does not throw its scrollback away.
         assertThat(frameFor(hostId).asDrawn()).contains(BANNER)
         pumpUntil(describe = { "the transcript lost the end of the session" }) {
-            viewModel.uiState.value.terminalOutput[hostId].orEmpty().contains(FAREWELL)
+            viewModel.uiState.value.terminalOutput[hostId]
+                .orEmpty()
+                .contains(FAREWELL)
         }
         // And there is a way back that is not "close the tab and start again from Hosts", which would
         // take the scrollback with it. Reporting the state without offering the remedy is half a fix.
@@ -553,11 +572,14 @@ class TerminalSessionLifecycleRobolectricTest {
 
         val reported = tabFor(hostId)?.lastError
         assertWithMessage("what the tab says about an ending it was told nothing about")
-            .that(reported).contains("remote shell")
+            .that(reported)
+            .contains("remote shell")
         assertWithMessage("the ending must not be reported as the transport dying")
-            .that(reported).doesNotContain("Disconnected from the remote host")
+            .that(reported)
+            .doesNotContain("Disconnected from the remote host")
         assertWithMessage("states the tab passed through: $states")
-            .that(states).doesNotContain(SessionConnectionState.RECONNECTING)
+            .that(states)
+            .doesNotContain(SessionConnectionState.RECONNECTING)
         holdWhileTheLadderWouldHaveFired(
             describe = { "the ended shell was treated as an outage. " + diagnose(hostId) },
         ) {
@@ -598,7 +620,8 @@ class TerminalSessionLifecycleRobolectricTest {
             tabFor(hostId)?.state == SessionConnectionState.ERROR
         }
         assertWithMessage("what the tab says about a signalled shell")
-            .that(tabFor(hostId)?.lastError).contains("SIG" + KILL_SIGNAL)
+            .that(tabFor(hostId)?.lastError)
+            .contains("SIG" + KILL_SIGNAL)
         holdWhileTheLadderWouldHaveFired(
             describe = { "a signalled shell was treated as an outage. " + diagnose(hostId) },
         ) {
@@ -628,7 +651,9 @@ class TerminalSessionLifecycleRobolectricTest {
         compose.runOnUiThread { viewModel.sendInput(hostId, "before-reconnect\n") }
         waitForFrameText(hostId, "echo: before-reconnect")
 
-        val host = viewModel.uiState.value.hosts.first { it.id == hostId }
+        val host =
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId }
         compose.runOnUiThread { viewModel.connect(host, password = PASSWORD) }
         // Waited on through the app, not through `shellsStarted`. The server increments that counter
         // when it starts the shell, which is *before* the client has opened the channel, swapped it in
@@ -675,7 +700,8 @@ class TerminalSessionLifecycleRobolectricTest {
 
         val opened = ptyRequests.single()
         assertWithMessage("a shell must be opened at some size, or this test proves nothing")
-            .that(opened.first).isGreaterThan(0)
+            .that(opened.first)
+            .isGreaterThan(0)
         assertWithMessage("the grid kept its default while the pty was sized to the screen")
             .that(frameFor(hostId).let { it.columns to it.rows })
             .isEqualTo(opened)
@@ -698,7 +724,8 @@ class TerminalSessionLifecycleRobolectricTest {
         waitForFrameText(fitted, PROMPT)
         val screenRows = ptyRequests.last().second
         assertWithMessage("with the height at \"fit screen\" the window is the grid, not a window into it")
-            .that(frameFor(fitted).lines.size).isEqualTo(screenRows)
+            .that(frameFor(fitted).lines.size)
+            .isEqualTo(screenRows)
         compose.runOnUiThread { viewModel().closeTab(checkNotNull(tabFor(fitted))) }
 
         // Written the way the height screen writes it, then waited for so the second shell opens under
@@ -706,7 +733,8 @@ class TerminalSessionLifecycleRobolectricTest {
         runBlocking { SettingsRepository(RuntimeEnvironment.getApplication()).setTerminalRows(TALL_ROWS) }
         terminalRowsChanged = true
         pumpUntil(describe = { "the height setting never took: ${viewModel().uiState.value.settings}" }) {
-            viewModel().uiState.value.settings.terminalRows == TALL_ROWS
+            viewModel()
+                .uiState.value.settings.terminalRows == TALL_ROWS
         }
 
         val tall = connectAndOpenTerminal()
@@ -723,7 +751,8 @@ class TerminalSessionLifecycleRobolectricTest {
         // The window is not. The screen is the same screen, so the same number of rows is on it - the
         // rest are one scroll gesture away, which is the whole difference between a floor and a ceiling.
         assertWithMessage("the tall grid was drawn as if the phone had a thousand rows")
-            .that(frame.lines.size).isEqualTo(screenRows)
+            .that(frame.lines.size)
+            .isEqualTo(screenRows)
     }
 
     /**
@@ -814,9 +843,11 @@ class TerminalSessionLifecycleRobolectricTest {
             tabFor(hostId)?.state == SessionConnectionState.CONNECTED && ptyRequests.size >= 2
         }
         assertWithMessage("the recovered shell was opened at a size the user never chose")
-            .that(ptyRequests.last()).isEqualTo(opened)
+            .that(ptyRequests.last())
+            .isEqualTo(opened)
         assertWithMessage("the grid moved back after the banner cleared, so the outage cost two resizes")
-            .that(ptyResizes()).isEqualTo(settled)
+            .that(ptyResizes())
+            .isEqualTo(settled)
     }
 
     /**
@@ -841,8 +872,10 @@ class TerminalSessionLifecycleRobolectricTest {
         waitForFrameText(hostId, PROMPT)
         val viewModel = viewModel()
         assertWithMessage("the host must have no saved password, or this test proves nothing")
-            .that(viewModel.uiState.value.savedCredentials[hostId]?.hasPassword ?: false)
-            .isFalse()
+            .that(
+                viewModel.uiState.value.savedCredentials[hostId]
+                    ?.hasPassword ?: false,
+            ).isFalse()
         val loginsBefore = passwordsAccepted.get()
 
         checkNotNull(liveTransport.get()) { "the server never recorded its session" }.close(true)
@@ -866,7 +899,10 @@ class TerminalSessionLifecycleRobolectricTest {
         waitForFrameText(hostId, "echo: after-outage")
 
         // And nothing was written to the credential store on the way.
-        assertThat(viewModel.uiState.value.savedCredentials[hostId]?.hasPassword ?: false).isFalse()
+        assertThat(
+            viewModel.uiState.value.savedCredentials[hostId]
+                ?.hasPassword ?: false,
+        ).isFalse()
     }
 
     /**
@@ -1313,7 +1349,10 @@ class TerminalSessionLifecycleRobolectricTest {
         assertThat(shellsStarted.get()).isEqualTo(1)
     }
 
-    private fun tabFor(hostId: String) = viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+    private fun tabFor(hostId: String) =
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     // ---------------------------------------------------------------- the on-screen key row
 
@@ -1330,7 +1369,10 @@ class TerminalSessionLifecycleRobolectricTest {
      * newline, a repeat, the character the focus change put in the field - would be just as broken as
      * one that sent nothing.
      */
-    private fun assertCapSends(description: String, expected: List<Int>) {
+    private fun assertCapSends(
+        description: String,
+        expected: List<Int>,
+    ) {
         clearRecording()
         cap(description)
         pumpUntil(describe = { "$description sent ${sentCodes()} rather than $expected" }) {
@@ -1354,8 +1396,7 @@ class TerminalSessionLifecycleRobolectricTest {
     /** The tab, not the identically-titled top app bar; only the tab is clickable. */
     private fun tab(label: String) = compose.onNode(hasText(label) and hasClickAction())
 
-    private fun viewModel(): MainViewModel =
-        ViewModelProvider(compose.activity)[MainViewModel::class.java]
+    private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     /**
      * Drives frames and main-looper work until [condition] holds, then fails with [describe].
@@ -1366,7 +1407,11 @@ class TerminalSessionLifecycleRobolectricTest {
      * `TERMINAL_FRAME_MS` between renders, the reconnect backoff in `connect` — and `idle()` leaves
      * the looper's virtual clock where it was, so those continuations would never come due.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -1392,7 +1437,11 @@ class TerminalSessionLifecycleRobolectricTest {
      * within a small factor of each other, which is all the ladder's thresholds need. It costs this test
      * the ~31s of backoff the app really waits, and [FLAP_TIMEOUT_MS] is sized for that.
      */
-    private fun pumpInStepUntil(timeoutMs: Long, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpInStepUntil(
+        timeoutMs: Long,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -1413,7 +1462,10 @@ class TerminalSessionLifecycleRobolectricTest {
      * *wall* clock - and a window measured only in virtual time ends microseconds later, before a
      * connect thread could have got anywhere. Waiting for both is what makes "no second shell" mean it.
      */
-    private fun holdWhileTheLadderWouldHaveFired(describe: () -> String, invariant: () -> Boolean) {
+    private fun holdWhileTheLadderWouldHaveFired(
+        describe: () -> String,
+        invariant: () -> Boolean,
+    ) {
         val virtualDeadline = compose.mainClock.currentTime + FIRST_BACKOFF_CEILING_MS
         val wallDeadline = System.nanoTime() + REAL_DIAL_GRACE_NANOS
         while (compose.mainClock.currentTime < virtualDeadline || System.nanoTime() < wallDeadline) {
@@ -1441,15 +1493,16 @@ class TerminalSessionLifecycleRobolectricTest {
     private fun connectAndOpenTerminal(): String {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "lifecycle-" + nextHostId++,
-            name = HOST_NAME,
-            host = LOOPBACK,
-            username = USER,
-            port = serverPort,
-            authMethod = AuthMethod.PASSWORD,
-            connectTimeoutSeconds = 60,
-        )
+        val profile =
+            HostProfile(
+                id = "lifecycle-" + nextHostId++,
+                name = HOST_NAME,
+                host = LOOPBACK,
+                username = USER,
+                port = serverPort,
+                authMethod = AuthMethod.PASSWORD,
+                connectTimeoutSeconds = 60,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(
             describe = {
@@ -1457,9 +1510,12 @@ class TerminalSessionLifecycleRobolectricTest {
                     " hosts=${viewModel.uiState.value.hosts.map { it.id }}"
             },
         ) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         compose.runOnUiThread { viewModel.connect(saved, password = PASSWORD) }
 
         // Every challenge is answered, not only the first. One tap per question is what the dialog
@@ -1486,17 +1542,29 @@ class TerminalSessionLifecycleRobolectricTest {
 
     /** How many shell greetings the frame holds - one per shell that has attached to this tab. */
     private fun greetingsInFrame(hostId: String): Int =
-        viewModel().frames.value[hostId]?.asDrawn()?.split(BANNER)?.let { it.size - 1 } ?: 0
+        viewModel()
+            .frames.value[hostId]
+            ?.asDrawn()
+            ?.split(BANNER)
+            ?.let { it.size - 1 } ?: 0
 
-    private fun frameFor(hostId: String): TerminalFrame =
-        checkNotNull(viewModel().frames.value[hostId]) { "no frame has been published for $hostId" }
+    private fun frameFor(hostId: String): TerminalFrame = checkNotNull(viewModel().frames.value[hostId]) { "no frame has been published for $hostId" }
 
-    private fun waitForFrameText(hostId: String, text: String) = pumpUntil(
+    private fun waitForFrameText(
+        hostId: String,
+        text: String,
+    ) = pumpUntil(
         describe = { "\"$text\" never reached the frame. " + diagnose(hostId) },
-        condition = { viewModel().frames.value[hostId]?.asDrawn()?.contains(text) == true },
+        condition = {
+            viewModel()
+                .frames.value[hostId]
+                ?.asDrawn()
+                ?.contains(text) == true
+        },
     )
 
     /** Everything worth knowing when the terminal is not showing what it should. */
+
     /**
      * How many times the app has told the engine the terminal changed size, read from its own trace.
      *
@@ -1505,7 +1573,9 @@ class TerminalSessionLifecycleRobolectricTest {
      * assertion wants, and one a counter wrapped around the call would get wrong.
      */
     private fun ptyResizes(): Int =
-        viewModel().uiState.value.diagnostics.count { it.event == SessionEvent.PTY_RESIZED }
+        viewModel()
+            .uiState.value.diagnostics
+            .count { it.event == SessionEvent.PTY_RESIZED }
 
     private fun diagnose(hostId: String): String {
         val viewModel = viewModel()
@@ -1522,9 +1592,16 @@ class TerminalSessionLifecycleRobolectricTest {
             // that arrives with nothing to authenticate with produces neither, which is a different
             // fault from offering the wrong password and is otherwise indistinguishable from it in a
             // timeout message - see [passwordsAccepted].
-            append(" logins=").append(passwordsAccepted.get()).append("+/").append(passwordsRejected.get()).append("-")
+            append(" logins=")
+                .append(passwordsAccepted.get())
+                .append("+/")
+                .append(passwordsRejected.get())
+                .append("-")
             append(" window=").append(windowSize.get())
-            append(" transcript=").append(viewModel.uiState.value.terminalOutput[hostId]?.length)
+            append(" transcript=").append(
+                viewModel.uiState.value.terminalOutput[hostId]
+                    ?.length,
+            )
             append(" frameRows=").append(frame?.lines?.size)
             append(" frameRevision=").append(frame?.revision)
             // Whether anything is *collecting* frames, which decides whether any get built at all:
@@ -1584,11 +1661,9 @@ class TerminalSessionLifecycleRobolectricTest {
      * on the row. Searching the trimmed rendering for it can never succeed no matter how correct the
      * terminal is.
      */
-    private fun TerminalFrame.asDrawn(): String =
-        lines.joinToString(separator = "\n") { line -> line.joinToString(separator = "") { it.value.toString() } }
+    private fun TerminalFrame.asDrawn(): String = lines.joinToString(separator = "\n") { line -> line.joinToString(separator = "") { it.value.toString() } }
 
-    private fun List<dev.eclipse.ssh.terminal.TerminalCell>.text(): String =
-        joinToString(separator = "") { it.value.toString() }.trimEnd()
+    private fun List<dev.eclipse.ssh.terminal.TerminalCell>.text(): String = joinToString(separator = "") { it.value.toString() }.trimEnd()
 
     private companion object {
         /**
@@ -1734,7 +1809,9 @@ class TerminalSessionLifecycleRobolectricTest {
          * [aDroppedTransportIsNeverSilent]; this is the same drop happening to every session the
          * reconnect ladder manages to establish. See [aFlappingSessionStopsReconnectingAndSaysWhy].
          */
-        val flapEveryShell = java.util.concurrent.atomic.AtomicBoolean(false)
+        val flapEveryShell =
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
 
         /**
          * How long a flapping shell stays up before its transport goes.
@@ -1757,8 +1834,12 @@ class TerminalSessionLifecycleRobolectricTest {
         val ptyRequests: MutableList<Pair<Int, Int>> = Collections.synchronizedList(mutableListOf())
 
         /** Server-side counters, so a silent terminal can be blamed on the right side of the wire. */
-        val shellsStarted = java.util.concurrent.atomic.AtomicInteger(0)
-        val serverWrote = java.util.concurrent.atomic.AtomicInteger(0)
+        val shellsStarted =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
+        val serverWrote =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
 
         /**
          * Password logins the server accepted, and ones it turned down.
@@ -1768,8 +1849,12 @@ class TerminalSessionLifecycleRobolectricTest {
          * rejected one either - it never gets as far as an attempt - which is a different failure from
          * offering the wrong password, and the two are worth telling apart.
          */
-        val passwordsAccepted = java.util.concurrent.atomic.AtomicInteger(0)
-        val passwordsRejected = java.util.concurrent.atomic.AtomicInteger(0)
+        val passwordsAccepted =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
+        val passwordsRejected =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
 
         private var nextHostId = 0
         private lateinit var server: SshServer
@@ -1841,12 +1926,24 @@ class TerminalSessionLifecycleRobolectricTest {
          */
         @Volatile private var handRolledEnding = false
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            this.exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             val out = output ?: return
             val inn = input ?: return
             shellsStarted.incrementAndGet()
@@ -1890,25 +1987,27 @@ class TerminalSessionLifecycleRobolectricTest {
                         // acts on it, it does not leave three characters in front of the next command.
                         // Without this the arrow key asserted earlier in a test was still sitting in
                         // the line buffer when the next command was typed, and the shell saw both.
-                        state = when {
-                            state == CSI -> if (byte in FINAL_BYTES) TEXT else CSI
-                            state == SS3 -> TEXT
-                            state == ESCAPED -> when (byte) {
-                                BRACKET -> CSI
-                                SS3_INTRODUCER -> SS3
-                                else -> TEXT
+                        state =
+                            when {
+                                state == CSI -> if (byte in FINAL_BYTES) TEXT else CSI
+                                state == SS3 -> TEXT
+                                state == ESCAPED ->
+                                    when (byte) {
+                                        BRACKET -> CSI
+                                        SS3_INTRODUCER -> SS3
+                                        else -> TEXT
+                                    }
+                                byte == ESCAPE -> ESCAPED
+                                byte == CARRIAGE_RETURN || byte == LINE_FEED -> {
+                                    running = respond(out, line.toString())
+                                    line.setLength(0)
+                                    TEXT
+                                }
+                                else -> {
+                                    line.append(byte.toChar())
+                                    TEXT
+                                }
                             }
-                            byte == ESCAPE -> ESCAPED
-                            byte == CARRIAGE_RETURN || byte == LINE_FEED -> {
-                                running = respond(out, line.toString())
-                                line.setLength(0)
-                                TEXT
-                            }
-                            else -> {
-                                line.append(byte.toChar())
-                                TEXT
-                            }
-                        }
                     }
                 }
                 if (!handRolledEnding) runCatching { exit?.onExit(0) }
@@ -1926,7 +2025,10 @@ class TerminalSessionLifecycleRobolectricTest {
         }
 
         /** Answers [command], reporting whether the shell should stay up afterwards. */
-        private fun respond(out: OutputStream, command: String): Boolean {
+        private fun respond(
+            out: OutputStream,
+            command: String,
+        ): Boolean {
             when {
                 // What `exit` does: a parting line and then the channel goes away. The farewell is
                 // written deliberately, because output that arrives in the same breath as the close is
@@ -1984,7 +2086,10 @@ class TerminalSessionLifecycleRobolectricTest {
         }
 
         /** Writes one channel message for this channel's far end, as the server's own code would. */
-        private fun sendRaw(command: Byte, fill: (Buffer) -> Unit = {}) {
+        private fun sendRaw(
+            command: Byte,
+            fill: (Buffer) -> Unit = {},
+        ) {
             val channel = this.channel ?: return
             runCatching {
                 val session = channel.session

@@ -1,11 +1,11 @@
 package dev.eclipse.ssh.ssh
 
 import com.google.common.truth.Truth.assertThat
-import java.io.IOException
-import java.net.SocketException
 import org.apache.sshd.common.SshConstants
 import org.apache.sshd.common.SshException
 import org.junit.Test
+import java.io.IOException
+import java.net.SocketException
 
 /**
  * What the tab says after a session ends.
@@ -16,7 +16,6 @@ import org.junit.Test
  * itself, was the one being reported as a network fault.
  */
 class SessionEndTest {
-
     @Test
     fun `a clean exit reads as an ended session`() {
         assertThat(describeSessionEnd(SessionEnd.ShellEnded(status = 0, signal = null)))
@@ -51,22 +50,24 @@ class SessionEndTest {
 
     @Test
     fun `a server that hung up is quoted`() {
-        val end = SessionEnd.Disconnected(
-            reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION,
-            message = "Timeout, your session not responding.",
-            byPeer = true,
-        )
+        val end =
+            SessionEnd.Disconnected(
+                reason = SshConstants.SSH2_DISCONNECT_BY_APPLICATION,
+                message = "Timeout, your session not responding.",
+                byPeer = true,
+            )
         assertThat(describeSessionEnd(end))
             .isEqualTo("The server disconnected: Timeout, your session not responding.")
     }
 
     @Test
     fun `a disconnect with no message falls back to the reason it carried`() {
-        val end = SessionEnd.Disconnected(
-            reason = SshConstants.SSH2_DISCONNECT_MAC_ERROR,
-            message = "   ",
-            byPeer = false,
-        )
+        val end =
+            SessionEnd.Disconnected(
+                reason = SshConstants.SSH2_DISCONNECT_MAC_ERROR,
+                message = "   ",
+                byPeer = false,
+            )
         val message = describeSessionEnd(end)
         assertThat(message).startsWith("Disconnected: ")
         // Whatever MINA calls the code, the code itself must not be the whole answer.

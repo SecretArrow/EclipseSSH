@@ -16,8 +16,10 @@ import org.junit.Test
  * rather than connecting to a host at random.
  */
 class LastHostResolutionTest {
-
-    private fun host(name: String, lastConnectedAt: Long?) = HostProfile(
+    private fun host(
+        name: String,
+        lastConnectedAt: Long?,
+    ) = HostProfile(
         name = name,
         host = "$name.example.com",
         username = "deploy",
@@ -26,11 +28,12 @@ class LastHostResolutionTest {
 
     @Test
     fun `the host with the greatest lastConnectedAt is chosen`() {
-        val hosts = listOf(
-            host("old", 1_000L),
-            host("newest", 3_000L),
-            host("middle", 2_000L),
-        )
+        val hosts =
+            listOf(
+                host("old", 1_000L),
+                host("newest", 3_000L),
+                host("middle", 2_000L),
+            )
         assertThat(mostRecentlyConnectedHost(hosts)?.name).isEqualTo("newest")
     }
 
@@ -51,11 +54,12 @@ class LastHostResolutionTest {
     fun `a host that has connected beats hosts that never have`() {
         // A null lastConnectedAt is "never dialled", not "dialled at time zero": it must never win
         // over a host that has actually connected, however small that host's timestamp is.
-        val hosts = listOf(
-            host("never-a", null),
-            host("connected", 42L),
-            host("never-b", null),
-        )
+        val hosts =
+            listOf(
+                host("never-a", null),
+                host("connected", 42L),
+                host("never-b", null),
+            )
         assertThat(mostRecentlyConnectedHost(hosts)?.name).isEqualTo("connected")
     }
 

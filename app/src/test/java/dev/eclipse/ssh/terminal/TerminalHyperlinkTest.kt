@@ -17,12 +17,16 @@ private val ESC: String = Char(0x1B).toString()
  * anything, and the tap that does is the app's decision and not the parser's.
  */
 class TerminalHyperlinkTest {
-    private val link = "${ESC}]8;;https://example.com/$ESC\\"
+    private val link = "$ESC]8;;https://example.com/$ESC\\"
 
     private fun buffer() = AnsiTerminalBuffer(columns = 20, rows = 4)
 
     /** The target on each of the first [count] cells of row [row], as a list. */
-    private fun targets(buffer: AnsiTerminalBuffer, row: Int = 0, count: Int = 20): List<String?> {
+    private fun targets(
+        buffer: AnsiTerminalBuffer,
+        row: Int = 0,
+        count: Int = 20,
+    ): List<String?> {
         val frame = buffer.frame()
         return (0 until count).map { hyperlinkAt(frame, frame.firstLine + row, it) }
     }
@@ -73,7 +77,7 @@ class TerminalHyperlinkTest {
     fun `the parameters between the code and the target are not read, and the target keeps its semicolons`() {
         val buffer = buffer()
 
-        buffer.feed("${ESC}]8;id=42;https://example.com/a;b$ESC\\ x")
+        buffer.feed("$ESC]8;id=42;https://example.com/a;b$ESC\\ x")
 
         // The second separator is the one that matters: a target is everything after it, verbatim,
         // because a link whose address this terminal rewrote would go somewhere else.
@@ -94,7 +98,7 @@ class TerminalHyperlinkTest {
     fun `a sequence with no separator at all leaves the open link alone`() {
         val buffer = buffer()
 
-        buffer.feed("$link a${ESC}]8$ESC\\ b")
+        buffer.feed("$link a$ESC]8$ESC\\ b")
 
         // Not a link this terminal can read, and a sequence it cannot read is not evidence that the
         // program meant to end the one it was in.
@@ -118,7 +122,7 @@ class TerminalHyperlinkTest {
         val buffer = buffer()
 
         // Opened on a line that scrolls off, and read back out of the scrollback.
-        buffer.feed("$link one${ESC}]8;;$ESC\\\r\ntwo\r\nthree\r\nfour\r\nfive")
+        buffer.feed("$link one$ESC]8;;$ESC\\\r\ntwo\r\nthree\r\nfour\r\nfive")
 
         val live = buffer.frame()
         assertThat(live.firstLine).isEqualTo(1)
@@ -160,17 +164,17 @@ class TerminalHyperlinkTest {
         val longest = "https://example.com/" + "a".repeat(2028)
 
         val kept = buffer()
-        kept.feed("${ESC}]8;;$longest$ESC\\ x")
+        kept.feed("$ESC]8;;$longest$ESC\\ x")
         assertThat(hyperlinkAt(kept.frame(), 0, 0)).isEqualTo(longest)
 
         val refused = buffer()
-        refused.feed("${ESC}]8;;${longest}a$ESC\\ x")
+        refused.feed("$ESC]8;;${longest}a$ESC\\ x")
         assertThat(hyperlinkAt(refused.frame(), 0, 0)).isNull()
 
         // And a target it refuses does not leave the *previous* link standing over cells the program
         // meant to point somewhere else.
         val replaced = buffer()
-        replaced.feed("${ESC}]8;;https://example.com/$ESC\\a${ESC}]8;;${longest}a$ESC\\b")
+        replaced.feed("$ESC]8;;https://example.com/$ESC\\a$ESC]8;;${longest}a$ESC\\b")
         assertThat(hyperlinkAt(replaced.frame(), 0, 0)).isEqualTo("https://example.com/")
         assertThat(hyperlinkAt(replaced.frame(), 0, 1)).isNull()
     }
@@ -181,7 +185,7 @@ class TerminalHyperlinkTest {
 
         // The sequence is split at the byte, which is what a pty does to it - the parser is stateful
         // across reads, and the target has to be too.
-        buffer.feed("${ESC}]8;;https://exa")
+        buffer.feed("$ESC]8;;https://exa")
         buffer.feed("mple.com/$ESC\\ hello")
 
         assertThat(hyperlinkAt(buffer.frame(), 0, 0)).isEqualTo("https://example.com/")

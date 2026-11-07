@@ -134,7 +134,11 @@ internal class HandZip {
         return out.toByteArray()
     }
 
-    private fun writeField(target: ByteArray, at: Int, bytes: ByteArray) {
+    private fun writeField(
+        target: ByteArray,
+        at: Int,
+        bytes: ByteArray,
+    ) {
         bytes.forEachIndexed { index, byte -> target[at + index] = byte }
     }
 }
@@ -144,17 +148,18 @@ internal class HandZip {
  * for the same reason HandZip is: the extractor's tests build archives too, and both suites must
  * spell the same bytes with the same helpers.
  */
-internal fun le16(value: Int): ByteArray = byteArrayOf(
-    (value and 0xFF).toByte(),
-    ((value ushr 8) and 0xFF).toByte(),
-)
+internal fun le16(value: Int): ByteArray =
+    byteArrayOf(
+        (value and 0xFF).toByte(),
+        ((value ushr 8) and 0xFF).toByte(),
+    )
 
-internal fun le32(value: Long): ByteArray = byteArrayOf(
-    (value and 0xFF).toByte(),
-    ((value ushr 8) and 0xFF).toByte(),
-    ((value ushr 16) and 0xFF).toByte(),
-    ((value ushr 24) and 0xFF).toByte(),
-)
+internal fun le32(value: Long): ByteArray =
+    byteArrayOf(
+        (value and 0xFF).toByte(),
+        ((value ushr 8) and 0xFF).toByte(),
+        ((value ushr 16) and 0xFF).toByte(),
+        ((value ushr 24) and 0xFF).toByte(),
+    )
 
-internal fun le64(value: Long): ByteArray =
-    (0 until 8).map { index -> ((value ushr (8 * index)) and 0xFF).toByte() }.toByteArray()
+internal fun le64(value: Long): ByteArray = (0 until 8).map { index -> ((value ushr (8 * index)) and 0xFF).toByte() }.toByteArray()

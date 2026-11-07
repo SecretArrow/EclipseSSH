@@ -27,7 +27,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35])
 class SshdUserHomeTest {
-
     @Test
     fun `application startup points sshd at app private storage`() {
         val app = RuntimeEnvironment.getApplication()
@@ -61,9 +60,10 @@ class SshdUserHomeTest {
         // ClientBuilder.<clinit> is what pulled in DefaultConfigFileHostEntryResolver ->
         // PublicKeyEntry.getDefaultKeysFolderPath -> PathUtils.getUserHomeFolder. Walking it
         // explicitly keeps the whole chain covered rather than just the leaf.
-        val built = runCatching {
-            ClientBuilder.builder().build()
-        }
+        val built =
+            runCatching {
+                ClientBuilder.builder().build()
+            }
 
         assertThat(built.exceptionOrNull()).isNull()
         assertThat(built.getOrNull()).isNotNull()

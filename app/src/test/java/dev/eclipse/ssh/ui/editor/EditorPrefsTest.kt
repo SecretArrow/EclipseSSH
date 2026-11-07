@@ -24,7 +24,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class EditorPrefsTest {
-
     @Test
     fun `an empty string decodes to the defaults`() {
         // The DataStore default is "{}" but a wiped or migrated key can surface as "".
@@ -57,15 +56,16 @@ class EditorPrefsTest {
     @Test
     fun `every field survives an encode decode round trip`() {
         // Every value is the non-default one, so nothing passes by being the default twice.
-        val prefs = EditorPrefs(
-            wordWrap = true,
-            showLineNumbers = false,
-            tabSize = 8,
-            spacesInsteadOfTabs = true,
-            autoSaveEnabled = false,
-            autoSaveDelayMillis = 5_000L,
-            encoding = "Windows-1252",
-        )
+        val prefs =
+            EditorPrefs(
+                wordWrap = true,
+                showLineNumbers = false,
+                tabSize = 8,
+                spacesInsteadOfTabs = true,
+                autoSaveEnabled = false,
+                autoSaveDelayMillis = 5_000L,
+                encoding = "Windows-1252",
+            )
         assertThat(EditorPrefsCodec.decode(EditorPrefsCodec.encode(prefs))).isEqualTo(prefs)
     }
 
@@ -89,11 +89,12 @@ class EditorPrefsTest {
     fun `an unknown field is dropped and the known fields still decode`() {
         // Written by a newer app version. Dropping it — not erroring — is what lets the format
         // evolve without a migration step.
-        val json = JSONObject()
-            .put("wordWrap", true)
-            .put("futureFeature", JSONObject().put("nested", 1))
-            .put("tabSize", 2)
-            .toString()
+        val json =
+            JSONObject()
+                .put("wordWrap", true)
+                .put("futureFeature", JSONObject().put("nested", 1))
+                .put("tabSize", 2)
+                .toString()
         val decoded = EditorPrefsCodec.decode(json)
         assertThat(decoded).isEqualTo(EditorPrefs(wordWrap = true, tabSize = 2))
     }

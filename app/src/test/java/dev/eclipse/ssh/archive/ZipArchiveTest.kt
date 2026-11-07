@@ -27,15 +27,15 @@ import java.util.zip.ZipOutputStream
  * lives - which is precisely the input the bounds exist for.
  */
 class ZipArchiveTest {
-
     @Test
     fun `a two entry zip lists both entries with names sizes and methods`() {
         val deflated = "Hello, archive!".toByteArray()
         val stored = "0123456789".toByteArray()
-        val zip = zipOf(
-            ZipEntry("hello.txt") to deflated,
-            storedEntry("data.bin", stored) to stored,
-        )
+        val zip =
+            zipOf(
+                ZipEntry("hello.txt") to deflated,
+                storedEntry("data.bin", stored) to stored,
+            )
 
         val entries = list(zip)
 
@@ -57,11 +57,12 @@ class ZipArchiveTest {
 
     @Test
     fun `nested paths normalize and trailing slash entries are directories`() {
-        val zip = zipOf(
-            ZipEntry("a/b/c.txt") to "deep".toByteArray(),
-            ZipEntry("dir/") to ByteArray(0),
-            ZipEntry("top.txt") to "top".toByteArray(),
-        )
+        val zip =
+            zipOf(
+                ZipEntry("a/b/c.txt") to "deep".toByteArray(),
+                ZipEntry("dir/") to ByteArray(0),
+                ZipEntry("top.txt") to "top".toByteArray(),
+            )
 
         val entries = list(zip)
 
@@ -76,9 +77,10 @@ class ZipArchiveTest {
 
         // Some writers mark a directory only through the external attributes, with no trailing
         // slash in the name at all - the one shape ZipOutputStream cannot produce.
-        val handMade = HandZip().apply {
-            add("attr-dir".toByteArray(), externalAttrs = 0x10)
-        }
+        val handMade =
+            HandZip().apply {
+                add("attr-dir".toByteArray(), externalAttrs = 0x10)
+            }
         val attrEntry = list(handMade.build()).single()
         assertThat(attrEntry.path).isEqualTo("attr-dir")
         assertThat(attrEntry.isDirectory).isTrue()
@@ -90,10 +92,11 @@ class ZipArchiveTest {
         // (300 x ~290 bytes is about 87 KB), so the scan has to carry entries across a chunk
         // boundary to finish - the case a single-buffer parser would pass and a streaming one
         // could quietly get wrong.
-        val entriesToAdd = (0 until 300).map { index ->
-            val name = "%03d-".format(index) + "x".repeat(240)
-            ZipEntry(name) to "c$index".toByteArray()
-        }
+        val entriesToAdd =
+            (0 until 300).map { index ->
+                val name = "%03d-".format(index) + "x".repeat(240)
+                ZipEntry(name) to "c$index".toByteArray()
+            }
         val zip = zipOf(*entriesToAdd.toTypedArray())
 
         val entries = list(zip)
@@ -105,15 +108,18 @@ class ZipArchiveTest {
 
     @Test
     fun `a trailing archive comment does not defeat the eocd search`() {
-        val zip = ByteArrayOutputStream().let { buffer ->
-            ZipOutputStream(buffer).use { stream ->
-                stream.setComment("a comment far too long to sit between the signature and " +
-                    "the file's end unnoticed - " + "x".repeat(5_000))
-                stream.putNextEntry(ZipEntry("file.txt"))
-                stream.write("data".toByteArray())
+        val zip =
+            ByteArrayOutputStream().let { buffer ->
+                ZipOutputStream(buffer).use { stream ->
+                    stream.setComment(
+                        "a comment far too long to sit between the signature and " +
+                            "the file's end unnoticed - " + "x".repeat(5_000),
+                    )
+                    stream.putNextEntry(ZipEntry("file.txt"))
+                    stream.write("data".toByteArray())
+                }
+                buffer.toByteArray()
             }
-            buffer.toByteArray()
-        }
 
         val entries = list(zip)
 
@@ -145,9 +151,10 @@ class ZipArchiveTest {
         val builder = HandZip().apply { add("file.txt".toByteArray(), "data".toByteArray()) }
         // A size field above the ceiling is the hostile archive's one lever to turn "list me"
         // into "download me"; it must be refused before a single directory byte is read.
-        val zip = builder.build(eocdPatch = { eocd ->
-            poke32(eocd, 12, ZipArchive.CENTRAL_DIRECTORY_MAX_SEARCH_BYTES + 1)
-        })
+        val zip =
+            builder.build(eocdPatch = { eocd ->
+                poke32(eocd, 12, ZipArchive.CENTRAL_DIRECTORY_MAX_SEARCH_BYTES + 1)
+            })
 
         assertThat(corruptWhenListing(zip)).isInstanceOf(ArchiveCorruptException::class.java)
     }
@@ -162,16 +169,18 @@ class ZipArchiveTest {
 
     @Test
     fun `an entry that normalizes to nothing is skipped rather than listed`() {
-        val builder = HandZip().apply {
-            add("/".toByteArray())
-            add(".".toByteArray())
-            add("real.txt".toByteArray(), "data".toByteArray())
-        }
+        val builder =
+            HandZip().apply {
+                add("/".toByteArray())
+                add(".".toByteArray())
+                add("real.txt".toByteArray(), "data".toByteArray())
+            }
         var finalEntriesScanned = 0L
 
-        val entries = list(builder.build()) { progress ->
-            finalEntriesScanned = progress.entriesScanned
-        }
+        val entries =
+            list(builder.build()) { progress ->
+                finalEntriesScanned = progress.entriesScanned
+            }
 
         // The punctuation entries name nothing, so they cannot appear in the tree - but they
         // are still directory records, and the entry count a person sees must include them.
@@ -185,10 +194,12 @@ class ZipArchiveTest {
         val second = "second!".toByteArray()
         // Hand-built, because the platform writer refuses to emit the same name twice - a
         // duplicate central-directory pair is exactly what this fixture must contain.
-        val zip = HandZip().apply {
-            add("same.txt".toByteArray(), first)
-            add("same.txt".toByteArray(), second)
-        }.build()
+        val zip =
+            HandZip()
+                .apply {
+                    add("same.txt".toByteArray(), first)
+                    add("same.txt".toByteArray(), second)
+                }.build()
         val source = ByteArrayByteSource(zip)
         val archive = ZipArchive(source)
 
@@ -224,9 +235,10 @@ class ZipArchiveTest {
 
     @Test
     fun `the encrypted flag surfaces when bit zero is set`() {
-        val builder = HandZip().apply {
-            add("secret.txt".toByteArray(), "data".toByteArray(), flags = 0x0001)
-        }
+        val builder =
+            HandZip().apply {
+                add("secret.txt".toByteArray(), "data".toByteArray(), flags = 0x0001)
+            }
 
         val entry = list(builder.build()).single()
 
@@ -238,10 +250,11 @@ class ZipArchiveTest {
 
     @Test
     fun `progress reports scanned entries against the archive size`() {
-        val zip = zipOf(
-            ZipEntry("a.txt") to "a".toByteArray(),
-            ZipEntry("b.txt") to "b".toByteArray(),
-        )
+        val zip =
+            zipOf(
+                ZipEntry("a.txt") to "a".toByteArray(),
+                ZipEntry("b.txt") to "b".toByteArray(),
+            )
         val reports = mutableListOf<ArchiveScanProgress>()
 
         list(zip) { progress -> reports.add(progress) }
@@ -257,21 +270,23 @@ class ZipArchiveTest {
 
     @Test
     fun `an exception from onProgress aborts the scan partway`() {
-        val entriesToAdd = (0 until 300).map { index ->
-            ZipEntry("%03d-".format(index) + "x".repeat(240)) to "c$index".toByteArray()
-        }
+        val entriesToAdd =
+            (0 until 300).map { index ->
+                ZipEntry("%03d-".format(index) + "x".repeat(240)) to "c$index".toByteArray()
+            }
         val zip = zipOf(*entriesToAdd.toTypedArray())
         var maxEntriesScanned = 0L
 
-        val thrown = runCatching {
-            list(zip) { progress ->
-                maxEntriesScanned = maxOf(maxEntriesScanned, progress.entriesScanned)
-                // Fired once entries have been parsed but before the 300-entry directory is
-                // done: the callback is the cancellation surface, so its exception must stop
-                // the scan right here rather than after the last chunk.
-                if (progress.entriesScanned >= 1L) throw IllegalStateException("stop now")
-            }
-        }.exceptionOrNull()
+        val thrown =
+            runCatching {
+                list(zip) { progress ->
+                    maxEntriesScanned = maxOf(maxEntriesScanned, progress.entriesScanned)
+                    // Fired once entries have been parsed but before the 300-entry directory is
+                    // done: the callback is the cancellation surface, so its exception must stop
+                    // the scan right here rather than after the last chunk.
+                    if (progress.entriesScanned >= 1L) throw IllegalStateException("stop now")
+                }
+            }.exceptionOrNull()
 
         assertThat(thrown).isInstanceOf(IllegalStateException::class.java)
         assertThat(maxEntriesScanned).isLessThan(300L)
@@ -283,9 +298,10 @@ class ZipArchiveTest {
         // for the real values in the ZIP64 record the locator points at. Archives with more
         // than 65 535 entries or a 4 GB-plus prefix look exactly like this, so the fallback
         // has to be transparent to the caller.
-        val builder = HandZip().apply {
-            add("big.bin".toByteArray(), "payload".toByteArray())
-        }
+        val builder =
+            HandZip().apply {
+                add("big.bin".toByteArray(), "payload".toByteArray())
+            }
 
         val entries = list(builder.build(zip64 = true))
 
@@ -297,14 +313,15 @@ class ZipArchiveTest {
     @Test
     fun `zip64 saturated entry sizes resolve through the extra field`() {
         val zip64Extra = le16(0x0001) + le16(16) + le64(12_345) + le64(9_999)
-        val builder = HandZip().apply {
-            add(
-                "large.txt".toByteArray(),
-                cdUncompressedSize = 0xFFFFFFFFL,
-                cdCompressedSize = 0xFFFFFFFFL,
-                cdExtra = zip64Extra,
-            )
-        }
+        val builder =
+            HandZip().apply {
+                add(
+                    "large.txt".toByteArray(),
+                    cdUncompressedSize = 0xFFFFFFFFL,
+                    cdCompressedSize = 0xFFFFFFFFL,
+                    cdExtra = zip64Extra,
+                )
+            }
 
         val entry = list(builder.build()).single()
 
@@ -317,15 +334,16 @@ class ZipArchiveTest {
         val localName = "a-much-longer-local-name.txt".toByteArray()
         val localExtra = ByteArray(6)
         val builder = HandZip()
-        val headerOffset = builder.add(
-            name = "short.txt".toByteArray(),
-            data = "payload".toByteArray(),
-            // The two headers deliberately disagree: a 6-byte local extra where the central
-            // directory records none. A data start computed from the central lengths would
-            // land 6 bytes early, inside the header - only the local one is the truth.
-            localName = localName,
-            localExtra = localExtra,
-        )
+        val headerOffset =
+            builder.add(
+                name = "short.txt".toByteArray(),
+                data = "payload".toByteArray(),
+                // The two headers deliberately disagree: a 6-byte local extra where the central
+                // directory records none. A data start computed from the central lengths would
+                // land 6 bytes early, inside the header - only the local one is the truth.
+                localName = localName,
+                localExtra = localExtra,
+            )
         val archive = ZipArchive(ByteArrayByteSource(builder.build()))
 
         val entry = runBlocking { archive.listEntries() }.single()
@@ -357,9 +375,10 @@ class ZipArchiveTest {
         // The first entry's local header starts at 0; stamping junk over its signature is the
         // truncated-download shape. Listing still succeeds (it never reads local headers) -
         // only the resolve step notices.
-        val corrupted = zip.copyOf().also { bytes ->
-            for (index in 0 until 4) bytes[index] = 0x7F
-        }
+        val corrupted =
+            zip.copyOf().also { bytes ->
+                for (index in 0 until 4) bytes[index] = 0x7F
+            }
         val archive = ZipArchive(ByteArrayByteSource(corrupted))
         val entry = runBlocking { archive.listEntries() }.single()
 
@@ -385,17 +404,24 @@ class ZipArchiveTest {
     fun `dos timestamps convert to epoch millis and clamp impossible dates`() {
         val validDate = ((2024 - 1980) shl 9) or (5 shl 5) or 6
         val validTime = (12 shl 11) or (34 shl 5) or (56 / 2)
-        val builder = HandZip().apply {
-            add("ok.txt".toByteArray(), dosTime = validTime, dosDate = validDate)
-            // Month 13 and February 31st pass no real calendar; the all-zero pair is the
-            // format's "no timestamp at all". Three different wrong shapes, three different
-            // honest answers: clamp, clamp, null.
-            add("bad-month.txt".toByteArray(), dosTime = validTime,
-                dosDate = ((2024 - 1980) shl 9) or (13 shl 5) or 6)
-            add("feb31.txt".toByteArray(), dosTime = validTime,
-                dosDate = ((2024 - 1980) shl 9) or (2 shl 5) or 31)
-            add("none.txt".toByteArray(), dosTime = 0, dosDate = 0)
-        }
+        val builder =
+            HandZip().apply {
+                add("ok.txt".toByteArray(), dosTime = validTime, dosDate = validDate)
+                // Month 13 and February 31st pass no real calendar; the all-zero pair is the
+                // format's "no timestamp at all". Three different wrong shapes, three different
+                // honest answers: clamp, clamp, null.
+                add(
+                    "bad-month.txt".toByteArray(),
+                    dosTime = validTime,
+                    dosDate = ((2024 - 1980) shl 9) or (13 shl 5) or 6,
+                )
+                add(
+                    "feb31.txt".toByteArray(),
+                    dosTime = validTime,
+                    dosDate = ((2024 - 1980) shl 9) or (2 shl 5) or 31,
+                )
+                add("none.txt".toByteArray(), dosTime = 0, dosDate = 0)
+            }
 
         val entries = list(builder.build()).associateBy { it.path }
 
@@ -416,11 +442,12 @@ class ZipArchiveTest {
         val cp437Name = byteArrayOf(0x4D, 0x81.toByte(), 0x6E) + "chen.txt".toByteArray()
         val boxDrawingName = "art".toByteArray() + byteArrayOf(0xB0.toByte()) + ".txt".toByteArray()
         val utf8Name = "résumé.txt".toByteArray(Charsets.UTF_8)
-        val builder = HandZip().apply {
-            add(cp437Name, flags = 0)
-            add(boxDrawingName, flags = 0)
-            add(utf8Name, flags = 0x0800)
-        }
+        val builder =
+            HandZip().apply {
+                add(cp437Name, flags = 0)
+                add(boxDrawingName, flags = 0)
+                add(utf8Name, flags = 0x0800)
+            }
 
         val paths = list(builder.build()).map { it.path }
 
@@ -480,11 +507,15 @@ class ZipArchiveTest {
      * whole API is suspend and every preview-path test boils down to "read this entry, then
      * assert".
      */
-    private fun read(bytes: ByteArray, entry: ArchiveEntry): ByteArray? = runBlocking {
-        val source = ByteArrayByteSource(bytes)
-        ZipArchive(source).listEntries()
-        ArchiveReader.readEntry(ArchiveReader.Format.ZIP, source, entry)
-    }
+    private fun read(
+        bytes: ByteArray,
+        entry: ArchiveEntry,
+    ): ByteArray? =
+        runBlocking {
+            val source = ByteArrayByteSource(bytes)
+            ZipArchive(source).listEntries()
+            ArchiveReader.readEntry(ArchiveReader.Format.ZIP, source, entry)
+        }
 
     /**
      * Runs a listing to completion (or to its first exception), because the engine's whole API
@@ -496,11 +527,13 @@ class ZipArchiveTest {
     ): List<ArchiveEntry> = runBlocking { ZipArchive(ByteArrayByteSource(bytes)).listEntries(onProgress) }
 
     /** The exception a listing died with, or null when it did not - Truth asserts on the type. */
-    private fun corruptWhenListing(bytes: ByteArray): Throwable? =
-        runCatching { list(bytes) }.exceptionOrNull()
+    private fun corruptWhenListing(bytes: ByteArray): Throwable? = runCatching { list(bytes) }.exceptionOrNull()
 
     /** A STORED [ZipEntry] with the sizes and checksum the platform writer insists on. */
-    private fun storedEntry(name: String, data: ByteArray): ZipEntry =
+    private fun storedEntry(
+        name: String,
+        data: ByteArray,
+    ): ZipEntry =
         ZipEntry(name).apply {
             method = ZipEntry.STORED
             size = data.size.toLong()
@@ -531,16 +564,23 @@ class ZipArchiveTest {
         hour: Int,
         minute: Int,
         second: Int,
-    ): Long = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-        clear()
-        set(year, month, day, hour, minute, second)
-    }.timeInMillis
+    ): Long =
+        Calendar
+            .getInstance(TimeZone.getTimeZone("UTC"))
+            .apply {
+                clear()
+                set(year, month, day, hour, minute, second)
+            }.timeInMillis
 
     /**
      * Overwrites a little-endian 32-bit field in place, for patching one EOCD value in an
      * otherwise valid hand-built archive.
      */
-    private fun poke32(target: ByteArray, at: Int, value: Long) {
+    private fun poke32(
+        target: ByteArray,
+        at: Int,
+        value: Long,
+    ) {
         for (index in 0 until 4) {
             target[at + index] = ((value ushr (8 * index)) and 0xFF).toByte()
         }
@@ -550,22 +590,28 @@ class ZipArchiveTest {
      * An [ArchiveByteSource] that counts every byte handed out, so a test can assert what a
      * listing cost - the difference between "bounded scan" as a claim and as a number.
      */
-    private class CountingByteSource(private val inner: ArchiveByteSource) : ArchiveByteSource by inner {
+    private class CountingByteSource(
+        private val inner: ArchiveByteSource,
+    ) : ArchiveByteSource by inner {
         var bytesReturned = 0L
             private set
 
-        override suspend fun readAt(offset: Long, length: Int): ByteArray =
-            inner.readAt(offset, length).also { bytesReturned += it.size }
+        override suspend fun readAt(
+            offset: Long,
+            length: Int,
+        ): ByteArray = inner.readAt(offset, length).also { bytesReturned += it.size }
 
-        override suspend fun read(maxBytes: Int): ByteArray =
-            inner.read(maxBytes).also { bytesReturned += it.size }
+        override suspend fun read(maxBytes: Int): ByteArray = inner.read(maxBytes).also { bytesReturned += it.size }
     }
 
     private companion object {
         /** 1980-01-01T00:00:00Z - the DOS epoch the engine clamps impossible dates to. */
-        val DOS_EPOCH_MILLIS: Long = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-            clear()
-            set(1980, Calendar.JANUARY, 1, 0, 0, 0)
-        }.timeInMillis
+        val DOS_EPOCH_MILLIS: Long =
+            Calendar
+                .getInstance(TimeZone.getTimeZone("UTC"))
+                .apply {
+                    clear()
+                    set(1980, Calendar.JANUARY, 1, 0, 0, 0)
+                }.timeInMillis
     }
 }

@@ -7,10 +7,16 @@ package dev.eclipse.ssh.ssh
  * the two over the same interval is therefore how long the device spent asleep inside it - which is the
  * one thing a deadline on this platform cannot tell you by itself.
  */
-internal data class ClockReading(val elapsedRealtimeMs: Long, val uptimeMs: Long)
+internal data class ClockReading(
+    val elapsedRealtimeMs: Long,
+    val uptimeMs: Long,
+)
 
 /** How a wait was actually spent. */
-internal data class WaitSlice(val awakeMs: Long, val sleptMs: Long)
+internal data class WaitSlice(
+    val awakeMs: Long,
+    val sleptMs: Long,
+)
 
 /**
  * What a wait that ended without the network coming back is allowed to mean.
@@ -41,7 +47,10 @@ internal const val SUSPENSION_MIN_MS = 2_000L
  * reset under the app, and a negative [WaitSlice.awakeMs] would *extend* a hold instead of expiring it,
  * which is a loop rather than a wait.
  */
-internal fun waitSlice(before: ClockReading, after: ClockReading): WaitSlice {
+internal fun waitSlice(
+    before: ClockReading,
+    after: ClockReading,
+): WaitSlice {
     val elapsedMs = (after.elapsedRealtimeMs - before.elapsedRealtimeMs).coerceAtLeast(0L)
     val awakeMs = (after.uptimeMs - before.uptimeMs).coerceAtLeast(0L)
     return WaitSlice(awakeMs = awakeMs, sleptMs = (elapsedMs - awakeMs).coerceAtLeast(0L))
@@ -58,8 +67,9 @@ internal fun holdDecision(
     remainingMs: Long,
     slice: WaitSlice,
     sleepThresholdMs: Long = SUSPENSION_MIN_MS,
-): HoldDecision = when {
-    slice.sleptMs >= sleepThresholdMs -> HoldDecision.DEVICE_SLEPT
-    slice.awakeMs >= remainingMs -> HoldDecision.OUTAGE_EXPIRED
-    else -> HoldDecision.KEEP_WAITING
-}
+): HoldDecision =
+    when {
+        slice.sleptMs >= sleepThresholdMs -> HoldDecision.DEVICE_SLEPT
+        slice.awakeMs >= remainingMs -> HoldDecision.OUTAGE_EXPIRED
+        else -> HoldDecision.KEEP_WAITING
+    }

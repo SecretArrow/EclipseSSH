@@ -32,20 +32,26 @@ enum class SshKeyAlgorithm(
     ;
 
     fun generate(comment: String = "eclipse@ssh"): GeneratedKeyPair {
-        val keyPair = when (keyPairAlgorithm) {
-            "EC" -> KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec(SECP256R1_NAME)) }.generateKeyPair()
-            else -> KeyPairGenerator.getInstance(keyPairAlgorithm).apply { initialize(bits) }.generateKeyPair()
-        }
-        val privatePem = when (curveOid) {
-            null -> encodePkcs8PrivatePem(keyPair)
-            else -> encodeSec1EcPrivatePem(keyPair, curveOid)
-        }
+        val keyPair =
+            when (keyPairAlgorithm) {
+                "EC" -> KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec(SECP256R1_NAME)) }.generateKeyPair()
+                else -> KeyPairGenerator.getInstance(keyPairAlgorithm).apply { initialize(bits) }.generateKeyPair()
+            }
+        val privatePem =
+            when (curveOid) {
+                null -> encodePkcs8PrivatePem(keyPair)
+                else -> encodeSec1EcPrivatePem(keyPair, curveOid)
+            }
         val publicLine = "$opensshName ${encodePublicKey(keyPair)} $comment"
         return GeneratedKeyPair(privatePem = privatePem, publicLine = publicLine, defaultPrivateName = defaultPrivateName)
     }
 }
 
-data class GeneratedKeyPair(val privatePem: String, val publicLine: String, val defaultPrivateName: String)
+data class GeneratedKeyPair(
+    val privatePem: String,
+    val publicLine: String,
+    val defaultPrivateName: String,
+)
 
 /** `prime256v1` / `secp256r1` / NIST P-256 — the one curve this app generates. */
 private const val SECP256R1_OID = "1.2.840.10045.3.1.7"
@@ -78,43 +84,48 @@ internal fun encodePkcs8PrivatePem(keyPair: KeyPair): String = encodePem("PRIVAT
  * Writing the point out explicitly takes the provider out of the question — this is the shape
  * `openssl ecparam -genkey` produces, and OpenSSH, OpenSSL and MINA all read it.
  */
-internal fun encodeSec1EcPrivatePem(keyPair: KeyPair, curveOid: String): String {
+internal fun encodeSec1EcPrivatePem(
+    keyPair: KeyPair,
+    curveOid: String,
+): String {
     val private = keyPair.private as? ECPrivateKey ?: error("Not an EC private key: ${keyPair.private.algorithm}")
     val public = keyPair.public as? ECPublicKey ?: error("Not an EC public key: ${keyPair.public.algorithm}")
-    val body = derSequence(
-        // version: ecPrivkeyVer1
-        der(DER_INTEGER, byteArrayOf(1)),
-        // privateKey: the scalar, fixed-width for the curve, as RFC 5915 requires
-        der(DER_OCTET_STRING, fixedWidth(private.s, ecFieldBytes(public))),
-        // parameters [0]: the curve, by OID rather than spelled out
-        der(DER_CONTEXT_0, der(DER_OID, encodeObjectIdentifier(curveOid))),
-        // publicKey [1]: the point, with the BIT STRING's leading "no unused bits" octet
-        der(DER_CONTEXT_1, der(DER_BIT_STRING, byteArrayOf(0) + ecPointBytes(public))),
-    )
+    val body =
+        derSequence(
+            // version: ecPrivkeyVer1
+            der(DER_INTEGER, byteArrayOf(1)),
+            // privateKey: the scalar, fixed-width for the curve, as RFC 5915 requires
+            der(DER_OCTET_STRING, fixedWidth(private.s, ecFieldBytes(public))),
+            // parameters [0]: the curve, by OID rather than spelled out
+            der(DER_CONTEXT_0, der(DER_OID, encodeObjectIdentifier(curveOid))),
+            // publicKey [1]: the point, with the BIT STRING's leading "no unused bits" octet
+            der(DER_CONTEXT_1, der(DER_BIT_STRING, byteArrayOf(0) + ecPointBytes(public))),
+        )
     return encodePem("EC PRIVATE KEY", body)
 }
 
-internal fun encodePublicKey(keyPair: KeyPair): String = when (val public = keyPair.public) {
-    is RSAPublicKey -> {
-        val out = ByteArrayOutputStream()
-        writeString(out, "ssh-rsa")
-        writeMpint(out, public.publicExponent)
-        writeMpint(out, public.modulus)
-        Base64.getEncoder().encodeToString(out.toByteArray())
+internal fun encodePublicKey(keyPair: KeyPair): String =
+    when (val public = keyPair.public) {
+        is RSAPublicKey -> {
+            val out = ByteArrayOutputStream()
+            writeString(out, "ssh-rsa")
+            writeMpint(out, public.publicExponent)
+            writeMpint(out, public.modulus)
+            Base64.getEncoder().encodeToString(out.toByteArray())
+        }
+        is ECPublicKey -> {
+            // OpenSSH wire format (RFC 5656): exactly three fields —
+            // string algorithm, string curve name, string point Q. The point already
+            // contains the X and Y coordinates (0x04 || X || Y); writing them again
+            // as mpints would produce a non-standard blob some parsers reject.
+            val out = ByteArrayOutputStream()
+            writeString(out, "ecdsa-sha2-nistp256")
+            writeString(out, "nistp256")
+            writeBytes(out, ecPointBytes(public))
+            Base64.getEncoder().encodeToString(out.toByteArray())
+        }
+        else -> error("Unsupported public key type: ${public.javaClass.simpleName}")
     }
-    is ECPublicKey -> {
-        // OpenSSH wire format (RFC 5656): exactly three fields —
-        // string algorithm, string curve name, string point Q. The point already
-        // contains the X and Y coordinates (0x04 || X || Y); writing them again
-        // as mpints would produce a non-standard blob some parsers reject.
-        val out = ByteArrayOutputStream()
-        writeString(out, "ecdsa-sha2-nistp256")
-        writeString(out, "nistp256")
-        writeBytes(out, ecPointBytes(public))
-        Base64.getEncoder().encodeToString(out.toByteArray())
-    }
-    else -> error("Unsupported public key type: ${public.javaClass.simpleName}")
-}
 
 /** Octets needed for one coordinate on this key's curve: 32 for P-256, 48 for P-384, 66 for P-521. */
 private fun ecFieldBytes(public: ECPublicKey): Int = (public.params.curve.field.fieldSize + 7) / 8
@@ -135,7 +146,10 @@ internal fun ecPointBytes(public: ECPublicKey): ByteArray {
  * small share of "Generate key" taps crashed with nothing to distinguish them from the ones that
  * worked. Short values are padded and over-long ones are rejected rather than silently truncated.
  */
-internal fun fixedWidth(value: BigInteger, width: Int): ByteArray {
+internal fun fixedWidth(
+    value: BigInteger,
+    width: Int,
+): ByteArray {
     require(value.signum() >= 0) { "Cannot encode a negative value as $width unsigned octets" }
     // toByteArray() is two's complement, so a value whose top bit is set gains a 0x00 sign octet.
     val raw = value.toByteArray()
@@ -147,7 +161,10 @@ internal fun fixedWidth(value: BigInteger, width: Int): ByteArray {
 
 private const val ZERO_BYTE = 0.toByte()
 
-private fun encodePem(label: String, der: ByteArray): String {
+private fun encodePem(
+    label: String,
+    der: ByteArray,
+): String {
     // The MIME encoder does not guarantee a trailing line separator, so trim any
     // and always place the END marker on its own line. A glued marker would make
     // the last base64 line disappear during parsing (OpenSSH and SSHD both
@@ -171,7 +188,10 @@ private fun derSequence(vararg parts: ByteArray): ByteArray {
 }
 
 /** One DER tag-length-value, definite length, long form once the content passes 127 octets. */
-internal fun der(tag: Int, content: ByteArray): ByteArray {
+internal fun der(
+    tag: Int,
+    content: ByteArray,
+): ByteArray {
     val out = ByteArrayOutputStream()
     out.write(tag)
     if (content.size < 0x80) {
@@ -193,9 +213,10 @@ internal fun der(tag: Int, content: ByteArray): ByteArray {
  * `sun.security.util.ObjectIdentifier` (not public API, and gone on Android).
  */
 internal fun encodeObjectIdentifier(oid: String): ByteArray {
-    val arcs = oid.split('.').map { part ->
-        requireNotNull(part.toLongOrNull()) { "Not an object identifier: $oid" }
-    }
+    val arcs =
+        oid.split('.').map { part ->
+            requireNotNull(part.toLongOrNull()) { "Not an object identifier: $oid" }
+        }
     require(arcs.size >= 2) { "Not an object identifier: $oid" }
     require(arcs[0] in 0L..2L && arcs[1] < 40L) { "Not an object identifier: $oid" }
     val out = ByteArrayOutputStream()
@@ -205,7 +226,10 @@ internal fun encodeObjectIdentifier(oid: String): ByteArray {
     return out.toByteArray()
 }
 
-private fun writeBase128(out: ByteArrayOutputStream, value: Long) {
+private fun writeBase128(
+    out: ByteArrayOutputStream,
+    value: Long,
+) {
     val septets = ArrayDeque<Int>()
     var remaining = value
     do {
@@ -217,14 +241,23 @@ private fun writeBase128(out: ByteArrayOutputStream, value: Long) {
     }
 }
 
-private fun writeString(out: ByteArrayOutputStream, value: String) = writeBytes(out, value.toByteArray(Charsets.UTF_8))
+private fun writeString(
+    out: ByteArrayOutputStream,
+    value: String,
+) = writeBytes(out, value.toByteArray(Charsets.UTF_8))
 
-private fun writeBytes(out: ByteArrayOutputStream, bytes: ByteArray) {
+private fun writeBytes(
+    out: ByteArrayOutputStream,
+    bytes: ByteArray,
+) {
     writeUInt32(out, bytes.size)
     out.write(bytes)
 }
 
-private fun writeMpint(out: ByteArrayOutputStream, value: BigInteger) {
+private fun writeMpint(
+    out: ByteArrayOutputStream,
+    value: BigInteger,
+) {
     var bytes = value.toByteArray()
     if (bytes.size > 1 && bytes[0] == ZERO_BYTE && bytes[1] >= ZERO_BYTE) {
         bytes = bytes.copyOfRange(1, bytes.size)
@@ -233,7 +266,10 @@ private fun writeMpint(out: ByteArrayOutputStream, value: BigInteger) {
     out.write(bytes)
 }
 
-private fun writeUInt32(out: ByteArrayOutputStream, value: Int) {
+private fun writeUInt32(
+    out: ByteArrayOutputStream,
+    value: Int,
+) {
     out.write((value ushr 24) and 0xFF)
     out.write((value ushr 16) and 0xFF)
     out.write((value ushr 8) and 0xFF)

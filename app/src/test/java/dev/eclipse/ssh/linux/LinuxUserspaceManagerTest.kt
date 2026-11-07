@@ -2,15 +2,15 @@ package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.ssh.SessionEnd
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.runTest
-import org.junit.Test
 
 /**
  * The userspace state machine, driven end to end over the real components: a real rootfs fixture
@@ -23,7 +23,6 @@ import org.junit.Test
  * state; if these invariants slip, the card lies.
  */
 class LinuxUserspaceManagerTest {
-
     private class Harness(
         distro: LinuxDistro,
         // Overridable because the stale-flag test needs the root to exist - with its state file
@@ -83,40 +82,42 @@ class LinuxUserspaceManagerTest {
                 // disk, so no test here reaches a repair that has to fetch one either.
                 retryWaitsMillis = longArrayOf(),
             )
-        val distribution = UbuntuDistributionManager(
-            distro,
-            runtime,
-            appUid = 10150,
-            appGid = 10150,
-            supplementaryGids = supplementaryGids,
-            // Wired here as the graph wires it (LinuxUserspaceGraphProvider), because the setup
-            // pipeline's prologue restores any of dpkg's own programs the rootfs has lost out of
-            // the same pinned archive — and that restore is the repair the reported
-            // "1 expected program not found in PATH" failure needs. A harness without it exercises
-            // a distribution that can only warn about a missing `rm`, which is not the app.
-            installer = installer,
-            // Nothing listens on port 1, so the mirror feed is unreachable in a millisecond and the
-            // apt-update ladder is the three archives [builtinMirrorUrls] names and no more. Only
-            // the tests that drive an *exhausted* update ever read it, and they have to be hermetic:
-            // the default endpoint is a real host, and a unit test that waited on it would be a test
-            // of the build machine's network.
-            mirrorListUrl = UNREACHABLE_MIRROR_FEED,
-        )
+        val distribution =
+            UbuntuDistributionManager(
+                distro,
+                runtime,
+                appUid = 10150,
+                appGid = 10150,
+                supplementaryGids = supplementaryGids,
+                // Wired here as the graph wires it (LinuxUserspaceGraphProvider), because the setup
+                // pipeline's prologue restores any of dpkg's own programs the rootfs has lost out of
+                // the same pinned archive — and that restore is the repair the reported
+                // "1 expected program not found in PATH" failure needs. A harness without it exercises
+                // a distribution that can only warn about a missing `rm`, which is not the app.
+                installer = installer,
+                // Nothing listens on port 1, so the mirror feed is unreachable in a millisecond and the
+                // apt-update ladder is the three archives [builtinMirrorUrls] names and no more. Only
+                // the tests that drive an *exhausted* update ever read it, and they have to be hermetic:
+                // the default endpoint is a real host, and a unit test that waited on it would be a test
+                // of the build machine's network.
+                mirrorListUrl = UNREACHABLE_MIRROR_FEED,
+            )
         val processes = LinuxProcessManager()
         val workspace = LinuxWorkspaceManager(runtime)
         val backupFile = File(rootDir.parentFile, "${rootDir.name}-workspace-backup.tar.gz")
 
-        val manager = LinuxUserspaceManager(
-            rootDir,
-            distro,
-            runtime,
-            installer,
-            distribution,
-            processes,
-            workspace,
-            backupFile,
-            storage = storage,
-        )
+        val manager =
+            LinuxUserspaceManager(
+                rootDir,
+                distro,
+                runtime,
+                installer,
+                distribution,
+                processes,
+                workspace,
+                backupFile,
+                storage = storage,
+            )
     }
 
     companion object {
@@ -153,1174 +154,1261 @@ class LinuxUserspaceManagerTest {
     }
 
     @Test
-    fun `install runs the whole pipeline and lands on Stopped`() = runTest {
-        val harness = newHarness()
-        // Observe the endpoints of the trajectory, not its middle: StateFlow conflates, so
-        // intermediate Installing steps are not deterministically observable by a collector -
-        // their content is pinned by RootfsInstallerTest's progress assertions instead. The first
-        // value a fresh collector receives is the current one, which is NotInstalled here.
-        val states = mutableListOf<LinuxUserspaceState>()
-        val observer = launch { harness.manager.state.collect { states += it } }
-        // Run the observer to its first suspension before install() starts. install suspends on
-        // real IO, and the work runner starts queued coroutines while the body waits there - so
-        // without this flush the observer's first dispatch happens after the state has already
-        // advanced to Installing, and it never sees the NotInstalled it exists to pin.
-        testScheduler.runCurrent()
+    fun `install runs the whole pipeline and lands on Stopped`() =
+        runTest {
+            val harness = newHarness()
+            // Observe the endpoints of the trajectory, not its middle: StateFlow conflates, so
+            // intermediate Installing steps are not deterministically observable by a collector -
+            // their content is pinned by RootfsInstallerTest's progress assertions instead. The first
+            // value a fresh collector receives is the current one, which is NotInstalled here.
+            val states = mutableListOf<LinuxUserspaceState>()
+            val observer = launch { harness.manager.state.collect { states += it } }
+            // Run the observer to its first suspension before install() starts. install suspends on
+            // real IO, and the work runner starts queued coroutines while the body waits there - so
+            // without this flush the observer's first dispatch happens after the state has already
+            // advanced to Installing, and it never sees the NotInstalled it exists to pin.
+            testScheduler.runCurrent()
 
-        val report = harness.manager.install()
-        testScheduler.advanceUntilIdle()
+            val report = harness.manager.install()
+            testScheduler.advanceUntilIdle()
 
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(report.warnings).isEmpty()
-        assertThat(harness.downloads).isEqualTo(1)
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(report.warnings).isEmpty()
+            assertThat(harness.downloads).isEqualTo(1)
 
-        // The account entry is the app uid's own name, not the identity a session runs as: the
-        // session is proot's fake root (see ProotRuntimeExecModelTest), and this line is what makes
-        // `su - ubuntu` land back on the uid that really owns every file in the rootfs.
-        val passwd = harness.installer.rootfsDir.resolve("etc/passwd").readText()
-        assertThat(passwd).contains("ubuntu:x:10150:10150:Ubuntu:/home/ubuntu:/bin/bash")
-        // The group and shadow entries replaced any shipped ubuntu line rather than duplicating it.
-        val group = harness.installer.rootfsDir.resolve("etc/group").readText()
-        assertThat(group.lines().count { it.startsWith("ubuntu:") }).isEqualTo(1)
+            // The account entry is the app uid's own name, not the identity a session runs as: the
+            // session is proot's fake root (see ProotRuntimeExecModelTest), and this line is what makes
+            // `su - ubuntu` land back on the uid that really owns every file in the rootfs.
+            val passwd =
+                harness.installer.rootfsDir
+                    .resolve("etc/passwd")
+                    .readText()
+            assertThat(passwd).contains("ubuntu:x:10150:10150:Ubuntu:/home/ubuntu:/bin/bash")
+            // The group and shadow entries replaced any shipped ubuntu line rather than duplicating it.
+            val group =
+                harness.installer.rootfsDir
+                    .resolve("etc/group")
+                    .readText()
+            assertThat(group.lines().count { it.startsWith("ubuntu:") }).isEqualTo(1)
 
-        // The archive matches the architecture: arm64 gets the ports archive, not amd64's.
-        val sources = harness.installer.rootfsDir.resolve("etc/apt/sources.list").readText()
-        assertThat(sources).contains("ports.ubuntu.com/ubuntu-ports")
+            // The archive matches the architecture: arm64 gets the ports archive, not amd64's.
+            val sources =
+                harness.installer.rootfsDir
+                    .resolve("etc/apt/sources.list")
+                    .readText()
+            assertThat(sources).contains("ports.ubuntu.com/ubuntu-ports")
 
-        // DNS is a real file, not the rootfs's dangling systemd symlink.
-        val resolv = harness.installer.rootfsDir.resolve("etc/resolv.conf").readText()
-        assertThat(resolv.lines().first()).isEqualTo("nameserver 1.1.1.1")
+            // DNS is a real file, not the rootfs's dangling systemd symlink.
+            val resolv =
+                harness.installer.rootfsDir
+                    .resolve("etc/resolv.conf")
+                    .readText()
+            assertThat(resolv.lines().first()).isEqualTo("nameserver 1.1.1.1")
 
-        assertThat(harness.installer.rootfsDir.resolve("home/ubuntu/workspace").isDirectory).isTrue()
+            assertThat(
+                harness.installer.rootfsDir
+                    .resolve("home/ubuntu/workspace")
+                    .isDirectory,
+            ).isTrue()
 
-        // The setup pipeline really ran through the scripted proot: package lists updated, the
-        // base packages installed, both with proot's `-0` — the identity dpkg insists on before it
-        // will unpack anything.
-        // The happy path never leaves the ladder's first rung - the primary archive succeeds and no
-        // mirror is fetched - which is what pins the flags every rung carries.
-        val commands = harness.spawner.commands
-        assertThat(commands).contains(
-            "apt-get update -o Acquire::Retries=3 -o Acquire::Languages=none -o Acquire::http::Timeout=30",
-        )
-        assertThat(
-            commands.any { it.startsWith("apt-get install -y --no-install-recommends") },
-        ).isTrue()
+            // The setup pipeline really ran through the scripted proot: package lists updated, the
+            // base packages installed, both with proot's `-0` — the identity dpkg insists on before it
+            // will unpack anything.
+            // The happy path never leaves the ladder's first rung - the primary archive succeeds and no
+            // mirror is fetched - which is what pins the flags every rung carries.
+            val commands = harness.spawner.commands
+            assertThat(commands).contains(
+                "apt-get update -o Acquire::Retries=3 -o Acquire::Languages=none -o Acquire::http::Timeout=30",
+            )
+            assertThat(
+                commands.any { it.startsWith("apt-get install -y --no-install-recommends") },
+            ).isTrue()
 
-        // The probe ran too, and it is the user-facing path.
-        assertThat(commands).contains("whoami")
+            // The probe ran too, and it is the user-facing path.
+            assertThat(commands).contains("whoami")
 
-        // And every proot run carried `-0`, the probe's included: a session that is not fake root
-        // reports a non-zero uid, which is the state the user's own device was in when
-        // `apt install` answered "requested operation requires superuser privilege" and `su` died
-        // with a system error. Asserted over the raw argument vectors, so a builder that dropped
-        // the flag for one caller cannot pass by leaving the summary looking right.
-        assertThat(harness.spawner.spawns).isNotEmpty()
-        assertThat(harness.spawner.spawns.filterNot { it.argv.contains("-0") }.map { it.argv }).isEmpty()
+            // And every proot run carried `-0`, the probe's included: a session that is not fake root
+            // reports a non-zero uid, which is the state the user's own device was in when
+            // `apt install` answered "requested operation requires superuser privilege" and `su` died
+            // with a system error. Asserted over the raw argument vectors, so a builder that dropped
+            // the flag for one caller cannot pass by leaving the summary looking right.
+            assertThat(harness.spawner.spawns).isNotEmpty()
+            assertThat(
+                harness.spawner.spawns
+                    .filterNot { it.argv.contains("-0") }
+                    .map { it.argv },
+            ).isEmpty()
 
-        assertThat(states.first()).isEqualTo(LinuxUserspaceState.NotInstalled)
-        assertThat(states.last()).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(states.first()).isEqualTo(LinuxUserspaceState.NotInstalled)
+            assertThat(states.last()).isEqualTo(LinuxUserspaceState.Stopped)
 
-        observer.cancel()
-    }
-
-    @Test
-    fun `start verifies health, stop closes every session`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-
-        // A live session: a real local channel over a scripted pty, as the terminal tab opens one.
-        val process = FakePtyProcess()
-        val channel = LocalTerminalChannel(process)
-        harness.processes.register("session-1", channel)
-        assertThat(harness.manager.sessionCount.value).isEqualTo(1)
-
-        harness.manager.start()
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-
-        harness.manager.stop()
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Stop closed the session - the one path where ending a terminal is logout, because the
-        // user asked for the whole userspace to stop.
-        assertThat(harness.manager.sessionCount.value).isEqualTo(0)
-        assertThat(channel.hasEnded).isTrue()
-    }
-
-    @Test
-    fun `an unhealthy probe lands on NeedsRepair instead of Running`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-
-        // Break the one thing the probe trusts: whoami answers `ubuntu`, the app's own Android uid
-        // rather than proot's fake root — a userspace whose sessions are not uid 0, where dpkg and
-        // su cannot work, even though every command still exits 0. Everything else stays healthy,
-        // so NeedsRepair names the identity and nothing else.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
+            observer.cancel()
         }
 
-        harness.manager.start()
-        assertThat(harness.manager.state.value)
-            .isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-        assertThat((harness.manager.state.value as LinuxUserspaceState.NeedsRepair).detail)
-            .contains("'ubuntu'")
-
-        // Repair runs the pipeline again over the extracted rootfs - without re-downloading it.
-        harness.spawner.respond = healthyRespond
-        harness.manager.repair()
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(harness.downloads).isEqualTo(1)
-
-        // And with health restored, start now reaches Running.
-        harness.manager.start()
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-    }
-
     @Test
-    fun `repair puts a program dpkg needs back, out of the pinned archive`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
-        assertThat(rm.readText()).isEqualTo("fake rm\n")
-        // The reported failure, in one deleted file: while `rm` is gone, every command in the setup
-        // pipeline answers `dpkg: error: 1 expected program not found in PATH or not executable`,
-        // and until the ladder existed that pipeline was the only repair the app had — so the one
-        // state Repair was reported against was the one it could not clear. The program itself has
-        // to come back, out of the archive the install came from, and the pipeline then runs over
-        // the rootfs it just healed.
-        rm.delete()
-        // Something the user installed on top, which a rebuild would take with it. This repair is
-        // not one, and this file is how the test says so.
-        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
-        userPackage.writeText("installed by the user\n")
-        val downloadsBeforeRepair = harness.downloads
+    fun `start verifies health, stop closes every session`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
 
-        harness.manager.repair()
+            // A live session: a real local channel over a scripted pty, as the terminal tab opens one.
+            val process = FakePtyProcess()
+            val channel = LocalTerminalChannel(process)
+            harness.processes.register("session-1", channel)
+            assertThat(harness.manager.sessionCount.value).isEqualTo(1)
 
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Back, byte for byte and executable: the archive's own copy, not a placeholder.
-        assertThat(rm.readText()).isEqualTo("fake rm\n")
-        assertThat(rm.canExecute()).isTrue()
-        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
-        // And it cost the network nothing at all. This used to be one download, because the install
-        // deleted the tarball once it was unpacked ("the tarball has served its purpose") and
-        // putting one file back therefore meant fetching thirty-four megabytes for it. The archive
-        // is kept for exactly this, and the assertion is +0 rather than +1 so that a future change
-        // which starts fetching again fails here rather than at the user's data plan.
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-    }
+            harness.manager.start()
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
 
-    @Test
-    fun `repair restores a base file the pipeline does not look for, from the archive`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // A member of the archive that nothing in the pipeline asks about: the prologue stats the
-        // fourteen programs dpkg runs, and a base system is a few thousand files. The rest is this
-        // rung's - it compares the archive with what is on disk and writes back what is absent.
-        val pad = harness.installer.rootfsDir.resolve("var/lib/rootfs-fixture.pad")
-        assertThat(pad.isFile).isTrue()
-        pad.delete()
-        // The probe fails while the file is gone, which is the only way the ladder can be made to
-        // climb past its first rung here: the pipeline itself succeeds whatever the filesystem
-        // holds, because the proot behind it is scripted.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command == "whoami" && !pad.exists()) 0 to "ubuntu\n" else healthyRespond(command)
-        }
-        val downloadsBeforeRepair = harness.downloads
-
-        harness.manager.repair()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Back, and the whole 3 MB of it: the archive's own bytes over the hole, not an empty file
-        // standing in for one.
-        assertThat(pad.length()).isEqualTo(3L * 1024 * 1024)
-        // Written out of the archive the install kept, so the repair fetched nothing: see the test
-        // above for why this is +0 and not +1.
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-    }
-
-    @Test
-    fun `repair reclaims an interrupted extraction and keeps the rootfs that is there`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // The crash shape the ladder opens on: a whole rootfs, and a staging tree its extraction
-        // never finished with. `isExtracted()` is false because of the leftover alone, so every
-        // rung below reads the install as missing - the leftover goes first, and nothing else does.
-        val staging = harness.rootDir.resolve("rootfs.staging")
-        staging.resolve("etc").mkdirs()
-        staging.resolve("etc/half-written.conf").writeText("truncated by the crash\n")
-        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
-        userPackage.writeText("installed by the user\n")
-        val downloadsBeforeRepair = harness.downloads
-
-        harness.manager.repair()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(staging.exists()).isFalse()
-        assertThat(harness.installer.rootfsDir.resolve("bin/bash").isFile).isTrue()
-        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
-        // The rootfs was already there and already whole: no archive was fetched, so no download.
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-    }
-
-    @Test
-    fun `repair refuses to rebuild over a failure a rebuild cannot fix`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // A rootfs the probe calls broken (its `whoami` answers the app's own uid) and no network
-        // to fetch the archive the deeper rungs read. Every one of them would hit that same dead
-        // network, and the deepest would rewrite a working base system on the way to the same
-        // failure - so the ladder has to stop, and hand back the typed failure it was given.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
-        }
-        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
-        userPackage.writeText("installed by the user\n")
-        // The archive has to go first, and that is the whole point of this test's premise rather
-        // than a detail of it: an install *keeps* its verified tarball precisely so the deeper rungs
-        // can write base bytes without the network, which means a device with nothing on disk to
-        // rebuild from is the only one left to refuse. It goes here by being released by hand,
-        // because nothing on the ladder removes it any more — the disk step that used to is gone
-        // (AUDIT-REPORT §76) — and on a device it takes a changed pin or a lost file. The sibling
-        // test below — "repair climbs to a rebuild when nothing cheaper clears the fault, and keeps
-        // the work" — is the other side of that line: it reaches the deepest rung and rebuilds out
-        // of the archive, fetching nothing.
-        assertThat(harness.installer.releasePinnedArchive()).isGreaterThan(0L)
-        harness.downloadFails = true
-
-        val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
-
-        assertThat(failure).isInstanceOf(IOException::class.java)
-        assertThat(failure?.message).contains("the network is down")
-        // And the sentence is the taxonomy's rather than the downloader's. The installer types this
-        // refusal so the ladder can stop on it, but a type is not something a user can act on:
-        // "downloading … failed: " names the fault and not the response, and this is the case where
-        // the only useful thing the user can do is the thing the button they pressed does again.
-        assertThat(failure).isInstanceOf(UserspaceFailure.ArchiveUnavailable::class.java)
-        assertThat(failure?.message).contains("check the connection")
-        // Untouched: nothing re-extracted, nothing rewritten, and the packages the user installed
-        // on top of the base system are still installed.
-        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-    }
-
-    @Test
-    fun `repair climbs to a rebuild when nothing cheaper clears the fault, and keeps the work`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val projects = harness.workspace.workspaceDir.resolve("projects")
-        projects.mkdirs()
-        projects.resolve("site.txt").writeText("the user's work\n")
-        // A fault only a rebuild removes: a file the archive never carried, standing in the rootfs
-        // and keeping the probe failing. No cheaper rung can touch it - the essentials are all
-        // present, so the prologue finds nothing to put back, and the overlay writes the archive's
-        // own members over theirs without clearing anything the archive does not name. So the
-        // ladder reaches its last rung, which is the one that costs the user something.
-        val poison = harness.installer.rootfsDir.resolve("usr/bin/poison")
-        poison.writeText("only a rebuild removes this\n")
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command == "whoami" && poison.exists()) 0 to "ubuntu\n" else healthyRespond(command)
+            harness.manager.stop()
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // Stop closed the session - the one path where ending a terminal is logout, because the
+            // user asked for the whole userspace to stop.
+            assertThat(harness.manager.sessionCount.value).isEqualTo(0)
+            assertThat(channel.hasEnded).isTrue()
         }
 
-        harness.manager.repair()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // The rootfs is not the one that was there, and the fault went with it.
-        assertThat(poison.exists()).isFalse()
-        assertThat(harness.installer.rootfsDir.resolve("bin/bash").isFile).isTrue()
-        // And the price was the base system alone: the work was parked before the rebuild and put
-        // back after it, which is the one thing this rung must never cost.
-        assertThat(harness.workspace.workspaceDir.resolve("projects/site.txt").readText())
-            .isEqualTo("the user's work\n")
-        assertThat(harness.manager.hasPendingWorkspaceBackup()).isFalse()
-    }
-
     @Test
-    fun `a package lock apt cannot open is cleared, and the ladder stops before it can spend a package step`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // A directory standing where the lock file belongs. This is the damage the local rung answers,
-        // and it is deliberately *not* an empty lock file: apt and dpkg never unlink their own lock
-        // files, so the four empty files are what a successful package run leaves, and a rung that
-        // cleared those would be clearing the healthy state on every press.
-        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
-        lock.parentFile?.mkdirs()
-        lock.mkdirs()
-        // Something the user installed on top of the base system: a rebuild would take it with it, and
-        // this repair is not one.
-        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
-        userPackage.writeText("installed by the user\n")
-        // And apt's own trees, at the size a real device has them: an index apt has already fetched
-        // and a package it has already downloaded. This repair has nothing to do with either, and it
-        // is the repair that used to take both — a full re-index plus every cached `.deb`, on the
-        // user's connection, to answer a marker on disk.
-        val index = harness.installer.rootfsDir.resolve("var/lib/apt/lists/fixture_Packages")
-        index.parentFile?.mkdirs()
-        index.writeText("Package: fixture\n")
-        val cachedDeb = harness.installer.rootfsDir.resolve("var/cache/apt/archives/fixture.deb")
-        cachedDeb.parentFile?.mkdirs()
-        cachedDeb.writeText("already downloaded\n")
-        val downloadsBeforeRepair = harness.downloads
+    fun `an unhealthy probe lands on NeedsRepair instead of Running`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
 
-        // What the real userspace does with a lock path it cannot open: every dpkg and apt command
-        // refuses in about a second, in apt's own sentence about the *open* failing - naming no
-        // process, because nothing holds it. Scripted so the test fails if even one package step ever
-        // meets the lock — the count is asserted below.
-        var refusals = 0
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (lock.isDirectory && (command.contains("dpkg") || command.contains("apt-get"))) {
-                refusals++
-                100 to "E: Could not open lock file $lock - open (21: Is a directory)\n"
-            } else {
-                healthyRespond(command)
+            // Break the one thing the probe trusts: whoami answers `ubuntu`, the app's own Android uid
+            // rather than proot's fake root — a userspace whose sessions are not uid 0, where dpkg and
+            // su cannot work, even though every command still exits 0. Everything else stays healthy,
+            // so NeedsRepair names the identity and nothing else.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
             }
+
+            harness.manager.start()
+            assertThat(harness.manager.state.value)
+                .isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+            assertThat((harness.manager.state.value as LinuxUserspaceState.NeedsRepair).detail)
+                .contains("'ubuntu'")
+
+            // Repair runs the pipeline again over the extracted rootfs - without re-downloading it.
+            harness.spawner.respond = healthyRespond
+            harness.manager.repair()
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(harness.downloads).isEqualTo(1)
+
+            // And with health restored, start now reaches Running.
+            harness.manager.start()
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
         }
 
-        val report = harness.manager.repair()
+    @Test
+    fun `repair puts a program dpkg needs back, out of the pinned archive`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
+            assertThat(rm.readText()).isEqualTo("fake rm\n")
+            // The reported failure, in one deleted file: while `rm` is gone, every command in the setup
+            // pipeline answers `dpkg: error: 1 expected program not found in PATH or not executable`,
+            // and until the ladder existed that pipeline was the only repair the app had — so the one
+            // state Repair was reported against was the one it could not clear. The program itself has
+            // to come back, out of the archive the install came from, and the pipeline then runs over
+            // the rootfs it just healed.
+            rm.delete()
+            // Something the user installed on top, which a rebuild would take with it. This repair is
+            // not one, and this file is how the test says so.
+            val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+            userPackage.writeText("installed by the user\n")
+            val downloadsBeforeRepair = harness.downloads
 
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Gone before anything that would have refused on it — and gone is where the ladder *ended*:
-        // the local rung cleared it, the probe that follows the local rungs found the userspace sound,
-        // and every rung below that one never ran. Without the local rung the ladder would have spent
-        // all four of its rungs on this one refusal and ended by rebuilding the rootfs.
-        assertThat(lock.exists()).isFalse()
-        assertThat(refusals).isEqualTo(0)
-        assertThat(report.warnings.joinToString("\n")).contains("cleared 1 package-manager lock(s)")
-        // Nothing was downloaded and nothing was rebuilt: the failure was a marker on disk, not the
-        // base system, and the repair that clears it costs the user no network at all.
-        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-        // Including apt's trees, which this repair never named and therefore never touched. This is
-        // the whole of "every press of Repair re-downloads the world": the old rung emptied both of
-        // these before the setup run, on every failure there was.
-        assertThat(index.readText()).isEqualTo("Package: fixture\n")
-        assertThat(cachedDeb.readText()).isEqualTo("already downloaded\n")
-    }
+            harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // Back, byte for byte and executable: the archive's own copy, not a placeholder.
+            assertThat(rm.readText()).isEqualTo("fake rm\n")
+            assertThat(rm.canExecute()).isTrue()
+            assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+            // And it cost the network nothing at all. This used to be one download, because the install
+            // deleted the tarball once it was unpacked ("the tarball has served its purpose") and
+            // putting one file back therefore meant fetching thirty-four megabytes for it. The archive
+            // is kept for exactly this, and the assertion is +0 rather than +1 so that a future change
+            // which starts fetching again fails here rather than at the user's data plan.
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        }
 
     @Test
-    fun `the lock files a package run leaves are not damage, and no repair is spent on them`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // The state a successful `apt-get install` leaves behind, on a userspace that is otherwise
-        // perfectly healthy: all four lock files, empty, held by nobody. The health check used to call
-        // this damage - it asked whether the file existed and whether a lock was held on it, and those
-        // four files exist after every successful run with nothing holding them - so a working
-        // userspace was reported broken, and no rung could satisfy the check: the local rung removed
-        // the files and the setup rung below recreated them, on every press, forever.
-        val locks = listOf(
-            "var/lib/dpkg/lock",
-            "var/lib/dpkg/lock-frontend",
-            "var/lib/apt/lists/lock",
-            "var/cache/apt/archives/lock",
-        ).map { harness.installer.rootfsDir.resolve(it) }
-        locks.forEach { it.parentFile?.mkdirs(); it.writeText("") }
+    fun `repair restores a base file the pipeline does not look for, from the archive`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // A member of the archive that nothing in the pipeline asks about: the prologue stats the
+            // fourteen programs dpkg runs, and a base system is a few thousand files. The rest is this
+            // rung's - it compares the archive with what is on disk and writes back what is absent.
+            val pad = harness.installer.rootfsDir.resolve("var/lib/rootfs-fixture.pad")
+            assertThat(pad.isFile).isTrue()
+            pad.delete()
+            // The probe fails while the file is gone, which is the only way the ladder can be made to
+            // climb past its first rung here: the pipeline itself succeeds whatever the filesystem
+            // holds, because the proot behind it is scripted.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command == "whoami" && !pad.exists()) 0 to "ubuntu\n" else healthyRespond(command)
+            }
+            val downloadsBeforeRepair = harness.downloads
 
-        val report = harness.manager.repair()
+            harness.manager.repair()
 
-        // Every one of them still there, and untouched: the repair did not do work to remove the state
-        // the package manager itself creates. This is the regression the reported failure was.
-        locks.forEach { assertThat(it.isFile).isTrue() }
-        assertThat(report.warnings.joinToString("\n")).doesNotContain("package-manager lock")
-        // And the package steps ran on a userspace that was never asked to refuse, because a lock apt
-        // can open is a lock apt is content with.
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-    }
-
-    @Test
-    fun `scratch directories a gone proot left are cleared by a repair, and it says how many`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // One directory per launch: what a proot that exits normally left behind before patch 0006,
-        // holding the loader link its teardown could not remove. The pid is one nothing here runs,
-        // which is the whole of what makes it litter rather than a live session's.
-        val gone = TestPids.nothingRuns()
-        val leaked = File(harness.runtime.tmpDir, "exec-$gone-bervFx").apply { mkdirs() }
-        File(leaked, "bash").writeText("")
-        val downloadsBeforeRepair = harness.downloads
-
-        val report = harness.manager.repair()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(leaked.exists()).isFalse()
-        assertThat(report.warnings.joinToString("\n"))
-            .contains("cleared 1 leftover proot scratch directory")
-        assertThat(harness.distribution.diagnostics.export())
-            .contains("cleared leftover proot scratch directories")
-        // Local, and therefore free: the litter cost the user no network at all.
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-    }
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // Back, and the whole 3 MB of it: the archive's own bytes over the hole, not an empty file
+            // standing in for one.
+            assertThat(pad.length()).isEqualTo(3L * 1024 * 1024)
+            // Written out of the archive the install kept, so the repair fetched nothing: see the test
+            // above for why this is +0 and not +1.
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        }
 
     @Test
-    fun `a setup run that fails over apt's own lists gives them up and runs the pipeline again`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val rootfs = harness.installer.rootfsDir
-        // The two things a repair used to throw away whether or not anything was wrong with them.
-        val index = rootfs.resolve("var/lib/apt/lists/fixture_Packages")
-        index.parentFile?.mkdirs()
-        index.writeText("Package: fixture\n")
-        val cachedDeb = rootfs.resolve("var/cache/apt/archives/fixture.deb")
-        cachedDeb.parentFile?.mkdirs()
-        cachedDeb.writeText("already downloaded\n")
+    fun `repair reclaims an interrupted extraction and keeps the rootfs that is there`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // The crash shape the ladder opens on: a whole rootfs, and a staging tree its extraction
+            // never finished with. `isExtracted()` is false because of the leftover alone, so every
+            // rung below reads the install as missing - the leftover goes first, and nothing else does.
+            val staging = harness.rootDir.resolve("rootfs.staging")
+            staging.resolve("etc").mkdirs()
+            staging.resolve("etc/half-written.conf").writeText("truncated by the crash\n")
+            val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+            userPackage.writeText("installed by the user\n")
+            val downloadsBeforeRepair = harness.downloads
 
-        // apt's own words for its own bookkeeping, and it keeps saying them until the lists it blames
-        // are actually gone — so the second setup run is the one that succeeds. Keyed on the file
-        // rather than on an attempt count, because a count would make this test pass by outlasting
-        // the ladder instead of by the repair working; and the updates that happen *after* the lists
-        // went are counted, because those are the pipeline running again, which is the rung's claim.
-        var updatesAfterTheListsWent = 0
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("apt-get update")) {
-                if (index.exists()) {
-                    100 to "E: Failed to fetch http://m.example/ubuntu/dists/noble/main/binary-amd64/Packages  " +
-                        "Hash Sum mismatch\n" +
-                        "E: Some index files failed to download. They have been ignored, or old ones used instead.\n"
+            harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(staging.exists()).isFalse()
+            assertThat(
+                harness.installer.rootfsDir
+                    .resolve("bin/bash")
+                    .isFile,
+            ).isTrue()
+            assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+            // The rootfs was already there and already whole: no archive was fetched, so no download.
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        }
+
+    @Test
+    fun `repair refuses to rebuild over a failure a rebuild cannot fix`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // A rootfs the probe calls broken (its `whoami` answers the app's own uid) and no network
+            // to fetch the archive the deeper rungs read. Every one of them would hit that same dead
+            // network, and the deepest would rewrite a working base system on the way to the same
+            // failure - so the ladder has to stop, and hand back the typed failure it was given.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
+            }
+            val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+            userPackage.writeText("installed by the user\n")
+            // The archive has to go first, and that is the whole point of this test's premise rather
+            // than a detail of it: an install *keeps* its verified tarball precisely so the deeper rungs
+            // can write base bytes without the network, which means a device with nothing on disk to
+            // rebuild from is the only one left to refuse. It goes here by being released by hand,
+            // because nothing on the ladder removes it any more — the disk step that used to is gone
+            // (AUDIT-REPORT §76) — and on a device it takes a changed pin or a lost file. The sibling
+            // test below — "repair climbs to a rebuild when nothing cheaper clears the fault, and keeps
+            // the work" — is the other side of that line: it reaches the deepest rung and rebuilds out
+            // of the archive, fetching nothing.
+            assertThat(harness.installer.releasePinnedArchive()).isGreaterThan(0L)
+            harness.downloadFails = true
+
+            val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(IOException::class.java)
+            assertThat(failure?.message).contains("the network is down")
+            // And the sentence is the taxonomy's rather than the downloader's. The installer types this
+            // refusal so the ladder can stop on it, but a type is not something a user can act on:
+            // "downloading … failed: " names the fault and not the response, and this is the case where
+            // the only useful thing the user can do is the thing the button they pressed does again.
+            assertThat(failure).isInstanceOf(UserspaceFailure.ArchiveUnavailable::class.java)
+            assertThat(failure?.message).contains("check the connection")
+            // Untouched: nothing re-extracted, nothing rewritten, and the packages the user installed
+            // on top of the base system are still installed.
+            assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+        }
+
+    @Test
+    fun `repair climbs to a rebuild when nothing cheaper clears the fault, and keeps the work`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val projects = harness.workspace.workspaceDir.resolve("projects")
+            projects.mkdirs()
+            projects.resolve("site.txt").writeText("the user's work\n")
+            // A fault only a rebuild removes: a file the archive never carried, standing in the rootfs
+            // and keeping the probe failing. No cheaper rung can touch it - the essentials are all
+            // present, so the prologue finds nothing to put back, and the overlay writes the archive's
+            // own members over theirs without clearing anything the archive does not name. So the
+            // ladder reaches its last rung, which is the one that costs the user something.
+            val poison = harness.installer.rootfsDir.resolve("usr/bin/poison")
+            poison.writeText("only a rebuild removes this\n")
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command == "whoami" && poison.exists()) 0 to "ubuntu\n" else healthyRespond(command)
+            }
+
+            harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // The rootfs is not the one that was there, and the fault went with it.
+            assertThat(poison.exists()).isFalse()
+            assertThat(
+                harness.installer.rootfsDir
+                    .resolve("bin/bash")
+                    .isFile,
+            ).isTrue()
+            // And the price was the base system alone: the work was parked before the rebuild and put
+            // back after it, which is the one thing this rung must never cost.
+            assertThat(
+                harness.workspace.workspaceDir
+                    .resolve("projects/site.txt")
+                    .readText(),
+            ).isEqualTo("the user's work\n")
+            assertThat(harness.manager.hasPendingWorkspaceBackup()).isFalse()
+        }
+
+    @Test
+    fun `a package lock apt cannot open is cleared, and the ladder stops before it can spend a package step`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // A directory standing where the lock file belongs. This is the damage the local rung answers,
+            // and it is deliberately *not* an empty lock file: apt and dpkg never unlink their own lock
+            // files, so the four empty files are what a successful package run leaves, and a rung that
+            // cleared those would be clearing the healthy state on every press.
+            val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+            lock.parentFile?.mkdirs()
+            lock.mkdirs()
+            // Something the user installed on top of the base system: a rebuild would take it with it, and
+            // this repair is not one.
+            val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+            userPackage.writeText("installed by the user\n")
+            // And apt's own trees, at the size a real device has them: an index apt has already fetched
+            // and a package it has already downloaded. This repair has nothing to do with either, and it
+            // is the repair that used to take both — a full re-index plus every cached `.deb`, on the
+            // user's connection, to answer a marker on disk.
+            val index = harness.installer.rootfsDir.resolve("var/lib/apt/lists/fixture_Packages")
+            index.parentFile?.mkdirs()
+            index.writeText("Package: fixture\n")
+            val cachedDeb = harness.installer.rootfsDir.resolve("var/cache/apt/archives/fixture.deb")
+            cachedDeb.parentFile?.mkdirs()
+            cachedDeb.writeText("already downloaded\n")
+            val downloadsBeforeRepair = harness.downloads
+
+            // What the real userspace does with a lock path it cannot open: every dpkg and apt command
+            // refuses in about a second, in apt's own sentence about the *open* failing - naming no
+            // process, because nothing holds it. Scripted so the test fails if even one package step ever
+            // meets the lock — the count is asserted below.
+            var refusals = 0
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (lock.isDirectory && (command.contains("dpkg") || command.contains("apt-get"))) {
+                    refusals++
+                    100 to "E: Could not open lock file $lock - open (21: Is a directory)\n"
                 } else {
-                    updatesAfterTheListsWent++
                     healthyRespond(command)
                 }
-            } else {
-                healthyRespond(command)
             }
+
+            val report = harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // Gone before anything that would have refused on it — and gone is where the ladder *ended*:
+            // the local rung cleared it, the probe that follows the local rungs found the userspace sound,
+            // and every rung below that one never ran. Without the local rung the ladder would have spent
+            // all four of its rungs on this one refusal and ended by rebuilding the rootfs.
+            assertThat(lock.exists()).isFalse()
+            assertThat(refusals).isEqualTo(0)
+            assertThat(report.warnings.joinToString("\n")).contains("cleared 1 package-manager lock(s)")
+            // Nothing was downloaded and nothing was rebuilt: the failure was a marker on disk, not the
+            // base system, and the repair that clears it costs the user no network at all.
+            assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+            // Including apt's trees, which this repair never named and therefore never touched. This is
+            // the whole of "every press of Repair re-downloads the world": the old rung emptied both of
+            // these before the setup run, on every failure there was.
+            assertThat(index.readText()).isEqualTo("Package: fixture\n")
+            assertThat(cachedDeb.readText()).isEqualTo("already downloaded\n")
         }
 
-        val report = harness.manager.repair()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Both halves, because apt named the bytes themselves: a corrupt `.deb` is the one file apt
-        // will never rewrite for itself, and every install of that package fails identically until it
-        // is gone. The index would have been re-fetched on the next update either way.
-        assertThat(index.exists()).isFalse()
-        assertThat(cachedDeb.exists()).isFalse()
-        assertThat(report.warnings.joinToString("\n"))
-            .contains("apt's package lists and the packages it had already downloaded were given up")
-        // And the setup pipeline ran again: the rung that won needed one update, and the unscoped
-        // confirmation beside it is the second. A repair that cleared the lists and stopped there
-        // would leave the user with a userspace no update has ever completed.
-        assertThat(updatesAfterTheListsWent).isEqualTo(2)
-    }
-
     @Test
-    fun `a setup run that fails over something else leaves apt's state where it is`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val rootfs = harness.installer.rootfsDir
-        val index = rootfs.resolve("var/lib/apt/lists/fixture_Packages")
-        index.parentFile?.mkdirs()
-        index.writeText("Package: fixture\n")
-
-        // A failure with nothing to do with apt's bookkeeping: dpkg's own subprocess died while
-        // configuring a package. The ladder's answer to that is files put back or the base system
-        // rewritten — the rungs below the setup run — and never a download. Emptying the index here
-        // would buy the user thirty megabytes of fresh index and fix nothing, which is exactly the
-        // trade this rung exists to refuse.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("apt-get update")) {
-                100 to "dpkg: error processing package fixture (--configure):\n" +
-                    " installed fixture package post-installation script subprocess returned error exit status 1\n" +
-                    "Errors were encountered while processing:\n fixture\n"
-            } else {
-                healthyRespond(command)
+    fun `the lock files a package run leaves are not damage, and no repair is spent on them`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // The state a successful `apt-get install` leaves behind, on a userspace that is otherwise
+            // perfectly healthy: all four lock files, empty, held by nobody. The health check used to call
+            // this damage - it asked whether the file existed and whether a lock was held on it, and those
+            // four files exist after every successful run with nothing holding them - so a working
+            // userspace was reported broken, and no rung could satisfy the check: the local rung removed
+            // the files and the setup rung below recreated them, on every press, forever.
+            val locks =
+                listOf(
+                    "var/lib/dpkg/lock",
+                    "var/lib/dpkg/lock-frontend",
+                    "var/lib/apt/lists/lock",
+                    "var/cache/apt/archives/lock",
+                ).map { harness.installer.rootfsDir.resolve(it) }
+            locks.forEach {
+                it.parentFile?.mkdirs()
+                it.writeText("")
             }
+
+            val report = harness.manager.repair()
+
+            // Every one of them still there, and untouched: the repair did not do work to remove the state
+            // the package manager itself creates. This is the regression the reported failure was.
+            locks.forEach { assertThat(it.isFile).isTrue() }
+            assertThat(report.warnings.joinToString("\n")).doesNotContain("package-manager lock")
+            // And the package steps ran on a userspace that was never asked to refuse, because a lock apt
+            // can open is a lock apt is content with.
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
         }
 
-        runCatching { harness.manager.repair() }
+    @Test
+    fun `scratch directories a gone proot left are cleared by a repair, and it says how many`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // One directory per launch: what a proot that exits normally left behind before patch 0006,
+            // holding the loader link its teardown could not remove. The pid is one nothing here runs,
+            // which is the whole of what makes it litter rather than a live session's.
+            val gone = TestPids.nothingRuns()
+            val leaked = File(harness.runtime.tmpDir, "exec-$gone-bervFx").apply { mkdirs() }
+            File(leaked, "bash").writeText("")
+            val downloadsBeforeRepair = harness.downloads
 
-        // The rung ran and declined, in the record rather than in the tree: the deeper rungs rewrite
-        // the base system and with it the lists, so what the file looks like at the end says nothing
-        // about what this rung decided. The diagnostic is the decision itself.
-        assertThat(harness.distribution.diagnostics.export())
-            .contains("apt's state left alone: nothing named it")
-    }
+            val report = harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(leaked.exists()).isFalse()
+            assertThat(report.warnings.joinToString("\n"))
+                .contains("cleared 1 leftover proot scratch directory")
+            assertThat(harness.distribution.diagnostics.export())
+                .contains("cleared leftover proot scratch directories")
+            // Local, and therefore free: the litter cost the user no network at all.
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+        }
 
     @Test
-    fun `an unreadable package database is restored from dpkg's own previous copy, not by a rebuild`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val dpkg = harness.installer.rootfsDir.resolve("var/lib/dpkg")
-        val shipped = dpkg.resolve("status").readText()
-        // dpkg's own previous generation, and the truncation a killed dpkg leaves in its place. This
-        // is the deadlock the ladder could not see: `var/lib/dpkg` is a preserved member, so no rung
-        // may write it, and every rung begins with a command that cannot start without reading it.
-        dpkg.resolve("status-old").writeText(shipped)
-        val truncated = "Package: bash\nStatus: install ok instal"
-        dpkg.resolve("status").writeText(truncated)
-        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
-        userPackage.writeText("installed by the user\n")
-        val downloadsBeforeRepair = harness.downloads
+    fun `a setup run that fails over apt's own lists gives them up and runs the pipeline again`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val rootfs = harness.installer.rootfsDir
+            // The two things a repair used to throw away whether or not anything was wrong with them.
+            val index = rootfs.resolve("var/lib/apt/lists/fixture_Packages")
+            index.parentFile?.mkdirs()
+            index.writeText("Package: fixture\n")
+            val cachedDeb = rootfs.resolve("var/cache/apt/archives/fixture.deb")
+            cachedDeb.parentFile?.mkdirs()
+            cachedDeb.writeText("already downloaded\n")
 
-        // Every package command of the first rung fails the way dpkg really fails on this file, so the
-        // ladder has to climb; the probe's `apt-get check` fails with them.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (dpkg.resolve("status").length() < 512 && (command.contains("dpkg") || command.contains("apt"))) {
-                2 to "dpkg: failed to open package info file '${dpkg.resolve("status")}' for reading: " +
-                    "No such file or directory\n"
-            } else {
-                healthyRespond(command)
+            // apt's own words for its own bookkeeping, and it keeps saying them until the lists it blames
+            // are actually gone — so the second setup run is the one that succeeds. Keyed on the file
+            // rather than on an attempt count, because a count would make this test pass by outlasting
+            // the ladder instead of by the repair working; and the updates that happen *after* the lists
+            // went are counted, because those are the pipeline running again, which is the rung's claim.
+            var updatesAfterTheListsWent = 0
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("apt-get update")) {
+                    if (index.exists()) {
+                        100 to "E: Failed to fetch http://m.example/ubuntu/dists/noble/main/binary-amd64/Packages  " +
+                            "Hash Sum mismatch\n" +
+                            "E: Some index files failed to download. They have been ignored, or old ones used instead.\n"
+                    } else {
+                        updatesAfterTheListsWent++
+                        healthyRespond(command)
+                    }
+                } else {
+                    healthyRespond(command)
+                }
             }
+
+            val report = harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // Both halves, because apt named the bytes themselves: a corrupt `.deb` is the one file apt
+            // will never rewrite for itself, and every install of that package fails identically until it
+            // is gone. The index would have been re-fetched on the next update either way.
+            assertThat(index.exists()).isFalse()
+            assertThat(cachedDeb.exists()).isFalse()
+            assertThat(report.warnings.joinToString("\n"))
+                .contains("apt's package lists and the packages it had already downloaded were given up")
+            // And the setup pipeline ran again: the rung that won needed one update, and the unscoped
+            // confirmation beside it is the second. A repair that cleared the lists and stopped there
+            // would leave the user with a userspace no update has ever completed.
+            assertThat(updatesAfterTheListsWent).isEqualTo(2)
         }
 
-        val report = harness.manager.repair()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(dpkg.resolve("status").readText()).isEqualTo(shipped)
-        // Kept: it is the only remaining evidence of what the user had installed.
-        assertThat(dpkg.resolve("status.broken").readText()).isEqualTo(truncated)
-        // The package the user installed on top of the base system is still installed — this rung
-        // writes one file, where the rebuild it replaces would have untracked every one of them.
-        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
-        // And it cost nothing: dpkg's own copy was already on the device.
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-        assertThat(report.warnings.joinToString("\n")).contains("dpkg's own previous copy")
-    }
-
     @Test
-    fun `the ladder refuses to rebuild over what the device or the network owns`() = runTest {
-        val harness = newHarness()
-        // The gate as the table it is, one row per failure family. Everything on the left is an answer
-        // about the phone or about the link: the deepest rung reads the same network, the same disk and
-        // the same device, so it would rewrite a working base system on the way to the same failure —
-        // and on a metered connection or a nearly-full device, leave the user worse off than the
-        // failure did.
-        val deviceOrNetwork = listOf(
-            UserspaceFailure.Offline(),
-            UserspaceFailure.DnsUnresolved(servers = listOf("192.168.1.1")),
-            UserspaceFailure.MirrorUnreachable("http://m.example/ubuntu", UserspaceFailure.Kind.Refused),
-            UserspaceFailure.RepositoryUnsigned("http://m.example/ubuntu"),
-            UserspaceFailure.DiskFull(neededBytes = 900L * 1024 * 1024, freeBytes = 10L * 1024 * 1024),
-            UserspaceFailure.StepTimedOut("Installing base packages"),
-            // The phone's date, which nothing inside the rootfs can move: apt's index reads as expired
-            // because the clock is wrong, and a rebuild reaches that same sentence thirty megabytes later.
-            UserspaceFailure.ClockSkew(expired = true),
-            UserspaceFailure.KilledBySignal(9, "Killed"),
-            // The app's own runtime, not the Ubuntu files: no amount of writing the rootfs supplies it.
-            UserspaceFailure.NativeRuntimeMissing("libproot-loader.so", "/data/app/dev.eclipse.ssh/lib/libproot-loader.so"),
-            UserspaceFailure.TooManyTerminals(16),
-        )
-        for (failure in deviceOrNetwork) {
-            assertThat(harness.manager.aRebuildCouldFix(failure)).isFalse()
-        }
+    fun `a setup run that fails over something else leaves apt's state where it is`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val rootfs = harness.installer.rootfsDir
+            val index = rootfs.resolve("var/lib/apt/lists/fixture_Packages")
+            index.parentFile?.mkdirs()
+            index.writeText("Package: fixture\n")
 
-        // And everything whose evidence is inside the rootfs passes: these are what the ladder is for,
-        // including the four failures the rungs above exist to repair.
-        val rootfsOwned = listOf(
-            UserspaceFailure.ProotLaunchFailed(127, ""),
-            UserspaceFailure.PackageDbBroken(),
-            UserspaceFailure.PackageLocksHeld(
-                holderPid = 4321,
-                locks = listOf("/var/lib/dpkg/lock-frontend"),
-                openFailed = false,
-            ),
-            UserspaceFailure.PackageDatabaseUnreadable(),
-            UserspaceFailure.IndexHashMismatch("http://m.example/ubuntu"),
-            UserspaceFailure.GuestTmpUnwritable("/tmp"),
-            UserspaceFailure.DpkgSubprocessFailed(1),
-        )
-        for (failure in rootfsOwned) {
-            assertThat(harness.manager.aRebuildCouldFix(failure)).isTrue()
-        }
-
-        // The prefix contracts the runtime layer throws by, read through a wrapper: a failure that has
-        // been wrapped is still the failure.
-        assertThat(harness.manager.aRebuildCouldFix(IOException("$RUNTIME_STORAGE_PREFIX the tmp probe could not write"))).isFalse()
-        assertThat(harness.manager.aRebuildCouldFix(IOException("$DISK_FULL_PREFIX ~900 MB free; 200 MB available"))).isFalse()
-        // The base system's own archive, which is what a rebuild is made of: no rung below the one
-        // that reads it supplies those bytes. Typed at the boundary by the taxonomy *and* one layer
-        // down by the installer, and both are false — the ladder must not spend its last thirty
-        // megabytes fetching what just failed to arrive.
-        assertThat(harness.manager.aRebuildCouldFix(UserspaceFailure.ArchiveUnavailable(attempts = 3))).isFalse()
-        assertThat(harness.manager.aRebuildCouldFix(PinnedArchiveUnavailable("the network is down"))).isFalse()
-        // Anything that is not a typed failure at all passes: untyped prose is what a rung's own
-        // failure looks like, and the ladder's answer to that is to keep climbing.
-        assertThat(harness.manager.aRebuildCouldFix(IllegalStateException("the health check failed"))).isTrue()
-    }
-
-    @Test
-    fun `an ending that blames the userspace only moves a userspace the probe agrees is broken`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        harness.manager.start()
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-
-        // `exit 127` typed by hand, or a command that does not exist: the shell ran and exited, which
-        // says nothing about the environment. The probe is what tells the two apart, and here it passes.
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-
-        // An ordinary exit and a kill are not the userspace's verdict either, whatever the probe says.
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 0, signal = null))
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 137, signal = "KILL"))
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-
-        // A sibling terminal still open is proof the environment works, whatever this one exit says.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command -> if (command == "whoami") 127 to "" else healthyRespond(command) }
-        harness.processes.register("session-2", LocalTerminalChannel(FakePtyProcess()))
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-
-        // With the last session gone and the probe failing too, the ending is the userspace's: the card
-        // now offers the Repair that fixes a shell proot cannot find, instead of a terminal that cannot
-        // open while the host card goes on claiming the userspace is running.
-        harness.processes.unregister("session-2")
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
-        val state = harness.manager.state.value
-        assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-        // The detail is the probe's own sentence rather than the exit code: what is wrong, not which
-        // program the user typed.
-        assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("root")
-    }
-
-    @Test
-    fun `an ending does not condemn a userspace that is only offline`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        harness.manager.start()
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-
-        // The device loses its connection after the userspace is up: the resolver stops answering and
-        // nothing the environment itself is judged on changes. The shell that ended with 127 really
-        // did fail — but not for a reason this reading can see.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("getent hosts")) 2 to "" else healthyRespond(command)
-        }
-
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
-
-        // Running, and not NeedsRepair("DNS does not resolve"). The verdict this condition reads is
-        // [HealthReport.sound] — the environment on its own account — because the network is the one
-        // field `healthy` adds that no rung of Repair touches: the ladder's own setup rung refuses to
-        // start without a connection, so the Repair such a verdict offers cannot run, and the user
-        // pays for a press that was never going to fix the sentence it was answering. The offline
-        // device is already answered where it belongs, by the card's own health rule.
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-        assertThat(harness.distribution.diagnostics.export())
-            .contains("the environment itself is still sound")
-    }
-
-    @Test
-    fun `a health probe that cannot run at all is a repair state, not an app crash`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        harness.manager.start()
-
-        // proot will not fork at all — the runtime's own refusal, not a command that failed. The
-        // probe throws out of `runCommand` instead of answering, which is the one shape of failure
-        // that has no report to return.
-        harness.spawner.respond = { throw UserspaceFailure.TooManyTerminals(16) }
-
-        harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
-
-        // On the device this call arrives on a bare `launch` of the transport scope, which has no
-        // exception handler: a throwable escaping here reached the thread's default handler and took
-        // the process with it — the app dying from a health check. The ending stands instead, and the
-        // runtime's own sentence is the detail.
-        val state = harness.manager.state.value
-        assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-        assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
-    }
-
-    @Test
-    fun `a refresh whose probe cannot run still offers a Repair`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-
-        // The Verify button on a userspace whose runtime will not spawn. Nothing about the userspace
-        // changed except the thing the probe needs in order to look at it.
-        harness.spawner.respond = { throw UserspaceFailure.TooManyTerminals(16) }
-
-        val thrown = runCatching { harness.manager.refreshHealth() }.exceptionOrNull()
-
-        // The reason is rethrown, because the screen's error line is where it belongs...
-        assertThat(thrown).isNotNull()
-        // ...and the state is the one that offers the way out. Left as it was — Stopped, with no
-        // Repair anywhere — the screen answered a userspace it cannot start with the same card it
-        // shows for a healthy one, which is the state the manager's own Start refuses to leave a user
-        // in.
-        val state = harness.manager.state.value
-        assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-        assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
-    }
-
-    @Test
-    fun `start names the Android groups, so an install made before the naming is corrected`() = runTest {
-        // An install from a build that had no names to write, over a device whose app is in the
-        // four groups the report named. The set is read on every start rather than only at install
-        // time, so the terminal is correct the first time it is opened after the update — no
-        // reinstall, and no Repair, for a file the user never sees.
-        var gids = IntArray(0)
-        val harness = newHarness(supplementaryGids = { gids })
-        harness.manager.install()
-        val group = harness.installer.rootfsDir.resolve("etc/group")
-        assertThat(group.readText()).doesNotContain(AndroidGroupNames.PREFIX)
-
-        gids = intArrayOf(3003, 9997, 20504, 50504)
-        harness.manager.start()
-
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-        assertThat(group.readLines()).containsAtLeast(
-            "android_inet:x:3003:",
-            "android_everybody:x:9997:",
-            "android_cache_504:x:20504:",
-            "android_shared_504:x:50504:",
-        )
-        // The account line the app writes for itself is still the only one, and still where it was.
-        assertThat(group.readLines().count { it.startsWith("ubuntu:") }).isEqualTo(1)
-    }
-
-    @Test
-    fun `a group list that cannot be read does not stop the userspace starting`() = runTest {
-        val harness = newHarness(supplementaryGids = { throw IllegalStateException("no groups for you") })
-        harness.manager.install()
-
-        harness.manager.start()
-
-        // Names beside four numbers are not worth a terminal the user cannot open, so this is
-        // recorded and not fatal — and recorded, rather than swallowed, because the install log is
-        // where someone asking "why does groups print numbers" has to be able to find the answer.
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
-        assertThat(harness.distribution.diagnostics.export()).contains("supplementary group names")
-        assertThat(harness.distribution.diagnostics.export()).contains("no groups for you")
-    }
-
-    @Test
-    fun `a keep-workspace uninstall snapshots and the next install restores it`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val projects = harness.workspace.workspaceDir.resolve("projects")
-        projects.mkdirs()
-        projects.resolve("site.txt").writeText("the user's work\n")
-
-        harness.manager.uninstall(keepWorkspace = true)
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.NotInstalled)
-        assertThat(harness.installer.rootfsDir.exists()).isFalse()
-        // The backup lives outside the userspace root, or the uninstall would destroy the thing it
-        // was keeping.
-        assertThat(harness.manager.hasPendingWorkspaceBackup()).isTrue()
-
-        harness.manager.install()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(harness.workspace.workspaceDir.resolve("projects/site.txt").readText())
-            .isEqualTo("the user's work\n")
-        // The backup is consumed by the restore, not left to shadow newer work later.
-        assertThat(harness.manager.hasPendingWorkspaceBackup()).isFalse()
-    }
-
-    @Test
-    fun `a delete-workspace uninstall removes the backup too`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val projects = harness.workspace.workspaceDir.resolve("projects")
-        projects.mkdirs()
-        projects.resolve("site.txt").writeText("disposable\n")
-
-        harness.manager.uninstall(keepWorkspace = false)
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.NotInstalled)
-        assertThat(harness.manager.hasPendingWorkspaceBackup()).isFalse()
-        assertThat(harness.installer.rootfsDir.exists()).isFalse()
-    }
-
-    @Test
-    fun `a fresh harness starts NotInstalled, and a stale flag cannot fake an install`() = runTest {
-        val harness = newHarness()
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.NotInstalled)
-
-        // Crash recovery's dark twin: the state file says installed, the filesystem says otherwise
-        // (here: never extracted at all). The manager must not present that as a healthy install -
-        // NeedsRepair is what the settings screen turns into a Repair button. The root and its
-        // flag exist before the harness, because the classification runs at construction.
-        val staleRoot = Files.createTempDirectory("linux-userspace-stale").toFile().apply { deleteOnExit() }
-        staleRoot.resolve("state.properties").writeText("installed=true\ndistroId=ubuntu-22.04\n")
-        val stale = Harness(
-            TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
-            staleRoot,
-        )
-        assertThat(stale.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-    }
-
-    @Test
-    fun `an interrupted install comes back as NeedsRepair and the retry reclaims its staging`() = runTest {
-        // The crash shape: the installing marker was written, then the process died
-        // mid-extraction - a junk staging tree, no rootfs. Construction classifies it as
-        // repairable (never as a healthy install), and the install that follows reclaims the
-        // staging tree and completes.
-        val interruptedRoot =
-            Files.createTempDirectory("linux-userspace-interrupted").toFile().apply { deleteOnExit() }
-        interruptedRoot.resolve("state.properties")
-            .writeText("installing=true\ndistroId=ubuntu-22.04\nphase=download\nstartedAtMs=1\n")
-        interruptedRoot.resolve("rootfs.staging/etc").mkdirs()
-        interruptedRoot.resolve("rootfs.staging/etc/half-written.conf").writeText("truncated by the crash\n")
-        val harness = Harness(
-            TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
-            interruptedRoot,
-        )
-
-        val state = harness.manager.state.value
-        assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-        assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("interrupted")
-
-        harness.manager.install()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(harness.installer.rootfsDir.resolve("bin/bash").isFile).isTrue()
-        // The junk tree is gone - reclaimed by the real extraction - and the run's bookkeeping
-        // cleaned itself up: no in-flight marker left for the next construction to misread, no
-        // lock left to refuse the next install.
-        assertThat(interruptedRoot.resolve("rootfs.staging").exists()).isFalse()
-        assertThat(interruptedRoot.resolve("state.properties").readText()).doesNotContain("installing=true")
-        assertThat(interruptedRoot.resolve("install.lock").exists()).isFalse()
-    }
-
-    @Test
-    fun `every proot spawn carries the loader, the tmp dir and the binds`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        harness.runtime.spawnSession(40, 120)
-
-        val spawns = harness.spawner.spawns
-        assertThat(spawns).isNotEmpty()
-        for (spawn in spawns) {
-            // The exec model, pinned per spawn: the binary and loader come from nativeLibraryDir
-            // (the only execve-able directory for this app), the rootfs is the shared path, and
-            // /dev, /proc and /sys are bound because the Ubuntu Base rootfs ships them empty.
-            assertThat(spawn.argv.first()).isEqualTo("${fakeNativeLibraryDir()}/libproot.so")
-            assertThat(spawn.argv)
-                .contains("--rootfs=${harness.rootDir.resolve("rootfs").absolutePath}")
-            for (bind in listOf("/dev", "/proc", "/sys")) {
-                val index = spawn.argv.indexOf(bind)
-                assertThat(spawn.argv[index - 1]).isEqualTo("-b")
+            // A failure with nothing to do with apt's bookkeeping: dpkg's own subprocess died while
+            // configuring a package. The ladder's answer to that is files put back or the base system
+            // rewritten — the rungs below the setup run — and never a download. Emptying the index here
+            // would buy the user thirty megabytes of fresh index and fix nothing, which is exactly the
+            // trade this rung exists to refuse.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("apt-get update")) {
+                    100 to "dpkg: error processing package fixture (--configure):\n" +
+                        " installed fixture package post-installation script subprocess returned error exit status 1\n" +
+                        "Errors were encountered while processing:\n fixture\n"
+                } else {
+                    healthyRespond(command)
+                }
             }
-            // PROOT_LOADER must point into nativeLibraryDir, or proot extracts its embedded
-            // loader into PROOT_TMP_DIR - under filesDir, never executable - and dies with EACCES.
-            // PROOT_TMP_DIR names the directory RuntimeStorageManager creates and probes.
-            assertThat(spawn.envp).contains("PROOT_LOADER=${fakeNativeLibraryDir()}/libproot-loader.so")
-            assertThat(spawn.envp)
-                .contains("PROOT_TMP_DIR=${harness.rootDir.resolve("tmp").absolutePath}")
-            // Blocked-syscall diagnostics land in a file this app can write (the fork's default
-            // points at the fork's own app's cache — see linux/proot-patches/0002).
-            assertThat(spawn.envp)
-                .contains("PROOT_SIGSYS_LOG=${harness.rootDir.resolve("sigsys-log.txt").absolutePath}")
-        }
-        // Every proot run carries `-0` — the session's own spawn included, which is the last one
-        // here and the one this assertion used to forbid. See ProotRuntimeExecModelTest for why,
-        // and for the session argv read back from the spawner directly.
-        assertThat(spawns.filterNot { it.argv.contains("-0") }.map { it.argv }).isEmpty()
-    }
 
-    @Test
-    fun `a command that never finishes is closed at its timeout, not leaked`() = runBlocking {
-        val root = Files.createTempDirectory("proot-timeout").toFile().apply { deleteOnExit() }
-        val process = BlockingPtyProcess()
-        val runtime = ProotRuntime(root, fakeNativeLibraryDir(), spawner = { _, _, _, _, _ -> process })
+            runCatching { harness.manager.repair() }
 
-        val result = runtime.runCommand(listOf("proot"), timeoutMs = 200)
-
-        // The timeout fired, the child was SIGHUPed, and — the part the old blocking read loop
-        // could not do — the blocked read actually ended, so the call returned instead of hanging
-        // the install with the pty slot held.
-        assertThat(result).isNull()
-        assertThat(process.closed).isTrue()
-        assertThat(process.readReturned).isTrue()
-    }
-
-    @Test
-    fun `a reader that no close can wake is abandoned, not awaited forever`() = runBlocking {
-        val root = Files.createTempDirectory("proot-abandon").toFile().apply { deleteOnExit() }
-        val process = UnwakeablePtyProcess()
-        val runtime = ProotRuntime(
-            root,
-            fakeNativeLibraryDir(),
-            spawner = { _, _, _, _, _ -> process },
-            readerDrainTimeoutMs = 200,
-        )
-
-        // The kernel-truth worst case: the timeout closed the pty but the parked read never
-        // returned — the 2026-09 install hang's exact shape, a child that died before opening
-        // the slave so no hangup ever came. The call must still come back (bounded failure)
-        // instead of holding the install on "Configuring DNS". The parked reader thread leaks
-        // for the rest of the JVM — accepted in production (a log line, not a hang) and
-        // harmless in a test.
-        val result = kotlinx.coroutines.withTimeout(10_000) {
-            runtime.runCommand(listOf("proot"), timeoutMs = 200)
+            // The rung ran and declined, in the record rather than in the tree: the deeper rungs rewrite
+            // the base system and with it the lists, so what the file looks like at the end says nothing
+            // about what this rung decided. The diagnostic is the decision itself.
+            assertThat(harness.distribution.diagnostics.export())
+                .contains("apt's state left alone: nothing named it")
         }
 
-        assertThat(result).isNull()
-        assertThat(process.closed).isTrue()
-    }
+    @Test
+    fun `an unreadable package database is restored from dpkg's own previous copy, not by a rebuild`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val dpkg = harness.installer.rootfsDir.resolve("var/lib/dpkg")
+            val shipped = dpkg.resolve("status").readText()
+            // dpkg's own previous generation, and the truncation a killed dpkg leaves in its place. This
+            // is the deadlock the ladder could not see: `var/lib/dpkg` is a preserved member, so no rung
+            // may write it, and every rung begins with a command that cannot start without reading it.
+            dpkg.resolve("status-old").writeText(shipped)
+            val truncated = "Package: bash\nStatus: install ok instal"
+            dpkg.resolve("status").writeText(truncated)
+            val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+            userPackage.writeText("installed by the user\n")
+            val downloadsBeforeRepair = harness.downloads
+
+            // Every package command of the first rung fails the way dpkg really fails on this file, so the
+            // ladder has to climb; the probe's `apt-get check` fails with them.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (dpkg.resolve("status").length() < 512 && (command.contains("dpkg") || command.contains("apt"))) {
+                    2 to "dpkg: failed to open package info file '${dpkg.resolve("status")}' for reading: " +
+                        "No such file or directory\n"
+                } else {
+                    healthyRespond(command)
+                }
+            }
+
+            val report = harness.manager.repair()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(dpkg.resolve("status").readText()).isEqualTo(shipped)
+            // Kept: it is the only remaining evidence of what the user had installed.
+            assertThat(dpkg.resolve("status.broken").readText()).isEqualTo(truncated)
+            // The package the user installed on top of the base system is still installed — this rung
+            // writes one file, where the rebuild it replaces would have untracked every one of them.
+            assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+            // And it cost nothing: dpkg's own copy was already on the device.
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+            assertThat(report.warnings.joinToString("\n")).contains("dpkg's own previous copy")
+        }
 
     @Test
-    fun `scripted commands are visible and killable while in flight`() = runBlocking {
-        val root = Files.createTempDirectory("proot-kill").toFile().apply { deleteOnExit() }
-        val process = BlockingPtyProcess()
-        val runtime = ProotRuntime(root, fakeNativeLibraryDir(), spawner = { _, _, _, _, _ -> process })
+    fun `the ladder refuses to rebuild over what the device or the network owns`() =
+        runTest {
+            val harness = newHarness()
+            // The gate as the table it is, one row per failure family. Everything on the left is an answer
+            // about the phone or about the link: the deepest rung reads the same network, the same disk and
+            // the same device, so it would rewrite a working base system on the way to the same failure —
+            // and on a metered connection or a nearly-full device, leave the user worse off than the
+            // failure did.
+            val deviceOrNetwork =
+                listOf(
+                    UserspaceFailure.Offline(),
+                    UserspaceFailure.DnsUnresolved(servers = listOf("192.168.1.1")),
+                    UserspaceFailure.MirrorUnreachable("http://m.example/ubuntu", UserspaceFailure.Kind.Refused),
+                    UserspaceFailure.RepositoryUnsigned("http://m.example/ubuntu"),
+                    UserspaceFailure.DiskFull(neededBytes = 900L * 1024 * 1024, freeBytes = 10L * 1024 * 1024),
+                    UserspaceFailure.StepTimedOut("Installing base packages"),
+                    // The phone's date, which nothing inside the rootfs can move: apt's index reads as expired
+                    // because the clock is wrong, and a rebuild reaches that same sentence thirty megabytes later.
+                    UserspaceFailure.ClockSkew(expired = true),
+                    UserspaceFailure.KilledBySignal(9, "Killed"),
+                    // The app's own runtime, not the Ubuntu files: no amount of writing the rootfs supplies it.
+                    UserspaceFailure.NativeRuntimeMissing("libproot-loader.so", "/data/app/dev.eclipse.ssh/lib/libproot-loader.so"),
+                    UserspaceFailure.TooManyTerminals(16),
+                )
+            for (failure in deviceOrNetwork) {
+                assertThat(harness.manager.aRebuildCouldFix(failure)).isFalse()
+            }
 
-        val command = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-            runtime.runCommand(listOf("proot"), timeoutMs = 60_000)
+            // And everything whose evidence is inside the rootfs passes: these are what the ladder is for,
+            // including the four failures the rungs above exist to repair.
+            val rootfsOwned =
+                listOf(
+                    UserspaceFailure.ProotLaunchFailed(127, ""),
+                    UserspaceFailure.PackageDbBroken(),
+                    UserspaceFailure.PackageLocksHeld(
+                        holderPid = 4321,
+                        locks = listOf("/var/lib/dpkg/lock-frontend"),
+                        openFailed = false,
+                    ),
+                    UserspaceFailure.PackageDatabaseUnreadable(),
+                    UserspaceFailure.IndexHashMismatch("http://m.example/ubuntu"),
+                    UserspaceFailure.GuestTmpUnwritable("/tmp"),
+                    UserspaceFailure.DpkgSubprocessFailed(1),
+                )
+            for (failure in rootfsOwned) {
+                assertThat(harness.manager.aRebuildCouldFix(failure)).isTrue()
+            }
+
+            // The prefix contracts the runtime layer throws by, read through a wrapper: a failure that has
+            // been wrapped is still the failure.
+            assertThat(harness.manager.aRebuildCouldFix(IOException("$RUNTIME_STORAGE_PREFIX the tmp probe could not write"))).isFalse()
+            assertThat(harness.manager.aRebuildCouldFix(IOException("$DISK_FULL_PREFIX ~900 MB free; 200 MB available"))).isFalse()
+            // The base system's own archive, which is what a rebuild is made of: no rung below the one
+            // that reads it supplies those bytes. Typed at the boundary by the taxonomy *and* one layer
+            // down by the installer, and both are false — the ladder must not spend its last thirty
+            // megabytes fetching what just failed to arrive.
+            assertThat(harness.manager.aRebuildCouldFix(UserspaceFailure.ArchiveUnavailable(attempts = 3))).isFalse()
+            assertThat(harness.manager.aRebuildCouldFix(PinnedArchiveUnavailable("the network is down"))).isFalse()
+            // Anything that is not a typed failure at all passes: untyped prose is what a rung's own
+            // failure looks like, and the ladder's answer to that is to keep climbing.
+            assertThat(harness.manager.aRebuildCouldFix(IllegalStateException("the health check failed"))).isTrue()
         }
-        // Wait until the child is genuinely parked in its read, not just spawned.
-        assertThat(process.readEntered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
-        assertThat(runtime.hasLiveScriptedProcesses()).isTrue()
 
-        runtime.killScriptedProcesses()
+    @Test
+    fun `an ending that blames the userspace only moves a userspace the probe agrees is broken`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            harness.manager.start()
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
 
-        kotlinx.coroutines.withTimeout(5_000) { command.join() }
-        assertThat(process.closed).isTrue()
-        assertThat(runtime.hasLiveScriptedProcesses()).isFalse()
-    }
+            // `exit 127` typed by hand, or a command that does not exist: the shell ran and exited, which
+            // says nothing about the environment. The probe is what tells the two apart, and here it passes.
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+
+            // An ordinary exit and a kill are not the userspace's verdict either, whatever the probe says.
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 0, signal = null))
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 137, signal = "KILL"))
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+
+            // A sibling terminal still open is proof the environment works, whatever this one exit says.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command -> if (command == "whoami") 127 to "" else healthyRespond(command) }
+            harness.processes.register("session-2", LocalTerminalChannel(FakePtyProcess()))
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+
+            // With the last session gone and the probe failing too, the ending is the userspace's: the card
+            // now offers the Repair that fixes a shell proot cannot find, instead of a terminal that cannot
+            // open while the host card goes on claiming the userspace is running.
+            harness.processes.unregister("session-2")
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+            val state = harness.manager.state.value
+            assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+            // The detail is the probe's own sentence rather than the exit code: what is wrong, not which
+            // program the user typed.
+            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("root")
+        }
+
+    @Test
+    fun `an ending does not condemn a userspace that is only offline`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            harness.manager.start()
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+
+            // The device loses its connection after the userspace is up: the resolver stops answering and
+            // nothing the environment itself is judged on changes. The shell that ended with 127 really
+            // did fail — but not for a reason this reading can see.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("getent hosts")) 2 to "" else healthyRespond(command)
+            }
+
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+
+            // Running, and not NeedsRepair("DNS does not resolve"). The verdict this condition reads is
+            // [HealthReport.sound] — the environment on its own account — because the network is the one
+            // field `healthy` adds that no rung of Repair touches: the ladder's own setup rung refuses to
+            // start without a connection, so the Repair such a verdict offers cannot run, and the user
+            // pays for a press that was never going to fix the sentence it was answering. The offline
+            // device is already answered where it belongs, by the card's own health rule.
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+            assertThat(harness.distribution.diagnostics.export())
+                .contains("the environment itself is still sound")
+        }
+
+    @Test
+    fun `a health probe that cannot run at all is a repair state, not an app crash`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            harness.manager.start()
+
+            // proot will not fork at all — the runtime's own refusal, not a command that failed. The
+            // probe throws out of `runCommand` instead of answering, which is the one shape of failure
+            // that has no report to return.
+            harness.spawner.respond = { throw UserspaceFailure.TooManyTerminals(16) }
+
+            harness.manager.noteSessionEnded("session-1", SessionEnd.ShellEnded(status = 127, signal = null))
+
+            // On the device this call arrives on a bare `launch` of the transport scope, which has no
+            // exception handler: a throwable escaping here reached the thread's default handler and took
+            // the process with it — the app dying from a health check. The ending stands instead, and the
+            // runtime's own sentence is the detail.
+            val state = harness.manager.state.value
+            assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
+        }
+
+    @Test
+    fun `a refresh whose probe cannot run still offers a Repair`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+
+            // The Verify button on a userspace whose runtime will not spawn. Nothing about the userspace
+            // changed except the thing the probe needs in order to look at it.
+            harness.spawner.respond = { throw UserspaceFailure.TooManyTerminals(16) }
+
+            val thrown = runCatching { harness.manager.refreshHealth() }.exceptionOrNull()
+
+            // The reason is rethrown, because the screen's error line is where it belongs...
+            assertThat(thrown).isNotNull()
+            // ...and the state is the one that offers the way out. Left as it was — Stopped, with no
+            // Repair anywhere — the screen answered a userspace it cannot start with the same card it
+            // shows for a healthy one, which is the state the manager's own Start refuses to leave a user
+            // in.
+            val state = harness.manager.state.value
+            assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
+        }
+
+    @Test
+    fun `start names the Android groups, so an install made before the naming is corrected`() =
+        runTest {
+            // An install from a build that had no names to write, over a device whose app is in the
+            // four groups the report named. The set is read on every start rather than only at install
+            // time, so the terminal is correct the first time it is opened after the update — no
+            // reinstall, and no Repair, for a file the user never sees.
+            var gids = IntArray(0)
+            val harness = newHarness(supplementaryGids = { gids })
+            harness.manager.install()
+            val group = harness.installer.rootfsDir.resolve("etc/group")
+            assertThat(group.readText()).doesNotContain(AndroidGroupNames.PREFIX)
+
+            gids = intArrayOf(3003, 9997, 20504, 50504)
+            harness.manager.start()
+
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+            assertThat(group.readLines()).containsAtLeast(
+                "android_inet:x:3003:",
+                "android_everybody:x:9997:",
+                "android_cache_504:x:20504:",
+                "android_shared_504:x:50504:",
+            )
+            // The account line the app writes for itself is still the only one, and still where it was.
+            assertThat(group.readLines().count { it.startsWith("ubuntu:") }).isEqualTo(1)
+        }
+
+    @Test
+    fun `a group list that cannot be read does not stop the userspace starting`() =
+        runTest {
+            val harness = newHarness(supplementaryGids = { throw IllegalStateException("no groups for you") })
+            harness.manager.install()
+
+            harness.manager.start()
+
+            // Names beside four numbers are not worth a terminal the user cannot open, so this is
+            // recorded and not fatal — and recorded, rather than swallowed, because the install log is
+            // where someone asking "why does groups print numbers" has to be able to find the answer.
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.Running::class.java)
+            assertThat(harness.distribution.diagnostics.export()).contains("supplementary group names")
+            assertThat(harness.distribution.diagnostics.export()).contains("no groups for you")
+        }
+
+    @Test
+    fun `a keep-workspace uninstall snapshots and the next install restores it`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val projects = harness.workspace.workspaceDir.resolve("projects")
+            projects.mkdirs()
+            projects.resolve("site.txt").writeText("the user's work\n")
+
+            harness.manager.uninstall(keepWorkspace = true)
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.NotInstalled)
+            assertThat(harness.installer.rootfsDir.exists()).isFalse()
+            // The backup lives outside the userspace root, or the uninstall would destroy the thing it
+            // was keeping.
+            assertThat(harness.manager.hasPendingWorkspaceBackup()).isTrue()
+
+            harness.manager.install()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(
+                harness.workspace.workspaceDir
+                    .resolve("projects/site.txt")
+                    .readText(),
+            ).isEqualTo("the user's work\n")
+            // The backup is consumed by the restore, not left to shadow newer work later.
+            assertThat(harness.manager.hasPendingWorkspaceBackup()).isFalse()
+        }
+
+    @Test
+    fun `a delete-workspace uninstall removes the backup too`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val projects = harness.workspace.workspaceDir.resolve("projects")
+            projects.mkdirs()
+            projects.resolve("site.txt").writeText("disposable\n")
+
+            harness.manager.uninstall(keepWorkspace = false)
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.NotInstalled)
+            assertThat(harness.manager.hasPendingWorkspaceBackup()).isFalse()
+            assertThat(harness.installer.rootfsDir.exists()).isFalse()
+        }
+
+    @Test
+    fun `a fresh harness starts NotInstalled, and a stale flag cannot fake an install`() =
+        runTest {
+            val harness = newHarness()
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.NotInstalled)
+
+            // Crash recovery's dark twin: the state file says installed, the filesystem says otherwise
+            // (here: never extracted at all). The manager must not present that as a healthy install -
+            // NeedsRepair is what the settings screen turns into a Repair button. The root and its
+            // flag exist before the harness, because the classification runs at construction.
+            val staleRoot = Files.createTempDirectory("linux-userspace-stale").toFile().apply { deleteOnExit() }
+            staleRoot.resolve("state.properties").writeText("installed=true\ndistroId=ubuntu-22.04\n")
+            val stale =
+                Harness(
+                    TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
+                    staleRoot,
+                )
+            assertThat(stale.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+        }
+
+    @Test
+    fun `an interrupted install comes back as NeedsRepair and the retry reclaims its staging`() =
+        runTest {
+            // The crash shape: the installing marker was written, then the process died
+            // mid-extraction - a junk staging tree, no rootfs. Construction classifies it as
+            // repairable (never as a healthy install), and the install that follows reclaims the
+            // staging tree and completes.
+            val interruptedRoot =
+                Files.createTempDirectory("linux-userspace-interrupted").toFile().apply { deleteOnExit() }
+            interruptedRoot
+                .resolve("state.properties")
+                .writeText("installing=true\ndistroId=ubuntu-22.04\nphase=download\nstartedAtMs=1\n")
+            interruptedRoot.resolve("rootfs.staging/etc").mkdirs()
+            interruptedRoot.resolve("rootfs.staging/etc/half-written.conf").writeText("truncated by the crash\n")
+            val harness =
+                Harness(
+                    TestTarballs.fixtureDistro("https://fixtures.invalid/rootfs.tar.gz", TestTarballs.sha256(FIXTURE)),
+                    interruptedRoot,
+                )
+
+            val state = harness.manager.state.value
+            assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("interrupted")
+
+            harness.manager.install()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(
+                harness.installer.rootfsDir
+                    .resolve("bin/bash")
+                    .isFile,
+            ).isTrue()
+            // The junk tree is gone - reclaimed by the real extraction - and the run's bookkeeping
+            // cleaned itself up: no in-flight marker left for the next construction to misread, no
+            // lock left to refuse the next install.
+            assertThat(interruptedRoot.resolve("rootfs.staging").exists()).isFalse()
+            assertThat(interruptedRoot.resolve("state.properties").readText()).doesNotContain("installing=true")
+            assertThat(interruptedRoot.resolve("install.lock").exists()).isFalse()
+        }
+
+    @Test
+    fun `every proot spawn carries the loader, the tmp dir and the binds`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            harness.runtime.spawnSession(40, 120)
+
+            val spawns = harness.spawner.spawns
+            assertThat(spawns).isNotEmpty()
+            for (spawn in spawns) {
+                // The exec model, pinned per spawn: the binary and loader come from nativeLibraryDir
+                // (the only execve-able directory for this app), the rootfs is the shared path, and
+                // /dev, /proc and /sys are bound because the Ubuntu Base rootfs ships them empty.
+                assertThat(spawn.argv.first()).isEqualTo("${fakeNativeLibraryDir()}/libproot.so")
+                assertThat(spawn.argv)
+                    .contains("--rootfs=${harness.rootDir.resolve("rootfs").absolutePath}")
+                for (bind in listOf("/dev", "/proc", "/sys")) {
+                    val index = spawn.argv.indexOf(bind)
+                    assertThat(spawn.argv[index - 1]).isEqualTo("-b")
+                }
+                // PROOT_LOADER must point into nativeLibraryDir, or proot extracts its embedded
+                // loader into PROOT_TMP_DIR - under filesDir, never executable - and dies with EACCES.
+                // PROOT_TMP_DIR names the directory RuntimeStorageManager creates and probes.
+                assertThat(spawn.envp).contains("PROOT_LOADER=${fakeNativeLibraryDir()}/libproot-loader.so")
+                assertThat(spawn.envp)
+                    .contains("PROOT_TMP_DIR=${harness.rootDir.resolve("tmp").absolutePath}")
+                // Blocked-syscall diagnostics land in a file this app can write (the fork's default
+                // points at the fork's own app's cache — see linux/proot-patches/0002).
+                assertThat(spawn.envp)
+                    .contains("PROOT_SIGSYS_LOG=${harness.rootDir.resolve("sigsys-log.txt").absolutePath}")
+            }
+            // Every proot run carries `-0` — the session's own spawn included, which is the last one
+            // here and the one this assertion used to forbid. See ProotRuntimeExecModelTest for why,
+            // and for the session argv read back from the spawner directly.
+            assertThat(spawns.filterNot { it.argv.contains("-0") }.map { it.argv }).isEmpty()
+        }
+
+    @Test
+    fun `a command that never finishes is closed at its timeout, not leaked`() =
+        runBlocking {
+            val root = Files.createTempDirectory("proot-timeout").toFile().apply { deleteOnExit() }
+            val process = BlockingPtyProcess()
+            val runtime = ProotRuntime(root, fakeNativeLibraryDir(), spawner = { _, _, _, _, _ -> process })
+
+            val result = runtime.runCommand(listOf("proot"), timeoutMs = 200)
+
+            // The timeout fired, the child was SIGHUPed, and — the part the old blocking read loop
+            // could not do — the blocked read actually ended, so the call returned instead of hanging
+            // the install with the pty slot held.
+            assertThat(result).isNull()
+            assertThat(process.closed).isTrue()
+            assertThat(process.readReturned).isTrue()
+        }
+
+    @Test
+    fun `a reader that no close can wake is abandoned, not awaited forever`() =
+        runBlocking {
+            val root = Files.createTempDirectory("proot-abandon").toFile().apply { deleteOnExit() }
+            val process = UnwakeablePtyProcess()
+            val runtime =
+                ProotRuntime(
+                    root,
+                    fakeNativeLibraryDir(),
+                    spawner = { _, _, _, _, _ -> process },
+                    readerDrainTimeoutMs = 200,
+                )
+
+            // The kernel-truth worst case: the timeout closed the pty but the parked read never
+            // returned — the 2026-09 install hang's exact shape, a child that died before opening
+            // the slave so no hangup ever came. The call must still come back (bounded failure)
+            // instead of holding the install on "Configuring DNS". The parked reader thread leaks
+            // for the rest of the JVM — accepted in production (a log line, not a hang) and
+            // harmless in a test.
+            val result =
+                kotlinx.coroutines.withTimeout(10_000) {
+                    runtime.runCommand(listOf("proot"), timeoutMs = 200)
+                }
+
+            assertThat(result).isNull()
+            assertThat(process.closed).isTrue()
+        }
+
+    @Test
+    fun `scripted commands are visible and killable while in flight`() =
+        runBlocking {
+            val root = Files.createTempDirectory("proot-kill").toFile().apply { deleteOnExit() }
+            val process = BlockingPtyProcess()
+            val runtime = ProotRuntime(root, fakeNativeLibraryDir(), spawner = { _, _, _, _, _ -> process })
+
+            val command =
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+                    runtime.runCommand(listOf("proot"), timeoutMs = 60_000)
+                }
+            // Wait until the child is genuinely parked in its read, not just spawned.
+            assertThat(process.readEntered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+            assertThat(runtime.hasLiveScriptedProcesses()).isTrue()
+
+            runtime.killScriptedProcesses()
+
+            kotlinx.coroutines.withTimeout(5_000) { command.join() }
+            assertThat(process.closed).isTrue()
+            assertThat(runtime.hasLiveScriptedProcesses()).isFalse()
+        }
 
     // ------------------------------------------------------------------ the ladder's own verdict
 
     @Test
-    fun `a fault the local rung clears stops the ladder before any package step`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // The one fault the local rung answers, and one the probe sees on the host rather than through
-        // the guest: a directory where the lock file belongs.
-        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
-        lock.parentFile?.mkdirs()
-        lock.mkdirs()
-        val downloadsBeforeRepair = harness.downloads
-        val commandsBeforeRepair = harness.spawner.commands.size
+    fun `a fault the local rung clears stops the ladder before any package step`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // The one fault the local rung answers, and one the probe sees on the host rather than through
+            // the guest: a directory where the lock file belongs.
+            val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+            lock.parentFile?.mkdirs()
+            lock.mkdirs()
+            val downloadsBeforeRepair = harness.downloads
+            val commandsBeforeRepair = harness.spawner.commands.size
 
-        val report = harness.manager.repair()
+            val report = harness.manager.repair()
 
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(lock.exists()).isFalse()
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(lock.exists()).isFalse()
 
-        // The whole point, and the user's own complaint in one assertion: the ladder stopped at its
-        // own probe rather than at the setup rung below it, so not one package step ran. The window is
-        // the repair's alone, and the probe's own reads are in it — `apt-get check` is how the report
-        // reads apt's state and is deliberately not what is being asked about here.
-        val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
-        val packageSteps = duringRepair.filter {
-            !it.startsWith("echo eclipse-uid=") &&
-                (it.startsWith("apt-get update") || it.startsWith("apt-get install") || it.contains("dpkg"))
+            // The whole point, and the user's own complaint in one assertion: the ladder stopped at its
+            // own probe rather than at the setup rung below it, so not one package step ran. The window is
+            // the repair's alone, and the probe's own reads are in it — `apt-get check` is how the report
+            // reads apt's state and is deliberately not what is being asked about here.
+            val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
+            val packageSteps =
+                duringRepair.filter {
+                    !it.startsWith("echo eclipse-uid=") &&
+                        (it.startsWith("apt-get update") || it.startsWith("apt-get install") || it.contains("dpkg"))
+                }
+            assertThat(packageSteps).isEmpty()
+            // And the stop was a measurement rather than a skip: the probe really ran over the repaired
+            // rootfs, which is the only thing that licenses ending the ladder here.
+            assertThat(duringRepair).contains("whoami")
+            assertThat(duringRepair).contains("apt-get check")
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+            assertThat(report.warnings.joinToString("\n")).contains("cleared 1 package-manager lock(s)")
         }
-        assertThat(packageSteps).isEmpty()
-        // And the stop was a measurement rather than a skip: the probe really ran over the repaired
-        // rootfs, which is the only thing that licenses ending the ladder here.
-        assertThat(duringRepair).contains("whoami")
-        assertThat(duringRepair).contains("apt-get check")
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-        assertThat(report.warnings.joinToString("\n")).contains("cleared 1 package-manager lock(s)")
-    }
 
     @Test
-    fun `a repair that changes nothing locally still runs the setup pipeline`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        val commandsBeforeRepair = harness.spawner.commands.size
+    fun `a repair that changes nothing locally still runs the setup pipeline`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            val commandsBeforeRepair = harness.spawner.commands.size
 
-        val report = harness.manager.repair()
+            val report = harness.manager.repair()
 
-        // Neither local rung had anything to do on the userspace the install left, and that is what
-        // licenses the ladder to keep going: a probe of an unchanged state is a second measurement of
-        // the same answer. So this pins the other direction of the stop — a ladder that stopped on an
-        // unchanged state would be a Repair button that silently does nothing at all.
-        val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
-        assertThat(duringRepair.any { it.startsWith("apt-get update") }).isTrue()
-        assertThat(report.warnings.joinToString("\n"))
-            .doesNotContain("recreated the guest's temporary directories")
-    }
+            // Neither local rung had anything to do on the userspace the install left, and that is what
+            // licenses the ladder to keep going: a probe of an unchanged state is a second measurement of
+            // the same answer. So this pins the other direction of the stop — a ladder that stopped on an
+            // unchanged state would be a Repair button that silently does nothing at all.
+            val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
+            assertThat(duringRepair.any { it.startsWith("apt-get update") }).isTrue()
+            assertThat(report.warnings.joinToString("\n"))
+                .doesNotContain("recreated the guest's temporary directories")
+        }
 
     @Test
-    fun `a userspace that is sound but has no network is not rebuilt over it`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // Something the user installed on top of the base system: a rebuild takes it, so its survival
-        // is how this test says no rebuild happened.
-        val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
-        userPackage.writeText("installed by the user\n")
-        val downloadsBeforeRepair = harness.downloads
-        // Everything the rootfs owns answers; the connection does not. The resolver is failed only
-        // *after* the pipeline has installed its base packages, because setup's own DNS step asks the
-        // same `getent hosts` the probe asks — and this test is about the probe's verdict, not about a
-        // setup run that died at its first step.
-        var baseInstalled = false
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("apt-get install")) {
-                baseInstalled = true
-                healthyRespond(command)
-            } else if (baseInstalled && command.startsWith("getent hosts")) {
-                2 to ""
-            } else {
-                healthyRespond(command)
+    fun `a userspace that is sound but has no network is not rebuilt over it`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // Something the user installed on top of the base system: a rebuild takes it, so its survival
+            // is how this test says no rebuild happened.
+            val userPackage = harness.installer.rootfsDir.resolve("usr/bin/user-package")
+            userPackage.writeText("installed by the user\n")
+            val downloadsBeforeRepair = harness.downloads
+            // Everything the rootfs owns answers; the connection does not. The resolver is failed only
+            // *after* the pipeline has installed its base packages, because setup's own DNS step asks the
+            // same `getent hosts` the probe asks — and this test is about the probe's verdict, not about a
+            // setup run that died at its first step.
+            var baseInstalled = false
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("apt-get install")) {
+                    baseInstalled = true
+                    healthyRespond(command)
+                } else if (baseInstalled && command.startsWith("getent hosts")) {
+                    2 to ""
+                } else {
+                    healthyRespond(command)
+                }
             }
+
+            val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
+
+            // Typed, and the type is the point: the report travels with the failure, and the report is
+            // what says the userspace itself is sound. Nothing on this ladder fixes a resolver, so the
+            // deepest rungs — which rewrite the base system and take the user's own packages with it —
+            // must never run over this.
+            assertThat(failure).isInstanceOf(UserspaceFailure.GuestUnhealthy::class.java)
+            assertThat((failure as UserspaceFailure.GuestUnhealthy).report.sound).isTrue()
+            assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
         }
-
-        val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
-
-        // Typed, and the type is the point: the report travels with the failure, and the report is
-        // what says the userspace itself is sound. Nothing on this ladder fixes a resolver, so the
-        // deepest rungs — which rewrite the base system and take the user's own packages with it —
-        // must never run over this.
-        assertThat(failure).isInstanceOf(UserspaceFailure.GuestUnhealthy::class.java)
-        assertThat((failure as UserspaceFailure.GuestUnhealthy).report.sound).isTrue()
-        assertThat(userPackage.readText()).isEqualTo("installed by the user\n")
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-    }
 
     @Test
-    fun `a lock the local rung clears does not stop the ladder over a program the rootfs is missing`() = runTest {
-        val harness = newHarness()
-        harness.manager.install()
-        // Two faults at once, and the pair is the whole test: one a local rung can clear and one it
-        // cannot even see. `missingPrograms` is read from the login shell's own report rather than from
-        // the host, so a stop decided on the local rung's own subjects — the lock paths and the guest
-        // temp trees, both free and both host-side — would call this userspace sound while dpkg still
-        // refuses to unpack anything. That is the shortcut this test exists to refuse.
-        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
-        lock.parentFile?.mkdirs()
-        lock.mkdirs()
-        val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
-        rm.delete()
-        val downloadsBeforeRepair = harness.downloads
-        val commandsBeforeRepair = harness.spawner.commands.size
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("echo eclipse-uid=") && !rm.exists()) {
-                0 to "eclipse-uid=0\neclipse-path=/usr/local/sbin:/usr/bin:/bin\neclipse-missing=rm\n"
-            } else {
-                healthyRespond(command)
+    fun `a lock the local rung clears does not stop the ladder over a program the rootfs is missing`() =
+        runTest {
+            val harness = newHarness()
+            harness.manager.install()
+            // Two faults at once, and the pair is the whole test: one a local rung can clear and one it
+            // cannot even see. `missingPrograms` is read from the login shell's own report rather than from
+            // the host, so a stop decided on the local rung's own subjects — the lock paths and the guest
+            // temp trees, both free and both host-side — would call this userspace sound while dpkg still
+            // refuses to unpack anything. That is the shortcut this test exists to refuse.
+            val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+            lock.parentFile?.mkdirs()
+            lock.mkdirs()
+            val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
+            rm.delete()
+            val downloadsBeforeRepair = harness.downloads
+            val commandsBeforeRepair = harness.spawner.commands.size
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("echo eclipse-uid=") && !rm.exists()) {
+                    0 to "eclipse-uid=0\neclipse-path=/usr/local/sbin:/usr/bin:/bin\neclipse-missing=rm\n"
+                } else {
+                    healthyRespond(command)
+                }
             }
+
+            harness.manager.repair()
+
+            // The ladder climbed: the local rung did something, the probe looked, and it disagreed — so
+            // the setup rung below ran, and the prologue put the program back out of the archive the
+            // install kept.
+            val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
+            assertThat(duringRepair.any { it.startsWith("apt-get update") }).isTrue()
+            assertThat(rm.readText()).isEqualTo("fake rm\n")
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
         }
-
-        harness.manager.repair()
-
-        // The ladder climbed: the local rung did something, the probe looked, and it disagreed — so
-        // the setup rung below ran, and the prologue put the program back out of the archive the
-        // install kept.
-        val duringRepair = harness.spawner.commands.drop(commandsBeforeRepair)
-        assertThat(duringRepair.any { it.startsWith("apt-get update") }).isTrue()
-        assertThat(rm.readText()).isEqualTo("fake rm\n")
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-    }
 
     // ------------------------------------------------------------------ the install's own heal
 
     @Test
-    fun `an install whose only fault is a lock path repairs itself in place and runs the pipeline once`() = runTest {
-        val harness = newHarness()
-        // The fault appears once the pipeline has installed its packages, so the install's own health
-        // check is what meets it. The check is the install's gate — "installed" and "works" are the
-        // same fact — which is what makes this a heal rather than a failure and a second press.
-        val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("apt-get install")) {
-                lock.parentFile?.mkdirs()
-                lock.mkdirs()
-            }
-            healthyRespond(command)
-        }
-
-        val report = harness.manager.install()
-
-        assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
-        // Under the lock path either way: gone, or the archive's own lock file written back over it.
-        // Both are states apt can open, which is the only question the probe asks.
-        assertThat(lock.isDirectory).isFalse()
-        // Once. One pipeline run is two `apt-get update` commands - the scoped rung and the unscoped
-        // confirmation beside it - so a second `setup()` would show as four, and that is the thing
-        // being asked about: the remedy is a file-level one and not `setup()` again, because a second
-        // pipeline run is another full update on the user's connection and finds nothing the first
-        // did not.
-        assertThat(harness.spawner.commands.count { it.startsWith("apt-get update") }).isEqualTo(2)
-        val warnings = report.warnings.joinToString("\n")
-        assertThat(warnings).contains("repaired in place rather than reporting the install as failed")
-        assertThat(warnings).contains("cleared 1 package-manager lock(s)")
-    }
-
-    @Test
-    fun `an install the remedies cannot fix fails with the sentence it would have failed with anyway`() = runTest {
-        val harness = newHarness()
-        // A fault no file on the device can answer: the session is not proot's fake root. The remedies
-        // still run — there is an archive on disk to read and lock paths to clear — and change none of
-        // it, so the install must not present them as a rescue.
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
-        }
-
-        val failure = runCatching { harness.manager.install() }.exceptionOrNull()
-
-        assertThat(failure).isInstanceOf(UserspaceFailure.GuestUnhealthy::class.java)
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-        // The same sentence the un-healed path produced, which is the contract: a heal that worked
-        // changes what the user sees, and one that did not changes nothing about it.
-        val unhealthy = failure as UserspaceFailure.GuestUnhealthy
-        assertThat(unhealthy.message).startsWith("Ubuntu installed but failed its health check: ")
-        assertThat(unhealthy.message).contains("'ubuntu'")
-        // Unsound, not merely unhealthy: a wrong account is exactly what the deeper rungs are for, so
-        // this is the case the *ladder* would climb on — and the install does not consult it, because
-        // an install has no ladder to climb. It has one bounded attempt, and this is its outcome.
-        assertThat(unhealthy.report.sound).isFalse()
-    }
-
-    @Test
-    fun `a repair on a disk too short for an install keeps the archive and spends nothing`() = runTest {
-        var free = ROOM_TO_SPARE
-        val harness = newHarness(freeBytes = { free })
-        // Installed with room to spare, because the reading is about to be the fault: a device that
-        // is short *before* the install never gets a userspace to repair.
-        harness.manager.install()
-        val archive = harness.installer.tarballFile
-        assertThat(harness.installer.pinnedArchiveOnDisk()).isTrue()
-        // And one fault that is not the disk, because the disk alone does not reach a rung: the local
-        // rungs have nothing to do on a sound userspace, so no probe is taken, and the ladder walks
-        // into the setup rung — which is where the budget this test is about is re-checked. A rootfs
-        // missing a program is unsound, so the ladder climbs to it either way; the pairing is what
-        // makes the press an *attempt* that the disk then stops.
-        val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
-        rm.delete()
-        val healthyRespond = harness.spawner.respond
-        harness.spawner.respond = { command ->
-            if (command.startsWith("echo eclipse-uid=") && !rm.exists()) {
-                0 to "eclipse-uid=0\neclipse-path=/usr/local/sbin:/usr/bin:/bin\neclipse-missing=rm\n"
-            } else {
+    fun `an install whose only fault is a lock path repairs itself in place and runs the pipeline once`() =
+        runTest {
+            val harness = newHarness()
+            // The fault appears once the pipeline has installed its packages, so the install's own health
+            // check is what meets it. The check is the install's gate — "installed" and "works" are the
+            // same fact — which is what makes this a heal rather than a failure and a second press.
+            val lock = harness.installer.rootfsDir.resolve("var/lib/dpkg/lock-frontend")
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("apt-get install")) {
+                    lock.parentFile?.mkdirs()
+                    lock.mkdirs()
+                }
                 healthyRespond(command)
             }
+
+            val report = harness.manager.install()
+
+            assertThat(harness.manager.state.value).isEqualTo(LinuxUserspaceState.Stopped)
+            // Under the lock path either way: gone, or the archive's own lock file written back over it.
+            // Both are states apt can open, which is the only question the probe asks.
+            assertThat(lock.isDirectory).isFalse()
+            // Once. One pipeline run is two `apt-get update` commands - the scoped rung and the unscoped
+            // confirmation beside it - so a second `setup()` would show as four, and that is the thing
+            // being asked about: the remedy is a file-level one and not `setup()` again, because a second
+            // pipeline run is another full update on the user's connection and finds nothing the first
+            // did not.
+            assertThat(harness.spawner.commands.count { it.startsWith("apt-get update") }).isEqualTo(2)
+            val warnings = report.warnings.joinToString("\n")
+            assertThat(warnings).contains("repaired in place rather than reporting the install as failed")
+            assertThat(warnings).contains("cleared 1 package-manager lock(s)")
         }
-        val downloadsBeforeRepair = harness.downloads
 
-        // Short by the install's own budget, which is the reading the disk rung's last step used to
-        // gate on. That step gave up the archive — and the arithmetic of it is the whole reason it
-        // no longer does: `requiredFreeBytes` is `rootfsSizeBytes * 5 + 600 MB`, so this reading is
-        // short by hundreds of megabytes and the archive is thirty-four, and every rung at or below
-        // "restore missing files" writes base bytes out of that archive — including the one directly
-        // below, which pays those same thirty-four megabytes back through `ensurePinnedArchive`. A
-        // download spent to arrive at the failure it was meant to avoid.
-        free = 100L * 1024 * 1024
-        harness.installer.requiredFreeBytes.let { assertThat(free).isLessThan(it) }
+    @Test
+    fun `an install the remedies cannot fix fails with the sentence it would have failed with anyway`() =
+        runTest {
+            val harness = newHarness()
+            // A fault no file on the device can answer: the session is not proot's fake root. The remedies
+            // still run — there is an archive on disk to read and lock paths to clear — and change none of
+            // it, so the install must not present them as a rescue.
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command == "whoami") 0 to "ubuntu\n" else healthyRespond(command)
+            }
 
-        val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
+            val failure = runCatching { harness.manager.install() }.exceptionOrNull()
 
-        // The archive is still there, and the press cost nothing: no rung below had to re-fetch it.
-        assertThat(harness.installer.pinnedArchiveOnDisk()).isTrue()
-        assertThat(archive.isFile).isTrue()
-        assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
-        // And the failure is the honest one — the disk, said plainly — rather than a rebuild attempt
-        // that the same reading would have stopped. `DiskFull` is on the ladder's "a rebuild cannot
-        // fix this" list, so the ladder stops where it stands, and the archive it would have given up
-        // is still on disk for the retry once the user has made room.
-        assertThat(failure).isInstanceOf(UserspaceFailure.DiskFull::class.java)
-        assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-    }
+            assertThat(failure).isInstanceOf(UserspaceFailure.GuestUnhealthy::class.java)
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+            // The same sentence the un-healed path produced, which is the contract: a heal that worked
+            // changes what the user sees, and one that did not changes nothing about it.
+            val unhealthy = failure as UserspaceFailure.GuestUnhealthy
+            assertThat(unhealthy.message).startsWith("Ubuntu installed but failed its health check: ")
+            assertThat(unhealthy.message).contains("'ubuntu'")
+            // Unsound, not merely unhealthy: a wrong account is exactly what the deeper rungs are for, so
+            // this is the case the *ladder* would climb on — and the install does not consult it, because
+            // an install has no ladder to climb. It has one bounded attempt, and this is its outcome.
+            assertThat(unhealthy.report.sound).isFalse()
+        }
+
+    @Test
+    fun `a repair on a disk too short for an install keeps the archive and spends nothing`() =
+        runTest {
+            var free = ROOM_TO_SPARE
+            val harness = newHarness(freeBytes = { free })
+            // Installed with room to spare, because the reading is about to be the fault: a device that
+            // is short *before* the install never gets a userspace to repair.
+            harness.manager.install()
+            val archive = harness.installer.tarballFile
+            assertThat(harness.installer.pinnedArchiveOnDisk()).isTrue()
+            // And one fault that is not the disk, because the disk alone does not reach a rung: the local
+            // rungs have nothing to do on a sound userspace, so no probe is taken, and the ladder walks
+            // into the setup rung — which is where the budget this test is about is re-checked. A rootfs
+            // missing a program is unsound, so the ladder climbs to it either way; the pairing is what
+            // makes the press an *attempt* that the disk then stops.
+            val rm = harness.installer.rootfsDir.resolve("usr/bin/rm")
+            rm.delete()
+            val healthyRespond = harness.spawner.respond
+            harness.spawner.respond = { command ->
+                if (command.startsWith("echo eclipse-uid=") && !rm.exists()) {
+                    0 to "eclipse-uid=0\neclipse-path=/usr/local/sbin:/usr/bin:/bin\neclipse-missing=rm\n"
+                } else {
+                    healthyRespond(command)
+                }
+            }
+            val downloadsBeforeRepair = harness.downloads
+
+            // Short by the install's own budget, which is the reading the disk rung's last step used to
+            // gate on. That step gave up the archive — and the arithmetic of it is the whole reason it
+            // no longer does: `requiredFreeBytes` is `rootfsSizeBytes * 5 + 600 MB`, so this reading is
+            // short by hundreds of megabytes and the archive is thirty-four, and every rung at or below
+            // "restore missing files" writes base bytes out of that archive — including the one directly
+            // below, which pays those same thirty-four megabytes back through `ensurePinnedArchive`. A
+            // download spent to arrive at the failure it was meant to avoid.
+            free = 100L * 1024 * 1024
+            harness.installer.requiredFreeBytes.let { assertThat(free).isLessThan(it) }
+
+            val failure = runCatching { harness.manager.repair() }.exceptionOrNull()
+
+            // The archive is still there, and the press cost nothing: no rung below had to re-fetch it.
+            assertThat(harness.installer.pinnedArchiveOnDisk()).isTrue()
+            assertThat(archive.isFile).isTrue()
+            assertThat(harness.downloads).isEqualTo(downloadsBeforeRepair)
+            // And the failure is the honest one — the disk, said plainly — rather than a rebuild attempt
+            // that the same reading would have stopped. `DiskFull` is on the ladder's "a rebuild cannot
+            // fix this" list, so the ladder stops where it stands, and the archive it would have given up
+            // is still on disk for the retry once the user has made room.
+            assertThat(failure).isInstanceOf(UserspaceFailure.DiskFull::class.java)
+            assertThat(harness.manager.state.value).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
+        }
 }
 
 /**
@@ -1337,7 +1425,10 @@ internal class ScriptedPtySpawner : PtySpawner {
     val commands = mutableListOf<String>()
 
     /** One spawn's full argument vector and environment. */
-    data class SpawnRecord(val argv: List<String>, val envp: List<String>)
+    data class SpawnRecord(
+        val argv: List<String>,
+        val envp: List<String>,
+    )
 
     /** Every spawn's full argv and environment — the exec-model invariant's evidence. */
     val spawns = mutableListOf<SpawnRecord>()
@@ -1384,7 +1475,11 @@ private class ScriptedPtyProcess(
 ) : PtyProcess {
     private var served = false
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         if (served) return -1
         served = true
         if (output.isEmpty()) return -1
@@ -1393,9 +1488,16 @@ private class ScriptedPtyProcess(
         return n
     }
 
-    override fun write(buffer: ByteArray, offset: Int, length: Int): Int = length
+    override fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = length
 
-    override fun resize(rows: Int, columns: Int) = Unit
+    override fun resize(
+        rows: Int,
+        columns: Int,
+    ) = Unit
 
     override fun awaitExit(): Int = exitCode
 
@@ -1419,16 +1521,27 @@ internal class BlockingPtyProcess : PtyProcess {
     var readReturned = false
         private set
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         readEntered.countDown()
         wake.await()
         readReturned = true
         return -1
     }
 
-    override fun write(buffer: ByteArray, offset: Int, length: Int): Int = length
+    override fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = length
 
-    override fun resize(rows: Int, columns: Int) = Unit
+    override fun resize(
+        rows: Int,
+        columns: Int,
+    ) = Unit
 
     override fun awaitExit(): Int = 0
 
@@ -1450,15 +1563,26 @@ private class UnwakeablePtyProcess : PtyProcess {
     var closed = false
         private set
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         // No wake exists. The reader's only exits are the runtime abandoning it or the JVM dying.
         never.await()
         return -1
     }
 
-    override fun write(buffer: ByteArray, offset: Int, length: Int): Int = length
+    override fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = length
 
-    override fun resize(rows: Int, columns: Int) = Unit
+    override fun resize(
+        rows: Int,
+        columns: Int,
+    ) = Unit
 
     override fun awaitExit(): Int = 0
 

@@ -1,12 +1,11 @@
 package dev.eclipse.ssh.feature.terminallog
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
-import org.junit.Test
 
 class SessionLogTest {
-
     @Test
     fun `snapshot is empty before anything is appended`() {
         assertThat(SessionLog().snapshot()).isEmpty()
@@ -103,25 +102,28 @@ class SessionLogTest {
     }
 
     @Test
-    fun `concurrent append and snapshot never throws`() {        val log = SessionLog(capacityChars = 512)
+    fun `concurrent append and snapshot never throws`() {
+        val log = SessionLog(capacityChars = 512)
         val failure = AtomicReference<Throwable?>(null)
         val start = CountDownLatch(1)
-        val writers = (1..2).map { thread ->
+        val writers =
+            (1..2).map { thread ->
+                Thread {
+                    start.await()
+                    repeat(2_000) { index ->
+                        runCatching { log.append("thread output line $index with some noise 😀\n") }
+                            .onFailure { failure.set(it) }
+                    }
+                }.apply { start() }
+            }
+        val reader =
             Thread {
                 start.await()
-                repeat(2_000) { index ->
-                    runCatching { log.append("thread output line $index with some noise 😀\n") }
+                repeat(2_000) {
+                    runCatching { log.snapshot() }
                         .onFailure { failure.set(it) }
                 }
             }.apply { start() }
-        }
-        val reader = Thread {
-            start.await()
-            repeat(2_000) {
-                runCatching { log.snapshot() }
-                    .onFailure { failure.set(it) }
-            }
-        }.apply { start() }
         start.countDown()
         writers.forEach { it.join() }
         reader.join()

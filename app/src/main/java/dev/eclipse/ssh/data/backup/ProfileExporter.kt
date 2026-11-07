@@ -37,65 +37,74 @@ import javax.inject.Singleton
  * caller already owns the wording it wants on top.
  */
 @Singleton
-class ProfileExporter @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val credentialStore: HostCredentialStore,
-) {
+class ProfileExporter
+    @Inject
+    constructor(
+        @ApplicationContext private val context: Context,
+        private val credentialStore: HostCredentialStore,
+    ) {
+        /**
+         * Encrypt [hosts] and write them to [uri]. Returns how many profiles went into the file.
+         *
+         * The count is returned rather than reported because "Exported 3 profile(s)" needs a number the
+         * caller does not otherwise have, and it is the one fact worth confirming back: it is what tells
+         * a user their export is not silently empty.
+         *
+         * Counted after the local environment is dropped, not before, because [VaultBackup.toProfilesJson]
+         * drops it too: its id is synthesized at runtime, so it can never arrive at the other end as a
+         * profile and must not be counted as one here.
+         */
+        suspend fun export(
+            hosts: List<HostProfile>,
+            passphrase: String,
+            uri: Uri,
+        ): Int {
+            val writable = hosts.filterNot { LocalLinuxHost.isLocalHost(it.id) }
+            val credentials = writable.associate { host -> host.id to credentialsOf(host) }
+            write(uri, VaultBackup.encrypt(VaultBackup.toProfilesJson(writable, credentials), passphrase))
+            return writable.size
+        }
 
-    /**
-     * Encrypt [hosts] and write them to [uri]. Returns how many profiles went into the file.
-     *
-     * The count is returned rather than reported because "Exported 3 profile(s)" needs a number the
-     * caller does not otherwise have, and it is the one fact worth confirming back: it is what tells
-     * a user their export is not silently empty.
-     *
-     * Counted after the local environment is dropped, not before, because [VaultBackup.toProfilesJson]
-     * drops it too: its id is synthesized at runtime, so it can never arrive at the other end as a
-     * profile and must not be counted as one here.
-     */
-    suspend fun export(hosts: List<HostProfile>, passphrase: String, uri: Uri): Int {
-        val writable = hosts.filterNot { LocalLinuxHost.isLocalHost(it.id) }
-        val credentials = writable.associate { host -> host.id to credentialsOf(host) }
-        write(uri, VaultBackup.encrypt(VaultBackup.toProfilesJson(writable, credentials), passphrase))
-        return writable.size
-    }
+        /**
+         * Every secret stored for one host, read through the store's own accessors.
+         *
+         * Guarded on [StoredCredentials] rather than on a null return, exactly as the credential store's
+         * contract asks: `password()` and `passphrase()` are plain reads that would each answer `null`
+         * both for "not stored" and for "the store failed", and those are different facts to a user
+         * deciding whether the file they just wrote is complete.
+         */
+        private suspend fun credentialsOf(host: HostProfile): ProfileCredentials {
+            val stored = runCatching { credentialStore.stored(host.id) }.getOrDefault(StoredCredentials())
+            val key = if (stored.hasKey) runCatching { credentialStore.keyBytes(host.id) }.getOrNull() else null
+            val readable = key?.isNotEmpty() == true
+            val rdp = runCatching { credentialStore.rdpCredentials(host.id) }.getOrNull()
+            return ProfileCredentials(
+                password = if (stored.hasPassword) runCatching { credentialStore.password(host.id) }.getOrNull() else null,
+                // The label is what makes the key usable, so it is written only beside bytes that are
+                // actually there — the same pairing the reader enforces on the way back in.
+                keyBase64 = key?.takeIf { readable }?.let { Base64.getEncoder().encodeToString(it) },
+                keyLabel = stored.keyLabel?.takeIf { readable },
+                keyType = stored.keyType?.takeIf { readable },
+                passphrase = if (stored.hasPassphrase) runCatching { credentialStore.passphrase(host.id) }.getOrNull() else null,
+                socksPassword = host.socksPassword,
+                rdpUsername = rdp?.username,
+                rdpDomain = rdp?.domain,
+                rdpPassword = rdp?.password,
+            )
+        }
 
-    /**
-     * Every secret stored for one host, read through the store's own accessors.
-     *
-     * Guarded on [StoredCredentials] rather than on a null return, exactly as the credential store's
-     * contract asks: `password()` and `passphrase()` are plain reads that would each answer `null`
-     * both for "not stored" and for "the store failed", and those are different facts to a user
-     * deciding whether the file they just wrote is complete.
-     */
-    private suspend fun credentialsOf(host: HostProfile): ProfileCredentials {
-        val stored = runCatching { credentialStore.stored(host.id) }.getOrDefault(StoredCredentials())
-        val key = if (stored.hasKey) runCatching { credentialStore.keyBytes(host.id) }.getOrNull() else null
-        val readable = key?.isNotEmpty() == true
-        val rdp = runCatching { credentialStore.rdpCredentials(host.id) }.getOrNull()
-        return ProfileCredentials(
-            password = if (stored.hasPassword) runCatching { credentialStore.password(host.id) }.getOrNull() else null,
-            // The label is what makes the key usable, so it is written only beside bytes that are
-            // actually there — the same pairing the reader enforces on the way back in.
-            keyBase64 = key?.takeIf { readable }?.let { Base64.getEncoder().encodeToString(it) },
-            keyLabel = stored.keyLabel?.takeIf { readable },
-            keyType = stored.keyType?.takeIf { readable },
-            passphrase = if (stored.hasPassphrase) runCatching { credentialStore.passphrase(host.id) }.getOrNull() else null,
-            socksPassword = host.socksPassword,
-            rdpUsername = rdp?.username,
-            rdpDomain = rdp?.domain,
-            rdpPassword = rdp?.password,
-        )
+        /**
+         * `"wt"` and not the default, for the reason [VaultExporter] gives: a document provider that
+         * already holds a longer file would otherwise leave its tail behind, and a truncated export that
+         * still parses is worse than one that does not.
+         */
+        private fun write(
+            uri: Uri,
+            payload: String,
+        ) {
+            val stream =
+                context.contentResolver.openOutputStream(uri, "wt")
+                    ?: throw BackupFormatException("That location could not be written")
+            stream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+        }
     }
-
-    /**
-     * `"wt"` and not the default, for the reason [VaultExporter] gives: a document provider that
-     * already holds a longer file would otherwise leave its tail behind, and a truncated export that
-     * still parses is worse than one that does not.
-     */
-    private fun write(uri: Uri, payload: String) {
-        val stream = context.contentResolver.openOutputStream(uri, "wt")
-            ?: throw BackupFormatException("That location could not be written")
-        stream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-    }
-}

@@ -31,14 +31,14 @@ import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.feature.vault.VaultUnlockGate
 import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ssh.SessionDiagnostics
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * The session trace, in a window of its own.
@@ -70,7 +70,6 @@ import kotlinx.coroutines.withContext
  */
 @AndroidEntryPoint
 class DiagnosticsActivity : SettingsDestinationActivity() {
-
     /**
      * The trace itself, injected rather than reached through the Settings view model.
      *
@@ -96,7 +95,10 @@ class DiagnosticsActivity : SettingsDestinationActivity() {
     override val screenTitle = "Connection diagnostics"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         // Subscribed, not pulled: the ring announces every event, so the count in the header and the
         // rows below it are the app's current state rather than a snapshot taken at open. The window
         // is left open while a session drops, which is precisely when this matters.
@@ -106,9 +108,10 @@ class DiagnosticsActivity : SettingsDestinationActivity() {
         val ordered = remember(events) { events.asReversed() }
         // Fixed 24-hour with seconds, not the locale's time format: the interval between two events is
         // the whole point of reading this, and half the locales drop seconds entirely.
-        val clock = remember {
-            DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
-        }
+        val clock =
+            remember {
+                DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+            }
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         val report = LocalSettingsReport.current
@@ -126,28 +129,30 @@ class DiagnosticsActivity : SettingsDestinationActivity() {
          * callback tell "there is nothing to write" from "write nothing", and say so.
          */
         var pendingExport by remember { mutableStateOf<ByteArray?>(null) }
-        val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
-            // Released first and unconditionally, including for a cancelled picker: the callback is
-            // the moment the other app's activity is gone, and leaving the flag held would suspend the
-            // auto-lock countdown for the rest of the process's life.
-            vaultUnlockGate.release()
-            val bytes = pendingExport
-            pendingExport = null
-            when {
-                // Cancelled. Nothing was chosen, so there is nothing to report.
-                uri == null -> Unit
-                // The export did not survive the round trip, which is the case the nullable slot above
-                // exists to make visible. Writing here would destroy the document the user just picked,
-                // so the loss is reported instead.
-                bytes == null -> report("Could not save the diagnostics log")
-                else -> scope.launch {
-                    // Off the main thread: this is a binder round trip into whichever provider owns the
-                    // URI, and it can be a cloud backend that syncs before the stream closes.
-                    writeExportDocument(context, uri, bytes)
-                        .onFailure { reportWriteFailure(report, "the diagnostics log", it) }
+        val savePicker =
+            rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri: Uri? ->
+                // Released first and unconditionally, including for a cancelled picker: the callback is
+                // the moment the other app's activity is gone, and leaving the flag held would suspend the
+                // auto-lock countdown for the rest of the process's life.
+                vaultUnlockGate.release()
+                val bytes = pendingExport
+                pendingExport = null
+                when {
+                    // Cancelled. Nothing was chosen, so there is nothing to report.
+                    uri == null -> Unit
+                    // The export did not survive the round trip, which is the case the nullable slot above
+                    // exists to make visible. Writing here would destroy the document the user just picked,
+                    // so the loss is reported instead.
+                    bytes == null -> report("Could not save the diagnostics log")
+                    else ->
+                        scope.launch {
+                            // Off the main thread: this is a binder round trip into whichever provider owns the
+                            // URI, and it can be a cloud backend that syncs before the stream closes.
+                            writeExportDocument(context, uri, bytes)
+                                .onFailure { reportWriteFailure(report, "the diagnostics log", it) }
+                        }
                 }
             }
-        }
 
         SettingsSection(screenTitle) {
             if (events.isEmpty()) {
@@ -258,11 +263,16 @@ class DiagnosticsActivity : SettingsDestinationActivity() {
  * already asked the user about replacing an existing document, so this is the write that answer
  * referred to.
  */
-private suspend fun writeExportDocument(context: Context, uri: Uri, bytes: ByteArray): Result<Unit> =
+private suspend fun writeExportDocument(
+    context: Context,
+    uri: Uri,
+    bytes: ByteArray,
+): Result<Unit> =
     withContext(Dispatchers.IO) {
         runCatching {
-            val stream = context.contentResolver.openOutputStream(uri, "w")
-                ?: throw IOException("The selected location could not be opened for writing")
+            val stream =
+                context.contentResolver.openOutputStream(uri, "w")
+                    ?: throw IOException("The selected location could not be opened for writing")
             stream.use { it.write(bytes) }
         }
     }

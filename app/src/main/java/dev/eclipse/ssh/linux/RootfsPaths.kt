@@ -36,8 +36,9 @@ import java.util.LinkedList
  * Pure in [root] and free of Android types, so the whole mapping is testable against a tree built in
  * a temp directory — which is what the provider's tests do, because a real rootfs is a 30 MB download.
  */
-internal class RootfsPaths(val root: File) {
-
+internal class RootfsPaths(
+    val root: File,
+) {
     /**
      * The host file [guestPath] names, with every link along the way expanded inside [root].
      *
@@ -95,8 +96,9 @@ internal class RootfsPaths(val root: File) {
             if (++hops > MAX_SYMLINK_HOPS) {
                 throw IOException("\"$guestPath\" follows more than $MAX_SYMLINK_HOPS symbolic links")
             }
-            val target = runCatching { Files.readSymbolicLink(candidate.toPath()).toString() }
-                .getOrElse { throw IOException("\"$guestPath\" links to something unreadable") }
+            val target =
+                runCatching { Files.readSymbolicLink(candidate.toPath()).toString() }
+                    .getOrElse { throw IOException("\"$guestPath\" links to something unreadable") }
             if (target.startsWith('/')) resolved.clear()
             val targetParts = target.split('/')
             // addFirst in reverse, so the target's own components are walked in order.
@@ -106,12 +108,13 @@ internal class RootfsPaths(val root: File) {
     }
 
     /** Whether [guestPath] names a directory, following a final symlink to one. */
-    fun isDirectory(guestPath: String): Boolean =
-        runCatching { hostPath(guestPath).isDirectory }.getOrDefault(false)
+    fun isDirectory(guestPath: String): Boolean = runCatching { hostPath(guestPath).isDirectory }.getOrDefault(false)
 
     /** The guest path of [name] inside the directory [guestDir] — never a host path. */
-    fun childOf(guestDir: String, name: String): String =
-        if (guestDir == "/") "/$name" else "${guestDir.trimEnd('/')}/$name"
+    fun childOf(
+        guestDir: String,
+        name: String,
+    ): String = if (guestDir == "/") "/$name" else "${guestDir.trimEnd('/')}/$name"
 
     /** The directory above [guestPath], or null at the root — POSIX parenting, no filesystem read. */
     fun parentOf(guestPath: String): String? {
@@ -125,8 +128,7 @@ internal class RootfsPaths(val root: File) {
         }
     }
 
-    private fun join(segments: List<String>): File =
-        if (segments.isEmpty()) root else File(root, segments.joinToString("/"))
+    private fun join(segments: List<String>): File = if (segments.isEmpty()) root else File(root, segments.joinToString("/"))
 
     companion object {
         /**

@@ -14,7 +14,6 @@ import org.junit.Test
  * buys different distances - which is what makes the screen move with the finger instead of ahead of it.
  */
 class TerminalScrollTest {
-
     // --- ScrollAccumulator -------------------------------------------------
 
     @Test
@@ -346,9 +345,10 @@ class TerminalScrollTest {
     @Test
     fun `a wrapped line spends two of the page's rows`() {
         // Line 7 is the third line walked back (9, 8, 7) and is two rows tall.
-        val steps = pageSteps(anchor = 10, fromOffset = 0, pageRows = 5, ceiling = 100) { line ->
-            if (line == 7) 2 else 1
-        }
+        val steps =
+            pageSteps(anchor = 10, fromOffset = 0, pageRows = 5, ceiling = 100) { line ->
+                if (line == 7) 2 else 1
+            }
 
         assertThat(steps).isEqualTo(4)
     }

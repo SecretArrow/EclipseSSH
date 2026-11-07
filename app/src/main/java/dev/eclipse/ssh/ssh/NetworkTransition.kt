@@ -63,11 +63,15 @@ internal enum class GraceOutcome {
  * Pure, so every case is a unit test rather than something to be reasoned about while holding a phone in
  * a lift.
  */
-internal fun graceOutcome(before: Set<String>, after: Set<String>): GraceOutcome = when {
-    before.isEmpty() || after.isEmpty() -> GraceOutcome.UNKNOWN
-    before.any { it in after } -> GraceOutcome.RESUME
-    else -> GraceOutcome.DROP
-}
+internal fun graceOutcome(
+    before: Set<String>,
+    after: Set<String>,
+): GraceOutcome =
+    when {
+        before.isEmpty() || after.isEmpty() -> GraceOutcome.UNKNOWN
+        before.any { it in after } -> GraceOutcome.RESUME
+        else -> GraceOutcome.DROP
+    }
 
 /**
  * Whether a network *replacement* is proof on its own that every live session is finished.
@@ -83,5 +87,7 @@ internal fun graceOutcome(before: Set<String>, after: Set<String>): GraceOutcome
  * dead. That case is precisely what the probe exists to catch, so an overlap - and an unknown - both fall
  * through to probing.
  */
-internal fun migrationProvesLoss(before: Set<String>, after: Set<String>): Boolean =
-    graceOutcome(before, after) == GraceOutcome.DROP
+internal fun migrationProvesLoss(
+    before: Set<String>,
+    after: Set<String>,
+): Boolean = graceOutcome(before, after) == GraceOutcome.DROP

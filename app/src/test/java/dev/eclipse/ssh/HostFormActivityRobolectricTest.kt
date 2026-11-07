@@ -18,10 +18,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.ui.settings.HostFormActivity
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -30,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The Add / Edit host form, in its own window.
@@ -65,7 +64,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class HostFormActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -104,7 +102,11 @@ class HostFormActivityRobolectricTest {
      * flow whose first emission is not synchronous, so asserting after a fixed number of frames would
      * be a race even when the frames are pumped.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -115,7 +117,10 @@ class HostFormActivityRobolectricTest {
     }
 
     /** Waits for a string to be in the tree at all, visible or not. */
-    private fun awaitText(text: String, describe: () -> String) = pumpUntil(describe = describe) {
+    private fun awaitText(
+        text: String,
+        describe: () -> String,
+    ) = pumpUntil(describe = describe) {
         compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
     }
 
@@ -134,13 +139,14 @@ class HostFormActivityRobolectricTest {
         username: String,
         port: Int,
     ): HostProfile {
-        val profile = HostProfile(
-            id = "form-test-$name",
-            name = name,
-            host = hostname,
-            username = username,
-            port = port,
-        )
+        val profile =
+            HostProfile(
+                id = "form-test-$name",
+                name = name,
+                host = hostname,
+                username = username,
+                port = port,
+            )
         ActivityScenario.launch<HostFormActivity>(launchIntent(hostId = null)).use { scenario ->
             scenario.onActivity { activity ->
                 runBlocking { activity.hostRepository.save(profile) }
@@ -256,13 +262,17 @@ class HostFormActivityRobolectricTest {
         ActivityScenario.launch<HostFormActivity>(launchIntent(hostId = null)).use { scenario ->
             awaitText("Add host", describe = { "the Add form never composed" })
 
-            compose.onNodeWithContentDescription("Paste password from clipboard")
-                .performScrollTo().assertIsDisplayed()
+            compose
+                .onNodeWithContentDescription("Paste password from clipboard")
+                .performScrollTo()
+                .assertIsDisplayed()
 
             // Set after the window is up, so nothing the app does on start can have already replaced
             // it - the clipboard is process-wide state and this class is not the only writer.
-            val clipboard = ApplicationProvider.getApplicationContext<Context>()
-                .getSystemService(ClipboardManager::class.java)
+            val clipboard =
+                ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .getSystemService(ClipboardManager::class.java)
             clipboard.setPrimaryClip(ClipData.newPlainText("test", "$PASTED\n"))
 
             compose.onNodeWithContentDescription("Paste password from clipboard").performClick()
@@ -288,12 +298,13 @@ class HostFormActivityRobolectricTest {
      */
     @Test
     fun editOpensOnThatHostPrefilled() {
-        val host = saveHost(
-            name = "Editable",
-            hostname = "edit.example.test",
-            username = "editor",
-            port = 2244,
-        )
+        val host =
+            saveHost(
+                name = "Editable",
+                hostname = "edit.example.test",
+                username = "editor",
+                port = 2244,
+            )
 
         ActivityScenario.launch<HostFormActivity>(launchIntent(hostId = host.id)).use { scenario ->
             awaitText("Edit host", describe = { "the Edit form never composed" })
@@ -330,7 +341,8 @@ class HostFormActivityRobolectricTest {
                 describe = { "the missing-host state never composed" },
             )
 
-            compose.onNodeWithText("That host is no longer saved, so there is nothing to edit.")
+            compose
+                .onNodeWithText("That host is no longer saved, so there is nothing to edit.")
                 .assertIsDisplayed()
             // A way out, on the screen rather than in a snackbar on a window that is closing.
             compose.onNodeWithText("Close").assertIsDisplayed()

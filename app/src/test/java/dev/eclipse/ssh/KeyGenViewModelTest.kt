@@ -47,7 +47,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35])
 class KeyGenViewModelTest {
-
     private val context: Context = ApplicationProvider.getApplicationContext<Context>()
 
     /**
@@ -123,13 +122,14 @@ class KeyGenViewModelTest {
         assertThat(gate.pickerActive).isTrue()
 
         val store = ViewModelStore()
-        val provider = ViewModelProvider(
-            store,
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = viewModel as T
-            },
-        )
+        val provider =
+            ViewModelProvider(
+                store,
+                object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T = viewModel as T
+                },
+            )
         provider[KeyGenViewModel::class.java]
         store.clear()
 

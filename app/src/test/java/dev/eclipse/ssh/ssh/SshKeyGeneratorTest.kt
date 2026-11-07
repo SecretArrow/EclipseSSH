@@ -1,14 +1,13 @@
 package dev.eclipse.ssh.ssh
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.security.interfaces.ECPublicKey
 import java.util.Base64
-import org.junit.Test
 
 class SshKeyGeneratorTest {
-
     @Test
     fun `rsa public key blob matches OpenSSH wire format`() {
         val pair = SshKeyAlgorithm.RSA_2048.generate()
@@ -61,11 +60,12 @@ class SshKeyGeneratorTest {
 
     @Test
     fun `loaded key reports the type the algorithm promises`() {
-        val expected = mapOf(
-            SshKeyAlgorithm.RSA_2048 to "RSA 2048",
-            SshKeyAlgorithm.RSA_4096 to "RSA 4096",
-            SshKeyAlgorithm.ECDSA_P256 to "ECDSA 256",
-        )
+        val expected =
+            mapOf(
+                SshKeyAlgorithm.RSA_2048 to "RSA 2048",
+                SshKeyAlgorithm.RSA_4096 to "RSA 4096",
+                SshKeyAlgorithm.ECDSA_P256 to "ECDSA 256",
+            )
         // Fails the build when an algorithm is added without deciding what the UI calls it.
         assertThat(expected.keys).containsExactlyElementsIn(SshKeyAlgorithm.entries)
 
@@ -123,8 +123,11 @@ class SshKeyGeneratorTest {
         // The point has to be in the DER, not merely derivable from it: sshd's EC parser reads it
         // and fails outright when the optional field is missing.
         val der = Base64.getDecoder().decode(pemBody(pair.privatePem))
-        val point = Base64.getDecoder().decode(pair.publicLine.substringAfter(' ').substringBefore(' '))
-            .let { blob -> readFields(blob)[2] }
+        val point =
+            Base64
+                .getDecoder()
+                .decode(pair.publicLine.substringAfter(' ').substringBefore(' '))
+                .let { blob -> readFields(blob)[2] }
         assertThat(der.asList()).containsAtLeastElementsIn(point.asList()).inOrder()
         // parameters [0] names the curve by OID rather than spelling it out.
         assertThat(der.asList()).containsAtLeastElementsIn(PRIME256V1_DER.asList()).inOrder()
@@ -143,10 +146,14 @@ class SshKeyGeneratorTest {
 
     @Test
     fun `generated point is a full width uncompressed point`() {
-        val loaded = SshKeyLoader.load(
-            SshKeyAlgorithm.ECDSA_P256.generate().privatePem.toByteArray(Charsets.UTF_8),
-            "id_ecdsa",
-        )
+        val loaded =
+            SshKeyLoader.load(
+                SshKeyAlgorithm.ECDSA_P256
+                    .generate()
+                    .privatePem
+                    .toByteArray(Charsets.UTF_8),
+                "id_ecdsa",
+            )
 
         val point = ecPointBytes(loaded.public as ECPublicKey)
 
@@ -159,14 +166,16 @@ class SshKeyGeneratorTest {
     @Test
     fun `a short value is padded on the left`() {
         assertThat(fixedWidth(BigInteger.valueOf(0x0102), 4).toList())
-            .containsExactly(0.toByte(), 0.toByte(), 1.toByte(), 2.toByte()).inOrder()
+            .containsExactly(0.toByte(), 0.toByte(), 1.toByte(), 2.toByte())
+            .inOrder()
     }
 
     @Test
     fun `the two's complement sign octet is dropped rather than counted`() {
         // 0xFF80 needs a leading 0x00 in two's complement; as a coordinate it is exactly two octets.
         assertThat(fixedWidth(BigInteger.valueOf(0xFF80), 2).toList())
-            .containsExactly(0xFF.toByte(), 0x80.toByte()).inOrder()
+            .containsExactly(0xFF.toByte(), 0x80.toByte())
+            .inOrder()
     }
 
     @Test
@@ -194,12 +203,20 @@ class SshKeyGeneratorTest {
     fun `object identifiers are encoded arc by arc`() {
         // prime256v1, whose 10045 arc needs two base-128 octets.
         assertThat(encodeObjectIdentifier("1.2.840.10045.3.1.7").toList())
-            .containsExactlyElementsIn(PRIME256V1_CONTENT.toList()).inOrder()
+            .containsExactlyElementsIn(PRIME256V1_CONTENT.toList())
+            .inOrder()
         // rsaEncryption, the textbook case.
         assertThat(encodeObjectIdentifier("1.2.840.113549.1.1.1").toList())
             .containsExactly(
-                0x2A.toByte(), 0x86.toByte(), 0x48.toByte(), 0x86.toByte(),
-                0xF7.toByte(), 0x0D.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(),
+                0x2A.toByte(),
+                0x86.toByte(),
+                0x48.toByte(),
+                0x86.toByte(),
+                0xF7.toByte(),
+                0x0D.toByte(),
+                0x01.toByte(),
+                0x01.toByte(),
+                0x01.toByte(),
             ).inOrder()
     }
 
@@ -220,8 +237,7 @@ class SshKeyGeneratorTest {
         assertThat(der(0x04, ByteArray(300)).size).isEqualTo(304)
     }
 
-    private fun pemBody(pem: String): String =
-        pem.lineSequence().filter { it.isNotBlank() && !it.startsWith("-----") }.joinToString("")
+    private fun pemBody(pem: String): String = pem.lineSequence().filter { it.isNotBlank() && !it.startsWith("-----") }.joinToString("")
 
     /** Reads all length-prefixed SSH wire-format fields. */
     private fun readFields(blob: ByteArray): List<ByteArray> {

@@ -6,7 +6,6 @@ import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.data.model.AuthMethod
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.model.ProxyType
-import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -15,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * What a saved host looks like after the app is killed and started again.
@@ -34,7 +34,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class DatabaseRestartTest {
-
     private val context get() = RuntimeEnvironment.getApplication()
     private var database: EclipseDatabase? = null
 
@@ -52,41 +51,43 @@ class DatabaseRestartTest {
      * unusual ones nobody checks by hand.
      */
     @Test
-    fun `a fully configured host comes back intact after the database is closed and reopened`() = runTest {
-        val saved = HostProfile(
-            id = "restart-full",
-            name = "Restart edge",
-            host = "10.1.2.3",
-            username = "operator",
-            port = 2222,
-            authMethod = AuthMethod.SSH_KEY,
-            group = "Production",
-            tags = listOf("eu-west", "bastion"),
-            isFavorite = true,
-            lastConnectedAt = 1_750_000_000_000L,
-            fingerprint = "SHA256:restart",
-            proxyType = ProxyType.SOCKS5,
-            proxyJump = "jump.example.com",
-            socksHost = "127.0.0.1",
-            socksPort = 9050,
-            socksUsername = "socksuser",
-            socksPassword = null,
-            accentColor = 0xFF2196F3,
-            connectTimeoutSeconds = 45,
-            keepAliveSeconds = 30,
-            // Off, which is not the column default: a default that overwrote the stored value would
-            // silently turn this back on and the test would catch it here rather than a user later.
-            autoLoginSftp = false,
-            // Dashes rather than colons, because the column stores the text as typed: a restart that
-            // normalised it would change what the form shows the next time it opens.
-            wakeOnLanMac = "4C-2E-81-1A-02-F7",
-        )
+    fun `a fully configured host comes back intact after the database is closed and reopened`() =
+        runTest {
+            val saved =
+                HostProfile(
+                    id = "restart-full",
+                    name = "Restart edge",
+                    host = "10.1.2.3",
+                    username = "operator",
+                    port = 2222,
+                    authMethod = AuthMethod.SSH_KEY,
+                    group = "Production",
+                    tags = listOf("eu-west", "bastion"),
+                    isFavorite = true,
+                    lastConnectedAt = 1_750_000_000_000L,
+                    fingerprint = "SHA256:restart",
+                    proxyType = ProxyType.SOCKS5,
+                    proxyJump = "jump.example.com",
+                    socksHost = "127.0.0.1",
+                    socksPort = 9050,
+                    socksUsername = "socksuser",
+                    socksPassword = null,
+                    accentColor = 0xFF2196F3,
+                    connectTimeoutSeconds = 45,
+                    keepAliveSeconds = 30,
+                    // Off, which is not the column default: a default that overwrote the stored value would
+                    // silently turn this back on and the test would catch it here rather than a user later.
+                    autoLoginSftp = false,
+                    // Dashes rather than colons, because the column stores the text as typed: a restart that
+                    // normalised it would change what the form shows the next time it opens.
+                    wakeOnLanMac = "4C-2E-81-1A-02-F7",
+                )
 
-        write(saved)
-        val restored = reopenAndReadHosts().single()
+            write(saved)
+            val restored = reopenAndReadHosts().single()
 
-        assertThat(restored).isEqualTo(saved)
-    }
+            assertThat(restored).isEqualTo(saved)
+        }
 
     /**
      * Both positions of the SFTP switch, side by side, through a restart.
@@ -96,17 +97,18 @@ class DatabaseRestartTest {
      * disagrees with it.
      */
     @Test
-    fun `the SFTP auto login switch survives a restart in both positions`() = runTest {
-        val on = HostProfile(id = "restart-on", name = "On", host = "a.example.com", username = "u", autoLoginSftp = true)
-        val off = HostProfile(id = "restart-off", name = "Off", host = "b.example.com", username = "u", autoLoginSftp = false)
+    fun `the SFTP auto login switch survives a restart in both positions`() =
+        runTest {
+            val on = HostProfile(id = "restart-on", name = "On", host = "a.example.com", username = "u", autoLoginSftp = true)
+            val off = HostProfile(id = "restart-off", name = "Off", host = "b.example.com", username = "u", autoLoginSftp = false)
 
-        write(on, off)
-        val restored = reopenAndReadHosts().associateBy(HostProfile::id)
+            write(on, off)
+            val restored = reopenAndReadHosts().associateBy(HostProfile::id)
 
-        assertThat(restored).hasSize(2)
-        assertWithMessage("the on position").that(restored["restart-on"]?.autoLoginSftp).isTrue()
-        assertWithMessage("the off position").that(restored["restart-off"]?.autoLoginSftp).isFalse()
-    }
+            assertThat(restored).hasSize(2)
+            assertWithMessage("the on position").that(restored["restart-on"]?.autoLoginSftp).isTrue()
+            assertWithMessage("the off position").that(restored["restart-off"]?.autoLoginSftp).isFalse()
+        }
 
     /**
      * A host with nothing optional set: null stays null rather than becoming an empty string.
@@ -117,19 +119,20 @@ class DatabaseRestartTest {
      * naive `split` on the unit separator produces.
      */
     @Test
-    fun `an unconfigured host keeps its nulls and its empty tag list`() = runTest {
-        val minimal = HostProfile(id = "restart-minimal", name = "Minimal", host = "min.example.com", username = "root")
+    fun `an unconfigured host keeps its nulls and its empty tag list`() =
+        runTest {
+            val minimal = HostProfile(id = "restart-minimal", name = "Minimal", host = "min.example.com", username = "root")
 
-        write(minimal)
-        val restored = reopenAndReadHosts().single()
+            write(minimal)
+            val restored = reopenAndReadHosts().single()
 
-        assertThat(restored).isEqualTo(minimal)
-        assertThat(restored.tags).isEmpty()
-        assertThat(restored.proxyJump).isNull()
-        assertThat(restored.keepAliveSeconds).isNull()
-        assertThat(restored.lastConnectedAt).isNull()
-        assertThat(restored.accentColor).isNull()
-    }
+            assertThat(restored).isEqualTo(minimal)
+            assertThat(restored.tags).isEmpty()
+            assertThat(restored.proxyJump).isNull()
+            assertThat(restored.keepAliveSeconds).isNull()
+            assertThat(restored.lastConnectedAt).isNull()
+            assertThat(restored.accentColor).isNull()
+        }
 
     /**
      * An edit made before the restart is what comes back, not the row it replaced.
@@ -139,35 +142,37 @@ class DatabaseRestartTest {
      * show the same machine twice with different settings.
      */
     @Test
-    fun `an edited host survives as the edit rather than as the original`() = runTest {
-        val original = HostProfile(id = "restart-edit", name = "Before", host = "before.example.com", username = "u", port = 22)
-        write(original)
+    fun `an edited host survives as the edit rather than as the original`() =
+        runTest {
+            val original = HostProfile(id = "restart-edit", name = "Before", host = "before.example.com", username = "u", port = 22)
+            write(original)
 
-        // Reopened, edited, closed again: the edit is written by a different connection from the one
-        // that created the row, which is what an edit after a relaunch actually is.
-        val edited = original.copy(name = "After", host = "after.example.com", port = 2200, autoLoginSftp = false)
-        write(edited)
+            // Reopened, edited, closed again: the edit is written by a different connection from the one
+            // that created the row, which is what an edit after a relaunch actually is.
+            val edited = original.copy(name = "After", host = "after.example.com", port = 2200, autoLoginSftp = false)
+            write(edited)
 
-        val restored = reopenAndReadHosts()
-        assertThat(restored).hasSize(1)
-        assertThat(restored.single()).isEqualTo(edited)
-    }
+            val restored = reopenAndReadHosts()
+            assertThat(restored).hasSize(1)
+            assertThat(restored.single()).isEqualTo(edited)
+        }
 
     /** A deleted host stays deleted: nothing resurrects from the file on the next launch. */
     @Test
-    fun `a deleted host does not come back on the next launch`() = runTest {
-        val keep = HostProfile(id = "restart-keep", name = "Keep", host = "keep.example.com", username = "u")
-        val drop = HostProfile(id = "restart-drop", name = "Drop", host = "drop.example.com", username = "u")
-        write(keep, drop)
+    fun `a deleted host does not come back on the next launch`() =
+        runTest {
+            val keep = HostProfile(id = "restart-keep", name = "Keep", host = "keep.example.com", username = "u")
+            val drop = HostProfile(id = "restart-drop", name = "Drop", host = "drop.example.com", username = "u")
+            write(keep, drop)
 
-        open().let { db ->
-            db.hostDao().delete(drop.toEntity())
-            close()
+            open().let { db ->
+                db.hostDao().delete(drop.toEntity())
+                close()
+            }
+
+            val restored = reopenAndReadHosts()
+            assertThat(restored.map(HostProfile::id)).containsExactly("restart-keep")
         }
-
-        val restored = reopenAndReadHosts()
-        assertThat(restored.map(HostProfile::id)).containsExactly("restart-keep")
-    }
 
     // ---------------------------------------------------------------- the restart itself
 
@@ -180,7 +185,11 @@ class DatabaseRestartTest {
 
     /** Opens the same file again and reads the host list back as domain objects. */
     private suspend fun reopenAndReadHosts(): List<HostProfile> =
-        open().hostDao().observeAll().first().map(HostEntity::toDomain)
+        open()
+            .hostDao()
+            .observeAll()
+            .first()
+            .map(HostEntity::toDomain)
 
     /**
      * Opens the shipped database on a real file.
@@ -192,7 +201,8 @@ class DatabaseRestartTest {
      */
     private fun open(): EclipseDatabase {
         database?.close()
-        return Room.databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
+        return Room
+            .databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
             .allowMainThreadQueries()
             .build()
             .also { database = it }

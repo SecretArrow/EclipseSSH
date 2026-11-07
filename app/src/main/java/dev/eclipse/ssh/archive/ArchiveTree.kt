@@ -18,12 +18,14 @@ package dev.eclipse.ssh.archive
  * All lookups are prefix-driven on the normalized '/'-separated shape, so a query is a scan of
  * one folder's slice, never of the whole list.
  */
-class ArchiveTree(entries: List<ArchiveEntry>) {
-
+class ArchiveTree(
+    entries: List<ArchiveEntry>,
+) {
     /** The listing with every directory's trailing slash stripped - the shape every query speaks. */
-    private val normalized: List<ArchiveEntry> = entries.map { entry ->
-        if (entry.isDirectory && entry.path.endsWith("/")) entry.copy(path = entry.path.trimEnd('/')) else entry
-    }
+    private val normalized: List<ArchiveEntry> =
+        entries.map { entry ->
+            if (entry.isDirectory && entry.path.endsWith("/")) entry.copy(path = entry.path.trimEnd('/')) else entry
+        }
 
     /**
      * Every path the tree can name, keyed by its normalized path for O(1) lookup: the real
@@ -43,42 +45,43 @@ class ArchiveTree(entries: List<ArchiveEntry>) {
      * information beyond existence - but real archives do list directories explicitly, so they
      * are kept and merged with implied parents (see [children]).
      */
-    private val childrenIndex: Map<String, MutableList<ArchiveEntry>> = buildMap {
-        for (entry in normalized) {
-            // Every real entry lives in its parent folder.
-            parentOf(entry.path)?.let { parent ->
-                getOrPut(parent) { mutableListOf() }.add(entry)
-            }
-            // A directory entry is also a *container* its children are indexed under, even when
-            // it is empty - an empty folder must still appear in its own parent's listing.
-            if (entry.isDirectory) getOrPut(entry.path) { mutableListOf() }
-            // Entries nested deeper than one level imply the folders between: "a/b/c.txt"
-            // implies "a" and "a/b" even when no directory entry for either exists.
-            if (!entry.isDirectory) {
-                entry.impliedParents().forEach { implied ->
-                    if (byPath[implied]?.isDirectory != true) {
-                        // Only synthesize when no real directory entry claimed the path - a real
-                        // entry always knows more (size, mtime) than the implied placeholder.
-                        getOrPut(implied) { mutableListOf() }
+    private val childrenIndex: Map<String, MutableList<ArchiveEntry>> =
+        buildMap {
+            for (entry in normalized) {
+                // Every real entry lives in its parent folder.
+                parentOf(entry.path)?.let { parent ->
+                    getOrPut(parent) { mutableListOf() }.add(entry)
+                }
+                // A directory entry is also a *container* its children are indexed under, even when
+                // it is empty - an empty folder must still appear in its own parent's listing.
+                if (entry.isDirectory) getOrPut(entry.path) { mutableListOf() }
+                // Entries nested deeper than one level imply the folders between: "a/b/c.txt"
+                // implies "a" and "a/b" even when no directory entry for either exists.
+                if (!entry.isDirectory) {
+                    entry.impliedParents().forEach { implied ->
+                        if (byPath[implied]?.isDirectory != true) {
+                            // Only synthesize when no real directory entry claimed the path - a real
+                            // entry always knows more (size, mtime) than the implied placeholder.
+                            getOrPut(implied) { mutableListOf() }
+                        }
                     }
                 }
             }
-        }
-        // Second pass: the implied folders need to appear as children of THEIR parents, and to be
-        // addressable by path like any real entry - entryAt/subtreeOf/search must not care whether
-        // the archive listed a folder or a nested file merely implied it. Doing this in a second
-        // pass keeps the first pass's iteration over `entries` clean while the map is still being
-        // built. The root ("") is a container key, never an entry - it is spelled "" only in
-        // storage, and byPath[""] would be a phantom nobody can query for.
-        val impliedFolders = keys.filter { it.isNotEmpty() && it !in byPath }
-        for (folder in impliedFolders) {
-            val placeholder = impliedFolderEntry(folder)
-            parentOf(folder)?.let { parent ->
-                getOrPut(parent) { mutableListOf() }.add(placeholder)
+            // Second pass: the implied folders need to appear as children of THEIR parents, and to be
+            // addressable by path like any real entry - entryAt/subtreeOf/search must not care whether
+            // the archive listed a folder or a nested file merely implied it. Doing this in a second
+            // pass keeps the first pass's iteration over `entries` clean while the map is still being
+            // built. The root ("") is a container key, never an entry - it is spelled "" only in
+            // storage, and byPath[""] would be a phantom nobody can query for.
+            val impliedFolders = keys.filter { it.isNotEmpty() && it !in byPath }
+            for (folder in impliedFolders) {
+                val placeholder = impliedFolderEntry(folder)
+                parentOf(folder)?.let { parent ->
+                    getOrPut(parent) { mutableListOf() }.add(placeholder)
+                }
+                byPath[folder] = placeholder
             }
-            byPath[folder] = placeholder
         }
-    }
 
     /** The archive's root-level entries (both real and implied folders), in listing order. */
     fun rootChildren(): List<ArchiveEntry> = children("").orEmpty()
@@ -98,20 +101,23 @@ class ArchiveTree(entries: List<ArchiveEntry>) {
     fun entryAt(path: String): ArchiveEntry? = byPath[path]
 
     /** All entries whose path contains [query] (case-insensitive), capped at [limit]. */
-    fun search(query: String, limit: Int = 500): List<ArchiveEntry> {
+    fun search(
+        query: String,
+        limit: Int = 500,
+    ): List<ArchiveEntry> {
         if (query.isBlank()) return emptyList()
         val needle = query.trim().lowercase()
         // byPath is a LinkedHashMap: iteration order is listing order, which makes the results
         // stable across repeat searches of the same query.
-        return byPath.values.asSequence()
+        return byPath.values
+            .asSequence()
             .filter { it.path.lowercase().contains(needle) }
             .take(limit)
             .toList()
     }
 
     /** Whether the entry at [path] has any children - the folder-expansion affordance. */
-    fun hasChildren(path: String): Boolean =
-        !(childrenIndex[normalizeFolder(path)]?.isEmpty() ?: true)
+    fun hasChildren(path: String): Boolean = !(childrenIndex[normalizeFolder(path)]?.isEmpty() ?: true)
 
     /**
      * The folder paths on the way from the root to [path], excluding [path] itself - what the
@@ -121,9 +127,12 @@ class ArchiveTree(entries: List<ArchiveEntry>) {
         // drop(1) sheds the seed: runningFold starts from "", which is the root's storage spelling
         // and not a path anyone renders or extracts. An empty result for a root-level file falls
         // out for free - dropLast(1) leaves nothing to fold.
-        path.split('/').dropLast(1).runningFold("") { acc, segment ->
-            if (acc.isEmpty()) segment else "$acc/$segment"
-        }.drop(1)
+        path
+            .split('/')
+            .dropLast(1)
+            .runningFold("") { acc, segment ->
+                if (acc.isEmpty()) segment else "$acc/$segment"
+            }.drop(1)
 
     /**
      * Every entry at or below [folderPath] - the selective-extract set for a folder. Includes the
@@ -139,8 +148,7 @@ class ArchiveTree(entries: List<ArchiveEntry>) {
     /** Total addressable entries: the scan's listing plus the folders a nested file implied. */
     val entryCount: Int get() = byPath.size
 
-    private fun normalizeFolder(path: String): String =
-        path.trim('/').ifEmpty { "" }
+    private fun normalizeFolder(path: String): String = path.trim('/').ifEmpty { "" }
 
     private fun parentOf(path: String): String? {
         val index = path.lastIndexOf('/')
@@ -157,14 +165,15 @@ class ArchiveTree(entries: List<ArchiveEntry>) {
      * are unknown - null rather than invented numbers - and the path is the identity every other
      * query uses, so the placeholder behaves like a real entry wherever it flows.
      */
-    private fun impliedFolderEntry(path: String) = ArchiveEntry(
-        path = path,
-        isDirectory = true,
-        size = 0L,
-        compressedSize = null,
-        modifiedEpochMillis = null,
-        method = null,
-        dataOffset = null,
-        encrypted = false,
-    )
+    private fun impliedFolderEntry(path: String) =
+        ArchiveEntry(
+            path = path,
+            isDirectory = true,
+            size = 0L,
+            compressedSize = null,
+            modifiedEpochMillis = null,
+            method = null,
+            dataOffset = null,
+            encrypted = false,
+        )
 }

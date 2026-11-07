@@ -1,12 +1,12 @@
 package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Assume
+import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.nio.file.Files
-import org.junit.Assume
-import org.junit.Test
 
 /**
  * The shared archive guards' own contracts, independent of the pipelines that use them.
@@ -21,7 +21,6 @@ import org.junit.Test
  * contents, which in this app's layout is the user's real data one directory over.
  */
 class TarSafetyTest {
-
     private fun newRoot(): File = Files.createTempDirectory("tar-safety").toFile().apply { deleteOnExit() }
 
     @Test
@@ -107,7 +106,8 @@ class TarSafetyTest {
         File(tree, "inside.txt").writeText("extraction content\n")
         // The shape deleteRecursively mishandles: a link to a directory, which it treats as a
         // directory and recurses into.
-        java.nio.file.Files.createSymbolicLink(File(tree, "link-to-outside").toPath(), outside.toPath())
+        java.nio.file.Files
+            .createSymbolicLink(File(tree, "link-to-outside").toPath(), outside.toPath())
 
         assertThat(deleteTreeNoFollow(tree)).isTrue()
         assertThat(tree.exists()).isFalse()
@@ -141,13 +141,15 @@ class TarSafetyTest {
     fun `a symlink to a directory is not a directory of its own`() {
         val root = newRoot()
         val real = File(root, "real").apply { mkdirs() }
-        val link = File(root, "link").also {
-            Files.createSymbolicLink(it.toPath(), real.toPath())
-        }
-        val linkToFile = File(root, "link-to-file").also {
-            File(root, "file.txt").writeText("content\n")
-            Files.createSymbolicLink(it.toPath(), File(root, "file.txt").toPath())
-        }
+        val link =
+            File(root, "link").also {
+                Files.createSymbolicLink(it.toPath(), real.toPath())
+            }
+        val linkToFile =
+            File(root, "link-to-file").also {
+                File(root, "file.txt").writeText("content\n")
+                Files.createSymbolicLink(it.toPath(), File(root, "file.txt").toPath())
+            }
 
         // Followed, both links answer as what they point at - which is exactly why the no-follow
         // pair exists, and why they disagree here.
@@ -186,9 +188,10 @@ class TarSafetyTest {
 
     @Test
     fun `a progress-reporting open counts the compressed bytes it hands over`() {
-        val fixture = TestTarballs.writeRootfsFixture(
-            newRoot().resolve("rootfs.tar.gz"),
-        )
+        val fixture =
+            TestTarballs.writeRootfsFixture(
+                newRoot().resolve("rootfs.tar.gz"),
+            )
         val readings = mutableListOf<Long>()
 
         // Drained in full, because the count is of what the *decompressor* read: a stream opened

@@ -13,13 +13,6 @@ import dev.eclipse.ssh.data.model.SessionTab
 import dev.eclipse.ssh.data.model.SftpSessionState
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.ssh.fallbackHome
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.time.Duration
-import java.util.Collections
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.Environment
 import org.apache.sshd.server.ExitCallback
@@ -39,6 +32,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Duration
+import java.util.Collections
 
 /**
  * The Auto Login SFTP switch, end to end, against two local SSH servers in this JVM.
@@ -64,7 +64,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SftpAutoLoginRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -100,7 +99,10 @@ class SftpAutoLoginRobolectricTest {
         // The listing itself, not just the state: the seeded file is what proves a real subsystem
         // channel opened, authenticated on the SSH transport, and read a directory.
         assertThat(viewModel.uiState.value.remotePath).isNotNull()
-        assertThat(viewModel.uiState.value.remoteFiles.map { it.name }).contains(SEEDED_FILE)
+        assertThat(
+            viewModel.uiState.value.remoteFiles
+                .map { it.name },
+        ).contains(SEEDED_FILE)
         // And the session is untouched by any of it.
         assertThat(tabFor(hostId)?.state).isEqualTo(SessionConnectionState.CONNECTED)
     }
@@ -127,7 +129,11 @@ class SftpAutoLoginRobolectricTest {
         assertThat(viewModel().statusMessage.value).isNull()
 
         // Still SSH: the shell is live and the pty is attached, which is the whole point of the mode.
-        assertThat(viewModel().uiState.value.tabs.map(SessionTab::hostId)).contains(hostId)
+        assertThat(
+            viewModel()
+                .uiState.value.tabs
+                .map(SessionTab::hostId),
+        ).contains(hostId)
     }
 
     /**
@@ -188,7 +194,9 @@ class SftpAutoLoginRobolectricTest {
             tabFor(hostId)?.sftpState == SftpSessionState.DISABLED
         }
         val viewModel = viewModel()
-        val host = viewModel.uiState.value.hosts.first { it.id == hostId }
+        val host =
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId }
 
         compose.runOnUiThread { viewModel.refreshFiles(host) }
 
@@ -229,7 +237,9 @@ class SftpAutoLoginRobolectricTest {
             tabFor(hostId)?.sftpState == SftpSessionState.DISABLED
         }
         val viewModel = viewModel()
-        val host = viewModel.uiState.value.hosts.first { it.id == hostId }
+        val host =
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId }
 
         compose.runOnUiThread { viewModel.refreshFiles(host) }
 
@@ -237,7 +247,10 @@ class SftpAutoLoginRobolectricTest {
             tabFor(hostId)?.sftpState == SftpSessionState.READY
         }
         assertThat(tabFor(hostId)?.sftpError).isNull()
-        assertThat(viewModel.uiState.value.remoteFiles.map { it.name }).contains(SEEDED_FILE)
+        assertThat(
+            viewModel.uiState.value.remoteFiles
+                .map { it.name },
+        ).contains(SEEDED_FILE)
     }
 
     /**
@@ -255,15 +268,25 @@ class SftpAutoLoginRobolectricTest {
         val viewModel = viewModel()
 
         // Edit the host the way the dialog does, close the session, and connect again.
-        val edited = viewModel.uiState.value.hosts.first { it.id == hostId }.copy(autoLoginSftp = false)
+        val edited =
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId }
+                .copy(autoLoginSftp = false)
         compose.runOnUiThread { viewModel.saveHost(edited) }
         pumpUntil(describe = { "the edit never reached the host list" }) {
-            viewModel.uiState.value.hosts.first { it.id == hostId }.autoLoginSftp.not()
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId }
+                .autoLoginSftp
+                .not()
         }
         closeAll()
 
         compose.runOnUiThread {
-            viewModel.connect(viewModel.uiState.value.hosts.first { it.id == hostId }, password = PASSWORD)
+            viewModel.connect(
+                viewModel.uiState.value.hosts
+                    .first { it.id == hostId },
+                password = PASSWORD,
+            )
         }
         pumpUntil(describe = { "the reconnected session ignored the edit: " + diagnose(hostId) }) {
             tabFor(hostId)?.sftpState == SftpSessionState.DISABLED
@@ -279,7 +302,9 @@ class SftpAutoLoginRobolectricTest {
 
         // Closed without waiting for READY, so the login is very likely still in flight.
         compose.runOnUiThread {
-            viewModel.uiState.value.tabs.firstOrNull { it.hostId == hostId }?.let(viewModel::closeTab)
+            viewModel.uiState.value.tabs
+                .firstOrNull { it.hostId == hostId }
+                ?.let(viewModel::closeTab)
         }
 
         pumpUntil(describe = { "the tab never went away" }) { tabFor(hostId) == null }
@@ -298,7 +323,9 @@ class SftpAutoLoginRobolectricTest {
     private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     private fun tabFor(hostId: String): SessionTab? =
-        viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     /**
      * Saves a profile pointing at [port] and connects it, accepting the host key the way the dialog's
@@ -309,26 +336,33 @@ class SftpAutoLoginRobolectricTest {
      * generates a fresh host key per run, so the first connection to it is genuinely a
      * trust-on-first-use prompt, and accepting it is what retries the connection.
      */
-    private fun connect(autoLoginSftp: Boolean, port: Int): String {
+    private fun connect(
+        autoLoginSftp: Boolean,
+        port: Int,
+    ): String {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "sftp-toggle-" + nextHostId++,
-            name = HOST_NAME,
-            host = LOOPBACK,
-            username = USER,
-            port = port,
-            authMethod = AuthMethod.PASSWORD,
-            // Stated rather than defaulted: this suite shares a JVM with every other test, and a
-            // loopback handshake that takes milliseconds alone should not fail on a loaded machine.
-            connectTimeoutSeconds = 60,
-            autoLoginSftp = autoLoginSftp,
-        )
+        val profile =
+            HostProfile(
+                id = "sftp-toggle-" + nextHostId++,
+                name = HOST_NAME,
+                host = LOOPBACK,
+                username = USER,
+                port = port,
+                authMethod = AuthMethod.PASSWORD,
+                // Stated rather than defaulted: this suite shares a JVM with every other test, and a
+                // loopback handshake that takes milliseconds alone should not fail on a loaded machine.
+                connectTimeoutSeconds = 60,
+                autoLoginSftp = autoLoginSftp,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         compose.runOnUiThread { viewModel.connect(saved, password = PASSWORD) }
 
         // Every challenge is answered, not only the first: one tap per question is what the dialog does,
@@ -348,7 +382,10 @@ class SftpAutoLoginRobolectricTest {
     private fun closeAll() {
         val viewModel = viewModel()
         compose.runOnUiThread { viewModel.disconnectAll() }
-        pumpUntil(describe = { "sessions never closed" }) { viewModel.uiState.value.tabs.isEmpty() }
+        pumpUntil(describe = { "sessions never closed" }) {
+            viewModel.uiState.value.tabs
+                .isEmpty()
+        }
     }
 
     /**
@@ -360,7 +397,11 @@ class SftpAutoLoginRobolectricTest {
      * what invalidates the recomposer at all. `idleFor` rather than `idle` because this code is full
      * of real `delay`, and `idle()` leaves the looper's virtual clock where it was.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -444,15 +485,20 @@ class SftpAutoLoginRobolectricTest {
          * never started. Its own key file per server so trusting one cannot disturb the other's
          * known-hosts entry.
          */
-        private fun server(root: Path, configure: SshServer.() -> Unit): SshServer =
+        private fun server(
+            root: Path,
+            configure: SshServer.() -> Unit,
+        ): SshServer =
             SshServer.setUpDefaultServer().apply {
                 port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("sftp-toggle-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    user == USER && password == PASSWORD
-                }
+                keyPairProvider =
+                    SimpleGeneratorHostKeyProvider(
+                        Files.createTempDirectory("sftp-toggle-hostkey").resolve("hostkey.ser"),
+                    )
+                passwordAuthenticator =
+                    PasswordAuthenticator { user, password, _ ->
+                        user == USER && password == PASSWORD
+                    }
                 fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
                 shellFactory = ShellFactory { QuietShell() }
                 configure()
@@ -473,33 +519,49 @@ class SftpAutoLoginRobolectricTest {
         private var exit: ExitCallback? = null
         private var worker: Thread? = null
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            this.exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             val source = input ?: return
             val sink = output ?: return
-            worker = Thread {
-                runCatching {
-                    sink.write("eclipse-quiet-shell\r\n$ ".toByteArray())
-                    sink.flush()
-                    val line = StringBuilder()
-                    while (true) {
-                        val byte = source.read()
-                        if (byte < 0) break
-                        if (byte == '\n'.code || byte == '\r'.code) {
-                            sink.write("echo: $line\r\n$ ".toByteArray())
-                            sink.flush()
-                            line.setLength(0)
-                        } else {
-                            line.append(byte.toChar())
+            worker =
+                Thread {
+                    runCatching {
+                        sink.write("eclipse-quiet-shell\r\n$ ".toByteArray())
+                        sink.flush()
+                        val line = StringBuilder()
+                        while (true) {
+                            val byte = source.read()
+                            if (byte < 0) break
+                            if (byte == '\n'.code || byte == '\r'.code) {
+                                sink.write("echo: $line\r\n$ ".toByteArray())
+                                sink.flush()
+                                line.setLength(0)
+                            } else {
+                                line.append(byte.toChar())
+                            }
                         }
                     }
+                    exit?.onExit(0)
+                }.apply {
+                    isDaemon = true
+                    start()
                 }
-                exit?.onExit(0)
-            }.apply { isDaemon = true; start() }
         }
 
         override fun destroy(channel: ChannelSession) {

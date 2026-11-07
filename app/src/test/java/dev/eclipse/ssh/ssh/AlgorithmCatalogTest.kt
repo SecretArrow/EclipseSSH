@@ -16,7 +16,6 @@ import org.junit.Test
  * and it is asserted directly rather than inferred from two separate lists of expected names.
  */
 class AlgorithmCatalogTest {
-
     @Test
     fun `an empty field is acceptable and means the library's own list`() {
         // The state every existing host is in, and the state clearing the field returns it to. It has to
@@ -152,15 +151,16 @@ class AlgorithmCatalogTest {
         // The invariant the whole file exists for. `reviewAlgorithmList` decides what may be saved and
         // the factory builders decide what gets installed, from two different MINA entry points; if they
         // ever disagreed, a host would connect proposing something other than what its form displayed.
-        val cases = listOf(
-            "aes256-ctr,aes128-ctr",
-            "aes256-ctr",
-            "none",
-            "none,aes256-ctr",
-            "aes-1024-quantum",
-            "aes256-ctr,aes-1024-quantum",
-            "",
-        )
+        val cases =
+            listOf(
+                "aes256-ctr,aes128-ctr",
+                "aes256-ctr",
+                "none",
+                "none,aes256-ctr",
+                "aes-1024-quantum",
+                "aes256-ctr,aes-1024-quantum",
+                "",
+            )
         cases.forEach { text ->
             val promised = reviewAlgorithmList(AlgorithmKind.CIPHERS, text).names
             // Null means "install nothing, keep the session's own list", which is the right answer for an

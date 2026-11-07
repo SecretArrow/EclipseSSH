@@ -26,17 +26,20 @@ import org.junit.Test
  *    the text a reset replaces.
  */
 class TerminalComposingTest {
-
     // The sentinel is private to the file under test; this mirrors it by its definition - eight
     // U+200B - and every test below depends on that being what the field actually pads with.
     private val sentinel = Char(0x200B).toString().repeat(8)
 
-    private fun field(text: String, composition: TextRange? = null) =
-        TextFieldValue(text = text, selection = TextRange(text.length), composition = composition)
+    private fun field(
+        text: String,
+        composition: TextRange? = null,
+    ) = TextFieldValue(text = text, selection = TextRange(text.length), composition = composition)
 
     /** The field mid-word: `SEDANG` typed, the keyboard still holding `ANG`. */
-    private fun typing(committed: String, held: String) =
-        field(sentinel + committed + held, TextRange(sentinel.length + committed.length, sentinel.length + committed.length + held.length))
+    private fun typing(
+        committed: String,
+        held: String,
+    ) = field(sentinel + committed + held, TextRange(sentinel.length + committed.length, sentinel.length + committed.length + held.length))
 
     @Test
     fun `a composing word is not the shell's business`() {

@@ -16,13 +16,11 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.data.model.Snippet
-import dev.eclipse.ssh.data.settings.SnippetRepository
 import dev.eclipse.ssh.security.StandInAndroidKeyStore
 import dev.eclipse.ssh.ui.actions.ActionAnswer
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.SnippetActionKind
 import dev.eclipse.ssh.ui.snippets.SnippetsActivity
-import java.time.Duration
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -33,6 +31,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The snippets window, as a window: what it lists, what a row files back, and the one row it performs.
@@ -59,7 +58,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SnippetsActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -95,7 +93,9 @@ class SnippetsActivityRobolectricTest {
         launch().use { scenario ->
             scenario.onActivity { activity ->
                 runBlocking {
-                    activity.snippetRepository.snippets.first().forEach { activity.snippetRepository.delete(it.id) }
+                    activity.snippetRepository.snippets
+                        .first()
+                        .forEach { activity.snippetRepository.delete(it.id) }
                 }
             }
         }
@@ -249,7 +249,11 @@ class SnippetsActivityRobolectricTest {
         return ids
     }
 
-    private fun snippet(id: String, label: String, command: String) = Snippet(id = id, label = label, command = command)
+    private fun snippet(
+        id: String,
+        label: String,
+        command: String,
+    ) = Snippet(id = id, label = label, command = command)
 
     /** A text node that must be there, and on screen. */
     private fun awaitText(text: String) {
@@ -285,7 +289,11 @@ class SnippetsActivityRobolectricTest {
      * The shape the suites that drive live state all share — see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -303,7 +311,10 @@ class SnippetsActivityRobolectricTest {
      * the next, and [pumpUntil] asks twice — once to leave the loop and once to decide whether it
      * timed out. Read straight, an answer that did arrive is reported as one that never did.
      */
-    private fun awaitAnswer(expected: ActionAnswer, describe: () -> String): ActionAnswer {
+    private fun awaitAnswer(
+        expected: ActionAnswer,
+        describe: () -> String,
+    ): ActionAnswer {
         var answer: ActionAnswer? = null
         pumpUntil(describe = describe) {
             answer = answer ?: ActionRequests.takeAnswer()
@@ -325,7 +336,10 @@ class SnippetsActivityRobolectricTest {
      * cannot be showing a menu: `onActivity` throws once there is nothing live to run on. What cannot
      * pass is a window that is neither finishing nor gone.
      */
-    private fun awaitClosing(scenario: ActivityScenario<SnippetsActivity>, describe: () -> String) {
+    private fun awaitClosing(
+        scenario: ActivityScenario<SnippetsActivity>,
+        describe: () -> String,
+    ) {
         var closing = false
         pumpUntil(describe = describe) {
             runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }

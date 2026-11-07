@@ -37,7 +37,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ExportBackupActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<ExportBackupActivity>()
 
@@ -97,7 +96,8 @@ class ExportBackupActivityRobolectricTest {
         compose.waitForIdle()
 
         assertWithMessage("the window offers nowhere to type a passphrase")
-            .that(compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes()).isNotEmpty()
+            .that(compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes())
+            .isNotEmpty()
     }
 
     /**
@@ -145,7 +145,8 @@ class ExportBackupActivityRobolectricTest {
         compose.waitForIdle()
 
         assertWithMessage("the window reports an export that was never asked for")
-            .that(compose.onAllNodesWithText("Exported", substring = true).fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Exported", substring = true).fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**

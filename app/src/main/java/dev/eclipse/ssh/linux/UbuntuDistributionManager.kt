@@ -1,5 +1,7 @@
 package dev.eclipse.ssh.linux
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -7,8 +9,6 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * Turns a freshly extracted Ubuntu Base rootfs into the distribution the feature promises: an
@@ -88,7 +88,6 @@ class UbuntuDistributionManager(
      */
     val diagnostics: UserspaceDiagnostics = UserspaceDiagnostics(),
 ) {
-
     private val rootfs: File get() = runtime.rootfsDir
 
     /**
@@ -254,11 +253,12 @@ class UbuntuDistributionManager(
     suspend fun healthProbe(probeNetwork: Boolean = true): HealthReport {
         val shell = runSessionCommand("echo $PROBE_MARKER", PROBE_TIMEOUT_MS)
         val whoami = runSessionCommand("whoami", PROBE_TIMEOUT_MS)
-        val network = if (probeNetwork) {
-            runSessionCommand("getent hosts $networkHost", NETWORK_TIMEOUT_MS)
-        } else {
-            null
-        }
+        val network =
+            if (probeNetwork) {
+                runSessionCommand("getent hosts $networkHost", NETWORK_TIMEOUT_MS)
+            } else {
+                null
+            }
         val apt = runSessionCommand("apt-get check", APT_TIMEOUT_MS)
         // One more command, and the one that answers the failure this probe could not name before:
         // `whoami` proves the session is fake root, but says nothing about the PATH the login shell
@@ -274,16 +274,23 @@ class UbuntuDistributionManager(
         // what makes a failed probe here mean something the user can act on.
         val unusableTemp = installer?.unusableGuestTemp().orEmpty()
         val unusableLocks = installer?.unusablePackageLocks().orEmpty()
-        val loginLines = login?.outputText()?.lines()?.map { stripEscapes(it).trim() }.orEmpty()
+        val loginLines =
+            login
+                ?.outputText()
+                ?.lines()
+                ?.map { stripEscapes(it).trim() }
+                .orEmpty()
         // The answer line, not the capture. proot writes its own teardown notes to this command's
         // own pty, after `whoami` has already answered, and read whole they became the "account
         // name" — see answerLine() for the device transcript that cost this report its verdict.
         val account = whoami?.outputText()?.answerLine()
-        fun marked(prefix: String): String? = loginLines
-            .firstOrNull { it.startsWith(prefix) }
-            ?.removePrefix(prefix)
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+
+        fun marked(prefix: String): String? =
+            loginLines
+                .firstOrNull { it.startsWith(prefix) }
+                ?.removePrefix(prefix)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
         return HealthReport(
             shellWorks = shell != null && shell.exitCode == 0 && shell.outputText().contains(PROBE_MARKER),
             account = account,
@@ -292,10 +299,11 @@ class UbuntuDistributionManager(
             aptUsable = apt?.exitCode == 0,
             loginUid = marked(PROBE_UID_PREFIX)?.toIntOrNull(),
             loginPath = marked(PROBE_PATH_PREFIX),
-            missingPrograms = loginLines
-                .filter { it.startsWith(PROBE_MISSING_PREFIX) }
-                .map { it.removePrefix(PROBE_MISSING_PREFIX).trim() }
-                .filter { it.isNotEmpty() },
+            missingPrograms =
+                loginLines
+                    .filter { it.startsWith(PROBE_MISSING_PREFIX) }
+                    .map { it.removePrefix(PROBE_MISSING_PREFIX).trim() }
+                    .filter { it.isNotEmpty() },
             unusableTempDirs = unusableTemp,
             unusablePackageLocks = unusableLocks,
         )
@@ -357,7 +365,11 @@ class UbuntuDistributionManager(
     }
 
     /** Replaces any existing line starting with [prefix] with [line], preserving every other line. */
-    private fun rewriteKeepingOthers(file: File, prefix: String, line: String) {
+    private fun rewriteKeepingOthers(
+        file: File,
+        prefix: String,
+        line: String,
+    ) {
         check(file.isFile) { "the rootfs has no ${file.path}" }
         val kept = file.readLines().filterNot { it.startsWith(prefix) }
         writeAtomically(file, (kept + line).joinToString("\n", postfix = "\n"))
@@ -378,7 +390,10 @@ class UbuntuDistributionManager(
      * A crash between the write and the rename strands one `.name.new-<nanos>` file instead —
      * inert, unparseable by nothing, and swept by nothing because nothing reads that name.
      */
-    private fun writeAtomically(file: File, content: String) {
+    private fun writeAtomically(
+        file: File,
+        content: String,
+    ) {
         val parent = file.parentFile
         check(parent != null && parent.isDirectory) { "the rootfs has no ${parent?.path ?: file.path}" }
         val temp = File(parent, ".${file.name}.new-${System.nanoTime()}")
@@ -431,7 +446,9 @@ class UbuntuDistributionManager(
             rootfsInstaller.ensureGuestTemp()
         }
         val workspace = File(rootfs, WORKSPACE_DIR)
-        val linked = java.nio.file.Files.isSymbolicLink(workspace.toPath())
+        val linked =
+            java.nio.file.Files
+                .isSymbolicLink(workspace.toPath())
         if (workspace.isDirectory && !linked) return
         deleteTreeNoFollow(workspace)
         workspace.mkdirs()
@@ -476,21 +493,23 @@ class UbuntuDistributionManager(
     private suspend fun verifyResolution() {
         val startedAt = System.currentTimeMillis()
         val result = runSetupCommand("getent hosts $networkHost", RESOLUTION_TIMEOUT_MS)
-        val failure = UserspaceFailure.fromAptRun(
-            networkHost,
-            result?.exitCode,
-            result?.outputText() ?: "",
-            dnsServers = writtenDnsServers,
-        )
+        val failure =
+            UserspaceFailure.fromAptRun(
+                networkHost,
+                result?.exitCode,
+                result?.outputText() ?: "",
+                dnsServers = writtenDnsServers,
+            )
         if (failure is UserspaceFailure.ProotLaunchFailed) throw failure
         if (result == null || result.exitCode != 0) {
             throw UserspaceFailure.DnsUnresolved(
                 servers = writtenDnsServers,
-                detail = if (result == null) {
-                    "the check did not answer within ${RESOLUTION_TIMEOUT_MS / 1000} seconds"
-                } else {
-                    result.outputText().take(500).ifBlank { "getent hosts $networkHost failed without a word" }
-                },
+                detail =
+                    if (result == null) {
+                        "the check did not answer within ${RESOLUTION_TIMEOUT_MS / 1000} seconds"
+                    } else {
+                        result.outputText().take(500).ifBlank { "getent hosts $networkHost failed without a word" }
+                    },
             )
         }
         diagnostics.record(
@@ -596,11 +615,12 @@ class UbuntuDistributionManager(
                 // The scoped rung only refreshed the archive under test; one unscoped update
                 // confirms the whole sources tree. Best-effort: the lists the install needs are
                 // already on disk, and a third-party entry failing here must not undo a won rung.
-                val unscoped = runSetupCommand(
-                    aptUpdateCommand(attempt, scoped = false),
-                    aptUpdateAttemptTimeoutMs,
-                    lineTracker(onProgress),
-                )
+                val unscoped =
+                    runSetupCommand(
+                        aptUpdateCommand(attempt, scoped = false),
+                        aptUpdateAttemptTimeoutMs,
+                        lineTracker(onProgress),
+                    )
                 if (unscoped == null || unscoped.exitCode != 0) {
                     diagnostics.record(
                         UserspaceDiagnosticCategory.APT,
@@ -633,9 +653,15 @@ class UbuntuDistributionManager(
                 diagnostics.record(
                     UserspaceDiagnosticCategory.APT,
                     "rung failed",
-                    detail = "${attempt.baseUri}" +
-                        (output.lineSequence().map { it.trim() }.firstOrNull { it.startsWith("Err:") || it.startsWith("E:") }
-                            ?.let { " $it" } ?: ""),
+                    detail =
+                        "${attempt.baseUri}" +
+                            (
+                                output
+                                    .lineSequence()
+                                    .map { it.trim() }
+                                    .firstOrNull { it.startsWith("Err:") || it.startsWith("E:") }
+                                    ?.let { " $it" } ?: ""
+                            ),
                     exitCode = result.exitCode,
                     durationMs = durationMs,
                 )
@@ -646,7 +672,8 @@ class UbuntuDistributionManager(
             // syscall the handler could not downgrade. Absent, empty or unreadable means no
             // SIGSYS happened — not worth a diagnostic of its own.
             recordSigsysTail("rung failed: ${attempt.baseUri}")
-            UserspaceFailure.fromAptRun(attempt.baseUri, result?.exitCode, output, dnsServers = writtenDnsServers)
+            UserspaceFailure
+                .fromAptRun(attempt.baseUri, result?.exitCode, output, dnsServers = writtenDnsServers)
                 ?.let { classified ->
                     if (classified is UserspaceFailure.ProotLaunchFailed) {
                         // The launcher's exit codes and proot's own error text are facts about
@@ -709,7 +736,10 @@ class UbuntuDistributionManager(
      * database the host sees, and the fork's log — and the warning carries dpkg's line, which is
      * the sentence the user can act on.
      */
-    private suspend fun repairPackageState(warnings: MutableList<String>, onProgress: (String) -> Unit) {
+    private suspend fun repairPackageState(
+        warnings: MutableList<String>,
+        onProgress: (String) -> Unit,
+    ) {
         // Before dpkg is asked anything, because dpkg cannot answer if it is the broken thing. An
         // install whose `rm` or `tar` has gone is one where every command below fails with the same
         // "'<program>' not found in PATH or not executable", so a pass that did not check first
@@ -742,8 +772,10 @@ class UbuntuDistributionManager(
             )
             warnings +=
                 "the dpkg repair pass did not fully succeed" +
-                    (failureTail(result?.outputText(), lines = 1)
-                        ?.let { ": $it" } ?: ": the pass did not answer in time")
+                (
+                    failureTail(result?.outputText(), lines = 1)
+                        ?.let { ": $it" } ?: ": the pass did not answer in time"
+                )
         }
     }
 
@@ -776,9 +808,10 @@ class UbuntuDistributionManager(
         // out of the root, and an essential program that cannot be resolved is not one dpkg can run
         // either. The failure is recorded rather than thrown — this runs inside the repair prologue,
         // where a check that could throw would replace the evidence with itself.
-        val missing = ESSENTIAL_PROGRAMS.filter { guest ->
-            runCatching { !paths.hostPath(guest).exists() }.getOrDefault(true)
-        }
+        val missing =
+            ESSENTIAL_PROGRAMS.filter { guest ->
+                runCatching { !paths.hostPath(guest).exists() }.getOrDefault(true)
+            }
         if (missing.isEmpty()) return
         val detail = "missing=" + missing.joinToString(",")
         val restorer = installer
@@ -789,25 +822,26 @@ class UbuntuDistributionManager(
         }
         onProgress("restoring ${missing.size} missing program(s)")
         val members = missing.flatMap { guest -> tarSpellingsOf(guest) }.toSet()
-        val restored = runCatching {
-            restorer.restoreFromPinnedTarball(members, onProgress = { progress ->
-                // The download is the only part of this that is slow enough to be worth reporting,
-                // and it is exactly the part a user would otherwise see as a repair that has hung.
-                if (progress is RootfsInstaller.Progress.Downloading && progress.total > 0) {
-                    onProgress("restoring: ${progress.received * 100 / progress.total}%")
-                }
-            })
-        }.getOrElse { failure ->
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "essential restore failed",
-                detail = detail + "; " + (failure.message ?: failure.javaClass.simpleName),
-            )
-            recordSigsysTail("essential restore failed")
-            warnings += "could not restore ${missing.joinToString(", ")}: " +
-                (failure.message ?: failure.javaClass.simpleName)
-            return
-        }
+        val restored =
+            runCatching {
+                restorer.restoreFromPinnedTarball(members, onProgress = { progress ->
+                    // The download is the only part of this that is slow enough to be worth reporting,
+                    // and it is exactly the part a user would otherwise see as a repair that has hung.
+                    if (progress is RootfsInstaller.Progress.Downloading && progress.total > 0) {
+                        onProgress("restoring: ${progress.received * 100 / progress.total}%")
+                    }
+                })
+            }.getOrElse { failure ->
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "essential restore failed",
+                    detail = detail + "; " + (failure.message ?: failure.javaClass.simpleName),
+                )
+                recordSigsysTail("essential restore failed")
+                warnings += "could not restore ${missing.joinToString(", ")}: " +
+                    (failure.message ?: failure.javaClass.simpleName)
+                return
+            }
         // dpkg names the program it looked for, so the answer is recorded by name at both ends -
         // and in one vocabulary: the guest path, which is how the user's own error names it. What
         // the archive calls the member is an implementation detail of [tarSpellingsOf], and a line
@@ -843,11 +877,12 @@ class UbuntuDistributionManager(
      */
     private fun tarSpellingsOf(guestPath: String): List<String> {
         val trimmed = guestPath.trim('/')
-        val usrmerged = when {
-            trimmed.startsWith("bin/") -> "usr/$trimmed"
-            trimmed.startsWith("sbin/") -> "usr/$trimmed"
-            else -> null
-        }
+        val usrmerged =
+            when {
+                trimmed.startsWith("bin/") -> "usr/$trimmed"
+                trimmed.startsWith("sbin/") -> "usr/$trimmed"
+                else -> null
+            }
         return listOfNotNull(trimmed, usrmerged).distinct()
     }
 
@@ -859,7 +894,11 @@ class UbuntuDistributionManager(
      * the user's warning list. [lines] is how many of the last non-blank lines to join; the cap
      * keeps a wall of apt progress from becoming the message.
      */
-    private fun failureTail(output: String?, lines: Int = 2, maxChars: Int = 300): String? =
+    private fun failureTail(
+        output: String?,
+        lines: Int = 2,
+        maxChars: Int = 300,
+    ): String? =
         output
             ?.lineSequence()
             ?.map { stripEscapes(it).trim() }
@@ -875,8 +914,10 @@ class UbuntuDistributionManager(
      * [dpkgFailureReason] is the whole of it, kept a top-level function so it can be tested against
      * transcripts this class can only produce on a device.
      */
-    private fun failureReason(output: String?, maxChars: Int = UserspaceDiagnostics.MAX_DETAIL): String? =
-        dpkgFailureReason(output, maxChars)
+    private fun failureReason(
+        output: String?,
+        maxChars: Int = UserspaceDiagnostics.MAX_DETAIL,
+    ): String? = dpkgFailureReason(output, maxChars)
 
     /**
      * The runtime smoke step: `echo <marker>` under the same argv every scripted command uses.
@@ -900,11 +941,12 @@ class UbuntuDistributionManager(
             throw UserspaceFailure.ProotLaunchFailed(
                 exitCode = result?.exitCode ?: -1,
                 tail = result?.outputText()?.take(2000) ?: "",
-                detail = if (result == null) {
-                    "the smoke command did not answer within ${RUNTIME_SMOKE_TIMEOUT_MS / 1000} seconds"
-                } else {
-                    null
-                },
+                detail =
+                    if (result == null) {
+                        "the smoke command did not answer within ${RUNTIME_SMOKE_TIMEOUT_MS / 1000} seconds"
+                    } else {
+                        null
+                    },
             )
         }
     }
@@ -980,8 +1022,9 @@ class UbuntuDistributionManager(
 
     /** Restores the last-known-good mirror — or the primary, when none has ever won — into sources.list. */
     private fun restoreLastGoodMirror() {
-        val lastGood = runCatching { File(runtime.rootDir, LAST_GOOD_MIRROR_FILE).takeIf { it.isFile }?.readText()?.trim() }
-            .getOrNull()
+        val lastGood =
+            runCatching { File(runtime.rootDir, LAST_GOOD_MIRROR_FILE).takeIf { it.isFile }?.readText()?.trim() }
+                .getOrNull()
         val base = lastGood?.takeIf { it.isNotBlank() } ?: primaryArchiveUrl(distro)
         writeSourcesList(base)
         diagnostics.record(
@@ -1005,7 +1048,10 @@ class UbuntuDistributionManager(
      * install. Only every single package failing ends the step — that is a broken apt, not a
      * missing one.
      */
-    private suspend fun installBasePackages(onProgress: (String) -> Unit, warnings: MutableList<String>) {
+    private suspend fun installBasePackages(
+        onProgress: (String) -> Unit,
+        warnings: MutableList<String>,
+    ) {
         requireOnline("installing the base packages")
         val command = basePackagesCommand()
         val first = runSetupCommand(command, INSTALL_TIMEOUT_MS, lineTracker(onProgress))
@@ -1030,8 +1076,9 @@ class UbuntuDistributionManager(
         diagnostics.record(
             UserspaceDiagnosticCategory.APT,
             "bulk base-package install failed",
-            detail = failureReason(first?.outputText() ?: retry?.outputText())
-                ?: failureTail(first?.outputText() ?: retry?.outputText(), lines = 2),
+            detail =
+                failureReason(first?.outputText() ?: retry?.outputText())
+                    ?: failureTail(first?.outputText() ?: retry?.outputText(), lines = 2),
             exitCode = first?.exitCode ?: retry?.exitCode,
         )
         diagnostics.record(
@@ -1069,8 +1116,10 @@ class UbuntuDistributionManager(
                 refusals += pkg to result
                 warnings +=
                     "package '$pkg' was not installed" +
-                        (failureTail(result?.outputText(), lines = 1)
-                            ?.let { ": $it" } ?: ": the install did not answer in time")
+                    (
+                        failureTail(result?.outputText(), lines = 1)
+                            ?.let { ": $it" } ?: ": the install did not answer in time"
+                    )
             }
         }
         if (refusals.isNotEmpty()) {
@@ -1084,8 +1133,9 @@ class UbuntuDistributionManager(
                     diagnostics.record(
                         UserspaceDiagnosticCategory.APT,
                         "base packages refused one by one",
-                        detail = "$reason | ${group.size}/${BASE_PACKAGES.size} refused: " +
-                            group.joinToString(", ") { it.first },
+                        detail =
+                            "$reason | ${group.size}/${BASE_PACKAGES.size} refused: " +
+                                group.joinToString(", ") { it.first },
                         exitCode = group.first().second?.exitCode,
                     )
                 }
@@ -1121,8 +1171,10 @@ class UbuntuDistributionManager(
                 dnsServers = writtenDnsServers,
             ) ?: IOException(
                 "Installing base packages failed (exit ${first?.exitCode ?: retry?.exitCode}): " +
-                    (failureTail(first?.outputText() ?: retry?.outputText(), lines = 3, maxChars = 2000)
-                        ?: "") +
+                    (
+                        failureTail(first?.outputText() ?: retry?.outputText(), lines = 3, maxChars = 2000)
+                            ?: ""
+                    ) +
                     " (" + dpkgState + ")",
             )
         }
@@ -1234,8 +1286,9 @@ class UbuntuDistributionManager(
         diagnostics.record(
             UserspaceDiagnosticCategory.APT,
             "bulk extra-package install failed",
-            detail = failureReason(first?.outputText() ?: retry?.outputText())
-                ?: failureTail(first?.outputText() ?: retry?.outputText(), lines = 2),
+            detail =
+                failureReason(first?.outputText() ?: retry?.outputText())
+                    ?: failureTail(first?.outputText() ?: retry?.outputText(), lines = 2),
             exitCode = first?.exitCode ?: retry?.exitCode,
         )
         val refusals = mutableListOf<Pair<String, ProotCommandResult?>>()
@@ -1309,17 +1362,18 @@ class UbuntuDistributionManager(
         // `gnupg` comes from the pinned archive — the one package this route adds that is not part
         // of the selection — because the base rootfs has no `gpg` and `gpg --dearmor` is how a
         // binary keyring is written without the deprecated `apt-key`.
-        val upgrade = runSetupCommand(
-            "apt-get install -y --no-install-recommends gnupg && " +
-                "curl -fsSL $NODESOURCE_KEY_URL -o $NODESOURCE_KEY_FILE && " +
-                "gpg --dearmor -o $NODESOURCE_KEYRING $NODESOURCE_KEY_FILE && " +
-                "echo 'deb [signed-by=$NODESOURCE_KEYRING] $NODESOURCE_REPO $NODESOURCE_SUITE main' " +
-                "> /etc/apt/sources.list.d/$NODESOURCE_LIST_FILE && " +
-                "apt-get update $NODESOURCE_SCOPED_UPDATE_FLAGS && " +
-                "apt-get install -y --no-install-recommends nodejs",
-            NODESOURCE_TIMEOUT_MS,
-            lineTracker(onProgress),
-        )
+        val upgrade =
+            runSetupCommand(
+                "apt-get install -y --no-install-recommends gnupg && " +
+                    "curl -fsSL $NODESOURCE_KEY_URL -o $NODESOURCE_KEY_FILE && " +
+                    "gpg --dearmor -o $NODESOURCE_KEYRING $NODESOURCE_KEY_FILE && " +
+                    "echo 'deb [signed-by=$NODESOURCE_KEYRING] $NODESOURCE_REPO $NODESOURCE_SUITE main' " +
+                    "> /etc/apt/sources.list.d/$NODESOURCE_LIST_FILE && " +
+                    "apt-get update $NODESOURCE_SCOPED_UPDATE_FLAGS && " +
+                    "apt-get install -y --no-install-recommends nodejs",
+                NODESOURCE_TIMEOUT_MS,
+                lineTracker(onProgress),
+            )
         val after = nodeMajorVersion(onProgress)
         return when {
             after != null && after >= MODERN_NODE_MAJOR -> {
@@ -1347,7 +1401,11 @@ class UbuntuDistributionManager(
     private suspend fun nodeMajorVersion(onProgress: (String) -> Unit): Int? {
         val result = runSetupCommand(NODE_VERSION_COMMAND, NODE_VERSION_TIMEOUT_MS, lineTracker(onProgress))
         if (result == null || result.exitCode != 0) return null
-        return NODE_VERSION.find(result.outputText())?.groupValues?.get(1)?.toIntOrNull()
+        return NODE_VERSION
+            .find(result.outputText())
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
     }
 
     /**
@@ -1370,8 +1428,10 @@ class UbuntuDistributionManager(
             if (result == null || result.exitCode != 0) {
                 warnings +=
                     "npm package '$tool' was not installed" +
-                        (failureTail(result?.outputText(), lines = 1)
-                            ?.let { ": $it" } ?: ": the install timed out")
+                    (
+                        failureTail(result?.outputText(), lines = 1)
+                            ?.let { ": $it" } ?: ": the install timed out"
+                    )
                 diagnostics.record(
                     UserspaceDiagnosticCategory.APT,
                     "npm global refused",
@@ -1414,26 +1474,33 @@ class UbuntuDistributionManager(
                     diagnostics.record(
                         UserspaceDiagnosticCategory.APT,
                         "vendor installer skipped",
-                        detail = "${installer.url} | arch=${distro.ubuntuArch}, " +
-                            "supported=${installer.supportedArches.joinToString("/")}",
+                        detail =
+                            "${installer.url} | arch=${distro.ubuntuArch}, " +
+                                "supported=${installer.supportedArches.joinToString("/")}",
                     )
                     continue
                 }
-                val result = runSetupCommand(
-                    vendorInstallCommand(installer.url),
-                    VENDOR_INSTALL_TIMEOUT_MS,
-                    lineTracker(onProgress),
-                )
+                val result =
+                    runSetupCommand(
+                        vendorInstallCommand(installer.url),
+                        VENDOR_INSTALL_TIMEOUT_MS,
+                        lineTracker(onProgress),
+                    )
                 if (result == null || result.exitCode != 0) {
                     warnings += "${entry.label} was not installed" +
-                        (failureTail(result?.outputText(), lines = 1)
-                            ?.let { ": $it" } ?: ": the install timed out")
+                        (
+                            failureTail(result?.outputText(), lines = 1)
+                                ?.let { ": $it" } ?: ": the install timed out"
+                        )
                     diagnostics.record(
                         UserspaceDiagnosticCategory.APT,
                         "vendor installer refused",
-                        detail = "${installer.url} | " +
-                            (failureTail(result?.outputText(), lines = 2)
-                                ?: "no output before the timeout"),
+                        detail =
+                            "${installer.url} | " +
+                                (
+                                    failureTail(result?.outputText(), lines = 2)
+                                        ?: "no output before the timeout"
+                                ),
                         exitCode = result?.exitCode,
                     )
                     continue
@@ -1444,8 +1511,9 @@ class UbuntuDistributionManager(
                     diagnostics.record(
                         UserspaceDiagnosticCategory.APT,
                         "vendor installer not on path",
-                        detail = "${installer.url} | a login shell could not resolve " +
-                            "${installer.command} after the installer exited 0",
+                        detail =
+                            "${installer.url} | a login shell could not resolve " +
+                                "${installer.command} after the installer exited 0",
                     )
                 }
             }
@@ -1473,15 +1541,15 @@ class UbuntuDistributionManager(
             if (ok) "recovery repair pass" else "recovery repair pass failed",
             exitCode = result?.exitCode,
             durationMs = System.currentTimeMillis() - startedAt,
-            detail = "$before -> " + dpkgDatabaseSummary() +
-                (failureTail(result?.outputText(), lines = 1)?.let { ": $it" } ?: ""),
+            detail =
+                "$before -> " + dpkgDatabaseSummary() +
+                    (failureTail(result?.outputText(), lines = 1)?.let { ": $it" } ?: ""),
         )
         recordSigsysTail("recovery repair pass")
         return ok
     }
 
-    private fun basePackagesCommand(): String =
-        "apt-get install -y --no-install-recommends ${BASE_PACKAGES.joinToString(" ")}"
+    private fun basePackagesCommand(): String = "apt-get install -y --no-install-recommends ${BASE_PACKAGES.joinToString(" ")}"
 
     /**
      * Gives `ubuntu` passwordless sudo. Nothing needs it to become root — a session already is —
@@ -1567,19 +1635,20 @@ class UbuntuDistributionManager(
      * compiled-in default.
      */
     private fun rewriteLoginDefs(file: File) {
-        val kept = if (file.isFile) {
-            file.readLines().filterNot { line ->
-                // The key is the first whitespace-delimited token, not what precedes an `=`: this
-                // file spells a setting `ENV_PATH PATH=/usr/bin`, with the value's own `=` inside
-                // it, so splitting on `=` reads the key as "ENV_PATH PATH" and keeps the old line -
-                // which is the setting this method exists to replace, left in place beside its
-                // replacement. Whatever login and su read first is then the distro's short PATH.
-                val key = line.trim().takeWhile { !it.isWhitespace() }
-                key == "ENV_PATH" || key == "ENV_SUPATH"
+        val kept =
+            if (file.isFile) {
+                file.readLines().filterNot { line ->
+                    // The key is the first whitespace-delimited token, not what precedes an `=`: this
+                    // file spells a setting `ENV_PATH PATH=/usr/bin`, with the value's own `=` inside
+                    // it, so splitting on `=` reads the key as "ENV_PATH PATH" and keeps the old line -
+                    // which is the setting this method exists to replace, left in place beside its
+                    // replacement. Whatever login and su read first is then the distro's short PATH.
+                    val key = line.trim().takeWhile { !it.isWhitespace() }
+                    key == "ENV_PATH" || key == "ENV_SUPATH"
+                }
+            } else {
+                emptyList()
             }
-        } else {
-            emptyList()
-        }
         writeAtomically(
             file,
             (kept + "ENV_PATH PATH=$LINUX_PATH" + "ENV_SUPATH PATH=$LINUX_PATH").joinToString("\n") + "\n",
@@ -1600,7 +1669,8 @@ class UbuntuDistributionManager(
      *    contract.
      */
     private fun setupEnv(): List<String> =
-        runtime.baseEnv()
+        runtime
+            .baseEnv()
             .map { entry ->
                 if (entry.startsWith("PATH=")) {
                     "PATH=$HOME_DIR/.local/bin:${entry.removePrefix("PATH=")}"
@@ -1621,13 +1691,14 @@ class UbuntuDistributionManager(
         command: String,
         timeoutMs: Long,
         onOutput: ((ByteArray) -> Unit)? = null,
-    ): ProotCommandResult? = try {
-        runtime.runCommand(runtime.commandArgv(command), env = setupEnv(), timeoutMs = timeoutMs, onOutput = onOutput)
-    } catch (e: IOException) {
-        // Cross-fork contract: the runtime layer refuses to spawn with its own worded message
-        // ("runtime storage not ready: …"); the taxonomy maps it so the user reads one verdict.
-        throw UserspaceFailure.fromMessage(e.message ?: "", e) ?: e
-    }
+    ): ProotCommandResult? =
+        try {
+            runtime.runCommand(runtime.commandArgv(command), env = setupEnv(), timeoutMs = timeoutMs, onOutput = onOutput)
+        } catch (e: IOException) {
+            // Cross-fork contract: the runtime layer refuses to spawn with its own worded message
+            // ("runtime storage not ready: …"); the taxonomy maps it so the user reads one verdict.
+            throw UserspaceFailure.fromMessage(e.message ?: "", e) ?: e
+        }
 
     /**
      * Runs a command through the *session* argv and environment — the exact pair a terminal tab is
@@ -1636,8 +1707,10 @@ class UbuntuDistributionManager(
      * difference left is the environment: this one is the clean [ProotRuntime.baseEnv], not the
      * apt-tuned one [setupEnv] builds.
      */
-    private suspend fun runSessionCommand(command: String, timeoutMs: Long): ProotCommandResult? =
-        runtime.runCommand(runtime.sessionArgv(command), env = runtime.baseEnv(), timeoutMs = timeoutMs)
+    private suspend fun runSessionCommand(
+        command: String,
+        timeoutMs: Long,
+    ): ProotCommandResult? = runtime.runCommand(runtime.sessionArgv(command), env = runtime.baseEnv(), timeoutMs = timeoutMs)
 
     /**
      * A vendor's installer as the one command the guest runs: fetch it whole, then — only if every
@@ -1656,8 +1729,7 @@ class UbuntuDistributionManager(
      * `bash`, named, not `sh`: these scripts use `=~` and `BASH_REMATCH`, and Ubuntu's `/bin/sh` is
      * dash. No `set -o pipefail` belongs here either — there is no pipeline left to guard.
      */
-    private fun vendorInstallCommand(url: String): String =
-        "curl -fsSL $url -o $VENDOR_INSTALL_SCRIPT && bash $VENDOR_INSTALL_SCRIPT"
+    private fun vendorInstallCommand(url: String): String = "curl -fsSL $url -o $VENDOR_INSTALL_SCRIPT && bash $VENDOR_INSTALL_SCRIPT"
 
     /**
      * Whether the command an installer claims to have left behind is one a login shell can actually
@@ -1671,12 +1743,12 @@ class UbuntuDistributionManager(
      */
     private suspend fun vendorCommandIsRunnable(command: String): Boolean {
         val result = runSessionCommand(vendorProbeCommand(command), VENDOR_PROBE_TIMEOUT_MS)
-        return result != null && result.exitCode == 0 &&
+        return result != null &&
+            result.exitCode == 0 &&
             result.outputText().contains(VENDOR_ON_PATH_MARKER)
     }
 
-    private fun vendorProbeCommand(command: String): String =
-        "command -v $command >/dev/null 2>&1 && echo $VENDOR_ON_PATH_MARKER"
+    private fun vendorProbeCommand(command: String): String = "command -v $command >/dev/null 2>&1 && echo $VENDOR_ON_PATH_MARKER"
 
     /**
      * Records the tail of the proot fork's blocked-syscall log ([ProotRuntime] points
@@ -1713,6 +1785,7 @@ class UbuntuDistributionManager(
      */
     private fun dpkgDatabaseSummary(): String {
         val dpkgDir = File(rootfs, "var/lib/dpkg")
+
         fun describe(name: String): String {
             val file = File(dpkgDir, name)
             return if (file.isFile) "$name=${file.length()}B" else "$name=absent"
@@ -1789,12 +1862,13 @@ class UbuntuDistributionManager(
      * where the alternative (buffering until a newline) would hide the very movement it exists to
      * show.
      */
-    private fun lineTracker(onProgress: (String) -> Unit): (ByteArray) -> Unit = { chunk ->
-        String(chunk, Charsets.UTF_8)
-            .lineSequence()
-            .lastOrNull { it.isNotBlank() }
-            ?.let(onProgress)
-    }
+    private fun lineTracker(onProgress: (String) -> Unit): (ByteArray) -> Unit =
+        { chunk ->
+            String(chunk, Charsets.UTF_8)
+                .lineSequence()
+                .lastOrNull { it.isNotBlank() }
+                ?.let(onProgress)
+        }
 
     private fun writeSourcesList(baseUri: String) {
         writeAtomically(File(rootfs, "etc/apt/sources.list"), sourcesListContent(distro, baseUri))
@@ -1812,27 +1886,31 @@ class UbuntuDistributionManager(
      * run, so the feed is never a new single point of failure, and the exhaustion message can say
      * whether the feed was unreachable or simply named nothing usable.
      */
-    private suspend fun fetchMirrorList(): List<String> = withContext(Dispatchers.IO) {
-        val outcome = runCatching { fetchFeedBody() }
-        val body = outcome.getOrNull()
-        val mirrors = body?.let { parseMirrorList(it, primaryArchiveUrl(distro)) } ?: emptyList()
-        mirrorFeedStatus = when {
-            // Not "unreachable": the endpoint answered, its answer just cannot be trusted to be a
-            // mirror list — a misrired or hostile response serving an unbounded body.
-            outcome.exceptionOrNull() is MirrorFeedTooLarge -> "too large (over ${MIRROR_FEED_MAX_BYTES / 1024} KiB)"
-            outcome.isFailure ->
-                "unreachable" + outcome.exceptionOrNull()
-                    ?.let { " (${(it.message ?: it.javaClass.simpleName).take(100)})" }
-            mirrors.isEmpty() -> "fetched, but it named no usable mirror"
-            else -> "ok, ${mirrors.size} mirrors"
+    private suspend fun fetchMirrorList(): List<String> =
+        withContext(Dispatchers.IO) {
+            val outcome = runCatching { fetchFeedBody() }
+            val body = outcome.getOrNull()
+            val mirrors = body?.let { parseMirrorList(it, primaryArchiveUrl(distro)) } ?: emptyList()
+            mirrorFeedStatus =
+                when {
+                    // Not "unreachable": the endpoint answered, its answer just cannot be trusted to be a
+                    // mirror list — a misrired or hostile response serving an unbounded body.
+                    outcome.exceptionOrNull() is MirrorFeedTooLarge -> "too large (over ${MIRROR_FEED_MAX_BYTES / 1024} KiB)"
+                    outcome.isFailure ->
+                        "unreachable" +
+                            outcome
+                                .exceptionOrNull()
+                                ?.let { " (${(it.message ?: it.javaClass.simpleName).take(100)})" }
+                    mirrors.isEmpty() -> "fetched, but it named no usable mirror"
+                    else -> "ok, ${mirrors.size} mirrors"
+                }
+            diagnostics.record(
+                UserspaceDiagnosticCategory.APT,
+                "mirror feed",
+                detail = "$mirrorListUrl -> $mirrorFeedStatus",
+            )
+            mirrors
         }
-        diagnostics.record(
-            UserspaceDiagnosticCategory.APT,
-            "mirror feed",
-            detail = "$mirrorListUrl -> $mirrorFeedStatus",
-        )
-        mirrors
-    }
 
     private fun fetchFeedBody(): String {
         if (mirrorListUrl.startsWith("file:")) {
@@ -1878,6 +1956,7 @@ class UbuntuDistributionManager(
 
     companion object {
         private const val ACCOUNT_NAME = "ubuntu"
+
         /**
          * What `whoami` has to answer inside a session: the identity proot's `-0` gives it, and the
          * one `dpkg` insists on before it will unpack anything. Anything else here means the
@@ -1885,6 +1964,7 @@ class UbuntuDistributionManager(
          */
         private const val ROOT_ACCOUNT = "root"
         private const val HOME_DIR = "/home/ubuntu"
+
         /**
          * The user's persisted projects, inside their home, as a path *relative to the rootfs* — the
          * form every other path in this file takes. Named once because two places ask about it for
@@ -1931,21 +2011,22 @@ class UbuntuDistributionManager(
          * fixes. The `case` guard makes re-sourcing idempotent, so nested login shells do not
          * accumulate duplicates.
          */
-        private val PROFILE_PATH_SCRIPT = listOf(
-            "# Written by Eclipse: keep the directories dpkg and apt require on PATH.",
-            "#",
-            "# A login shell rebuilds PATH from files the app never wrote, and a PATH without",
-            "# /usr/sbin or /sbin is what makes dpkg stop with \"'rm' not found in PATH or not",
-            "# executable\" the moment a maintainer script runs. Only the missing directories are",
-            "# appended, so a PATH arranged by hand keeps its order.",
-            "for dir in " + LINUX_PATH.split(":").joinToString(" ") + "; do",
-            "  case \":\$PATH:\" in",
-            "    *\":\$dir:\"*) ;;",
-            "    *) PATH=\"\$PATH:\$dir\" ;;",
-            "  esac",
-            "done",
-            "export PATH",
-        ).joinToString("\n") + "\n"
+        private val PROFILE_PATH_SCRIPT =
+            listOf(
+                "# Written by Eclipse: keep the directories dpkg and apt require on PATH.",
+                "#",
+                "# A login shell rebuilds PATH from files the app never wrote, and a PATH without",
+                "# /usr/sbin or /sbin is what makes dpkg stop with \"'rm' not found in PATH or not",
+                "# executable\" the moment a maintainer script runs. Only the missing directories are",
+                "# appended, so a PATH arranged by hand keeps its order.",
+                "for dir in " + LINUX_PATH.split(":").joinToString(" ") + "; do",
+                "  case \":\$PATH:\" in",
+                "    *\":\$dir:\"*) ;;",
+                "    *) PATH=\"\$PATH:\$dir\" ;;",
+                "  esac",
+                "done",
+                "export PATH",
+            ).joinToString("\n") + "\n"
 
         /**
          * The programs `dpkg` and the repair path need to exist *before* either can run: the shell
@@ -1967,22 +2048,23 @@ class UbuntuDistributionManager(
          * fixture that does not carry the programs a real install put there would raise its warning
          * on every test that runs setup.
          */
-        internal val ESSENTIAL_PROGRAMS = listOf(
-            "/usr/bin/sh",
-            "/usr/bin/dash",
-            "/usr/bin/bash",
-            "/usr/bin/rm",
-            "/usr/bin/tar",
-            "/usr/bin/env",
-            "/usr/bin/find",
-            "/usr/bin/sed",
-            "/usr/bin/grep",
-            "/usr/bin/xargs",
-            "/usr/bin/dpkg",
-            "/usr/bin/apt-get",
-            "/usr/bin/apt",
-            "/usr/sbin/ldconfig",
-        )
+        internal val ESSENTIAL_PROGRAMS =
+            listOf(
+                "/usr/bin/sh",
+                "/usr/bin/dash",
+                "/usr/bin/bash",
+                "/usr/bin/rm",
+                "/usr/bin/tar",
+                "/usr/bin/env",
+                "/usr/bin/find",
+                "/usr/bin/sed",
+                "/usr/bin/grep",
+                "/usr/bin/xargs",
+                "/usr/bin/dpkg",
+                "/usr/bin/apt-get",
+                "/usr/bin/apt",
+                "/usr/sbin/ldconfig",
+            )
 
         /**
          * The markers [LOGIN_PROBE_COMMAND] prints, one line each, so the probe's answer is read
@@ -2045,20 +2127,21 @@ class UbuntuDistributionManager(
          * because scripts written for a real Ubuntu box shell out to it, and because a user who
          * wants it running can start the daemon by hand — not because the install makes it run.
          */
-        private val BASE_PACKAGES = listOf(
-            "apt-utils",
-            "bash-completion",
-            "ca-certificates",
-            "cron",
-            "curl",
-            "git",
-            "htop",
-            "openssh-client",
-            "sudo",
-            "unzip",
-            "wget",
-            "zip",
-        )
+        private val BASE_PACKAGES =
+            listOf(
+                "apt-utils",
+                "bash-completion",
+                "ca-certificates",
+                "cron",
+                "curl",
+                "git",
+                "htop",
+                "openssh-client",
+                "sudo",
+                "unzip",
+                "wget",
+                "zip",
+            )
 
         /**
          * How many lines of a failed command's output [dpkgFailureReason] keeps — see its doc.
@@ -2085,37 +2168,39 @@ class UbuntuDistributionManager(
          * picks its verdict by: a script that failed is the cause, and every verdict after it —
          * "dependency problems prevent configuration of …" — is a package reporting the damage.
          */
-        internal val SCRIPT_FAILURE_MARKERS = listOf(
-            "post-installation script",
-            "pre-installation script",
-            "pre-removal script",
-            "post-removal script",
-            "maintainer script",
-            "subprocess returned error exit status",
-        )
+        internal val SCRIPT_FAILURE_MARKERS =
+            listOf(
+                "post-installation script",
+                "pre-installation script",
+                "pre-removal script",
+                "post-removal script",
+                "maintainer script",
+                "subprocess returned error exit status",
+            )
 
         /**
          * The lines apt and dpkg emit around a failure without being it: their own progress
          * reports. Filtered out of [dpkgFailureReason]'s window so that the lines it keeps are the
          * failing script's own output and dpkg's verdict, which are the only ones that diagnose.
          */
-        internal val FAILURE_REASON_NOISE = listOf(
-            "Setting up ",
-            "Preparing to unpack ",
-            "Unpacking ",
-            "Selecting previously unselected",
-            "Processing triggers for ",
-            "Reading database",
-            "Reading package lists",
-            "Building dependency tree",
-            "Reading state information",
-            "Get:",
-            "Ign:",
-            "Hit:",
-            "Fetched ",
-            "update-alternatives: using",
-            "update-alternatives: warning",
-        )
+        internal val FAILURE_REASON_NOISE =
+            listOf(
+                "Setting up ",
+                "Preparing to unpack ",
+                "Unpacking ",
+                "Selecting previously unselected",
+                "Processing triggers for ",
+                "Reading database",
+                "Reading package lists",
+                "Building dependency tree",
+                "Reading state information",
+                "Get:",
+                "Ign:",
+                "Hit:",
+                "Fetched ",
+                "update-alternatives: using",
+                "update-alternatives: warning",
+            )
 
         private const val PROBE_MARKER = "eclipse-probe-ok"
 
@@ -2303,23 +2388,26 @@ internal fun dpkgFailureReason(
     output: String?,
     maxChars: Int = UserspaceDiagnostics.MAX_DETAIL,
 ): String? {
-    val lines = output
-        ?.lineSequence()
-        ?.map { stripEscapes(it).trim() }
-        ?.filter { it.isNotBlank() }
-        ?.toList()
-        ?: return null
+    val lines =
+        output
+            ?.lineSequence()
+            ?.map { stripEscapes(it).trim() }
+            ?.filter { it.isNotBlank() }
+            ?.toList()
+            ?: return null
     val verdicts = lines.indices.filter { lines[it].startsWith(UbuntuDistributionManager.DPKG_VERDICT_PREFIX) }
-    val scriptFailure = verdicts.firstOrNull { index ->
-        val next = lines.getOrNull(index + 1)
-        next != null && UbuntuDistributionManager.SCRIPT_FAILURE_MARKERS.any { next.contains(it) }
-    }
+    val scriptFailure =
+        verdicts.firstOrNull { index ->
+            val next = lines.getOrNull(index + 1)
+            next != null && UbuntuDistributionManager.SCRIPT_FAILURE_MARKERS.any { next.contains(it) }
+        }
     val verdict = scriptFailure ?: verdicts.lastOrNull() ?: -1
     // Everything up to that verdict, minus apt's and dpkg's progress chatter; the survivors at the
     // end are the failing script's own output and the verdict that follows it.
-    val window = (if (verdict >= 0) lines.subList(0, verdict + 1) else lines)
-        .filterNot { line -> UbuntuDistributionManager.FAILURE_REASON_NOISE.any { line.startsWith(it) } }
-        .takeLast(UbuntuDistributionManager.FAILURE_REASON_LINES)
+    val window =
+        (if (verdict >= 0) lines.subList(0, verdict + 1) else lines)
+            .filterNot { line -> UbuntuDistributionManager.FAILURE_REASON_NOISE.any { line.startsWith(it) } }
+            .takeLast(UbuntuDistributionManager.FAILURE_REASON_LINES)
     return window
         .joinToString(" | ")
         .take(maxChars)
@@ -2371,11 +2459,15 @@ internal fun builtinMirrorUrls(distro: LinuxDistro): List<String> =
  * already trims what it parses; this is the second line of defence for the mirrors that reach it
  * any other way.
  */
-internal fun aptUpdateCandidates(distro: LinuxDistro, fetchedMirrors: List<String>): List<AptUpdateAttempt> {
+internal fun aptUpdateCandidates(
+    distro: LinuxDistro,
+    fetchedMirrors: List<String>,
+): List<AptUpdateAttempt> {
     val primary = primaryArchiveUrl(distro).trimEnd('/')
-    val fallbacks = (fetchedMirrors + builtinMirrorUrls(distro))
-        .distinctBy { it.trimEnd('/') }
-        .filter { it.trimEnd('/') != primary }
+    val fallbacks =
+        (fetchedMirrors + builtinMirrorUrls(distro))
+            .distinctBy { it.trimEnd('/') }
+            .filter { it.trimEnd('/') != primary }
     return listOf(
         AptUpdateAttempt(primaryArchiveUrl(distro), forceIpv4 = false),
         AptUpdateAttempt(primaryArchiveUrl(distro), forceIpv4 = true),
@@ -2383,8 +2475,10 @@ internal fun aptUpdateCandidates(distro: LinuxDistro, fetchedMirrors: List<Strin
 }
 
 /** The fallback rungs — what joins the ladder once both primary rungs have failed. */
-internal fun fallbackCandidates(distro: LinuxDistro, fetchedMirrors: List<String>): List<AptUpdateAttempt> =
-    aptUpdateCandidates(distro, fetchedMirrors).drop(PRIMARY_RUNGS)
+internal fun fallbackCandidates(
+    distro: LinuxDistro,
+    fetchedMirrors: List<String>,
+): List<AptUpdateAttempt> = aptUpdateCandidates(distro, fetchedMirrors).drop(PRIMARY_RUNGS)
 
 /** The number of rungs that run before the fetched mirrors join. */
 private const val PRIMARY_RUNGS = 2
@@ -2410,8 +2504,12 @@ private const val FETCHED_MIRROR_RUNGS = 3
  * consulted); and only the first [FETCHED_MIRROR_RUNGS] are kept, in the feed's order — the feed
  * is geo-sorted for the asking IP, so the first entries are the nearest ones.
  */
-internal fun parseMirrorList(body: String, primaryArchiveUrl: String): List<String> =
-    body.lineSequence()
+internal fun parseMirrorList(
+    body: String,
+    primaryArchiveUrl: String,
+): List<String> =
+    body
+        .lineSequence()
         .map { it.trim().trimEnd('/') }
         .filter { MIRROR_ENTRY.matches(it) }
         .distinct()
@@ -2473,13 +2571,17 @@ private fun isIpv6Literal(candidate: String): Boolean =
  * else the rootfs's `sources.list.d` carries. Pure so the test can assert the exact command the
  * pty receives.
  */
-internal fun aptUpdateCommand(attempt: AptUpdateAttempt, scoped: Boolean = true): String = buildString {
-    append("apt-get update -o Acquire::Retries=3 -o Acquire::Languages=none -o Acquire::http::Timeout=30")
-    if (scoped) {
-        append(" -o Dir::Etc::sourcelist=/etc/apt/sources.list -o Dir::Etc::sourceparts=/dev/null")
+internal fun aptUpdateCommand(
+    attempt: AptUpdateAttempt,
+    scoped: Boolean = true,
+): String =
+    buildString {
+        append("apt-get update -o Acquire::Retries=3 -o Acquire::Languages=none -o Acquire::http::Timeout=30")
+        if (scoped) {
+            append(" -o Dir::Etc::sourcelist=/etc/apt/sources.list -o Dir::Etc::sourceparts=/dev/null")
+        }
+        if (attempt.forceIpv4) append(" -o Acquire::ForceIPv4=true")
     }
-    if (attempt.forceIpv4) append(" -o Acquire::ForceIPv4=true")
-}
 
 /** Marks a sources.list as ours, so [UbuntuDistributionManager.isConfigured] can tell setup from the shipped file. */
 internal const val APT_MARKER = "managed by Eclipse SSH"
@@ -2491,12 +2593,16 @@ private const val COMPONENTS = "main restricted universe multiverse"
  * mirror in the ladder serves from the same base URL. Marked with the setup marker so
  * [UbuntuDistributionManager.isConfigured] can tell our file from the rootfs's shipped one.
  */
-internal fun sourcesListContent(distro: LinuxDistro, baseUri: String): String = buildString {
-    append("# $APT_MARKER\n")
-    append("deb $baseUri ${distro.release} $COMPONENTS\n")
-    append("deb $baseUri ${distro.release}-updates $COMPONENTS\n")
-    append("deb $baseUri ${distro.release}-security $COMPONENTS\n")
-}
+internal fun sourcesListContent(
+    distro: LinuxDistro,
+    baseUri: String,
+): String =
+    buildString {
+        append("# $APT_MARKER\n")
+        append("deb $baseUri ${distro.release} $COMPONENTS\n")
+        append("deb $baseUri ${distro.release}-updates $COMPONENTS\n")
+        append("deb $baseUri ${distro.release}-security $COMPONENTS\n")
+    }
 
 /**
  * The named steps of [UbuntuDistributionManager.setup], in order, for the install screen.
@@ -2624,8 +2730,13 @@ data class HealthReport(
      * moving its line would move theirs.
      */
     val sound: Boolean
-        get() = shellWorks && accountCorrect && aptUsable && missingPrograms.isEmpty() &&
-            unusableTempDirs.isEmpty() && unusablePackageLocks.isEmpty()
+        get() =
+            shellWorks &&
+                accountCorrect &&
+                aptUsable &&
+                missingPrograms.isEmpty() &&
+                unusableTempDirs.isEmpty() &&
+                unusablePackageLocks.isEmpty()
 
     /**
      * The failing fields as one sentence, for NeedsRepair's detail and the settings screen. Names

@@ -53,11 +53,13 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class PinLockActivity : SettingsDestinationActivity() {
-
     override val screenTitle = "PIN lock"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         // Whether a PIN is set is carried here rather than re-read. The snapshot in `settings` is taken
         // once, when the window opened (see [SettingsDestination]), so this screen's own write is the
         // only thing that can change the answer while it is open - and without this state the row above
@@ -121,7 +123,11 @@ class PinLockActivity : SettingsDestinationActivity() {
         // not ask for the PIN to be typed again. The `writing` guard is the same double-tap guard as
         // `verifying`, for the same kind of cost: each tap here is a PBKDF2 hash and a store transaction,
         // and two of them racing would put two outcomes on screen for one tap.
-        fun writePin(ifItFails: String, write: suspend () -> Unit, onSuccess: () -> Unit) {
+        fun writePin(
+            ifItFails: String,
+            write: suspend () -> Unit,
+            onSuccess: () -> Unit,
+        ) {
             if (writing) return
             writing = true
             error = null
@@ -260,11 +266,12 @@ class PinLockActivity : SettingsDestinationActivity() {
                                         // first suspension of `setPin`.
                                         val pin = newPin
                                         writePin(
-                                            ifItFails = if (pinSet) {
-                                                "Could not save the new PIN, so the PIN already set is still in force."
-                                            } else {
-                                                "Could not save the PIN, so no PIN is set."
-                                            },
+                                            ifItFails =
+                                                if (pinSet) {
+                                                    "Could not save the new PIN, so the PIN already set is still in force."
+                                                } else {
+                                                    "Could not save the PIN, so no PIN is set."
+                                                },
                                             write = { repository.setPin(pin) },
                                             onSuccess = {
                                                 pinSet = true

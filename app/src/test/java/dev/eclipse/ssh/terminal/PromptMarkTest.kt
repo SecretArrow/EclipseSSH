@@ -21,17 +21,27 @@ private val ESC: String = Char(0x1B).toString()
  * terminal does with the bytes a shell sends and not what any particular shell chooses to send.
  */
 class PromptMarkTest {
-    private fun buffer(rows: Int = 4, scrollback: Int = 2_000) =
-        AnsiTerminalBuffer(columns = 20, rows = rows, scrollbackLimit = scrollback)
+    private fun buffer(
+        rows: Int = 4,
+        scrollback: Int = 2_000,
+    ) = AnsiTerminalBuffer(columns = 20, rows = rows, scrollbackLimit = scrollback)
 
     /** One `OSC 133` with [body] as its payload, terminated with ST. */
     private fun mark(body: String): String = "$ESC]133;$body$ESC\\"
 
-    private fun row(frame: TerminalFrame, line: Int): String =
-        frame.lines[line - frame.firstLine].map { it.value }.joinToString("").trimEnd()
+    private fun row(
+        frame: TerminalFrame,
+        line: Int,
+    ): String =
+        frame.lines[line - frame.firstLine]
+            .map { it.value }
+            .joinToString("")
+            .trimEnd()
 
-    private fun kindsAt(frame: TerminalFrame, line: Int): Set<PromptMarkKind>? =
-        promptMarkAt(frame, line)?.kinds
+    private fun kindsAt(
+        frame: TerminalFrame,
+        line: Int,
+    ): Set<PromptMarkKind>? = promptMarkAt(frame, line)?.kinds
 
     @Test
     fun `a session's marks land on the lines its own text did`() {
@@ -348,17 +358,18 @@ class PromptMarkTest {
     @Test
     fun `the marks stay one per line however the screen is rearranged`() {
         val buffer = buffer(rows = 4, scrollback = 3)
-        val script = listOf(
-            mark("A") + "one\r\n",
-            "two\r\nthree\r\nfour\r\nfive\r\n",
-            mark("C") + "out\r\n" + mark("D;0"),
-            "$ESC[2;4r$ESC[1;1H$ESC[L$ESC[M",
-            mark("B") + "$ESC[2K",
-            "$ESC[?1049h" + mark("A") + "alt" + "$ESC[?1049l",
-            "$ESC[1;1H$ESC[4J" + mark("A"),
-            "$ESC[1;1H$ESC[3K",
-            "$ESC[!p",
-        )
+        val script =
+            listOf(
+                mark("A") + "one\r\n",
+                "two\r\nthree\r\nfour\r\nfive\r\n",
+                mark("C") + "out\r\n" + mark("D;0"),
+                "$ESC[2;4r$ESC[1;1H$ESC[L$ESC[M",
+                mark("B") + "$ESC[2K",
+                "$ESC[?1049h" + mark("A") + "alt" + "$ESC[?1049l",
+                "$ESC[1;1H$ESC[4J" + mark("A"),
+                "$ESC[1;1H$ESC[3K",
+                "$ESC[!p",
+            )
 
         script.forEach { step ->
             buffer.feed(step)

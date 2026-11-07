@@ -21,10 +21,15 @@ sealed interface TransferRetry {
     val item: TransferItem
 
     /** Try again later. [delaySeconds] backs off with the attempt number. */
-    data class Again(override val item: TransferItem, val delaySeconds: Long) : TransferRetry
+    data class Again(
+        override val item: TransferItem,
+        val delaySeconds: Long,
+    ) : TransferRetry
 
     /** Out of attempts. The caller is expected to tell the user. */
-    data class GiveUp(override val item: TransferItem) : TransferRetry
+    data class GiveUp(
+        override val item: TransferItem,
+    ) : TransferRetry
 }
 
 /**
@@ -73,7 +78,10 @@ fun TransferItem.afterFailedAttempt(): TransferRetry {
  * can call. `runCatching` because a database error during teardown must not replace the cancellation
  * the caller is about to rethrow.
  */
-suspend fun persistCancelledTransfer(item: TransferItem, save: suspend (TransferItem) -> Unit) {
+suspend fun persistCancelledTransfer(
+    item: TransferItem,
+    save: suspend (TransferItem) -> Unit,
+) {
     withContext(NonCancellable) {
         runCatching { save(item.copy(status = TransferStatus.PAUSED)) }
     }

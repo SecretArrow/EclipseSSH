@@ -20,7 +20,6 @@ import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.ActionSubject
 import dev.eclipse.ssh.ui.actions.FileActionKind
 import dev.eclipse.ssh.ui.files.FileActionsActivity
-import java.time.Duration
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +27,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The explorer's per-entry window, as a window: which rows one entry's session can serve, and what
@@ -54,7 +54,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class FileActionsActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -69,15 +68,16 @@ class FileActionsActivityRobolectricTest {
     }
 
     /** A remote file: permissions exist, and a name the archive reader can be asked about. */
-    private fun remoteFile(name: String = "site-backup.tar") = FsEntry(
-        name = name,
-        path = "/srv/backups/$name",
-        isDirectory = false,
-        size = 2_254_856_192,
-        modifiedEpochMillis = 1_755_000_000_000,
-        permissions = "644",
-        mimeType = "application/x-tar",
-    )
+    private fun remoteFile(name: String = "site-backup.tar") =
+        FsEntry(
+            name = name,
+            path = "/srv/backups/$name",
+            isDirectory = false,
+            size = 2_254_856_192,
+            modifiedEpochMillis = 1_755_000_000_000,
+            permissions = "644",
+            mimeType = "application/x-tar",
+        )
 
     /**
      * The remote file with everything servable: every row the window can draw is drawn.
@@ -189,21 +189,22 @@ class FileActionsActivityRobolectricTest {
         val spent = ActionRequests.put(ActionSubject.FileActions(remoteFile()))
         ActionRequests.take(spent)
 
-        ActivityScenario.launch<FileActionsActivity>(
-            FileActionsActivity.intent(
-                context,
-                remoteFile(),
-                isLocal = false,
-                isUbuntu = false,
-                supportsPermissions = true,
-                canOpenArchive = true,
-            )
-                .putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, spent),
-        ).use { scenario ->
-            pumpUntil(describe = { "a spent subject token opened a window anyway" }) {
-                scenario.state == Lifecycle.State.DESTROYED
+        ActivityScenario
+            .launch<FileActionsActivity>(
+                FileActionsActivity
+                    .intent(
+                        context,
+                        remoteFile(),
+                        isLocal = false,
+                        isUbuntu = false,
+                        supportsPermissions = true,
+                        canOpenArchive = true,
+                    ).putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, spent),
+            ).use { scenario ->
+                pumpUntil(describe = { "a spent subject token opened a window anyway" }) {
+                    scenario.state == Lifecycle.State.DESTROYED
+                }
             }
-        }
     }
 
     /** An intent with no token at all opens nothing, the same way. */
@@ -251,14 +252,28 @@ class FileActionsActivityRobolectricTest {
      * a second time would agree with itself whatever the window did.
      */
     private fun labelsOnScreen(): List<String> {
-        val known = setOf(
-            "Select", "Preview", "View Archive", "Edit as text", "Rename", "Copy to…", "Move to…",
-            "Upload to server", "Download to device", "Send to another server", "Permissions",
-            "Properties", "Delete",
-        )
+        val known =
+            setOf(
+                "Select",
+                "Preview",
+                "View Archive",
+                "Edit as text",
+                "Rename",
+                "Copy to…",
+                "Move to…",
+                "Upload to server",
+                "Download to device",
+                "Send to another server",
+                "Permissions",
+                "Properties",
+                "Delete",
+            )
         return compose.onAllNodes(hasClickAction()).fetchSemanticsNodes().mapNotNull { node ->
-            node.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
-                ?.firstOrNull()?.text?.takeIf(known::contains)
+            node.config
+                .getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
+                ?.firstOrNull()
+                ?.text
+                ?.takeIf(known::contains)
         }
     }
 
@@ -289,7 +304,11 @@ class FileActionsActivityRobolectricTest {
      * The shape the suites that drive live state all share — see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -307,7 +326,10 @@ class FileActionsActivityRobolectricTest {
      * the next, and [pumpUntil] asks twice — once to leave the loop and once to decide whether it
      * timed out. Read straight, an answer that did arrive is reported as one that never did.
      */
-    private fun awaitAnswer(expected: ActionAnswer, describe: () -> String): ActionAnswer {
+    private fun awaitAnswer(
+        expected: ActionAnswer,
+        describe: () -> String,
+    ): ActionAnswer {
         var answer: ActionAnswer? = null
         pumpUntil(describe = describe) {
             answer = answer ?: ActionRequests.takeAnswer()
@@ -331,7 +353,10 @@ class FileActionsActivityRobolectricTest {
      * closes *before* it is ever resumed — a spent token, no token — still assert the state directly:
      * that one closes during the launch, and it is a different fact.
      */
-    private fun awaitClosing(scenario: ActivityScenario<FileActionsActivity>, describe: () -> String) {
+    private fun awaitClosing(
+        scenario: ActivityScenario<FileActionsActivity>,
+        describe: () -> String,
+    ) {
         var closing = false
         pumpUntil(describe = describe) {
             runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }

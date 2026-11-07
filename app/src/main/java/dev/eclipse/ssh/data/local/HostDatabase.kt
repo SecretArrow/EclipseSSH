@@ -6,16 +6,16 @@ import androidx.room.PrimaryKey
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
-import dev.eclipse.ssh.data.TransferEntity
 import dev.eclipse.ssh.data.TransferDao
+import dev.eclipse.ssh.data.TransferEntity
 import dev.eclipse.ssh.data.model.AuthMethod
 import dev.eclipse.ssh.data.model.DEFAULT_AUTH_TIMEOUT_SECONDS
 import dev.eclipse.ssh.data.model.DEFAULT_MAX_RECONNECT_ATTEMPTS
-import dev.eclipse.ssh.data.model.INHERIT_RECONNECT_BACKOFF
 import dev.eclipse.ssh.data.model.DEFAULT_SERVER_ALIVE_COUNT_MAX
 import dev.eclipse.ssh.data.model.DEFAULT_TERMINAL_TYPE
 import dev.eclipse.ssh.data.model.HostKeyPolicy
 import dev.eclipse.ssh.data.model.HostProfile
+import dev.eclipse.ssh.data.model.INHERIT_RECONNECT_BACKOFF
 import dev.eclipse.ssh.data.model.ProxyType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -101,9 +101,11 @@ class HostConverters {
     fun tagsToString(tags: List<String>): String = tags.joinToString("\u001f")
 
     @TypeConverter
-    fun stringToTags(value: String): List<String> = value.takeIf(String::isNotBlank)
-        ?.split("\u001f")
-        .orEmpty()
+    fun stringToTags(value: String): List<String> =
+        value
+            .takeIf(String::isNotBlank)
+            ?.split("\u001f")
+            .orEmpty()
 }
 
 @androidx.room.Dao
@@ -128,106 +130,109 @@ interface HostDao {
 @TypeConverters(HostConverters::class)
 abstract class EclipseDatabase : RoomDatabase() {
     abstract fun hostDao(): HostDao
+
     abstract fun transferDao(): TransferDao
 }
 
-fun HostEntity.toDomain() = HostProfile(
-    id = id,
-    name = name,
-    host = host,
-    username = username,
-    port = port,
-    authMethod = AuthMethod.entries.firstOrNull { it.name == authMethod } ?: AuthMethod.PASSWORD,
-    group = groupName,
-    tags = if (tags.isBlank()) emptyList() else tags.split("\u001f"),
-    isFavorite = isFavorite,
-    lastConnectedAt = lastConnectedAt,
-    fingerprint = fingerprint,
-    proxyType = ProxyType.entries.firstOrNull { it.name == proxyType } ?: ProxyType.NONE,
-    proxyJump = proxyJump,
-    socksHost = socksHost,
-    socksPort = socksPort,
-    socksUsername = socksUsername,
-    socksPassword = socksPassword,
-    accentColor = accentColor,
-    connectTimeoutSeconds = connectTimeoutSeconds,
-    keepAliveSeconds = keepAliveSeconds,
-    autoLoginSftp = autoLoginSftp,
-    compression = compression,
-    keepAliveEnabled = keepAliveEnabled,
-    serverAliveCountMax = serverAliveCountMax,
-    authTimeoutSeconds = authTimeoutSeconds,
-    autoReconnect = autoReconnect,
-    maxReconnectAttempts = maxReconnectAttempts,
-    reconnectBackoffSeconds = reconnectBackoffSeconds,
-    usePty = usePty,
-    terminalType = terminalType,
-    terminalColumns = terminalColumns,
-    terminalRows = terminalRows,
-    keyboardInteractiveAuth = keyboardInteractiveAuth,
-    legacyAlgorithms = legacyAlgorithms,
-    ciphers = ciphers,
-    kexAlgorithms = kexAlgorithms,
-    macs = macs,
-    hostKeyAlgorithms = hostKeyAlgorithms,
-    startupCommand = startupCommand,
-    environment = environment,
-    savedForwards = savedForwards,
-    remoteDesktop = remoteDesktop,
-    wakeOnLanMac = wakeOnLanMac,
-    agentForwarding = agentForwarding,
-    // An unrecognised name falls back to asking, the same way [authMethod] and [proxyType] fall back
-    // to their safest value: a row written by a newer build, or edited by hand, must not silently
-    // become the policy that trusts whatever key turns up.
-    hostKeyPolicy = HostKeyPolicy.entries.firstOrNull { it.name == hostKeyPolicy } ?: HostKeyPolicy.ASK,
-)
+fun HostEntity.toDomain() =
+    HostProfile(
+        id = id,
+        name = name,
+        host = host,
+        username = username,
+        port = port,
+        authMethod = AuthMethod.entries.firstOrNull { it.name == authMethod } ?: AuthMethod.PASSWORD,
+        group = groupName,
+        tags = if (tags.isBlank()) emptyList() else tags.split("\u001f"),
+        isFavorite = isFavorite,
+        lastConnectedAt = lastConnectedAt,
+        fingerprint = fingerprint,
+        proxyType = ProxyType.entries.firstOrNull { it.name == proxyType } ?: ProxyType.NONE,
+        proxyJump = proxyJump,
+        socksHost = socksHost,
+        socksPort = socksPort,
+        socksUsername = socksUsername,
+        socksPassword = socksPassword,
+        accentColor = accentColor,
+        connectTimeoutSeconds = connectTimeoutSeconds,
+        keepAliveSeconds = keepAliveSeconds,
+        autoLoginSftp = autoLoginSftp,
+        compression = compression,
+        keepAliveEnabled = keepAliveEnabled,
+        serverAliveCountMax = serverAliveCountMax,
+        authTimeoutSeconds = authTimeoutSeconds,
+        autoReconnect = autoReconnect,
+        maxReconnectAttempts = maxReconnectAttempts,
+        reconnectBackoffSeconds = reconnectBackoffSeconds,
+        usePty = usePty,
+        terminalType = terminalType,
+        terminalColumns = terminalColumns,
+        terminalRows = terminalRows,
+        keyboardInteractiveAuth = keyboardInteractiveAuth,
+        legacyAlgorithms = legacyAlgorithms,
+        ciphers = ciphers,
+        kexAlgorithms = kexAlgorithms,
+        macs = macs,
+        hostKeyAlgorithms = hostKeyAlgorithms,
+        startupCommand = startupCommand,
+        environment = environment,
+        savedForwards = savedForwards,
+        remoteDesktop = remoteDesktop,
+        wakeOnLanMac = wakeOnLanMac,
+        agentForwarding = agentForwarding,
+        // An unrecognised name falls back to asking, the same way [authMethod] and [proxyType] fall back
+        // to their safest value: a row written by a newer build, or edited by hand, must not silently
+        // become the policy that trusts whatever key turns up.
+        hostKeyPolicy = HostKeyPolicy.entries.firstOrNull { it.name == hostKeyPolicy } ?: HostKeyPolicy.ASK,
+    )
 
-fun HostProfile.toEntity() = HostEntity(
-    id = id,
-    name = name,
-    host = host,
-    username = username,
-    port = port,
-    authMethod = authMethod.name,
-    groupName = group,
-    tags = tags.joinToString("\u001f"),
-    isFavorite = isFavorite,
-    lastConnectedAt = lastConnectedAt,
-    fingerprint = fingerprint,
-    proxyType = proxyType.name,
-    proxyJump = proxyJump,
-    socksHost = socksHost,
-    socksPort = socksPort,
-    socksUsername = socksUsername,
-    socksPassword = socksPassword,
-    accentColor = accentColor,
-    connectTimeoutSeconds = connectTimeoutSeconds,
-    keepAliveSeconds = keepAliveSeconds,
-    autoLoginSftp = autoLoginSftp,
-    compression = compression,
-    keepAliveEnabled = keepAliveEnabled,
-    serverAliveCountMax = serverAliveCountMax,
-    authTimeoutSeconds = authTimeoutSeconds,
-    autoReconnect = autoReconnect,
-    maxReconnectAttempts = maxReconnectAttempts,
-    reconnectBackoffSeconds = reconnectBackoffSeconds,
-    usePty = usePty,
-    terminalType = terminalType,
-    terminalColumns = terminalColumns,
-    terminalRows = terminalRows,
-    keyboardInteractiveAuth = keyboardInteractiveAuth,
-    legacyAlgorithms = legacyAlgorithms,
-    ciphers = ciphers,
-    kexAlgorithms = kexAlgorithms,
-    macs = macs,
-    hostKeyAlgorithms = hostKeyAlgorithms,
-    startupCommand = startupCommand,
-    environment = environment,
-    savedForwards = savedForwards,
-    remoteDesktop = remoteDesktop,
-    wakeOnLanMac = wakeOnLanMac,
-    agentForwarding = agentForwarding,
-    hostKeyPolicy = hostKeyPolicy.name,
-)
+fun HostProfile.toEntity() =
+    HostEntity(
+        id = id,
+        name = name,
+        host = host,
+        username = username,
+        port = port,
+        authMethod = authMethod.name,
+        groupName = group,
+        tags = tags.joinToString("\u001f"),
+        isFavorite = isFavorite,
+        lastConnectedAt = lastConnectedAt,
+        fingerprint = fingerprint,
+        proxyType = proxyType.name,
+        proxyJump = proxyJump,
+        socksHost = socksHost,
+        socksPort = socksPort,
+        socksUsername = socksUsername,
+        socksPassword = socksPassword,
+        accentColor = accentColor,
+        connectTimeoutSeconds = connectTimeoutSeconds,
+        keepAliveSeconds = keepAliveSeconds,
+        autoLoginSftp = autoLoginSftp,
+        compression = compression,
+        keepAliveEnabled = keepAliveEnabled,
+        serverAliveCountMax = serverAliveCountMax,
+        authTimeoutSeconds = authTimeoutSeconds,
+        autoReconnect = autoReconnect,
+        maxReconnectAttempts = maxReconnectAttempts,
+        reconnectBackoffSeconds = reconnectBackoffSeconds,
+        usePty = usePty,
+        terminalType = terminalType,
+        terminalColumns = terminalColumns,
+        terminalRows = terminalRows,
+        keyboardInteractiveAuth = keyboardInteractiveAuth,
+        legacyAlgorithms = legacyAlgorithms,
+        ciphers = ciphers,
+        kexAlgorithms = kexAlgorithms,
+        macs = macs,
+        hostKeyAlgorithms = hostKeyAlgorithms,
+        startupCommand = startupCommand,
+        environment = environment,
+        savedForwards = savedForwards,
+        remoteDesktop = remoteDesktop,
+        wakeOnLanMac = wakeOnLanMac,
+        agentForwarding = agentForwarding,
+        hostKeyPolicy = hostKeyPolicy.name,
+    )
 
 fun Flow<List<HostEntity>>.asDomain(): Flow<List<HostProfile>> = map { entities -> entities.map(HostEntity::toDomain) }

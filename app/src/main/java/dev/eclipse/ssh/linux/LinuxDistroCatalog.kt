@@ -56,7 +56,6 @@ data class LinuxDistro(
  * installed from. `LinuxUserspaceGraphProvider.resolveDistro` holds that resolution order.
  */
 object LinuxDistroCatalog {
-
     /**
      * One LTS series: everything the per-architecture entries share. The per-arch map exists
      * because each architecture's tarball is a separate file with its own hash — the pin is per
@@ -187,8 +186,10 @@ object LinuxDistroCatalog {
     }
 
     /** One exact catalog entry, or null when the id/arch pair names nothing. */
-    fun byId(id: String, ubuntuArch: String): LinuxDistro? =
-        all.firstOrNull { it.id == id && it.ubuntuArch == ubuntuArch }
+    fun byId(
+        id: String,
+        ubuntuArch: String,
+    ): LinuxDistro? = all.firstOrNull { it.id == id && it.ubuntuArch == ubuntuArch }
 
     /** The Android ABI name to Ubuntu's, or null where Ubuntu publishes no Base image for it. */
     private fun String.toUbuntuArch(): String? =

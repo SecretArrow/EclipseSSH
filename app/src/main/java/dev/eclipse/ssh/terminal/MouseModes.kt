@@ -59,12 +59,13 @@ object MouseModes {
     const val ANY = 1003
     const val SGR = 1006
 
-    private val byMode: Map<Int, MouseMode> = mapOf(
-        X10 to MouseMode.X10,
-        NORMAL to MouseMode.NORMAL,
-        BUTTON to MouseMode.BUTTON,
-        ANY to MouseMode.ANY,
-    )
+    private val byMode: Map<Int, MouseMode> =
+        mapOf(
+            X10 to MouseMode.X10,
+            NORMAL to MouseMode.NORMAL,
+            BUTTON to MouseMode.BUTTON,
+            ANY to MouseMode.ANY,
+        )
 
     /** The modes this terminal acts on. Anything outside this set leaves [enabled] untouched. */
     val handled: Set<Int> = byMode.keys + SGR
@@ -82,11 +83,16 @@ object MouseModes {
      * [enabled] after DECSET/DECRST [mode]. A mode this terminal does not implement is not recorded,
      * so nothing here can later be acted on by mistake.
      */
-    fun withMode(enabled: Set<Int>, mode: Int, enable: Boolean): Set<Int> = when {
-        mode !in handled -> enabled
-        enable -> enabled + mode
-        else -> enabled - mode
-    }
+    fun withMode(
+        enabled: Set<Int>,
+        mode: Int,
+        enable: Boolean,
+    ): Set<Int> =
+        when {
+            mode !in handled -> enabled
+            enable -> enabled + mode
+            else -> enabled - mode
+        }
 
     /**
      * Whether a program that asked for [mode] in [sgr] is owed a report of [gesture].
@@ -108,7 +114,12 @@ object MouseModes {
      * program asking for an encoding it will not get must not be reported to in any form - the reports
      * would be bytes it reads as text.
      */
-    fun reports(mode: MouseMode, sgr: Boolean, gesture: MouseGesture, buttonHeld: Boolean): Boolean {
+    fun reports(
+        mode: MouseMode,
+        sgr: Boolean,
+        gesture: MouseGesture,
+        buttonHeld: Boolean,
+    ): Boolean {
         if (!sgr) return false
         return when (mode) {
             MouseMode.OFF -> false

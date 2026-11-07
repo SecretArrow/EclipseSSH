@@ -22,7 +22,6 @@ import org.junit.Test
  * applies it to every screen it produces.
  */
 class TerminalScrollViewportTest {
-
     @Test
     fun `a session that has not been scrolled draws its bottom rows and nothing else`() {
         val buffer = session()
@@ -319,7 +318,11 @@ class TerminalScrollViewportTest {
         assertThat(styled[0].style.foreground.isDefault).isFalse()
         // And the colour is the line's own: the plain line under it is still the default one.
         val plain = scrolled.lines.first { line -> line.any { it.value == 'p' } }
-        assertThat(plain.first { it.value == 'p' }.style.foreground.isDefault).isTrue()
+        assertThat(
+            plain
+                .first { it.value == 'p' }
+                .style.foreground.isDefault,
+        ).isTrue()
         assertThat(plain.first { it.value == 'p' }.style.bold).isFalse()
         assertThat(imageOf(buffer, offset = 30).joinToString("\n")).contains("red and bold")
     }
@@ -430,10 +433,11 @@ class TerminalScrollViewportTest {
         for (offset in intArrayOf(0, 1, 7, ceiling / 2, ceiling - 1, ceiling)) {
             val frame = buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS)
             val layout = terminalLayout(frame, WINDOW_COLUMNS, WINDOW_ROWS)
-            val painted = layout.rows.map { row ->
-                val line = frame.lines[row.line]
-                (row.from until row.to.coerceAtMost(line.size)).joinToString("") { line[it].value.toString() }.trimEnd()
-            }
+            val painted =
+                layout.rows.map { row ->
+                    val line = frame.lines[row.line]
+                    (row.from until row.to.coerceAtMost(line.size)).joinToString("") { line[it].value.toString() }.trimEnd()
+                }
             val expected = painted + List((WINDOW_ROWS - painted.size).coerceAtLeast(0)) { "" }
             assertThat(imageOf(buffer, offset = offset)).isEqualTo(expected)
             assertThat(imageOf(buffer, offset = offset)).hasSize(WINDOW_ROWS)
@@ -447,18 +451,19 @@ class TerminalScrollViewportTest {
         // asserted to agree over the shapes a screen actually meets: plain prose, one unbreakable token,
         // a word repeated to the margin, wide characters, a hash, and every width from one column to
         // wider than the line.
-        val shapes = listOf(
-            "ordinary shell output with words in it",
-            "a".repeat(120),
-            "/usr/local/share/a-long-path/with/segments ".repeat(4),
-            "中文中文中文中文中文中文中文中文中文中文中文中文中文",
-            "a中b文c中d文e中f文g中h文i中j文k中l文m中n文o中p",
-            "24f3ab9c1d0e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
-            "mixed 中文 and latin words that wrap somewhere in the middle of it all",
-            "",
-            " ",
-            "  leading and trailing  ",
-        )
+        val shapes =
+            listOf(
+                "ordinary shell output with words in it",
+                "a".repeat(120),
+                "/usr/local/share/a-long-path/with/segments ".repeat(4),
+                "中文中文中文中文中文中文中文中文中文中文中文中文中文",
+                "a中b文c中d文e中f文g中h文i中j文k中l文m中n文o中p",
+                "24f3ab9c1d0e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
+                "mixed 中文 and latin words that wrap somewhere in the middle of it all",
+                "",
+                " ",
+                "  leading and trailing  ",
+            )
         for (text in shapes) {
             val line = text.padEnd(160).take(160).map { TerminalCell(it) }
             for (width in 1..80) {
@@ -523,7 +528,7 @@ class TerminalScrollViewportTest {
         for (row in 1..60) {
             val buffer = session()
             feedLines(buffer, lines = 60)
-            buffer.feed("\u001B[${row};1H")
+            buffer.feed("\u001B[$row;1H")
 
             val frame = buffer.frame(0, WINDOW_ROWS, WINDOW_COLUMNS)
 
@@ -688,6 +693,7 @@ class TerminalScrollViewportTest {
      * how a fragment of a line comes to look like a line of its own, and why these tests assert on the
      * image rather than on the frame.
      */
+
     /**
      * What the scrolled-back badge is told, measured on the real buffer rather than by hand.
      *
@@ -726,34 +732,46 @@ class TerminalScrollViewportTest {
         assertThat(buffer.frame(5, WINDOW_ROWS, WINDOW_COLUMNS).linesBelow()).isEqualTo(5)
     }
 
-    private fun imageOf(buffer: AnsiTerminalBuffer, offset: Int): List<String> {
+    private fun imageOf(
+        buffer: AnsiTerminalBuffer,
+        offset: Int,
+    ): List<String> {
         val frame = buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS)
         val layout = terminalLayout(frame, WINDOW_COLUMNS, WINDOW_ROWS)
-        val painted = layout.rows.take(WINDOW_ROWS).map { row ->
-            val line = frame.lines.getOrNull(row.line).orEmpty()
-            (row.from until row.to.coerceAtMost(line.size)).joinToString("") { column ->
-                val cell = line[column]
-                cell.value.toString() + cell.combining
-            }.trimEnd()
-        }
+        val painted =
+            layout.rows.take(WINDOW_ROWS).map { row ->
+                val line = frame.lines.getOrNull(row.line).orEmpty()
+                (row.from until row.to.coerceAtMost(line.size))
+                    .joinToString("") { column ->
+                        val cell = line[column]
+                        cell.value.toString() + cell.combining
+                    }.trimEnd()
+            }
         // The rows below the window are the screen's own background, which is what the view draws there:
         // the window is fitted in *whole* lines, so a row or two at the bottom is often left over. Left
         // blank deliberately - filling it with a partial line is the fragment this class exists to stop.
         return painted + List((WINDOW_ROWS - painted.size).coerceAtLeast(0)) { "" }
     }
 
-    private fun layoutOf(buffer: AnsiTerminalBuffer, offset: Int): TerminalLayout =
-        terminalLayout(buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS), WINDOW_COLUMNS, WINDOW_ROWS)
+    private fun layoutOf(
+        buffer: AnsiTerminalBuffer,
+        offset: Int,
+    ): TerminalLayout = terminalLayout(buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS), WINDOW_COLUMNS, WINDOW_ROWS)
 
     /** The index one past the last line of the window at [offset], which is the line the offset measures. */
-    private fun windowEnd(buffer: AnsiTerminalBuffer, offset: Int): Int {
+    private fun windowEnd(
+        buffer: AnsiTerminalBuffer,
+        offset: Int,
+    ): Int {
         val frame = buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS)
         return frame.firstLine + frame.lines.size
     }
 
     /** The index of the first line of the window at [offset]. */
-    private fun windowStart(buffer: AnsiTerminalBuffer, offset: Int): Int =
-        buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS).firstLine
+    private fun windowStart(
+        buffer: AnsiTerminalBuffer,
+        offset: Int,
+    ): Int = buffer.frame(offset, WINDOW_ROWS, WINDOW_COLUMNS).firstLine
 
     /**
      * That no row of the screen begins in the middle of a line - the invariant the reported bug broke.
@@ -811,17 +829,21 @@ class TerminalScrollViewportTest {
     }
 
     /** A frame holding one line of a screen that is painting it, cursor at [cursorColumn]. */
-    private fun lineFrame(line: List<TerminalCell>, cursorColumn: Int): TerminalFrame = TerminalFrame(
-        lines = listOf(line),
-        firstLine = 0,
-        totalLines = 1,
-        cursorRow = 0,
-        cursorColumn = cursorColumn,
-        columns = line.size,
-        rows = 1,
-        cursorVisible = true,
-        revision = 0L,
-    )
+    private fun lineFrame(
+        line: List<TerminalCell>,
+        cursorColumn: Int,
+    ): TerminalFrame =
+        TerminalFrame(
+            lines = listOf(line),
+            firstLine = 0,
+            totalLines = 1,
+            cursorRow = 0,
+            cursorColumn = cursorColumn,
+            columns = line.size,
+            rows = 1,
+            cursorVisible = true,
+            revision = 0L,
+        )
 
     /** A frame holding one line, padded to at least [MIN_LINE_COLUMNS] columns the way the buffer pads. */
     private fun singleLineFrame(line: List<TerminalCell>): TerminalFrame {

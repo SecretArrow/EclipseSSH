@@ -1,9 +1,9 @@
 package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.io.File
 import java.nio.file.Files
-import org.junit.Test
 
 /**
  * The exec model's one non-negotiable flag: every proot run carries `-0`, sessions included.
@@ -26,11 +26,9 @@ import org.junit.Test
  * which runs the real thing on a real emulator.
  */
 class ProotRuntimeExecModelTest {
-
     private val spawner = ScriptedPtySpawner()
 
-    private fun root(): File =
-        Files.createTempDirectory("proot-exec-model").toFile().apply { deleteOnExit() }
+    private fun root(): File = Files.createTempDirectory("proot-exec-model").toFile().apply { deleteOnExit() }
 
     private fun runtime(): ProotRuntime = ProotRuntime(root(), fakeNativeLibraryDir(), spawner)
 
@@ -80,16 +78,22 @@ class ProotRuntimeExecModelTest {
         // Order matters to proot: the flag belongs before the bindings, which belong before the
         // shell. A `-0` that drifted after `/bin/bash` would be passed to bash instead.
         assertThat(argv.indexOf("-0")).isLessThan(argv.indexOf("-b"))
-        assertThat(argv).containsExactly(
-            "${fakeNativeLibraryDir()}/libproot.so",
-            "--rootfs=${runtime.rootfsDir.absolutePath}",
-            "-0",
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-w", "/home/ubuntu",
-            "/bin/bash", "--login",
-        ).inOrder()
+        assertThat(argv)
+            .containsExactly(
+                "${fakeNativeLibraryDir()}/libproot.so",
+                "--rootfs=${runtime.rootfsDir.absolutePath}",
+                "-0",
+                "-b",
+                "/dev",
+                "-b",
+                "/proc",
+                "-b",
+                "/sys",
+                "-w",
+                "/home/ubuntu",
+                "/bin/bash",
+                "--login",
+            ).inOrder()
     }
 
     /**

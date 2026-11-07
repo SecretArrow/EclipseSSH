@@ -37,7 +37,6 @@ import java.io.File
  * stay named in the rootfs forever.
  */
 internal object AndroidGroupNames {
-
     /** What every line this object writes starts with: the mark that says which lines are ours. */
     const val PREFIX = "android_"
 
@@ -51,24 +50,34 @@ internal object AndroidGroupNames {
      * the process, and the result is what the file should say. A caller writes it when the result
      * differs from [existing], and does nothing when it does not.
      */
-    fun groupFile(existing: List<String>, gids: IntArray): List<String> {
+    fun groupFile(
+        existing: List<String>,
+        gids: IntArray,
+    ): List<String> {
         // Ours from a previous run first, so a device that lost a permission loses its line too,
         // and so a group ID renamed by a newer version of this object is not named twice.
         val kept = existing.filterNot { it.startsWith(PREFIX) }
         val named = kept.mapNotNullTo(mutableSetOf()) { gidOf(it) }
-        val appended = gids.asSequence()
-            // GID 0 is root, which the rootfs's own group file already names; and a supplementary
-            // list never carries the primary gid, so nothing here is the `ubuntu` account itself.
-            .filter { it > 0 && it !in named }
-            .distinct()
-            .sorted()
-            .map { "${label(it)}:x:$it:" }
-            .toList()
+        val appended =
+            gids
+                .asSequence()
+                // GID 0 is root, which the rootfs's own group file already names; and a supplementary
+                // list never carries the primary gid, so nothing here is the `ubuntu` account itself.
+                .filter { it > 0 && it !in named }
+                .distinct()
+                .sorted()
+                .map { "${label(it)}:x:$it:" }
+                .toList()
         return kept + appended
     }
 
     /** The group ID a `/etc/group` line names — its third colon-separated field — or null. */
-    private fun gidOf(line: String): Int? = line.split(':').getOrNull(2)?.trim()?.toIntOrNull()
+    private fun gidOf(line: String): Int? =
+        line
+            .split(':')
+            .getOrNull(2)
+            ?.trim()
+            ?.toIntOrNull()
 
     /**
      * The supplementary group IDs in a `/proc/<pid>/status` body: the `Groups:` line, which is the
@@ -87,7 +96,11 @@ internal object AndroidGroupNames {
      */
     fun groupsIn(procStatus: String): IntArray {
         val line = procStatus.lineSequence().firstOrNull { it.startsWith(GROUPS) } ?: return IntArray(0)
-        return line.removePrefix(GROUPS).split(' ').mapNotNull { it.trim().toIntOrNull() }.toIntArray()
+        return line
+            .removePrefix(GROUPS)
+            .split(' ')
+            .mapNotNull { it.trim().toIntOrNull() }
+            .toIntArray()
     }
 
     /**
@@ -98,21 +111,22 @@ internal object AndroidGroupNames {
      * did before this object existed, and a session whose `/etc/group` is a little short is a
      * cosmetic difference, not a broken install.
      */
-    fun selfGroups(status: File = File("/proc/self/status")): IntArray =
-        runCatching { groupsIn(status.readText()) }.getOrDefault(IntArray(0))
+    fun selfGroups(status: File = File("/proc/self/status")): IntArray = runCatching { groupsIn(status.readText()) }.getOrDefault(IntArray(0))
 
     /**
      * What one Android group ID is called inside the rootfs. The table below is a courtesy rather
      * than the contract: an ID it does not know is named too, as `android_gid_<n>`, because every
      * unnamed ID is one more line of `cannot find name` for the user to read.
      */
-    private fun label(gid: Int): String = PREFIX + when {
-        gid in AID_NAMES -> AID_NAMES.getValue(gid)
-        gid in CACHE_GIDS -> "cache_${gid - CACHE_GIDS.first}"
-        gid in SHARED_GIDS -> "shared_${gid - SHARED_GIDS.first}"
-        gid in APP_UIDS -> "app_${gid - APP_UIDS.first}"
-        else -> "gid_$gid"
-    }
+    private fun label(gid: Int): String =
+        PREFIX +
+            when {
+                gid in AID_NAMES -> AID_NAMES.getValue(gid)
+                gid in CACHE_GIDS -> "cache_${gid - CACHE_GIDS.first}"
+                gid in SHARED_GIDS -> "shared_${gid - SHARED_GIDS.first}"
+                gid in APP_UIDS -> "app_${gid - APP_UIDS.first}"
+                else -> "gid_$gid"
+            }
 
     /**
      * `AID_CACHE_GID_START`…`AID_CACHE_GID_END` — the cache group of every app on the device, its
@@ -138,19 +152,20 @@ internal object AndroidGroupNames {
      * releases before scoped storage — or because it is in every app process on the device, as
      * `everybody` is.
      */
-    private val AID_NAMES = mapOf(
-        1015 to "sdcard_rw",
-        1023 to "media_rw",
-        1028 to "sdcard_r",
-        1078 to "ext_data_rw",
-        1079 to "ext_obb_rw",
-        3001 to "net_bt_admin",
-        3002 to "net_bt",
-        3003 to "inet",
-        3004 to "net_raw",
-        3005 to "net_admin",
-        3006 to "net_bw_stats",
-        3007 to "net_bw_acct",
-        9997 to "everybody",
-    )
+    private val AID_NAMES =
+        mapOf(
+            1015 to "sdcard_rw",
+            1023 to "media_rw",
+            1028 to "sdcard_r",
+            1078 to "ext_data_rw",
+            1079 to "ext_obb_rw",
+            3001 to "net_bt_admin",
+            3002 to "net_bt",
+            3003 to "inet",
+            3004 to "net_raw",
+            3005 to "net_admin",
+            3006 to "net_bw_stats",
+            3007 to "net_bw_acct",
+            9997 to "everybody",
+        )
 }

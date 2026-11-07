@@ -1,7 +1,23 @@
 package dev.eclipse.ssh.vnc
 
+import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.data.model.RemoteDesktopTarget
 import dev.eclipse.ssh.ssh.PortForwardingManager
+import org.apache.sshd.client.SshClient
+import org.apache.sshd.client.session.ClientSession
+import org.apache.sshd.server.SshServer
+import org.apache.sshd.server.auth.password.PasswordAuthenticator
+import org.apache.sshd.server.auth.password.UserAuthPasswordFactory
+import org.apache.sshd.server.forward.AcceptAllForwardingFilter
+import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
+import org.junit.After
+import org.junit.AfterClass
+import org.junit.Before
+import org.junit.BeforeClass
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.InetAddress
@@ -14,22 +30,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
-import org.apache.sshd.client.SshClient
-import org.apache.sshd.server.SshServer
-import org.apache.sshd.server.auth.password.PasswordAuthenticator
-import org.apache.sshd.server.auth.password.UserAuthPasswordFactory
-import org.apache.sshd.server.forward.AcceptAllForwardingFilter
-import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
-import org.apache.sshd.client.session.ClientSession
-import org.junit.After
-import org.junit.AfterClass
-import org.junit.Before
-import org.junit.BeforeClass
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
-import com.google.common.truth.Truth.assertThat
 
 /**
  * The VNC engine against real software on both sides of itself.
@@ -53,18 +53,19 @@ import com.google.common.truth.Truth.assertThat
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class VncTunnelTest {
-
     private lateinit var sshClient: SshClient
     private lateinit var session: ClientSession
     private var tunnel: VncTunnel? = null
+
     @Before
     fun connectSession() {
-        sshClient = SshClient.setUpDefaultClient().apply {
-            // A stand-in verifier is all the test needs: the server's key is generated in this
-            // JVM a moment before, and the tunnel's subject is not host-key trust.
-            serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
-            start()
-        }
+        sshClient =
+            SshClient.setUpDefaultClient().apply {
+                // A stand-in verifier is all the test needs: the server's key is generated in this
+                // JVM a moment before, and the tunnel's subject is not host-key trust.
+                serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
+                start()
+            }
         session = sshClient.connect(USER, LOOPBACK, serverPort).verify(15, TimeUnit.SECONDS).session
         session.addPasswordIdentity(PASSWORD)
         session.auth().verify(15, TimeUnit.SECONDS)
@@ -265,7 +266,10 @@ class VncTunnelTest {
      * vernacular's threads and read here, so there is no main looper to pump and no compose
      * clock to advance; the honest instrument is a deadline.
      */
-    private fun pumpUntil(describe: String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        describe: String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + TEST_TIMEOUT_MS * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Thread.sleep(20)
@@ -288,24 +292,27 @@ class VncTunnelTest {
         @JvmStatic
         @BeforeClass
         fun startServer() {
-            server = SshServer.setUpDefaultServer().apply {
-                // Port 0: the debug and release unit-test JVMs overlap, and a fixed port would give
-                // the loser of the bind a server that never started.
-                port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("vnc-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    user == USER && password == PASSWORD
+            server =
+                SshServer.setUpDefaultServer().apply {
+                    // Port 0: the debug and release unit-test JVMs overlap, and a fixed port would give
+                    // the loser of the bind a server that never started.
+                    port = 0
+                    keyPairProvider =
+                        SimpleGeneratorHostKeyProvider(
+                            Files.createTempDirectory("vnc-hostkey").resolve("hostkey.ser"),
+                        )
+                    passwordAuthenticator =
+                        PasswordAuthenticator { user, password, _ ->
+                            user == USER && password == PASSWORD
+                        }
+                    userAuthFactories = listOf(UserAuthPasswordFactory.INSTANCE)
+                    // The learned lesson from the forwarding suite, one layer down: a local forward's
+                    // destination is dialed by the *server* through a direct-tcpip channel, and the
+                    // builder's default filter refuses every one of those. Without an accepting filter
+                    // here, the tunnel under test binds its port and then waits forever for a frame.
+                    forwardingFilter = AcceptAllForwardingFilter.INSTANCE
+                    start()
                 }
-                userAuthFactories = listOf(UserAuthPasswordFactory.INSTANCE)
-                // The learned lesson from the forwarding suite, one layer down: a local forward's
-                // destination is dialed by the *server* through a direct-tcpip channel, and the
-                // builder's default filter refuses every one of those. Without an accepting filter
-                // here, the tunnel under test binds its port and then waits forever for a frame.
-                forwardingFilter = AcceptAllForwardingFilter.INSTANCE
-                start()
-            }
             serverPort = (server.boundAddresses.first() as InetSocketAddress).port
         }
 
@@ -342,7 +349,6 @@ private const val FRAME_HEIGHT = 8
  * `0xFFFF0000` assertion holds no matter which colour depth vernacular negotiates.
  */
 private class FakeRfbServer : AutoCloseable {
-
     private val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
     val port: Int get() = server.localPort
 
@@ -371,10 +377,11 @@ private class FakeRfbServer : AutoCloseable {
     /** The pixel format the client last set; painted from until it changes. */
     @Volatile private var pixelFormat = intArrayOf(32, 24, 0, 1, 255, 255, 255, 16, 8, 0)
 
-    private val acceptOnce = thread(name = "fake-rfb-accept") {
-        runCatching { server.accept().use { socket -> serve(socket) } }
-        disconnected.countDown()
-    }
+    private val acceptOnce =
+        thread(name = "fake-rfb-accept") {
+            runCatching { server.accept().use { socket -> serve(socket) } }
+            disconnected.countDown()
+        }
 
     private fun serve(socket: Socket) {
         val input = DataInputStream(socket.getInputStream().buffered())
@@ -385,7 +392,8 @@ private class FakeRfbServer : AutoCloseable {
         out.writeBytes("RFB 003.008\n")
         out.flush()
         input.readFully(ByteArray(12)) // the client's version
-        out.writeByte(1); out.writeByte(1) // one security type: None
+        out.writeByte(1)
+        out.writeByte(1) // one security type: None
         out.flush()
         require(input.readUnsignedByte() == 1) { "client did not choose None" }
         out.writeInt(0) // RFB 3.8: the security *result* follows even a None choice
@@ -508,7 +516,10 @@ private class FakeRfbServer : AutoCloseable {
         output.flush()
     }
 
-    private fun writePixelFormat(output: DataOutputStream, format: IntArray) {
+    private fun writePixelFormat(
+        output: DataOutputStream,
+        format: IntArray,
+    ) {
         output.writeByte(format[0]) // bitsPerPixel
         output.writeByte(format[1]) // depth
         output.writeByte(format[2]) // bigEndian

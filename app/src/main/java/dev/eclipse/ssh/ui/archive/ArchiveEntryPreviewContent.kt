@@ -88,11 +88,12 @@ fun ArchiveEntryPreviewContent(
     var state by remember(entry.path) { mutableStateOf<EntryPreviewState>(EntryPreviewState.Loading) }
 
     LaunchedEffect(entry.path) {
-        state = if (readEntry == null || kind == EntryPreviewKind.INFO) {
-            EntryPreviewState.Info
-        } else {
-            loadEntryPreview(entry, kind, readEntry)
-        }
+        state =
+            if (readEntry == null || kind == EntryPreviewKind.INFO) {
+                EntryPreviewState.Info
+            } else {
+                loadEntryPreview(entry, kind, readEntry)
+            }
     }
 
     Column(
@@ -113,47 +114,52 @@ fun ArchiveEntryPreviewContent(
         Spacer(Modifier.height(12.dp))
 
         when (val current = state) {
-            is EntryPreviewState.Loading -> Box(
-                Modifier.fillMaxWidth().height(160.dp),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
+            is EntryPreviewState.Loading ->
+                Box(
+                    Modifier.fillMaxWidth().height(160.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
 
-            is EntryPreviewState.Failed -> Text(
-                current.message,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            is EntryPreviewState.TooLarge -> Text(
-                "This file is ${"%.1f".format(current.bytes / (1024.0 * 1024.0))} MB — too large " +
-                    "to preview inside the archive. It can still be extracted.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            is EntryPreviewState.Info -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            is EntryPreviewState.Failed ->
                 Text(
-                    "No preview for this file type inside the archive.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    current.message,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
+
+            is EntryPreviewState.TooLarge ->
+                Text(
+                    "This file is ${"%.1f".format(current.bytes / (1024.0 * 1024.0))} MB — too large " +
+                        "to preview inside the archive. It can still be extracted.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+            is EntryPreviewState.Info ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "No preview for this file type inside the archive.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
             is EntryPreviewState.Image -> ZoomableImage(current.bitmap)
 
-            is EntryPreviewState.Text -> SelectionContainer {
-                Text(
-                    current.content,
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp)
-                        // 0.7 of the screen, the Files preview's own cap: a window has room a
-                        // sheet never had, and 420dp was sized for one phone's sheet.
-                        .heightIn(max = rememberDialogBodyMaxHeight(0.7f))
-                        .verticalScroll(rememberScrollState()),
-                    fontFamily = TerminalMonoFontFamily,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                )
-            }
+            is EntryPreviewState.Text ->
+                SelectionContainer {
+                    Text(
+                        current.content,
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                            // 0.7 of the screen, the Files preview's own cap: a window has room a
+                            // sheet never had, and 420dp was sized for one phone's sheet.
+                            .heightIn(max = rememberDialogBodyMaxHeight(0.7f))
+                            .verticalScroll(rememberScrollState()),
+                        fontFamily = TerminalMonoFontFamily,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
         }
     }
 }
@@ -161,11 +167,24 @@ fun ArchiveEntryPreviewContent(
 /** What the in-archive preview is showing; [Info] is an answer, not a fallback of last resort. */
 private sealed interface EntryPreviewState {
     data object Loading : EntryPreviewState
+
     data object Info : EntryPreviewState
-    data class Failed(val message: String) : EntryPreviewState
-    data class TooLarge(val bytes: Long) : EntryPreviewState
-    data class Image(val bitmap: Bitmap) : EntryPreviewState
-    data class Text(val content: String) : EntryPreviewState
+
+    data class Failed(
+        val message: String,
+    ) : EntryPreviewState
+
+    data class TooLarge(
+        val bytes: Long,
+    ) : EntryPreviewState
+
+    data class Image(
+        val bitmap: Bitmap,
+    ) : EntryPreviewState
+
+    data class Text(
+        val content: String,
+    ) : EntryPreviewState
 }
 
 /** The kinds an archive entry can be previewed as, judged by name alone — see the header comment. */
@@ -175,12 +194,17 @@ private const val MAX_IMAGE_BYTES = 24L * 1024 * 1024
 private const val MAX_TEXT_BYTES = 512L * 1024
 
 private fun previewKindOf(entry: ArchiveEntry): EntryPreviewKind =
-    when (entry.path.substringAfterLast('/', "").substringAfterLast('.', "").lowercase()) {
+    when (
+        entry.path
+            .substringAfterLast('/', "")
+            .substringAfterLast('.', "")
+            .lowercase()
+    ) {
         "png", "jpg", "jpeg", "gif", "webp", "bmp" -> EntryPreviewKind.IMAGE
         "txt", "log", "json", "xml", "yml", "yaml", "conf", "ini", "sh", "kt", "kts", "java",
         "py", "js", "ts", "css", "html", "csv", "properties", "gradle", "toml", "env", "md",
         "markdown", "c", "h", "cpp", "go", "rs", "sql", "php", "rb",
-            -> EntryPreviewKind.TEXT
+        -> EntryPreviewKind.TEXT
         else -> EntryPreviewKind.INFO
     }
 
@@ -193,26 +217,29 @@ private suspend fun loadEntryPreview(
     val ceiling = if (kind == EntryPreviewKind.IMAGE) MAX_IMAGE_BYTES else MAX_TEXT_BYTES
     if (size != null && size > ceiling) return EntryPreviewState.TooLarge(size)
     return try {
-        val bytes = readEntry()
-            // The reader's "cannot" - an entry this format or method cannot serve by range - is
-            // the window's Failed state, not an empty preview that reads as an empty file.
-            ?: return EntryPreviewState.Failed("This entry cannot be read from the archive as-is.")
+        val bytes =
+            readEntry()
+                // The reader's "cannot" - an entry this format or method cannot serve by range - is
+                // the window's Failed state, not an empty preview that reads as an empty file.
+                ?: return EntryPreviewState.Failed("This entry cannot be read from the archive as-is.")
         if (bytes.size > ceiling) return EntryPreviewState.TooLarge(bytes.size.toLong())
         when (kind) {
             EntryPreviewKind.IMAGE -> {
-                val bitmap = withContext(Dispatchers.IO) {
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                } ?: return EntryPreviewState.Failed("This image could not be decoded.")
+                val bitmap =
+                    withContext(Dispatchers.IO) {
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    } ?: return EntryPreviewState.Failed("This image could not be decoded.")
                 EntryPreviewState.Image(bitmap)
             }
             // A decode failure on the way to UTF-8 is replaced, not thrown: a text-named entry
             // whose bytes are not text still deserves its (garbled) preview rather than an error,
             // exactly what a terminal `cat` would have shown.
-            else -> EntryPreviewState.Text(
-                withContext(Dispatchers.IO) {
-                    bytes.toString(Charsets.UTF_8)
-                },
-            )
+            else ->
+                EntryPreviewState.Text(
+                    withContext(Dispatchers.IO) {
+                        bytes.toString(Charsets.UTF_8)
+                    },
+                )
         }
     } catch (cancelled: CancellationException) {
         throw cancelled
@@ -237,8 +264,7 @@ private fun ZoomableImage(bitmap: Bitmap) {
                     scale = next
                     offset = if (next > 1f) offset + pan else Offset.Zero
                 }
-            }
-            .pointerInput(bitmap) {
+            }.pointerInput(bitmap) {
                 detectTapGestures(onDoubleTap = {
                     scale = 1f
                     offset = Offset.Zero
@@ -249,14 +275,15 @@ private fun ZoomableImage(bitmap: Bitmap) {
             bitmap = bitmap.asImageBitmap(),
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offset.x
+                        translationY = offset.y
+                    },
         )
     }
 }

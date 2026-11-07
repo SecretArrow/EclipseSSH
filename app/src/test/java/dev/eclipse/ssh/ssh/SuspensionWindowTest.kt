@@ -14,8 +14,10 @@ import org.junit.Test
  * the hold is actually worth.
  */
 class SuspensionWindowTest {
-
-    private fun reading(elapsed: Long, uptime: Long) = ClockReading(elapsedRealtimeMs = elapsed, uptimeMs = uptime)
+    private fun reading(
+        elapsed: Long,
+        uptime: Long,
+    ) = ClockReading(elapsedRealtimeMs = elapsed, uptimeMs = uptime)
 
     @Test
     fun `a wait the device stayed awake for is all awake time`() {

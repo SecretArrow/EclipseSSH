@@ -14,7 +14,6 @@ import org.junit.Test
  * title and buttons does not fit a 480dp window in the first place.
  */
 class DialogHeightsTest {
-
     @Test
     fun `on a tall phone every dialog cap is higher than the fixed value it replaced`() {
         val screen = 891f

@@ -60,8 +60,10 @@ internal fun ArchiveEntry.impliedParents(): List<String> {
  */
 fun normalizeArchivePath(raw: String): String? {
     val forward = raw.replace('\\', '/')
-    val segments = forward.split('/')
-        .filterNot { it.isEmpty() || it == "." }
+    val segments =
+        forward
+            .split('/')
+            .filterNot { it.isEmpty() || it == "." }
     if (segments.isEmpty()) return null
     return segments.joinToString("/")
 }
@@ -74,16 +76,27 @@ fun normalizeArchivePath(raw: String): String? {
  * password -> the unlock dialog, unsupported -> "this archive cannot be browsed". The type, not
  * a message string, is what the UI switches on.
  */
-open class ArchiveException(message: String, cause: Throwable? = null) : Exception(message, cause)
+open class ArchiveException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 /** The container is structurally broken: no end record, a bad checksum, a truncated header. */
-class ArchiveCorruptException(message: String, cause: Throwable? = null) : ArchiveException(message, cause)
+class ArchiveCorruptException(
+    message: String,
+    cause: Throwable? = null,
+) : ArchiveException(message, cause)
 
 /** The container is well-formed but uses something the reader refuses (e.g. an unknown method). */
-class ArchiveUnsupportedException(message: String, cause: Throwable? = null) : ArchiveException(message, cause)
+class ArchiveUnsupportedException(
+    message: String,
+    cause: Throwable? = null,
+) : ArchiveException(message, cause)
 
 /** The archive (or one entry asked for) is encrypted and no password has been supplied. */
-class ArchivePasswordRequiredException(message: String) : ArchiveException(message)
+class ArchivePasswordRequiredException(
+    message: String,
+) : ArchiveException(message)
 
 /**
  * Scan progress, reported periodically while a container's structure is being read.

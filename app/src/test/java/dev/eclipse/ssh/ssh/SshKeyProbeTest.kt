@@ -15,7 +15,6 @@ import org.junit.Test
  * suite slow.
  */
 class SshKeyProbeTest {
-
     @Test
     fun `unencrypted key reports its type`() {
         val probe = probeSshKey(fixture("plain_ed25519"), "id_ed25519", passphrase = null)
@@ -94,8 +93,22 @@ class SshKeyProbeTest {
 
     @Test
     fun `rsa and ecdsa key types are labelled with their size`() {
-        val rsa = SshKeyLoader.load(SshKeyAlgorithm.RSA_2048.generate().privatePem.toByteArray(), "rsa")
-        val ecdsa = SshKeyLoader.load(SshKeyAlgorithm.ECDSA_P256.generate().privatePem.toByteArray(), "ec")
+        val rsa =
+            SshKeyLoader.load(
+                SshKeyAlgorithm.RSA_2048
+                    .generate()
+                    .privatePem
+                    .toByteArray(),
+                "rsa",
+            )
+        val ecdsa =
+            SshKeyLoader.load(
+                SshKeyAlgorithm.ECDSA_P256
+                    .generate()
+                    .privatePem
+                    .toByteArray(),
+                "ec",
+            )
         assertThat(sshKeyTypeLabel(rsa)).isEqualTo("RSA 2048")
         assertThat(sshKeyTypeLabel(ecdsa)).isEqualTo("ECDSA 256")
     }

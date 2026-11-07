@@ -13,8 +13,11 @@ import kotlin.math.roundToInt
  * given. After wrapping that is usually the window itself and there is nothing to pan; what is left is
  * the alternate screen, and the single token too wide to break.
  */
-internal fun maxPanPx(contentColumns: Int, visibleColumns: Int, cellWidth: Float): Float =
-    ((maxOf(contentColumns, visibleColumns) - visibleColumns) * cellWidth).coerceAtLeast(0f)
+internal fun maxPanPx(
+    contentColumns: Int,
+    visibleColumns: Int,
+    cellWidth: Float,
+): Float = ((maxOf(contentColumns, visibleColumns) - visibleColumns) * cellWidth).coerceAtLeast(0f)
 
 /**
  * The pan offset that keeps the cursor on screen, given where it is now.
@@ -99,8 +102,10 @@ internal const val PAN_FOLLOW_MS = 90
  * distance between the current offset and the target in cells: parameters rather than measurements taken
  * here, so that the rule is a function of the two numbers and nothing else.
  */
-internal fun followShouldAnimate(sinceLastFollowNanos: Long, cellsMoved: Int): Boolean =
-    cellsMoved <= 1 && sinceLastFollowNanos >= PAN_FOLLOW_MS.toLong() * NANOS_PER_MILLI
+internal fun followShouldAnimate(
+    sinceLastFollowNanos: Long,
+    cellsMoved: Int,
+): Boolean = cellsMoved <= 1 && sinceLastFollowNanos >= PAN_FOLLOW_MS.toLong() * NANOS_PER_MILLI
 
 /**
  * How far apart two pan offsets are, in cells, which is what [followShouldAnimate] is handed.
@@ -110,7 +115,10 @@ internal fun followShouldAnimate(sinceLastFollowNanos: Long, cellsMoved: Int): B
  * can be", so the follow is assigned rather than spread out; and a distance is rounded rather than
  * truncated, so the float arithmetic of a one-cell move still reads one and does not lose its tween.
  */
-internal fun cellsBetween(fromPx: Float, toPx: Float, cellWidth: Float): Int =
-    if (cellWidth <= 0f) Int.MAX_VALUE else (abs(toPx - fromPx) / cellWidth).roundToInt()
+internal fun cellsBetween(
+    fromPx: Float,
+    toPx: Float,
+    cellWidth: Float,
+): Int = if (cellWidth <= 0f) Int.MAX_VALUE else (abs(toPx - fromPx) / cellWidth).roundToInt()
 
 private const val NANOS_PER_MILLI = 1_000_000L

@@ -40,8 +40,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.feature.about.OPEN_SOURCE_LICENSES
 import dev.eclipse.ssh.ui.EclipseTheme
-import javax.inject.Inject
 import kotlinx.coroutines.flow.first
+import javax.inject.Inject
 
 /**
  * About, in its own window.
@@ -61,7 +61,6 @@ import kotlinx.coroutines.flow.first
  */
 @AndroidEntryPoint
 class AboutActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {

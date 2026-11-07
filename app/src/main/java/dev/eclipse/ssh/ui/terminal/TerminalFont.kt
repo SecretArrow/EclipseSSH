@@ -24,10 +24,11 @@ import dev.eclipse.ssh.R
  * width was measured from the regular cut. Registering the real bold face means a bold cell is the same
  * width as a plain one and the column alignment holds.
  */
-internal val TerminalMonoFontFamily: FontFamily = FontFamily(
-    Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
-    Font(R.font.jetbrains_mono_bold, FontWeight.Bold),
-)
+internal val TerminalMonoFontFamily: FontFamily =
+    FontFamily(
+        Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
+        Font(R.font.jetbrains_mono_bold, FontWeight.Bold),
+    )
 
 /**
  * The face that draws the symbols JetBrains Mono has no glyph for: `⏵`, `✻`, the braille spinner
@@ -63,13 +64,15 @@ internal val TerminalMonoFontFamily: FontFamily = FontFamily(
  * See `scripts/make-terminal-symbols.py` for the command that produced the file and
  * `docs/THIRD-PARTY.md` for the licence.
  */
-internal val TerminalSymbolFontFamily: FontFamily = FontFamily(
-    Font(R.font.terminal_symbols, FontWeight.Normal),
-)
+internal val TerminalSymbolFontFamily: FontFamily =
+    FontFamily(
+        Font(R.font.terminal_symbols, FontWeight.Normal),
+    )
 
 /** The family that draws [this] face. See [terminalFaceFor] for which cluster goes to which. */
 internal val TerminalFace.family: FontFamily
-    get() = when (this) {
-        TerminalFace.TEXT -> TerminalMonoFontFamily
-        TerminalFace.SYMBOL -> TerminalSymbolFontFamily
-    }
+    get() =
+        when (this) {
+            TerminalFace.TEXT -> TerminalMonoFontFamily
+            TerminalFace.SYMBOL -> TerminalSymbolFontFamily
+        }

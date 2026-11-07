@@ -49,7 +49,10 @@ import org.apache.sshd.common.signature.Signature
  * against the library's own ordering - "I want aes128-ctr *first* because this router is slow" is a
  * legitimate and common reason to use this feature at all, and a helpful re-sort would quietly undo it.
  */
-enum class AlgorithmKind(val label: String, val help: String) {
+enum class AlgorithmKind(
+    val label: String,
+    val help: String,
+) {
     CIPHERS(
         label = "Ciphers",
         help = "Comma-separated, most preferred first. Leave empty to let the library choose.",
@@ -118,12 +121,15 @@ data class AlgorithmListReview(
      * looking for a setting to change.
      */
     val problem: String?
-        get() = listOfNotNull(
-            refused.takeIf { it.isNotEmpty() }
-                ?.let { "Not allowed: ${it.joinToString(", ")} would leave the session unencrypted" },
-            unsupported.takeIf { it.isNotEmpty() }
-                ?.let { "Not available on this device: ${it.joinToString(", ")}" },
-        ).ifEmpty { null }?.joinToString(" · ")
+        get() =
+            listOfNotNull(
+                refused
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { "Not allowed: ${it.joinToString(", ")} would leave the session unencrypted" },
+                unsupported
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { "Not available on this device: ${it.joinToString(", ")}" },
+            ).ifEmpty { null }?.joinToString(" · ")
 }
 
 /**
@@ -132,10 +138,16 @@ data class AlgorithmListReview(
  * Empty in, empty out, with nothing unsupported - so a cleared field is always acceptable and always
  * means the library's default.
  */
-fun reviewAlgorithmList(kind: AlgorithmKind, text: String?): AlgorithmListReview {
-    val typed = text.orEmpty().split(',', '\n', ' ')
-        .map(String::trim)
-        .filter(String::isNotEmpty)
+fun reviewAlgorithmList(
+    kind: AlgorithmKind,
+    text: String?,
+): AlgorithmListReview {
+    val typed =
+        text
+            .orEmpty()
+            .split(',', '\n', ' ')
+            .map(String::trim)
+            .filter(String::isNotEmpty)
     if (typed.isEmpty()) return AlgorithmListReview(emptyList(), emptyList())
 
     // MINA's parsers are the authority on what a name means, including the aliases and the
@@ -159,13 +171,14 @@ fun reviewAlgorithmList(kind: AlgorithmKind, text: String?): AlgorithmListReview
  * this needs, so it is written against them instead of against a cast.
  */
 private fun <T> ListParseResult<T>.review(): AlgorithmListReview
-    where T : NamedResource, T : OptionalFeature = AlgorithmListReview(
-    names = parsedValues.usable().map { it.name },
-    // A name MINA resolved but this platform cannot run is reported alongside the ones it could not
-    // resolve at all, for the reason in this file's KDoc: to the user, both mean "not here".
-    unsupported = unsupportedValues + parsedValues.filter { !it.isSupported && it.isPermitted }.map { it.name },
-    refused = parsedValues.filterNot { it.isPermitted }.map { it.name },
-)
+    where T : NamedResource, T : OptionalFeature =
+    AlgorithmListReview(
+        names = parsedValues.usable().map { it.name },
+        // A name MINA resolved but this platform cannot run is reported alongside the ones it could not
+        // resolve at all, for the reason in this file's KDoc: to the user, both mean "not here".
+        unsupported = unsupportedValues + parsedValues.filter { !it.isSupported && it.isPermitted }.map { it.name },
+        refused = parsedValues.filterNot { it.isPermitted }.map { it.name },
+    )
 
 /**
  * The subset of a parse result this app will actually propose.
@@ -175,8 +188,7 @@ private fun <T> ListParseResult<T>.review(): AlgorithmListReview
  * either reject a name it then used, or - the direction that matters - accept a name it then refused
  * to install and leave the session proposing a shorter list than the user was shown.
  */
-private fun <T> List<T>.usable(): List<T> where T : NamedResource, T : OptionalFeature =
-    filter { it.isSupported && it.isPermitted }
+private fun <T> List<T>.usable(): List<T> where T : NamedResource, T : OptionalFeature = filter { it.isSupported && it.isPermitted }
 
 /**
  * Whether this app will carry [this] at all, whatever MINA and the device make of it.
@@ -196,15 +208,15 @@ private const val NO_ENCRYPTION = "none"
  * what [reviewAlgorithmList] accepts are the same set - a hint that suggested a name the validator
  * then rejected would be worse than no hint.
  */
-fun supportedAlgorithmNames(kind: AlgorithmKind): List<String> = when (kind) {
-    AlgorithmKind.CIPHERS -> BuiltinCiphers.values().supportedNames()
-    AlgorithmKind.KEX -> BuiltinDHFactories.values().supportedNames()
-    AlgorithmKind.MACS -> BuiltinMacs.values().supportedNames()
-    AlgorithmKind.HOST_KEYS -> BuiltinSignatures.values().supportedNames()
-}
+fun supportedAlgorithmNames(kind: AlgorithmKind): List<String> =
+    when (kind) {
+        AlgorithmKind.CIPHERS -> BuiltinCiphers.values().supportedNames()
+        AlgorithmKind.KEX -> BuiltinDHFactories.values().supportedNames()
+        AlgorithmKind.MACS -> BuiltinMacs.values().supportedNames()
+        AlgorithmKind.HOST_KEYS -> BuiltinSignatures.values().supportedNames()
+    }
 
-private fun <T> Array<T>.supportedNames(): List<String> where T : OptionalFeature, T : NamedResource =
-    toList().usable().map { it.name }
+private fun <T> Array<T>.supportedNames(): List<String> where T : OptionalFeature, T : NamedResource = toList().usable().map { it.name }
 
 /**
  * [text] as cipher factories to install on a session, or null to leave the session's own list alone.
@@ -219,12 +231,10 @@ private fun <T> Array<T>.supportedNames(): List<String> where T : OptionalFeatur
  *
  * The form is where a bad name gets reported ([reviewAlgorithmList]); this is where one gets survived.
  */
-internal fun cipherFactoriesFor(text: String?): List<NamedFactory<Cipher>>? =
-    text.parseNames { BuiltinCiphers.parseCiphersList(it).parsedValues.usable() }
+internal fun cipherFactoriesFor(text: String?): List<NamedFactory<Cipher>>? = text.parseNames { BuiltinCiphers.parseCiphersList(it).parsedValues.usable() }
 
 /** [text] as MAC factories, or null. See [cipherFactoriesFor]. */
-internal fun macFactoriesFor(text: String?): List<NamedFactory<Mac>>? =
-    text.parseNames { BuiltinMacs.parseMacsList(it).parsedValues.usable() }
+internal fun macFactoriesFor(text: String?): List<NamedFactory<Mac>>? = text.parseNames { BuiltinMacs.parseMacsList(it).parsedValues.usable() }
 
 /**
  * [text] as signature factories, or null. See [cipherFactoriesFor].
@@ -233,8 +243,7 @@ internal fun macFactoriesFor(text: String?): List<NamedFactory<Mac>>? =
  * types the client will accept a server's identity in, so `ssh_config`'s `HostKeyAlgorithms` maps onto
  * `session.signatureFactories` and not onto a list of its own.
  */
-internal fun signatureFactoriesFor(text: String?): List<NamedFactory<Signature>>? =
-    text.parseNames { BuiltinSignatures.parseSignatureList(it).parsedValues.usable() }
+internal fun signatureFactoriesFor(text: String?): List<NamedFactory<Signature>>? = text.parseNames { BuiltinSignatures.parseSignatureList(it).parsedValues.usable() }
 
 /**
  * [text] as key exchange factories, or null. See [cipherFactoriesFor].
@@ -244,7 +253,9 @@ internal fun signatureFactoriesFor(text: String?): List<NamedFactory<Signature>>
  */
 internal fun keyExchangeFactoriesFor(text: String?): List<KeyExchangeFactory>? =
     text.parseNames { names ->
-        BuiltinDHFactories.parseDHFactoriesList(names).parsedValues
+        BuiltinDHFactories
+            .parseDHFactoriesList(names)
+            .parsedValues
             .usable()
             .map { ClientBuilder.DH2KEX.apply(it) }
     }

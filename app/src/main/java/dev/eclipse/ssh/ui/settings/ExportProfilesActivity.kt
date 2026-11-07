@@ -40,10 +40,10 @@ import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.security.normalizePastedSecret
 import dev.eclipse.ssh.ui.SecretFieldKeyboard
 import dev.eclipse.ssh.ui.SecretPasteButton
-import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 /**
  * Export one or more connection profiles, credentials included, in a window of its own.
@@ -68,7 +68,6 @@ import kotlinx.coroutines.withContext
  */
 @AndroidEntryPoint
 class ExportProfilesActivity : SettingsDestinationActivity() {
-
     @Inject lateinit var hostRepository: HostRepository
 
     @Inject lateinit var profileExporter: ProfileExporter
@@ -84,7 +83,10 @@ class ExportProfilesActivity : SettingsDestinationActivity() {
     override val screenTitle = "Export profiles"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         val hosts by hostRepository.hosts.collectAsStateWithLifecycle(initialValue = emptyList())
         // Checked, not selected-and-forgotten: the ids survive an edit to a host's name or address
         // while this screen is open, so a rename behind the window cannot silently drop a profile
@@ -105,41 +107,43 @@ class ExportProfilesActivity : SettingsDestinationActivity() {
         val profiles = hosts.filterNot { LocalLinuxHost.isLocalHost(it.id) }
         val chosen = profiles.filter { it.id in selected }
 
-        val exportPicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/octet-stream"),
-        ) { uri: Uri? ->
-            vaultUnlockGate.release()
-            val pass = pendingPassphrase
-            pendingPassphrase = null
-            passphrase = ""
-            if (uri == null || pass == null) {
-                busy = false
-            } else {
-                scope.launch {
-                    try {
-                        // IO, not the main thread: the export reads six secrets per profile out of
-                        // DataStore, encrypts, and writes through a content resolver that may be a
-                        // binder round trip into a cloud provider.
-                        val count = withContext(Dispatchers.IO) { profileExporter.export(chosen, pass, uri) }
-                        report("Exported $count profile(s)")
-                    } catch (failure: Throwable) {
-                        reportWriteFailure(report, "the profile export", failure)
-                    } finally {
-                        busy = false
+        val exportPicker =
+            rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/octet-stream"),
+            ) { uri: Uri? ->
+                vaultUnlockGate.release()
+                val pass = pendingPassphrase
+                pendingPassphrase = null
+                passphrase = ""
+                if (uri == null || pass == null) {
+                    busy = false
+                } else {
+                    scope.launch {
+                        try {
+                            // IO, not the main thread: the export reads six secrets per profile out of
+                            // DataStore, encrypts, and writes through a content resolver that may be a
+                            // binder round trip into a cloud provider.
+                            val count = withContext(Dispatchers.IO) { profileExporter.export(chosen, pass, uri) }
+                            report("Exported $count profile(s)")
+                        } catch (failure: Throwable) {
+                            reportWriteFailure(report, "the profile export", failure)
+                        } finally {
+                            busy = false
+                        }
                     }
                 }
             }
-        }
 
         SettingsSection("Profiles") {
             when {
-                profiles.isEmpty() -> Text(
-                    "There is nothing to export yet. A profile is a saved server; add one from the hosts " +
-                        "list and it will appear here, with whatever password, key or passphrase you have " +
-                        "saved for it.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                )
+                profiles.isEmpty() ->
+                    Text(
+                        "There is nothing to export yet. A profile is a saved server; add one from the hosts " +
+                            "list and it will appear here, with whatever password, key or passphrase you have " +
+                            "saved for it.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
                 else -> {
                     // Every profile or none, one tap. The alternative - a checkbox per row and nothing
                     // else - makes "move everything to my new phone", the reason this screen exists,
@@ -153,9 +157,10 @@ class ExportProfilesActivity : SettingsDestinationActivity() {
                         TextButton(
                             onClick = { selected = if (allChosen) emptySet() else profiles.map { it.id }.toSet() },
                             enabled = !busy,
-                            modifier = Modifier.semantics {
-                                contentDescription = if (allChosen) "Clear selection" else "Select all"
-                            },
+                            modifier =
+                                Modifier.semantics {
+                                    contentDescription = if (allChosen) "Clear selection" else "Select all"
+                                },
                         ) { Text(if (allChosen) "Clear" else "All") }
                     }
                     profiles.forEach { host ->

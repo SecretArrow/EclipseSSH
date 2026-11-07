@@ -3,14 +3,17 @@ package dev.eclipse.ssh.data.saf
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 
 /** A private key file the user picked, held in memory with the name to show for it. */
-class PickedKeyFile(val bytes: ByteArray, val name: String) {
+class PickedKeyFile(
+    val bytes: ByteArray,
+    val name: String,
+) {
     /** Redacted: the whole point of this class is to carry key material. */
     override fun toString(): String = "PickedKeyFile(name=$name, bytes=${bytes.size})"
 }
@@ -35,7 +38,9 @@ const val MAX_PRIVATE_KEY_BYTES = 512 * 1024
  * a stack trace, not for somebody who just tapped a file. Worse, a provider's message is text from
  * another app, so putting it on screen means rendering a string this app did not write.
  */
-class KeyFileException internal constructor(message: String) : Exception(message)
+class KeyFileException internal constructor(
+    message: String,
+) : Exception(message)
 
 /**
  * Reads a picked document as a private key, or explains why it cannot be one.
@@ -44,31 +49,39 @@ class KeyFileException internal constructor(message: String) : Exception(message
  * provider strings, no file contents, no class names. On IO because it opens a document belonging to
  * another app.
  */
-suspend fun readPickedKeyFile(context: Context, uri: Uri): Result<PickedKeyFile> = withContext(Dispatchers.IO) {
-    try {
-        Result.success(readKeyFile(context, uri))
-    } catch (cancelled: CancellationException) {
-        // Never a diagnosis of the file; the caller's scope is going away.
-        throw cancelled
-    } catch (ours: KeyFileException) {
-        Result.failure(ours)
-    } catch (_: Throwable) {
-        // A revoked grant, a provider that crashed, a document that vanished between the picker
-        // closing and this read. All indistinguishable from here and all the same instruction.
-        Result.failure(KeyFileException("That file could not be read. Pick the private key again."))
+suspend fun readPickedKeyFile(
+    context: Context,
+    uri: Uri,
+): Result<PickedKeyFile> =
+    withContext(Dispatchers.IO) {
+        try {
+            Result.success(readKeyFile(context, uri))
+        } catch (cancelled: CancellationException) {
+            // Never a diagnosis of the file; the caller's scope is going away.
+            throw cancelled
+        } catch (ours: KeyFileException) {
+            Result.failure(ours)
+        } catch (_: Throwable) {
+            // A revoked grant, a provider that crashed, a document that vanished between the picker
+            // closing and this read. All indistinguishable from here and all the same instruction.
+            Result.failure(KeyFileException("That file could not be read. Pick the private key again."))
+        }
     }
-}
 
-private fun readKeyFile(context: Context, uri: Uri): PickedKeyFile {
+private fun readKeyFile(
+    context: Context,
+    uri: Uri,
+): PickedKeyFile {
     // Checked before opening, so an obviously oversized file costs nothing to reject. Providers
     // are not obliged to report a size, and some lie, which is why the read below is bounded too.
     localDocumentLength(context, uri)?.let { size ->
         if (size > MAX_PRIVATE_KEY_BYTES) throw KeyFileException(TOO_LARGE)
     }
-    val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
-        // One byte past the limit, so "exactly at the limit" and "over it" are distinguishable.
-        stream.readAtMost(MAX_PRIVATE_KEY_BYTES + 1)
-    } ?: throw KeyFileException("That file could not be opened")
+    val bytes =
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            // One byte past the limit, so "exactly at the limit" and "over it" are distinguishable.
+            stream.readAtMost(MAX_PRIVATE_KEY_BYTES + 1)
+        } ?: throw KeyFileException("That file could not be opened")
     if (bytes.size > MAX_PRIVATE_KEY_BYTES) throw KeyFileException(TOO_LARGE)
     if (bytes.isEmpty()) throw KeyFileException("That file is empty")
     return PickedKeyFile(bytes, pickedDocumentName(context, uri))
@@ -95,9 +108,13 @@ internal fun InputStream.readAtMost(limit: Int): ByteArray {
     return collected.toByteArray()
 }
 
-private fun pickedDocumentName(context: Context, uri: Uri): String {
-    val raw = runCatching { DocumentFile.fromSingleUri(context, uri)?.name }.getOrNull()
-        ?: uri.lastPathSegment
+private fun pickedDocumentName(
+    context: Context,
+    uri: Uri,
+): String {
+    val raw =
+        runCatching { DocumentFile.fromSingleUri(context, uri)?.name }.getOrNull()
+            ?: uri.lastPathSegment
     return sanitizedKeyName(raw)
 }
 
@@ -110,10 +127,13 @@ private fun pickedDocumentName(context: Context, uri: Uri): String {
  * label out of view. `internal` so its behaviour is pinned by a test rather than by inspection.
  */
 internal fun sanitizedKeyName(raw: String?): String {
-    val name = raw?.substringAfterLast('/')?.substringAfterLast('\\')
-        ?.filter { it.code in PRINTABLE_ASCII || it.code > LATIN_SUPPLEMENT_START }
-        ?.trim()
-        .orEmpty()
+    val name =
+        raw
+            ?.substringAfterLast('/')
+            ?.substringAfterLast('\\')
+            ?.filter { it.code in PRINTABLE_ASCII || it.code > LATIN_SUPPLEMENT_START }
+            ?.trim()
+            .orEmpty()
     return name.take(MAX_NAME_CHARS).ifBlank { FALLBACK_NAME }
 }
 

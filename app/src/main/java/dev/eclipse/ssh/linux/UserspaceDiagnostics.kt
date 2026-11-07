@@ -2,9 +2,9 @@ package dev.eclipse.ssh.linux
 
 import android.util.Log
 import dev.eclipse.ssh.ssh.scrub
-import java.util.ArrayDeque
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.ArrayDeque
 
 /**
  * The lifecycle of a userspace install or repair, recorded as structured events that carry no
@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.StateFlow
  * progress sequences would otherwise surround every error line quoted here.
  */
 class UserspaceDiagnostics {
-
     private val entries = ArrayDeque<UserspaceDiagnosticEvent>()
     private var sequence = 0L
 
@@ -54,15 +53,16 @@ class UserspaceDiagnostics {
         val entry: UserspaceDiagnosticEvent
         synchronized(entries) {
             sequence += 1
-            entry = UserspaceDiagnosticEvent(
-                sequence = sequence,
-                atMs = System.currentTimeMillis(),
-                category = category,
-                event = event,
-                detail = detail?.let { stripEscapes(scrub(it)).take(MAX_DETAIL) },
-                exitCode = exitCode,
-                durationMs = durationMs,
-            )
+            entry =
+                UserspaceDiagnosticEvent(
+                    sequence = sequence,
+                    atMs = System.currentTimeMillis(),
+                    category = category,
+                    event = event,
+                    detail = detail?.let { stripEscapes(scrub(it)).take(MAX_DETAIL) },
+                    exitCode = exitCode,
+                    durationMs = durationMs,
+                )
             entries.addLast(entry)
             while (entries.size > MAX_ENTRIES) entries.removeFirst()
             _events.value = entries.toList()
@@ -153,13 +153,14 @@ internal fun String.answerLine(): String? =
         .filter { it.isNotEmpty() && !PROOT_ERROR.containsMatchIn(it) }
         .lastOrNull()
 
-private val ANSI_ESCAPES = Regex(
-    "\\u001B\\[[0-9;?]*[ -/]*[@-~]" + // CSI
-        "|\\u001BO[@-~]" + // SS3
-        "|\\u001B[()#%][0-9A-Za-z]" + // charset designation
-        "|\\u001B[0-9:<=>?]" + // two-character escapes, private range: ESC 7 / ESC 8 / ESC =
-        "|\\u001B[@-NQ-Z\\\\^_a-np-z]", // two-character escapes, Fe/Fs range; [ is CSI, O is SS3
-)
+private val ANSI_ESCAPES =
+    Regex(
+        "\\u001B\\[[0-9;?]*[ -/]*[@-~]" + // CSI
+            "|\\u001BO[@-~]" + // SS3
+            "|\\u001B[()#%][0-9A-Za-z]" + // charset designation
+            "|\\u001B[0-9:<=>?]" + // two-character escapes, private range: ESC 7 / ESC 8 / ESC =
+            "|\\u001B[@-NQ-Z\\\\^_a-np-z]", // two-character escapes, Fe/Fs range; [ is CSI, O is SS3
+    )
 
 /**
  * The category prefix every line carries: the subsystems of an install — storage, the rootfs
@@ -167,7 +168,9 @@ private val ANSI_ESCAPES = Regex(
  * rather than read whole. Every one of the six is recorded by something: [RootfsInstaller] owns
  * storage, download and rootfs, [UbuntuDistributionManager] the rest.
  */
-enum class UserspaceDiagnosticCategory(val tag: String) {
+enum class UserspaceDiagnosticCategory(
+    val tag: String,
+) {
     STORAGE("storage"),
     ROOTFS("rootfs"),
     DOWNLOAD("download"),
@@ -192,14 +195,15 @@ data class UserspaceDiagnosticEvent(
      * The event as one line of `key=value` fields, shaped like the session trace's lines: absent
      * fields left out entirely, durations in seconds, detail quoted.
      */
-    fun line(): String = buildString {
-        append(atMs)
-        append(" [")
-        append(category.tag)
-        append("] ")
-        append(event)
-        exitCode?.let { append(" exit=").append(it) }
-        durationMs?.let { append(" dur=").append(it / 1_000).append('s') }
-        detail?.let { append(" detail=\"").append(it.replace('"', '\'')).append('"') }
-    }
+    fun line(): String =
+        buildString {
+            append(atMs)
+            append(" [")
+            append(category.tag)
+            append("] ")
+            append(event)
+            exitCode?.let { append(" exit=").append(it) }
+            durationMs?.let { append(" dur=").append(it / 1_000).append('s') }
+            detail?.let { append(" detail=\"").append(it.replace('"', '\'')).append('"') }
+        }
 }

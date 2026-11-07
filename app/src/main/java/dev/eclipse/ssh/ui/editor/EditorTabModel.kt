@@ -109,7 +109,10 @@ class EditorTabModel(
      * A save landed: the working text is now the server's text too, and the server's idea of the
      * file is what it reported after the write.
      */
-    fun saveSucceeded(newModified: Long?, newSize: Long?) {
+    fun saveSucceeded(
+        newModified: Long?,
+        newSize: Long?,
+    ) {
         savedText = text
         saving = false
         changedOnServer = false
@@ -135,7 +138,11 @@ class EditorTabModel(
      * edits. Only ever called from the reload paths the user chose (reload button, conflict
      * dialog's Reload Server Version); never from the watcher.
      */
-    fun reloadSucceeded(newText: String, newModified: Long?, newSize: Long?) {
+    fun reloadSucceeded(
+        newText: String,
+        newModified: Long?,
+        newSize: Long?,
+    ) {
         text = newText
         savedText = newText
         changedOnServer = false
@@ -156,7 +163,10 @@ class EditorTabModel(
      * SAF reports size with a zero mtime), and the "one field present, one unknown" shapes are
      * exactly the cases the first two guards already answer.
      */
-    fun serverStatsDiffer(modified: Long?, size: Long?): Boolean {
+    fun serverStatsDiffer(
+        modified: Long?,
+        size: Long?,
+    ): Boolean {
         if (modified != null && serverModified != null && modified != serverModified) return true
         if (size != null && serverSize != null && size != serverSize) return true
         // Vanished, in the only spelling a stat offers: nothing left to report at all.
@@ -175,7 +185,9 @@ class EditorTabModel(
  */
 sealed interface AutoSaveTick {
     /** A typing-idle marker from the timer; carries how long the user has been idle. */
-    data class Idle(val forMillis: Long) : AutoSaveTick
+    data class Idle(
+        val forMillis: Long,
+    ) : AutoSaveTick
 }
 
 /** How long the user must stop typing before an auto-save upload fires. */
@@ -192,11 +204,20 @@ const val AUTO_SAVE_DEBOUNCE_MS = 2_000L
  *  - not [changedOnServer] — the server moved; that is a conflict question, not a save;
  *  - not [readOnly] — the file cannot be written, and the mode exists to say so.
  */
-fun autoSaveTicks(ticks: Flow<AutoSaveTick>, tab: () -> EditorTabModel, enabled: () -> Boolean): Flow<Unit> =
+fun autoSaveTicks(
+    ticks: Flow<AutoSaveTick>,
+    tab: () -> EditorTabModel,
+    enabled: () -> Boolean,
+): Flow<Unit> =
     ticks.transform { tick ->
         val current = tab()
-        if (tick is AutoSaveTick.Idle && tick.forMillis >= AUTO_SAVE_DEBOUNCE_MS && enabled() &&
-            current.modified && !current.saving && !current.changedOnServer && !current.readOnly
+        if (tick is AutoSaveTick.Idle &&
+            tick.forMillis >= AUTO_SAVE_DEBOUNCE_MS &&
+            enabled() &&
+            current.modified &&
+            !current.saving &&
+            !current.changedOnServer &&
+            !current.readOnly
         ) {
             emit(Unit)
         }

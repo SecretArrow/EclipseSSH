@@ -41,12 +41,12 @@ import dev.eclipse.ssh.ui.actions.ActionSubject
 import dev.eclipse.ssh.ui.rememberDialogBodyMaxHeight
 import dev.eclipse.ssh.ui.settings.SettingsDestinationWindow
 import dev.eclipse.ssh.ui.statusColor
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
  * Why *this* session is in the state it is in, in a window of its own.
@@ -73,7 +73,6 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class SessionWhyActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var diagnostics: SessionDiagnostics
@@ -93,9 +92,10 @@ class SessionWhyActivity : ComponentActivity() {
             val scope = rememberCoroutineScope()
             // Collected rather than read once: see the class doc for why the trace is the live half.
             val events by diagnostics.events.collectAsStateWithLifecycle()
-            val trace = remember(events, tab.hostId) {
-                sessionDiagnostics(events, diagnostics.sessionLabels[tab.hostId])
-            }
+            val trace =
+                remember(events, tab.hostId) {
+                    sessionDiagnostics(events, diagnostics.sessionLabels[tab.hostId])
+                }
             val clock = remember { DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()) }
             val reason = remember(tab.lastError) { tab.lastError?.let(::scrub) }
 
@@ -176,11 +176,12 @@ class SessionWhyActivity : ComponentActivity() {
                                 // Oldest first in the copy, the opposite of the display: on screen the
                                 // answer wanted is the last thing that happened, and in a pasted
                                 // report the reader needs to follow the session forwards.
-                                val text = buildString {
-                                    append(tab.state.name)
-                                    reason?.let { append(" · ").append(it) }
-                                    trace.asReversed().forEach { append('\n').append(it.line()) }
-                                }
+                                val text =
+                                    buildString {
+                                        append(tab.state.name)
+                                        reason?.let { append(" · ").append(it) }
+                                        trace.asReversed().forEach { append('\n').append(it.line()) }
+                                    }
                                 // The window's own copy rather than a handoff back to the workspace:
                                 // the clipboard is a singleton and the clear-after delay is a
                                 // setting, so both halves are already here. A `Close` button is
@@ -205,10 +206,14 @@ class SessionWhyActivity : ComponentActivity() {
          * The tab is snapshotted into the request rather than parcelled, so the token is the whole
          * of what the intent carries.
          */
-        fun intent(context: Context, tab: SessionTab): Intent = Intent(context, SessionWhyActivity::class.java)
-            .putExtra(
-                ActionRequests.EXTRA_SUBJECT_TOKEN,
-                ActionRequests.put(ActionSubject.SessionWhy(tab)),
-            )
+        fun intent(
+            context: Context,
+            tab: SessionTab,
+        ): Intent =
+            Intent(context, SessionWhyActivity::class.java)
+                .putExtra(
+                    ActionRequests.EXTRA_SUBJECT_TOKEN,
+                    ActionRequests.put(ActionSubject.SessionWhy(tab)),
+                )
     }
 }

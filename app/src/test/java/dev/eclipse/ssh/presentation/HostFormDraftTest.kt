@@ -1,10 +1,10 @@
 package dev.eclipse.ssh.presentation
 
 import com.google.common.truth.Truth.assertThat
+import dev.eclipse.ssh.data.credentials.StoredCredentials
 import dev.eclipse.ssh.data.model.CONNECT_TIMEOUT_RANGE
 import dev.eclipse.ssh.data.model.KEEP_ALIVE_RANGE
 import dev.eclipse.ssh.data.model.PORT_RANGE
-import dev.eclipse.ssh.data.credentials.StoredCredentials
 import dev.eclipse.ssh.data.model.ProxyType
 import dev.eclipse.ssh.ssh.SshKeyProbe
 import org.junit.Test
@@ -17,7 +17,6 @@ import org.junit.Test
  * JVM test, because Robolectric never idles while a Compose dialog window is open.
  */
 class HostFormDraftTest {
-
     /** A draft that is valid, so each test can make exactly one thing wrong. */
     private fun valid(
         host: String = "edge.example.com",
@@ -180,17 +179,18 @@ class HostFormDraftTest {
     fun `a malformed pin is rejected rather than silently trusted`() {
         // Each of these would be written straight into the known-hosts store by saveHost, where it
         // could never match a real server key — every connection would then look like a key change.
-        val bad = listOf(
-            "7m3Pq9",                                   // no algorithm prefix
-            "MD5:aa:bb:cc",                             // the other fingerprint format
-            "SHA256:",                                  // prefix only
-            "SHA256:" + "A".repeat(42),                 // one character short
-            "SHA256:" + "A".repeat(44),                 // one character long
-            "SHA256:" + "A".repeat(42) + "=",           // padded, which the app never emits
-            "SHA256:" + "A".repeat(42) + "!",           // outside the base64 alphabet
-            "sha256:" + "A".repeat(43),                 // wrong case: not what the app prints
-            "SHA256:7m3…Pq9",                           // the old placeholder from the seed data
-        )
+        val bad =
+            listOf(
+                "7m3Pq9", // no algorithm prefix
+                "MD5:aa:bb:cc", // the other fingerprint format
+                "SHA256:", // prefix only
+                "SHA256:" + "A".repeat(42), // one character short
+                "SHA256:" + "A".repeat(44), // one character long
+                "SHA256:" + "A".repeat(42) + "=", // padded, which the app never emits
+                "SHA256:" + "A".repeat(42) + "!", // outside the base64 alphabet
+                "sha256:" + "A".repeat(43), // wrong case: not what the app prints
+                "SHA256:7m3…Pq9", // the old placeholder from the seed data
+            )
 
         for (candidate in bad) {
             assertThat(valid(fingerprint = candidate).fingerprintValid).isFalse()
@@ -219,11 +219,11 @@ class HostFormDraftTest {
         // Each of these would be stored verbatim and handed to the wake menu, which would build a
         // packet no card recognises - a host that looks wakable and is not.
         for (mac in listOf(
-            "AA:BB:CC:DD:EE",               // a pair short
-            "AA:BB:CC:DD:EE:01:02",         // a pair long
-            "AA:BB:CC:DD:EE:ZZ",            // not hex
-            "AA:BB-CC:DD:EE:01",            // mixed separators
-            "wake the server",              // prose, not an address
+            "AA:BB:CC:DD:EE", // a pair short
+            "AA:BB:CC:DD:EE:01:02", // a pair long
+            "AA:BB:CC:DD:EE:ZZ", // not hex
+            "AA:BB-CC:DD:EE:01", // mixed separators
+            "wake the server", // prose, not an address
         )) {
             assertThat(valid(wakeOnLanMac = mac).wakeOnLanMacValid).isFalse()
             assertThat(valid(wakeOnLanMac = mac).canSave).isFalse()
@@ -382,10 +382,11 @@ class HostFormDraftTest {
 
     @Test
     fun `forgetting the stored key detaches it`() {
-        val forgetting = valid(
-            storedCredentials = StoredCredentials(keyLabel = "id_rsa"),
-            forgetKey = true,
-        )
+        val forgetting =
+            valid(
+                storedCredentials = StoredCredentials(keyLabel = "id_rsa"),
+                forgetKey = true,
+            )
 
         assertThat(forgetting.keyAttached).isFalse()
         // Nothing invalid about a host with no key, so Save stays available.
@@ -395,12 +396,13 @@ class HostFormDraftTest {
     @Test
     fun `a picked key overrides a stored key being forgotten`() {
         // "Replace private key" sets both: forget what is there, attach what was picked.
-        val replacing = valid(
-            storedCredentials = StoredCredentials(keyLabel = "old_key"),
-            forgetKey = true,
-            keyPicked = true,
-            pickedKey = SshKeyProbe.Ready("RSA 4096"),
-        )
+        val replacing =
+            valid(
+                storedCredentials = StoredCredentials(keyLabel = "old_key"),
+                forgetKey = true,
+                keyPicked = true,
+                pickedKey = SshKeyProbe.Ready("RSA 4096"),
+            )
 
         assertThat(replacing.keyAttached).isTrue()
         assertThat(replacing.canSave).isTrue()
@@ -418,11 +420,12 @@ class HostFormDraftTest {
 
     @Test
     fun `a passphrase is fine alongside a picked key`() {
-        val paired = valid(
-            passphrase = "hunter2",
-            keyPicked = true,
-            pickedKey = SshKeyProbe.Ready("Ed25519"),
-        )
+        val paired =
+            valid(
+                passphrase = "hunter2",
+                keyPicked = true,
+                pickedKey = SshKeyProbe.Ready("Ed25519"),
+            )
 
         assertThat(paired.passphraseValid).isTrue()
         assertThat(paired.canSave).isTrue()
@@ -430,10 +433,11 @@ class HostFormDraftTest {
 
     @Test
     fun `a passphrase is fine alongside a stored key`() {
-        val paired = valid(
-            passphrase = "hunter2",
-            storedCredentials = StoredCredentials(keyLabel = "id_rsa"),
-        )
+        val paired =
+            valid(
+                passphrase = "hunter2",
+                storedCredentials = StoredCredentials(keyLabel = "id_rsa"),
+            )
 
         assertThat(paired.passphraseValid).isTrue()
         assertThat(paired.canSave).isTrue()
@@ -441,11 +445,12 @@ class HostFormDraftTest {
 
     @Test
     fun `a passphrase left behind after forgetting the key blocks Save`() {
-        val stranded = valid(
-            passphrase = "hunter2",
-            storedCredentials = StoredCredentials(keyLabel = "id_rsa", hasPassphrase = true),
-            forgetKey = true,
-        )
+        val stranded =
+            valid(
+                passphrase = "hunter2",
+                storedCredentials = StoredCredentials(keyLabel = "id_rsa", hasPassphrase = true),
+                forgetKey = true,
+            )
 
         assertThat(stranded.passphraseValid).isFalse()
         assertThat(stranded.canSave).isFalse()

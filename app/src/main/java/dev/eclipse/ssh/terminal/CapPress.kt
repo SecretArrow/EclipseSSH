@@ -27,7 +27,11 @@ enum class CapPress { DOWN, UP, ROW_MOVED }
  * [DOWN] wins over everything, including a press that was never released: a keyboard whose gesture
  * stream was broken for one tap is not a reason to stop drawing the next one.
  */
-fun capPressed(current: Boolean, event: CapPress): Boolean = when (event) {
-    CapPress.DOWN -> true
-    CapPress.UP, CapPress.ROW_MOVED -> false
-}
+fun capPressed(
+    current: Boolean,
+    event: CapPress,
+): Boolean =
+    when (event) {
+        CapPress.DOWN -> true
+        CapPress.UP, CapPress.ROW_MOVED -> false
+    }

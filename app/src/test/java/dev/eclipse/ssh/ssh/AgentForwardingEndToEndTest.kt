@@ -5,13 +5,6 @@ import dev.eclipse.ssh.data.model.AuthMethod
 import dev.eclipse.ssh.data.model.HostKeyChallenge
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.settings.SettingsRepository
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -35,6 +28,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * SSH agent forwarding, end to end against a real Apache MINA SSHD server.
@@ -53,7 +53,6 @@ import org.robolectric.RuntimeEnvironment
  */
 @RunWith(RobolectricTestRunner::class)
 class AgentForwardingEndToEndTest {
-
     companion object {
         private const val LOOPBACK = "127.0.0.1"
         private const val USER = "agent-user"
@@ -73,9 +72,10 @@ class AgentForwardingEndToEndTest {
             server = SshServer.setUpDefaultServer()
             server.port = 0
             server.keyPairProvider = SimpleGeneratorHostKeyProvider(root.resolve("hostkey.ser"))
-            server.passwordAuthenticator = PasswordAuthenticator { username, password, _ ->
-                username == USER && password == PASSWORD
-            }
+            server.passwordAuthenticator =
+                PasswordAuthenticator { username, password, _ ->
+                    username == USER && password == PASSWORD
+                }
             // The server-side half of forwarding: accept the request, and expose an agent client
             // that opens the agent channel back at whoever asked. The filter is not optional:
             // MINA's ChannelSession refuses auth-agent-req when the manager's forwarding filter
@@ -110,19 +110,31 @@ class AgentForwardingEndToEndTest {
         private var exit: ExitCallback? = null
 
         @Volatile private var environment: Environment? = null
+
         @Volatile private var serverSession: org.apache.sshd.server.session.ServerSession? = null
 
-        fun env(): Map<String, String>? =
-            environment?.env?.let { runCatching { HashMap(it) }.getOrNull() }
+        fun env(): Map<String, String>? = environment?.env?.let { runCatching { HashMap(it) }.getOrNull() }
 
         fun session(): org.apache.sshd.server.session.ServerSession? = serverSession
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             environment = env
             serverSession = channel.serverSession
             val inn = input ?: return
@@ -146,30 +158,33 @@ class AgentForwardingEndToEndTest {
         override fun destroy(channel: ChannelSession) = Unit
     }
 
-    private fun hostProfile(forwarding: Boolean) = HostProfile(
-        name = "agent-forwarding",
-        host = LOOPBACK,
-        username = USER,
-        port = serverPort,
-        authMethod = AuthMethod.PASSWORD,
-        connectTimeoutSeconds = 60,
-        agentForwarding = forwarding,
-    )
+    private fun hostProfile(forwarding: Boolean) =
+        HostProfile(
+            name = "agent-forwarding",
+            host = LOOPBACK,
+            username = USER,
+            port = serverPort,
+            authMethod = AuthMethod.PASSWORD,
+            connectTimeoutSeconds = 60,
+            agentForwarding = forwarding,
+        )
 
     /** Two identities the vault would hold: the RSA/SHA-2 case and the Ed25519 case. */
     private fun vaultIdentities(): List<AgentIdentity> {
-        val rsa = SshKeyAlgorithm.RSA_2048.generate().let {
-            AgentIdentity(SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName), "id_rsa")
-        }
-        val ed25519 = AgentIdentity(
-            SshKeyLoader.load(
-                checkNotNull(javaClass.classLoader?.getResourceAsStream("keys/plain_ed25519")) {
-                    "Missing fixture keys/plain_ed25519"
-                }.use { it.readBytes() },
+        val rsa =
+            SshKeyAlgorithm.RSA_2048.generate().let {
+                AgentIdentity(SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName), "id_rsa")
+            }
+        val ed25519 =
+            AgentIdentity(
+                SshKeyLoader.load(
+                    checkNotNull(javaClass.classLoader?.getResourceAsStream("keys/plain_ed25519")) {
+                        "Missing fixture keys/plain_ed25519"
+                    }.use { it.readBytes() },
+                    "id_ed25519",
+                ),
                 "id_ed25519",
-            ),
-            "id_ed25519",
-        )
+            )
         return listOf(rsa, ed25519)
     }
 
@@ -179,19 +194,22 @@ class AgentForwardingEndToEndTest {
     }
 
     /** Connects, trusting the server key the first time it is offered - the app's own flow. */
-    private suspend fun trustedConnect(manager: SshConnectionManager, profile: HostProfile) =
-        coroutineScope {
-            val challengeRef = AtomicReference<HostKeyChallenge?>()
-            val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
-            val attempt = runCatching { manager.connect(profile, PASSWORD, null) }
-            delay(300)
-            collector.cancel()
-            if (attempt.isSuccess) return@coroutineScope attempt.getOrThrow()
-            val challenge = challengeRef.get()
+    private suspend fun trustedConnect(
+        manager: SshConnectionManager,
+        profile: HostProfile,
+    ) = coroutineScope {
+        val challengeRef = AtomicReference<HostKeyChallenge?>()
+        val collector = launch { manager.hostKeyChallenges.collect { challengeRef.set(it) } }
+        val attempt = runCatching { manager.connect(profile, PASSWORD, null) }
+        delay(300)
+        collector.cancel()
+        if (attempt.isSuccess) return@coroutineScope attempt.getOrThrow()
+        val challenge =
+            challengeRef.get()
                 ?: throw attempt.exceptionOrNull() ?: IllegalStateException("connect failed with no challenge")
-            manager.trustHost(challenge)
-            manager.connect(profile, PASSWORD, null)
-        }
+        manager.trustHost(challenge)
+        manager.connect(profile, PASSWORD, null)
+    }
 
     /**
      * Waits for the shell the caller is about to talk to, and for it to have *started*: MINA adds the
@@ -216,57 +234,63 @@ class AgentForwardingEndToEndTest {
      * `ssh host-b` - sees the phone's vault and gets a signature back from it.
      */
     @Test(timeout = 120_000)
-    fun `a forwarded session serves the vault's identities and signs over the agent channel`() = runBlocking {
-        val manager = newManager()
-        try {
-            val shellsBefore = shells.size
-            val session = trustedConnect(manager, hostProfile(forwarding = true))
-            session.use {
-                manager.openTerminal(session, profile = hostProfile(forwarding = true))
+    fun `a forwarded session serves the vault's identities and signs over the agent channel`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val shellsBefore = shells.size
+                val session = trustedConnect(manager, hostProfile(forwarding = true))
+                session.use {
+                    manager.openTerminal(session, profile = hostProfile(forwarding = true))
 
-                val shell = awaitShell(shellsBefore)
-                val env = shell.env()
-                assertThat(env).isNotNull()
-                // The proof the request was honoured: this is what a real sshd hands the shell too.
-                val authSocket = env!![SshAgent.SSH_AUTHSOCKET_ENV_NAME]
-                assertThat(authSocket).isNotEmpty()
+                    val shell = awaitShell(shellsBefore)
+                    val env = shell.env()
+                    assertThat(env).isNotNull()
+                    // The proof the request was honoured: this is what a real sshd hands the shell too.
+                    val authSocket = env!![SshAgent.SSH_AUTHSOCKET_ENV_NAME]
+                    assertThat(authSocket).isNotEmpty()
 
-                // The server-side agent client, exactly as ProxyAgentFactory means it to be built:
-                // pointed at the proxy id the shell was handed, it opens the agent channel back at
-                // the phone over this very session.
-                PropertyResolverUtils.updateProperty(server, SshAgent.SSH_AUTHSOCKET_ENV_NAME, authSocket)
-                val remoteAgent = (server.agentFactory as ProxyAgentFactory)
-                    .createClient(shell.session(), server)
+                    // The server-side agent client, exactly as ProxyAgentFactory means it to be built:
+                    // pointed at the proxy id the shell was handed, it opens the agent channel back at
+                    // the phone over this very session.
+                    PropertyResolverUtils.updateProperty(server, SshAgent.SSH_AUTHSOCKET_ENV_NAME, authSocket)
+                    val remoteAgent =
+                        (server.agentFactory as ProxyAgentFactory)
+                            .createClient(shell.session(), server)
 
-                val identities = remoteAgent.getIdentities().toList()
-                assertThat(identities.map { it.value }).containsExactly("id_rsa", "id_ed25519").inOrder()
+                    val identities = remoteAgent.getIdentities().toList()
+                    assertThat(identities.map { it.value }).containsExactly("id_rsa", "id_ed25519").inOrder()
 
-                val data = "please sign this, said the server".toByteArray()
-                val rsaKey = identities.first { it.value == "id_rsa" }.key
-                val signed = remoteAgent.sign(null, rsaKey, "rsa-sha2-256", data)
+                    val data = "please sign this, said the server".toByteArray()
+                    val rsaKey = identities.first { it.value == "id_rsa" }.key
+                    val signed = remoteAgent.sign(null, rsaKey, "rsa-sha2-256", data)
 
-                // The reply is what a real sshd would check: the named algorithm, and a signature
-                // that verifies under the key the agent itself listed.
-                assertThat(signed.key).isEqualTo("rsa-sha2-256")
-                val verifier = SignatureFactory.resolveSignatureFactoryByPublicKey(rsaKey, signed.key).create()
-                verifier.initVerifier(null, rsaKey)
-                verifier.update(null, data)
-                assertThat(verifier.verify(null, signed.value)).isTrue()
+                    // The reply is what a real sshd would check: the named algorithm, and a signature
+                    // that verifies under the key the agent itself listed.
+                    assertThat(signed.key).isEqualTo("rsa-sha2-256")
+                    val verifier = SignatureFactory.resolveSignatureFactoryByPublicKey(rsaKey, signed.key).create()
+                    verifier.initVerifier(null, rsaKey)
+                    verifier.update(null, data)
+                    assertThat(verifier.verify(null, signed.value)).isTrue()
 
-                // And the refusal travels the wire: a remote ssh-add gets the agent protocol's
-                // failure reply, which the proxy surfaces as an exception rather than a success.
-                val loaded = SshKeyLoader.load(
-                    SshKeyAlgorithm.ECDSA_P256.generate().privatePem.toByteArray(),
-                    "administrator key",
-                )
-                val refused = runCatching { remoteAgent.addIdentity(loaded, "no") }
-                assertThat(refused.isFailure).isTrue()
-                assertThat(remoteAgent.getIdentities().toList()).hasSize(2)
+                    // And the refusal travels the wire: a remote ssh-add gets the agent protocol's
+                    // failure reply, which the proxy surfaces as an exception rather than a success.
+                    val loaded =
+                        SshKeyLoader.load(
+                            SshKeyAlgorithm.ECDSA_P256
+                                .generate()
+                                .privatePem
+                                .toByteArray(),
+                            "administrator key",
+                        )
+                    val refused = runCatching { remoteAgent.addIdentity(loaded, "no") }
+                    assertThat(refused.isFailure).isTrue()
+                    assertThat(remoteAgent.getIdentities().toList()).hasSize(2)
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 
     /**
      * The negative half: a host that never asked for forwarding never gets the invitation.
@@ -277,22 +301,22 @@ class AgentForwardingEndToEndTest {
      * to. A regression that forwarded by default would light this up on every host in the app.
      */
     @Test(timeout = 120_000)
-    fun `a session without forwarding never asks the host for an agent channel`() = runBlocking {
-        val manager = newManager()
-        try {
-            val shellsBefore = shells.size
-            val session = trustedConnect(manager, hostProfile(forwarding = false))
-            session.use {
-                manager.openTerminal(session, profile = hostProfile(forwarding = false))
+    fun `a session without forwarding never asks the host for an agent channel`() =
+        runBlocking {
+            val manager = newManager()
+            try {
+                val shellsBefore = shells.size
+                val session = trustedConnect(manager, hostProfile(forwarding = false))
+                session.use {
+                    manager.openTerminal(session, profile = hostProfile(forwarding = false))
 
-                val shell = awaitShell(shellsBefore)
-                val env = shell.env()
-                assertThat(env).isNotNull()
-                assertThat(env!!).doesNotContainKey(SshAgent.SSH_AUTHSOCKET_ENV_NAME)
+                    val shell = awaitShell(shellsBefore)
+                    val env = shell.env()
+                    assertThat(env).isNotNull()
+                    assertThat(env!!).doesNotContainKey(SshAgent.SSH_AUTHSOCKET_ENV_NAME)
+                }
+            } finally {
+                manager.close()
             }
-        } finally {
-            manager.close()
         }
-    }
 }
-

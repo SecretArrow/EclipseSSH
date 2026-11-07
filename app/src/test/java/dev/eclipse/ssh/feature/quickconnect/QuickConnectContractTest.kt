@@ -25,7 +25,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class QuickConnectContractTest {
-
     @Test
     fun `an intent carrying the extra is recognized as a quick connect`() {
         val intent = Intent().putExtra(EXTRA_QUICK_CONNECT_LAST, true)
@@ -37,10 +36,11 @@ class QuickConnectContractTest {
         // Built exactly as QuickConnectTileService and QuickConnectWidget build it. The flags do not
         // affect recognition, but constructing the real intent shape shows the extraction the
         // activity performs on a genuine tap behaves.
-        val intent = Intent().apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_QUICK_CONNECT_LAST, true)
-        }
+        val intent =
+            Intent().apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_QUICK_CONNECT_LAST, true)
+            }
         assertThat(isQuickConnect(intent)).isTrue()
     }
 

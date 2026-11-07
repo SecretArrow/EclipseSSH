@@ -7,7 +7,11 @@ package dev.eclipse.ssh.terminal
  * renderer holds; a caller that needs the absolute one adds [TerminalFrame.firstLine], exactly as it
  * already does for a selection.
  */
-data class TerminalVisualRow(val line: Int, val from: Int, val to: Int) {
+data class TerminalVisualRow(
+    val line: Int,
+    val from: Int,
+    val to: Int,
+) {
     /** How many columns this row paints - the number the pan extent is measured in. */
     val width: Int get() = to - from
 }
@@ -107,7 +111,11 @@ class TerminalLayout(
  * JSON blob or a numeric column split across rows reads as two different values, and a reader has no way
  * to tell that break from one the server sent.
  */
-fun terminalLayout(frame: TerminalFrame, width: Int, maxRows: Int): TerminalLayout {
+fun terminalLayout(
+    frame: TerminalFrame,
+    width: Int,
+    maxRows: Int,
+): TerminalLayout {
     if (frame.lines.isEmpty() || maxRows <= 0) return TerminalLayout.EMPTY
     val wrap = wrapsForDisplay(frame.alternateScreen, frame.positionalScreen, width)
     val rows = visualRowsOf(frame.lines, wrap, width) { index, line -> paintedExtent(frame, index, line) }
@@ -193,8 +201,11 @@ private inline fun visualRowsOf(
  * `0` means "no window to fit", and it is the state of every caller with no screen: a snapshot, the
  * PNG export renderer, and every test that drives the buffer directly.
  */
-internal fun wrapsForDisplay(alternateScreen: Boolean, positionalScreen: Boolean, width: Int): Boolean =
-    width > 0 && !alternateScreen && !positionalScreen
+internal fun wrapsForDisplay(
+    alternateScreen: Boolean,
+    positionalScreen: Boolean,
+    width: Int,
+): Boolean = width > 0 && !alternateScreen && !positionalScreen
 
 /**
  * Everything [terminalLayout]'s answer is a function of, as one value a caller can memoize on.
@@ -240,7 +251,11 @@ internal data class TerminalLayoutKey(
 )
 
 /** The [TerminalLayoutKey] of [frame] laid out for a window [columns] wide and [rows] tall. */
-internal fun layoutKey(frame: TerminalFrame, columns: Int, rows: Int): TerminalLayoutKey =
+internal fun layoutKey(
+    frame: TerminalFrame,
+    columns: Int,
+    rows: Int,
+): TerminalLayoutKey =
     TerminalLayoutKey(
         revision = frame.revision,
         firstLine = frame.firstLine,
@@ -262,7 +277,11 @@ internal fun layoutKey(frame: TerminalFrame, columns: Int, rows: Int): TerminalL
  * implementation of the rule would be a second thing to keep in step. The two agreeing is asserted
  * rather than assumed - see `TerminalScrollViewportTest.theLayoutAndTheWindowCountRowsTheSame`.
  */
-internal fun displayRowCount(line: List<TerminalCell>, extent: Int, width: Int): Int {
+internal fun displayRowCount(
+    line: List<TerminalCell>,
+    extent: Int,
+    width: Int,
+): Int {
     if (width <= 0 || extent <= width) return 1
     var rows = 0
     var start = 0
@@ -302,7 +321,11 @@ internal fun displayRowCount(line: List<TerminalCell>, extent: Int, width: Int):
  * A row is blank when its columns are blank, which is not the same as a *line* being blank: a wrapped
  * line whose second row is empty still has that row drawn, and it is dropped here like any other.
  */
-private fun fittedRows(rows: List<TerminalVisualRow>, frame: TerminalFrame, maxRows: Int): List<TerminalVisualRow> {
+private fun fittedRows(
+    rows: List<TerminalVisualRow>,
+    frame: TerminalFrame,
+    maxRows: Int,
+): List<TerminalVisualRow> {
     if (rows.size <= maxRows) return rows
     val cursorLine = if (frame.cursorVisible) frame.cursorRow else -1
     var end = rows.size
@@ -316,7 +339,10 @@ private fun fittedRows(rows: List<TerminalVisualRow>, frame: TerminalFrame, maxR
 }
 
 /** Whether the row paints nothing at all: every column of it outside the line, or blank within it. */
-private fun rowIsBlank(frame: TerminalFrame, row: TerminalVisualRow): Boolean {
+private fun rowIsBlank(
+    frame: TerminalFrame,
+    row: TerminalVisualRow,
+): Boolean {
     val line = frame.lines.getOrNull(row.line) ?: return true
     for (column in row.from until row.to) {
         val cell = line.getOrNull(column) ?: continue
@@ -335,13 +361,18 @@ private fun rowIsBlank(frame: TerminalFrame, row: TerminalVisualRow): Boolean {
  * Bounded by the line's own length, because a frame captured across a resize can report a cursor
  * column the line does not have.
  */
-private fun paintedExtent(frame: TerminalFrame, index: Int, line: List<TerminalCell>): Int {
+private fun paintedExtent(
+    frame: TerminalFrame,
+    index: Int,
+    line: List<TerminalCell>,
+): Int {
     val painted = terminalPaintedWidth(line)
-    val withCursor = if (index == frame.cursorRow && frame.cursorVisible) {
-        maxOf(painted, frame.cursorColumn + 1)
-    } else {
-        painted
-    }
+    val withCursor =
+        if (index == frame.cursorRow && frame.cursorVisible) {
+            maxOf(painted, frame.cursorColumn + 1)
+        } else {
+            painted
+        }
     return withCursor.coerceAtMost(line.size)
 }
 
@@ -357,7 +388,12 @@ private fun paintedExtent(frame: TerminalFrame, index: Int, line: List<TerminalC
  * is swallowed: the server's indentation is the only indentation on screen, which is what keeps a
  * wrapped table or a `tree` listing readable.
  */
-private fun wrapBreak(line: List<TerminalCell>, start: Int, extent: Int, width: Int): Int {
+private fun wrapBreak(
+    line: List<TerminalCell>,
+    start: Int,
+    extent: Int,
+    width: Int,
+): Int {
     if (extent - start <= width) return extent
     // The first column that does not fit, and therefore the first candidate: breaking here fills the row.
     val limit = start + width
@@ -391,8 +427,10 @@ private fun wrapBreak(line: List<TerminalCell>, start: Int, extent: Int, width: 
  * boundary is the one place left where they could be parted: the left half on one row and its own blank
  * on the next, with the glyph's ink drawn across the gap between them.
  */
-private fun splitsCharacter(line: List<TerminalCell>, at: Int): Boolean =
-    at in 1 until line.size && line[at - 1].wide
+private fun splitsCharacter(
+    line: List<TerminalCell>,
+    at: Int,
+): Boolean = at in 1 until line.size && line[at - 1].wide
 
 /**
  * Whether a break before column [at] would land inside a word.
@@ -402,5 +440,7 @@ private fun splitsCharacter(line: List<TerminalCell>, at: Int): Boolean =
  * user who long-presses a path and gets the whole path, then sees that path split across two rows,
  * has been told two different things about the same characters.
  */
-private fun splitsWord(line: List<TerminalCell>, at: Int): Boolean =
-    TerminalSelection.isWordCharacter(line[at - 1].value) && TerminalSelection.isWordCharacter(line[at].value)
+private fun splitsWord(
+    line: List<TerminalCell>,
+    at: Int,
+): Boolean = TerminalSelection.isWordCharacter(line[at - 1].value) && TerminalSelection.isWordCharacter(line[at].value)

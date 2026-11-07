@@ -36,28 +36,29 @@ package dev.eclipse.ssh.data.model
  * carried - a rule the engine cannot act on is not information, and a malformed line must not be able
  * to stop the other rules or the host itself from loading.
  */
-fun encodeForwardRules(rules: List<ForwardEntry>): String =
-    rules.take(MAX_SAVED_FORWARDS).joinToString("\n") { it.toRuleText() }
+fun encodeForwardRules(rules: List<ForwardEntry>): String = rules.take(MAX_SAVED_FORWARDS).joinToString("\n") { it.toRuleText() }
 
 /** One rule as the line [decodeForwardRules] reads back. */
 fun ForwardEntry.toRuleText(): String {
-    val marker = when {
-        !enabled -> "#"
-        !autoStart -> "-"
-        else -> ""
-    }
-    val bind = if (listenHost == DEFAULT_FORWARD_LISTEN_HOST) "" else "$listenHost:"
-    val core = when (type) {
-        ForwardType.LOCAL -> "L:${bind}$localPort:${remoteHost.orEmpty()}:${remotePort ?: 0}"
-        ForwardType.REMOTE -> {
-            // The destination host is written only when it is not the phone's own loopback, so the
-            // historical two-port form stays what a plain remote rule reads and writes.
-            val destination =
-                if (localHost.isNullOrBlank() || localHost == DEFAULT_FORWARD_LISTEN_HOST) "" else ":$localHost"
-            "R:${bind}${remotePort ?: 0}$destination:$localPort"
+    val marker =
+        when {
+            !enabled -> "#"
+            !autoStart -> "-"
+            else -> ""
         }
-        ForwardType.DYNAMIC -> "D:${bind}$localPort"
-    }
+    val bind = if (listenHost == DEFAULT_FORWARD_LISTEN_HOST) "" else "$listenHost:"
+    val core =
+        when (type) {
+            ForwardType.LOCAL -> "L:${bind}$localPort:${remoteHost.orEmpty()}:${remotePort ?: 0}"
+            ForwardType.REMOTE -> {
+                // The destination host is written only when it is not the phone's own loopback, so the
+                // historical two-port form stays what a plain remote rule reads and writes.
+                val destination =
+                    if (localHost.isNullOrBlank() || localHost == DEFAULT_FORWARD_LISTEN_HOST) "" else ":$localHost"
+                "R:${bind}${remotePort ?: 0}$destination:$localPort"
+            }
+            ForwardType.DYNAMIC -> "D:${bind}$localPort"
+        }
     val label = name?.trim()?.takeIf(String::isNotBlank)?.let { " $it" } ?: ""
     return marker + core + label
 }
@@ -69,13 +70,17 @@ fun ForwardEntry.toRuleText(): String {
  * `MainViewModel` keys its live handles that way - and a saved rule read back without it would be a
  * rule nobody could attribute to a session, or stop when that session went away.
  */
-fun decodeForwardRules(text: String, hostId: String? = null): List<ForwardEntry> = text
-    .lineSequence()
-    .map(String::trim)
-    .filter(String::isNotEmpty)
-    .mapIndexedNotNull { index, line -> parseForwardRule(line, hostId, index) }
-    .take(MAX_SAVED_FORWARDS)
-    .toList()
+fun decodeForwardRules(
+    text: String,
+    hostId: String? = null,
+): List<ForwardEntry> =
+    text
+        .lineSequence()
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .mapIndexedNotNull { index, line -> parseForwardRule(line, hostId, index) }
+        .take(MAX_SAVED_FORWARDS)
+        .toList()
 
 /**
  * One line as a rule, or null.
@@ -87,7 +92,11 @@ fun decodeForwardRules(text: String, hostId: String? = null): List<ForwardEntry>
  * it into six meaningless fields. The port is always the last one, and everything between the
  * local port and it is the host however many colons it contains.
  */
-private fun parseForwardRule(line: String, hostId: String?, index: Int): ForwardEntry? {
+private fun parseForwardRule(
+    line: String,
+    hostId: String?,
+    index: Int,
+): ForwardEntry? {
     val spaceAt = line.indexOfFirst { it.isWhitespace() }
     val rulePart: String
     val label: String?
@@ -192,18 +201,19 @@ private fun parseForwardRule(line: String, hostId: String?, index: Int): Forward
                 name = label,
             )
         }
-        "D" -> body.toPortOrNull()?.let {
-            ForwardEntry(
-                id = id,
-                type = ForwardType.DYNAMIC,
-                localPort = it,
-                hostId = hostId,
-                listenHost = listenHost,
-                enabled = enabled,
-                autoStart = autoStart,
-                name = label,
-            )
-        }
+        "D" ->
+            body.toPortOrNull()?.let {
+                ForwardEntry(
+                    id = id,
+                    type = ForwardType.DYNAMIC,
+                    localPort = it,
+                    hostId = hostId,
+                    listenHost = listenHost,
+                    enabled = enabled,
+                    autoStart = autoStart,
+                    name = label,
+                )
+            }
         else -> null
     }
 }
@@ -231,9 +241,10 @@ fun String.toPortOrNull(): Int? = trim().toIntOrNull()?.takeIf { it in PORT_RANG
  * it resolves to is the server's business, and a name that resolves to nothing fails the forward with
  * the server's own message, which is a better answer than this function guessing.
  */
-fun String.isForwardHostName(): Boolean = isNotBlank() &&
-    length <= MAX_FORWARD_HOST_LENGTH &&
-    none { it.isWhitespace() || it.isISOControl() }
+fun String.isForwardHostName(): Boolean =
+    isNotBlank() &&
+        length <= MAX_FORWARD_HOST_LENGTH &&
+        none { it.isWhitespace() || it.isISOControl() }
 
 private const val MAX_FORWARD_HOST_LENGTH = 253
 
@@ -248,10 +259,11 @@ private const val MAX_FORWARD_NAME_LENGTH = 64
  * the pair has to be unique or the second bind fails; a remote rule's phone side is a dial-out and
  * holds nothing.
  */
-fun ForwardEntry.deviceListenAddress(): String? = when (type) {
-    ForwardType.LOCAL, ForwardType.DYNAMIC -> "$listenHost:$localPort"
-    ForwardType.REMOTE -> null
-}
+fun ForwardEntry.deviceListenAddress(): String? =
+    when (type) {
+        ForwardType.LOCAL, ForwardType.DYNAMIC -> "$listenHost:$localPort"
+        ForwardType.REMOTE -> null
+    }
 
 /**
  * Whether [this] and [other] would ask the device for the same listening socket.
@@ -260,8 +272,7 @@ fun ForwardEntry.deviceListenAddress(): String? = when (type) {
  * locally: what they would collide on is a server-side port, and the server is both the authority
  * on that and the one that says so when the bind is refused.
  */
-fun ForwardEntry.conflictsWith(other: ForwardEntry): Boolean =
-    id != other.id && deviceListenAddress() != null && deviceListenAddress() == other.deviceListenAddress()
+fun ForwardEntry.conflictsWith(other: ForwardEntry): Boolean = id != other.id && deviceListenAddress() != null && deviceListenAddress() == other.deviceListenAddress()
 
 /** One rule as a line of English for the editor and for a failure message. */
 fun ForwardEntry.describe(): String {
@@ -269,12 +280,13 @@ fun ForwardEntry.describe(): String {
     // Loopback reads as "localhost" rather than the literal it is stored as - the word is what the
     // rule means to a person, and every other interface is named as written.
     val bind = if (listenHost == DEFAULT_FORWARD_LISTEN_HOST) "localhost" else listenHost
-    return label + when (type) {
-        ForwardType.LOCAL -> "$bind:$localPort → ${remoteHost.orEmpty()}:${remotePort ?: 0}"
-        ForwardType.REMOTE -> {
-            val server = if (listenHost == DEFAULT_FORWARD_LISTEN_HOST) "server" else "server $listenHost"
-            "$server:${remotePort ?: 0} → ${localHost ?: "localhost"}:$localPort"
+    return label +
+        when (type) {
+            ForwardType.LOCAL -> "$bind:$localPort → ${remoteHost.orEmpty()}:${remotePort ?: 0}"
+            ForwardType.REMOTE -> {
+                val server = if (listenHost == DEFAULT_FORWARD_LISTEN_HOST) "server" else "server $listenHost"
+                "$server:${remotePort ?: 0} → ${localHost ?: "localhost"}:$localPort"
+            }
+            ForwardType.DYNAMIC -> "SOCKS5 proxy on $bind:$localPort"
         }
-        ForwardType.DYNAMIC -> "SOCKS5 proxy on $bind:$localPort"
-    }
 }

@@ -37,70 +37,75 @@ import javax.inject.Inject
  * defaults are exactly what the tests override to point the datagram at a loopback socket instead of
  * a real broadcast.
  */
-class WakeOnLan @Inject constructor() {
-
-    /**
-     * Sends one magic packet for [mac] to [address]:[port], and returns when the datagram is on the
-     * wire.
-     *
-     * A network call: callers must run it away from the main thread, exactly as they would a connect
-     * attempt. It throws whatever the socket throws — unknown host, no route, network gone — and
-     * deliberately does not catch anything itself, because the caller is the one holding the host's
-     * name and the snackbar that a failure should reach.
-     */
-    fun wake(mac: ByteArray, address: String = BROADCAST_ADDRESS, port: Int = DEFAULT_PORT) {
-        val packet = magicPacket(mac)
-        val destination = InetAddress.getByName(address)
-        DatagramSocket().use { socket ->
-            // 255.255.255.255 is refused outright by several platform stacks without SO_BROADCAST,
-            // and a directed broadcast (x.x.x.255) needs it everywhere.
-            socket.broadcast = true
-            socket.send(DatagramPacket(packet, packet.size, destination, port))
+class WakeOnLan
+    @Inject
+    constructor() {
+        /**
+         * Sends one magic packet for [mac] to [address]:[port], and returns when the datagram is on the
+         * wire.
+         *
+         * A network call: callers must run it away from the main thread, exactly as they would a connect
+         * attempt. It throws whatever the socket throws — unknown host, no route, network gone — and
+         * deliberately does not catch anything itself, because the caller is the one holding the host's
+         * name and the snackbar that a failure should reach.
+         */
+        fun wake(
+            mac: ByteArray,
+            address: String = BROADCAST_ADDRESS,
+            port: Int = DEFAULT_PORT,
+        ) {
+            val packet = magicPacket(mac)
+            val destination = InetAddress.getByName(address)
+            DatagramSocket().use { socket ->
+                // 255.255.255.255 is refused outright by several platform stacks without SO_BROADCAST,
+                // and a directed broadcast (x.x.x.255) needs it everywhere.
+                socket.broadcast = true
+                socket.send(DatagramPacket(packet, packet.size, destination, port))
+            }
         }
-    }
 
-    companion object {
-        /** The LAN broadcast address — the only one a sleeping NIC can be reached on. */
-        const val BROADCAST_ADDRESS = "255.255.255.255"
+        companion object {
+            /** The LAN broadcast address — the only one a sleeping NIC can be reached on. */
+            const val BROADCAST_ADDRESS = "255.255.255.255"
 
-        /**
-         * The discard port, which is Wake-on-LAN's canonical port.
-         *
-         * Named rather than inlined so the form's helper text, the sender and the tests cannot drift
-         * apart on what the app actually uses.
-         */
-        const val DEFAULT_PORT = 9
+            /**
+             * The discard port, which is Wake-on-LAN's canonical port.
+             *
+             * Named rather than inlined so the form's helper text, the sender and the tests cannot drift
+             * apart on what the app actually uses.
+             */
+            const val DEFAULT_PORT = 9
 
-        /** One MAC address, in bytes. Not six-and-something: a magic packet has no room for variance. */
-        const val MAC_LENGTH = 6
+            /** One MAC address, in bytes. Not six-and-something: a magic packet has no room for variance. */
+            const val MAC_LENGTH = 6
 
-        /** The sixteen `0xFF` bytes that lead a magic packet and mark it as one. */
-        const val SYNC_LENGTH = 6
+            /** The sixteen `0xFF` bytes that lead a magic packet and mark it as one. */
+            const val SYNC_LENGTH = 6
 
-        /** How many times the MAC is repeated after the sync stream — sixteen, per the spec. */
-        const val MAC_REPEATS = 16
+            /** How many times the MAC is repeated after the sync stream — sixteen, per the spec. */
+            const val MAC_REPEATS = 16
 
-        /**
-         * The 102-byte datagram for [mac]: `FF FF FF FF FF FF` then the address sixteen times.
-         *
-         * A plain builder with no cleverness, because there is nothing to be clever about — every
-         * byte of the layout is fixed by the spec the NICs implement, and the one thing this function
-         * must never do is accept a MAC of the wrong length, which would silently shift every
-         * repetition and produce a packet that wakes nothing.
-         */
-        fun magicPacket(mac: ByteArray): ByteArray {
-            require(mac.size == MAC_LENGTH) { "A Wake-on-LAN MAC is $MAC_LENGTH bytes, got ${mac.size}" }
-            return ByteArray(SYNC_LENGTH + MAC_REPEATS * MAC_LENGTH).also { packet ->
-                for (i in 0 until SYNC_LENGTH) packet[i] = 0xFF.toByte()
-                for (repeat in 0 until MAC_REPEATS) {
-                    for (i in 0 until MAC_LENGTH) {
-                        packet[SYNC_LENGTH + repeat * MAC_LENGTH + i] = mac[i]
+            /**
+             * The 102-byte datagram for [mac]: `FF FF FF FF FF FF` then the address sixteen times.
+             *
+             * A plain builder with no cleverness, because there is nothing to be clever about — every
+             * byte of the layout is fixed by the spec the NICs implement, and the one thing this function
+             * must never do is accept a MAC of the wrong length, which would silently shift every
+             * repetition and produce a packet that wakes nothing.
+             */
+            fun magicPacket(mac: ByteArray): ByteArray {
+                require(mac.size == MAC_LENGTH) { "A Wake-on-LAN MAC is $MAC_LENGTH bytes, got ${mac.size}" }
+                return ByteArray(SYNC_LENGTH + MAC_REPEATS * MAC_LENGTH).also { packet ->
+                    for (i in 0 until SYNC_LENGTH) packet[i] = 0xFF.toByte()
+                    for (repeat in 0 until MAC_REPEATS) {
+                        for (i in 0 until MAC_LENGTH) {
+                            packet[SYNC_LENGTH + repeat * MAC_LENGTH + i] = mac[i]
+                        }
                     }
                 }
             }
         }
     }
-}
 
 /**
  * Reads a MAC address in any of the spellings a user might type, or null if it is not one.

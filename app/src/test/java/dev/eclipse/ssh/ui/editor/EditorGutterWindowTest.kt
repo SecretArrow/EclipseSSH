@@ -18,10 +18,11 @@ import org.junit.Test
  * and it never names a line that is not there.
  */
 class EditorGutterWindowTest {
-
     /** A document of [lines] lines, each [heightPx] tall, in the layout's own coordinates. */
-    private fun tops(lines: Int, heightPx: Float = 20f) =
-        FloatArray(lines + 1) { it * heightPx }
+    private fun tops(
+        lines: Int,
+        heightPx: Float = 20f,
+    ) = FloatArray(lines + 1) { it * heightPx }
 
     @Test
     fun `a document at the top shows the lines at the top`() {
@@ -90,7 +91,6 @@ class EditorGutterWindowTest {
  * line count of the document it is in.
  */
 class EditorDocumentPositionTest {
-
     @Test
     fun `an empty document is line one, column one, one line`() {
         assertThat(documentPosition("", 0)).isEqualTo(DocumentPosition(line = 1, column = 1, lines = 1))

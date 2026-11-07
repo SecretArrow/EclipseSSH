@@ -7,7 +7,6 @@ import org.junit.Test
 import java.io.IOException
 
 class Socks5HandshakeTest {
-
     @Test
     fun `connect request uses ipv4 address type for dotted quad`() {
         val bytes = Socks5Handshake.connectRequestBytes("192.168.1.50", 22)
@@ -22,9 +21,10 @@ class Socks5HandshakeTest {
     fun `connect request uses domain address type with length prefix`() {
         val bytes = Socks5Handshake.connectRequestBytes("example.com", 1080)
         // VER=5, CMD=1, RSV=0, ATYP=3(domain), len=11, "example.com", port 1080 (0x04 0x38)
-        val expected = byteArrayOf(5, 1, 0, 3, 11) +
-            "example.com".toByteArray(Charsets.US_ASCII) +
-            byteArrayOf(0x04, 0x38.toByte())
+        val expected =
+            byteArrayOf(5, 1, 0, 3, 11) +
+                "example.com".toByteArray(Charsets.US_ASCII) +
+                byteArrayOf(0x04, 0x38.toByte())
         assertArrayEquals(expected, bytes)
     }
 
@@ -57,10 +57,11 @@ class Socks5HandshakeTest {
     fun `auth request encodes rfc1929 username and password`() {
         val bytes = Socks5Handshake.authRequestBytes("alice", "s3cret")
         // VER=1, ULEN=5, "alice", PLEN=6, "s3cret"
-        val expected = byteArrayOf(1, 5) +
-            "alice".toByteArray(Charsets.US_ASCII) +
-            byteArrayOf(6) +
-            "s3cret".toByteArray(Charsets.US_ASCII)
+        val expected =
+            byteArrayOf(1, 5) +
+                "alice".toByteArray(Charsets.US_ASCII) +
+                byteArrayOf(6) +
+                "s3cret".toByteArray(Charsets.US_ASCII)
         assertArrayEquals(expected, bytes)
     }
 
@@ -80,9 +81,10 @@ class Socks5HandshakeTest {
     @Test
     fun `connect request uses ipv6 address type for literal`() {
         val bytes = Socks5Handshake.connectRequestBytes("2001:db8::1", 22)
-        val expected = byteArrayOf(5, 1, 0, 4) +
-            byteArrayOf(0x20, 0x01, 0x0d, 0xb8.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1) +
-            byteArrayOf(0, 22)
+        val expected =
+            byteArrayOf(5, 1, 0, 4) +
+                byteArrayOf(0x20, 0x01, 0x0d, 0xb8.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1) +
+                byteArrayOf(0, 22)
         assertArrayEquals(expected, bytes)
     }
 
@@ -107,8 +109,22 @@ class Socks5HandshakeTest {
         val address = Socks5Handshake.parseIpv6("::ffff:192.168.1.1")
         assertArrayEquals(
             byteArrayOf(
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff.toByte(), 0xff.toByte(),
-                192.toByte(), 168.toByte(), 1, 1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0xff.toByte(),
+                0xff.toByte(),
+                192.toByte(),
+                168.toByte(),
+                1,
+                1,
             ),
             address,
         )
@@ -119,8 +135,22 @@ class Socks5HandshakeTest {
         val address = Socks5Handshake.parseIpv6("2001:0db8:85a3:0000:0000:8a2e:0370:7334")
         assertArrayEquals(
             byteArrayOf(
-                0x20, 0x01, 0x0d, 0xb8.toByte(), 0x85.toByte(), 0xa3.toByte(), 0, 0,
-                0, 0, 0x8a.toByte(), 0x2e, 0x03, 0x70, 0x73, 0x34,
+                0x20,
+                0x01,
+                0x0d,
+                0xb8.toByte(),
+                0x85.toByte(),
+                0xa3.toByte(),
+                0,
+                0,
+                0,
+                0,
+                0x8a.toByte(),
+                0x2e,
+                0x03,
+                0x70,
+                0x73,
+                0x34,
             ),
             address,
         )

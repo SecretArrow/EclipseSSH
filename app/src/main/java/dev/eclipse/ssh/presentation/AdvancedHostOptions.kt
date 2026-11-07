@@ -3,23 +3,23 @@ package dev.eclipse.ssh.presentation
 import dev.eclipse.ssh.data.model.ALGORITHM_LIST_MAX_LENGTH
 import dev.eclipse.ssh.data.model.AUTH_TIMEOUT_RANGE
 import dev.eclipse.ssh.data.model.DEFAULT_AUTH_TIMEOUT_SECONDS
-import dev.eclipse.ssh.data.model.ENVIRONMENT_MAX_LENGTH
-import dev.eclipse.ssh.data.model.ForwardEntry
-import dev.eclipse.ssh.data.model.MAX_SAVED_FORWARDS
-import dev.eclipse.ssh.data.model.STARTUP_COMMAND_MAX_LENGTH
-import dev.eclipse.ssh.data.model.decodeForwardRules
-import dev.eclipse.ssh.data.model.encodeForwardRules
 import dev.eclipse.ssh.data.model.DEFAULT_MAX_RECONNECT_ATTEMPTS
 import dev.eclipse.ssh.data.model.DEFAULT_SERVER_ALIVE_COUNT_MAX
 import dev.eclipse.ssh.data.model.DEFAULT_TERMINAL_TYPE
+import dev.eclipse.ssh.data.model.ENVIRONMENT_MAX_LENGTH
+import dev.eclipse.ssh.data.model.ForwardEntry
 import dev.eclipse.ssh.data.model.HostKeyPolicy
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.model.INHERIT_RECONNECT_BACKOFF
 import dev.eclipse.ssh.data.model.MAX_RECONNECT_ATTEMPTS_RANGE
+import dev.eclipse.ssh.data.model.MAX_SAVED_FORWARDS
 import dev.eclipse.ssh.data.model.RECONNECT_BACKOFF_RANGE
 import dev.eclipse.ssh.data.model.SERVER_ALIVE_COUNT_RANGE
+import dev.eclipse.ssh.data.model.STARTUP_COMMAND_MAX_LENGTH
 import dev.eclipse.ssh.data.model.TERMINAL_COLUMNS_RANGE
 import dev.eclipse.ssh.data.model.TERMINAL_ROWS_RANGE
+import dev.eclipse.ssh.data.model.decodeForwardRules
+import dev.eclipse.ssh.data.model.encodeForwardRules
 import dev.eclipse.ssh.ssh.AlgorithmKind
 import dev.eclipse.ssh.ssh.AlgorithmListReview
 import dev.eclipse.ssh.ssh.parseEnvironment
@@ -101,12 +101,12 @@ internal data class AdvancedHostOptions(
      */
     val forwards: List<ForwardEntry> = emptyList(),
 ) {
-
     val serverAliveCountValid: Boolean = serverAliveCountMax.toIntOrNull() in SERVER_ALIVE_COUNT_RANGE
     val authTimeoutValid: Boolean = authTimeoutSeconds.toIntOrNull() in AUTH_TIMEOUT_RANGE
     val maxReconnectAttemptsValid: Boolean = maxReconnectAttempts.toIntOrNull() in MAX_RECONNECT_ATTEMPTS_RANGE
-    val backoffValid: Boolean = reconnectBackoffSeconds.isBlank() ||
-        reconnectBackoffSeconds.toIntOrNull() in RECONNECT_BACKOFF_RANGE
+    val backoffValid: Boolean =
+        reconnectBackoffSeconds.isBlank() ||
+            reconnectBackoffSeconds.toIntOrNull() in RECONNECT_BACKOFF_RANGE
     val columnsValid: Boolean = terminalColumns.isBlank() || terminalColumns.toIntOrNull() in TERMINAL_COLUMNS_RANGE
     val rowsValid: Boolean = terminalRows.isBlank() || terminalRows.toIntOrNull() in TERMINAL_ROWS_RANGE
 
@@ -131,8 +131,9 @@ internal data class AdvancedHostOptions(
      * the section append rather than replace and a paste is a paste. Bounded here as well as at the
      * importer, so the form cannot save what a restore would truncate. See [ALGORITHM_LIST_MAX_LENGTH].
      */
-    val algorithmListsValid: Boolean = listOf(ciphers, kexAlgorithms, macs, hostKeyAlgorithms)
-        .all { it.length <= ALGORITHM_LIST_MAX_LENGTH }
+    val algorithmListsValid: Boolean =
+        listOf(ciphers, kexAlgorithms, macs, hostKeyAlgorithms)
+            .all { it.length <= ALGORITHM_LIST_MAX_LENGTH }
 
     /** Bounded so a pasted file cannot become a startup command. See [STARTUP_COMMAND_MAX_LENGTH]. */
     val startupCommandValid: Boolean = startupCommand.length <= STARTUP_COMMAND_MAX_LENGTH
@@ -144,10 +145,12 @@ internal data class AdvancedHostOptions(
      * lines are usable, so a line it drops is a line the user should be told about, and asking it is the
      * only way the message and the behaviour cannot drift apart.
      */
-    val environmentValid: Boolean = environment.length <= ENVIRONMENT_MAX_LENGTH &&
-        parseEnvironment(environment).size == environment.lines().count { line ->
-            line.trim().let { it.isNotEmpty() && !it.startsWith('#') }
-        }
+    val environmentValid: Boolean =
+        environment.length <= ENVIRONMENT_MAX_LENGTH &&
+            parseEnvironment(environment).size ==
+            environment.lines().count { line ->
+                line.trim().let { it.isNotEmpty() && !it.startsWith('#') }
+            }
 
     /** No more rules than a host may carry, so an editor cannot build a profile an import would truncate. */
     val forwardsValid: Boolean = forwards.size <= MAX_SAVED_FORWARDS
@@ -158,11 +161,12 @@ internal data class AdvancedHostOptions(
      * The keep-alive interval itself is not here: it belongs to [HostFormDraft], which has validated it
      * since before this section existed. This is only about the fields the section owns.
      */
-    val isValid: Boolean = serverAliveCountValid && authTimeoutValid && maxReconnectAttemptsValid &&
-        backoffValid && columnsValid && rowsValid &&
-        cipherReview.isAcceptable && kexReview.isAcceptable && macReview.isAcceptable &&
-        hostKeyAlgorithmReview.isAcceptable && algorithmListsValid &&
-        startupCommandValid && environmentValid && forwardsValid
+    val isValid: Boolean =
+        serverAliveCountValid && authTimeoutValid && maxReconnectAttemptsValid &&
+            backoffValid && columnsValid && rowsValid &&
+            cipherReview.isAcceptable && kexReview.isAcceptable && macReview.isAcceptable &&
+            hostKeyAlgorithmReview.isAcceptable && algorithmListsValid &&
+            startupCommandValid && environmentValid && forwardsValid
 
     /**
      * Whether anything here differs from the shipped defaults, which is what enables Reset.
@@ -175,39 +179,43 @@ internal data class AdvancedHostOptions(
     val isDefault: Boolean get() = this == DEFAULTS
 
     /** Copies these options onto [profile]. Blank optional fields become their sentinels, not zeroes. */
-    fun applyTo(profile: HostProfile): HostProfile = profile.copy(
-        compression = compression,
-        keepAliveEnabled = keepAliveEnabled,
-        serverAliveCountMax = serverAliveCountMax.toIntOrNull()?.coerceIn(SERVER_ALIVE_COUNT_RANGE)
-            ?: DEFAULT_SERVER_ALIVE_COUNT_MAX,
-        authTimeoutSeconds = authTimeoutSeconds.toIntOrNull()?.coerceIn(AUTH_TIMEOUT_RANGE)
-            ?: DEFAULT_AUTH_TIMEOUT_SECONDS,
-        autoReconnect = autoReconnect,
-        maxReconnectAttempts = maxReconnectAttempts.toIntOrNull()?.coerceIn(MAX_RECONNECT_ATTEMPTS_RANGE)
-            ?: DEFAULT_MAX_RECONNECT_ATTEMPTS,
-        reconnectBackoffSeconds = reconnectBackoffSeconds.toIntOrNull()?.coerceIn(RECONNECT_BACKOFF_RANGE)
-            ?: INHERIT_RECONNECT_BACKOFF,
-        usePty = usePty,
-        terminalType = terminalType.trim().ifBlank { DEFAULT_TERMINAL_TYPE },
-        terminalColumns = terminalColumns.toIntOrNull()?.coerceIn(TERMINAL_COLUMNS_RANGE) ?: 0,
-        terminalRows = terminalRows.toIntOrNull()?.coerceIn(TERMINAL_ROWS_RANGE) ?: 0,
-        keyboardInteractiveAuth = keyboardInteractiveAuth,
-        agentForwarding = agentForwarding,
-        legacyAlgorithms = legacyAlgorithms,
-        // Blank becomes null, not "", because null is the column's "no opinion" and an empty list would
-        // be a real instruction to propose nothing. See [Migrations.MIGRATION_12_13].
-        ciphers = ciphers.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
-        kexAlgorithms = kexAlgorithms.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
-        macs = macs.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
-        hostKeyAlgorithms = hostKeyAlgorithms.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
-        startupCommand = startupCommand.trim().take(STARTUP_COMMAND_MAX_LENGTH),
-        environment = environment.trim().take(ENVIRONMENT_MAX_LENGTH),
-        savedForwards = encodeForwardRules(forwards),
-        hostKeyPolicy = hostKeyPolicy,
-    )
+    fun applyTo(profile: HostProfile): HostProfile =
+        profile.copy(
+            compression = compression,
+            keepAliveEnabled = keepAliveEnabled,
+            serverAliveCountMax =
+                serverAliveCountMax.toIntOrNull()?.coerceIn(SERVER_ALIVE_COUNT_RANGE)
+                    ?: DEFAULT_SERVER_ALIVE_COUNT_MAX,
+            authTimeoutSeconds =
+                authTimeoutSeconds.toIntOrNull()?.coerceIn(AUTH_TIMEOUT_RANGE)
+                    ?: DEFAULT_AUTH_TIMEOUT_SECONDS,
+            autoReconnect = autoReconnect,
+            maxReconnectAttempts =
+                maxReconnectAttempts.toIntOrNull()?.coerceIn(MAX_RECONNECT_ATTEMPTS_RANGE)
+                    ?: DEFAULT_MAX_RECONNECT_ATTEMPTS,
+            reconnectBackoffSeconds =
+                reconnectBackoffSeconds.toIntOrNull()?.coerceIn(RECONNECT_BACKOFF_RANGE)
+                    ?: INHERIT_RECONNECT_BACKOFF,
+            usePty = usePty,
+            terminalType = terminalType.trim().ifBlank { DEFAULT_TERMINAL_TYPE },
+            terminalColumns = terminalColumns.toIntOrNull()?.coerceIn(TERMINAL_COLUMNS_RANGE) ?: 0,
+            terminalRows = terminalRows.toIntOrNull()?.coerceIn(TERMINAL_ROWS_RANGE) ?: 0,
+            keyboardInteractiveAuth = keyboardInteractiveAuth,
+            agentForwarding = agentForwarding,
+            legacyAlgorithms = legacyAlgorithms,
+            // Blank becomes null, not "", because null is the column's "no opinion" and an empty list would
+            // be a real instruction to propose nothing. See [Migrations.MIGRATION_12_13].
+            ciphers = ciphers.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
+            kexAlgorithms = kexAlgorithms.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
+            macs = macs.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
+            hostKeyAlgorithms = hostKeyAlgorithms.trim().take(ALGORITHM_LIST_MAX_LENGTH).ifBlank { null },
+            startupCommand = startupCommand.trim().take(STARTUP_COMMAND_MAX_LENGTH),
+            environment = environment.trim().take(ENVIRONMENT_MAX_LENGTH),
+            savedForwards = encodeForwardRules(forwards),
+            hostKeyPolicy = hostKeyPolicy,
+        )
 
     companion object {
-
         val DEFAULTS = AdvancedHostOptions()
 
         /**
@@ -226,12 +234,23 @@ internal data class AdvancedHostOptions(
                 authTimeoutSeconds = profile.authTimeoutSeconds.toString(),
                 autoReconnect = profile.autoReconnect,
                 maxReconnectAttempts = profile.maxReconnectAttempts.toString(),
-                reconnectBackoffSeconds = profile.reconnectBackoffSeconds
-                    .takeIf { it != INHERIT_RECONNECT_BACKOFF }?.toString().orEmpty(),
+                reconnectBackoffSeconds =
+                    profile.reconnectBackoffSeconds
+                        .takeIf { it != INHERIT_RECONNECT_BACKOFF }
+                        ?.toString()
+                        .orEmpty(),
                 usePty = profile.usePty,
                 terminalType = profile.terminalType,
-                terminalColumns = profile.terminalColumns.takeIf { it != 0 }?.toString().orEmpty(),
-                terminalRows = profile.terminalRows.takeIf { it != 0 }?.toString().orEmpty(),
+                terminalColumns =
+                    profile.terminalColumns
+                        .takeIf { it != 0 }
+                        ?.toString()
+                        .orEmpty(),
+                terminalRows =
+                    profile.terminalRows
+                        .takeIf { it != 0 }
+                        ?.toString()
+                        .orEmpty(),
                 keyboardInteractiveAuth = profile.keyboardInteractiveAuth,
                 agentForwarding = profile.agentForwarding,
                 legacyAlgorithms = profile.legacyAlgorithms,

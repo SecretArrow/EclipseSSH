@@ -1,12 +1,12 @@
 package dev.eclipse.ssh.linux
 
-import java.io.File
-import java.util.zip.GZIPOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.archivers.tar.TarConstants
+import java.io.File
+import java.util.zip.GZIPOutputStream
 
 /**
  * The workspace's own lifecycle: how big it is, what clearing it means, and how it survives an
@@ -49,8 +49,7 @@ class LinuxWorkspaceManager(
     // into the tree — or at a directory full of files — was counted as this workspace's own bytes,
     // and a self-referential link (`ln -s . loop`, which project tooling does leave behind) made
     // the walk never terminate.
-    private fun entries(): Sequence<File> =
-        if (workspaceDir.isDirectory) walkTreeNoFollow(workspaceDir) else emptySequence()
+    private fun entries(): Sequence<File> = if (workspaceDir.isDirectory) walkTreeNoFollow(workspaceDir) else emptySequence()
 
     // A symlink is not content: it holds a target path, and its target's bytes are this workspace's
     // only when the target is a real entry the walk also yields. Counting through the link is how
@@ -86,7 +85,9 @@ class LinuxWorkspaceManager(
      * replacement could not be made.
      */
     fun ensureExists(): Boolean {
-        val linked = java.nio.file.Files.isSymbolicLink(workspaceDir.toPath())
+        val linked =
+            java.nio.file.Files
+                .isSymbolicLink(workspaceDir.toPath())
         if (workspaceDir.isDirectory && !linked) return false
         deleteTreeNoFollow(workspaceDir)
         workspaceDir.mkdirs()
@@ -98,96 +99,105 @@ class LinuxWorkspaceManager(
      * short but project trees are not, and GNU's `./PaxHeaders` noise would show up on desktop
      * extractors.
      */
-    suspend fun snapshotTo(target: File): File = withContext(Dispatchers.IO) {
-        target.parentFile?.mkdirs()
-        val tmp = File(target.parentFile, target.name + ".part")
-        GZIPOutputStream(tmp.outputStream().buffered()).use { gzip ->
-            TarArchiveOutputStream(gzip).use { tar ->
-                tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
-                tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
-                if (workspaceDir.isDirectory) {
-                    // A link is written as a link, never as what it points at. Following one here
-                    // would copy another tree's bytes into the user's snapshot, count them twice
-                    // when the link points back inside, or — for `ln -s . loop` — never finish,
-                    // writing an unbounded tar until the device fills up. restoreFrom already
-                    // reads LF_SYMLINK back, so the round trip is unchanged for real trees.
-                    walkTreeNoFollow(workspaceDir)
-                        .filter { it != workspaceDir }
-                        .forEach { file ->
-                            val name = file.relativeTo(workspaceDir).path
-                            val linkTarget = if (java.nio.file.Files.isSymbolicLink(file.toPath())) {
-                                // toString, not a resolved path: the entry must carry the target as
-                                // the link stores it (relative links stay relative, so a restore
-                                // lands in the same shape it was archived in).
-                                java.nio.file.Files.readSymbolicLink(file.toPath()).toString()
-                            } else {
-                                null
-                            }
-                            val entry = if (linkTarget != null) {
-                                TarArchiveEntry(name, TarConstants.LF_SYMLINK).apply {
-                                    linkName = linkTarget
+    suspend fun snapshotTo(target: File): File =
+        withContext(Dispatchers.IO) {
+            target.parentFile?.mkdirs()
+            val tmp = File(target.parentFile, target.name + ".part")
+            GZIPOutputStream(tmp.outputStream().buffered()).use { gzip ->
+                TarArchiveOutputStream(gzip).use { tar ->
+                    tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
+                    tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
+                    if (workspaceDir.isDirectory) {
+                        // A link is written as a link, never as what it points at. Following one here
+                        // would copy another tree's bytes into the user's snapshot, count them twice
+                        // when the link points back inside, or — for `ln -s . loop` — never finish,
+                        // writing an unbounded tar until the device fills up. restoreFrom already
+                        // reads LF_SYMLINK back, so the round trip is unchanged for real trees.
+                        walkTreeNoFollow(workspaceDir)
+                            .filter { it != workspaceDir }
+                            .forEach { file ->
+                                val name = file.relativeTo(workspaceDir).path
+                                val linkTarget =
+                                    if (java.nio.file.Files
+                                            .isSymbolicLink(file.toPath())
+                                    ) {
+                                        // toString, not a resolved path: the entry must carry the target as
+                                        // the link stores it (relative links stay relative, so a restore
+                                        // lands in the same shape it was archived in).
+                                        java.nio.file.Files
+                                            .readSymbolicLink(file.toPath())
+                                            .toString()
+                                    } else {
+                                        null
+                                    }
+                                val entry =
+                                    if (linkTarget != null) {
+                                        TarArchiveEntry(name, TarConstants.LF_SYMLINK).apply {
+                                            linkName = linkTarget
+                                        }
+                                    } else {
+                                        TarArchiveEntry(file, name).apply {
+                                            if (file.canExecute()) mode = mode or 0b001_001_001
+                                        }
+                                    }
+                                tar.putArchiveEntry(entry)
+                                // Regular files only: opening anything else is a hazard rather than an
+                                // omission — a fifo the workspace holds would block this read until a
+                                // writer appeared, hanging the snapshot (and the uninstall behind it).
+                                if (linkTarget == null && file.isRegularFileNoFollow()) {
+                                    file.inputStream().use { input -> input.copyTo(tar) }
                                 }
-                            } else {
-                                TarArchiveEntry(file, name).apply {
-                                    if (file.canExecute()) mode = mode or 0b001_001_001
-                                }
+                                tar.closeArchiveEntry()
                             }
-                            tar.putArchiveEntry(entry)
-                            // Regular files only: opening anything else is a hazard rather than an
-                            // omission — a fifo the workspace holds would block this read until a
-                            // writer appeared, hanging the snapshot (and the uninstall behind it).
-                            if (linkTarget == null && file.isRegularFileNoFollow()) {
-                                file.inputStream().use { input -> input.copyTo(tar) }
-                            }
-                            tar.closeArchiveEntry()
-                        }
+                    }
                 }
             }
+            check(tmp.renameTo(target)) { "could not move the workspace snapshot into place at $target" }
+            target
         }
-        check(tmp.renameTo(target)) { "could not move the workspace snapshot into place at $target" }
-        target
-    }
 
     /**
      * Replaces the workspace's contents with [archive]'s. The directory is cleared first, so a
      * restore is deterministic; extraction goes through the shared [resolveInsideRoot] guard like
      * every other archive this app opens.
      */
-    suspend fun restoreFrom(archive: File): Unit = withContext(Dispatchers.IO) {
-        check(archive.isFile) { "no workspace snapshot at $archive" }
-        clear()
-        // Through the shared gzip-aware opener: this snapshot is written gzipped, and a raw
-        // TarArchiveInputStream would read it as empty — after clear(), that is the user's
-        // workspace deleted with nothing restored in its place.
-        openTarStream(archive, 64 * 1024).use { tar ->
-            while (true) {
-                val entry = tar.nextTarEntry ?: break
-                val target = resolveInsideRoot(workspaceDir, entry.name)
-                when (entry.linkFlag) {
-                    TarArchiveEntry.LF_DIR -> target.mkdirs()
-                    TarArchiveEntry.LF_SYMLINK -> {
-                        target.parentFile?.mkdirs()
-                        // The snapshot is written by this app, but a moved or edited backup file
-                        // must not become an escape hatch: same link-target rule as the rootfs.
-                        resolveLinkInsideRoot(workspaceDir, entry.name, entry.linkName)
-                        target.delete()
-                        deleteTreeNoFollow(target)
-                        java.nio.file.Files.createSymbolicLink(
-                            target.toPath(),
-                            java.nio.file.Path.of(entry.linkName),
-                        )
-                    }
-                    TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
-                        target.parentFile?.mkdirs()
-                        target.outputStream().use { output -> tar.copyTo(output) }
-                        target.setExecutable((entry.mode and 0b001_001_001) != 0, true)
-                    }
-                    else -> {
-                        // Device nodes and fifos cannot exist under filesDir and have no business
-                        // in a workspace snapshot; skip rather than fail the whole restore.
+    suspend fun restoreFrom(archive: File): Unit =
+        withContext(Dispatchers.IO) {
+            check(archive.isFile) { "no workspace snapshot at $archive" }
+            clear()
+            // Through the shared gzip-aware opener: this snapshot is written gzipped, and a raw
+            // TarArchiveInputStream would read it as empty — after clear(), that is the user's
+            // workspace deleted with nothing restored in its place.
+            openTarStream(archive, 64 * 1024).use { tar ->
+                while (true) {
+                    val entry = tar.nextTarEntry ?: break
+                    val target = resolveInsideRoot(workspaceDir, entry.name)
+                    when (entry.linkFlag) {
+                        TarArchiveEntry.LF_DIR -> target.mkdirs()
+                        TarArchiveEntry.LF_SYMLINK -> {
+                            target.parentFile?.mkdirs()
+                            // The snapshot is written by this app, but a moved or edited backup file
+                            // must not become an escape hatch: same link-target rule as the rootfs.
+                            resolveLinkInsideRoot(workspaceDir, entry.name, entry.linkName)
+                            target.delete()
+                            deleteTreeNoFollow(target)
+                            java.nio.file.Files.createSymbolicLink(
+                                target.toPath(),
+                                java.nio.file.Path
+                                    .of(entry.linkName),
+                            )
+                        }
+                        TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
+                            target.parentFile?.mkdirs()
+                            target.outputStream().use { output -> tar.copyTo(output) }
+                            target.setExecutable((entry.mode and 0b001_001_001) != 0, true)
+                        }
+                        else -> {
+                            // Device nodes and fifos cannot exist under filesDir and have no business
+                            // in a workspace snapshot; skip rather than fail the whole restore.
+                        }
                     }
                 }
             }
         }
-    }
 }

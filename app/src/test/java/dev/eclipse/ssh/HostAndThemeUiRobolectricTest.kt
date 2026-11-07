@@ -28,7 +28,6 @@ import dev.eclipse.ssh.ui.actions.ActionSubject
 import dev.eclipse.ssh.ui.forward.PortForwardManagerActivity
 import dev.eclipse.ssh.ui.hosts.HostDetailsActivity
 import dev.eclipse.ssh.ui.settings.HostFormActivity
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Rule
@@ -39,6 +38,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The two controls the Hosts and Settings screens were rebuilt around: the terminal-theme dropdown and
@@ -62,7 +62,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class HostAndThemeUiRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -81,7 +80,9 @@ class HostAndThemeUiRobolectricTest {
         runCatching {
             val viewModel = viewModel()
             compose.runOnUiThread {
-                viewModel.uiState.value.hosts.filter { it.id.startsWith(ID_PREFIX) }.forEach(viewModel::deleteHost)
+                viewModel.uiState.value.hosts
+                    .filter { it.id.startsWith(ID_PREFIX) }
+                    .forEach(viewModel::deleteHost)
             }
         }
     }
@@ -108,7 +109,8 @@ class HostAndThemeUiRobolectricTest {
         // Every theme, by its display label: nine today, and this fails if one is ever unreachable.
         TerminalTheme.entries.forEach { theme ->
             assertWithMessage("the menu is missing ${theme.label}")
-                .that(compose.onAllNodesWithText(theme.label).fetchSemanticsNodes()).isNotEmpty()
+                .that(compose.onAllNodesWithText(theme.label).fetchSemanticsNodes())
+                .isNotEmpty()
         }
 
         compose.onAllNodesWithText(TerminalTheme.AMBER.label).onFirst().performClick()
@@ -134,7 +136,10 @@ class HostAndThemeUiRobolectricTest {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         pump()
 
-        assertThat(viewModel().uiState.value.settings.terminalTheme).isEqualTo(TerminalTheme.DARK.name)
+        assertThat(
+            viewModel()
+                .uiState.value.settings.terminalTheme,
+        ).isEqualTo(TerminalTheme.DARK.name)
         compose.onNodeWithContentDescription("Terminal theme, Dark").assertIsDisplayed()
     }
 
@@ -166,16 +171,20 @@ class HostAndThemeUiRobolectricTest {
 
         // Inside the window: nothing is hanging off the right edge where it cannot be tapped.
         assertWithMessage("the control runs past the screen")
-            .that(bounds.right.value).isAtMost(320f)
+            .that(bounds.right.value)
+            .isAtMost(320f)
         // Inside the budget the row gives it, so the title and subtitle keep the rest.
         assertWithMessage("the control took more than its share of the row")
-            .that(bounds.width.value).isAtMost(TRAILING_MAX_WIDTH_DP)
+            .that(bounds.width.value)
+            .isAtMost(TRAILING_MAX_WIDTH_DP)
         // One line: a wrapped label would make this roughly twice as tall.
         assertWithMessage("the label wrapped instead of ellipsizing")
-            .that(bounds.height.value).isAtMost(SINGLE_LINE_MAX_HEIGHT_DP)
+            .that(bounds.height.value)
+            .isAtMost(SINGLE_LINE_MAX_HEIGHT_DP)
         // Still on the same row as its title rather than pushed below it.
         assertWithMessage("the control fell off its row")
-            .that(bounds.top.value).isLessThan(root.bottom.value + SINGLE_LINE_MAX_HEIGHT_DP)
+            .that(bounds.top.value)
+            .isLessThan(root.bottom.value + SINGLE_LINE_MAX_HEIGHT_DP)
     }
 
     // ---------------------------------------------------------------- the host overflow menu
@@ -193,7 +202,8 @@ class HostAndThemeUiRobolectricTest {
         // Nothing on the card itself is a Connect control any more: the row itself connects (see the
         // test below), and it carries no "Connect" text of its own.
         assertWithMessage("the oversized Connect button is back on the card")
-            .that(compose.onAllNodesWithText("Connect").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Connect").fetchSemanticsNodes())
+            .isEmpty()
 
         openKebabMenu(host.name, "Connect")
         pump()
@@ -220,7 +230,8 @@ class HostAndThemeUiRobolectricTest {
         pump()
 
         assertWithMessage("tapping the card did not open the login")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
     }
 
@@ -240,10 +251,15 @@ class HostAndThemeUiRobolectricTest {
         pump()
 
         assertWithMessage("Remove deleted the host without asking")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
         // Nothing has been deleted yet: the profile is still in the list behind the dialog.
-        assertThat(viewModel().uiState.value.hosts.map(HostProfile::id)).contains(host.id)
+        assertThat(
+            viewModel()
+                .uiState.value.hosts
+                .map(HostProfile::id),
+        ).contains(host.id)
     }
 
     /**
@@ -276,11 +292,14 @@ class HostAndThemeUiRobolectricTest {
 
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("Edit did not open ${HostFormActivity::class.simpleName}")
-            .that(intent?.component?.className).isEqualTo(HostFormActivity::class.java.name)
+            .that(intent?.component?.className)
+            .isEqualTo(HostFormActivity::class.java.name)
         assertWithMessage("Edit did not carry the host it was opened from")
-            .that(intent?.getStringExtra(HostFormActivity.EXTRA_HOST_ID)).isEqualTo(host.id)
+            .that(intent?.getStringExtra(HostFormActivity.EXTRA_HOST_ID))
+            .isEqualTo(host.id)
         assertWithMessage("Edit still opened as a dialog over the list")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 
     /**
@@ -302,7 +321,10 @@ class HostAndThemeUiRobolectricTest {
 
         // Either the credential prompt opened, or an attempt is already under way with its own tab.
         val prompted = ShadowDialog.getShownDialogs().size > before
-        val attempted = viewModel().uiState.value.tabs.any { it.hostId == host.id }
+        val attempted =
+            viewModel()
+                .uiState.value.tabs
+                .any { it.hostId == host.id }
         assertWithMessage("Connect did nothing at all").that(prompted || attempted).isTrue()
     }
 
@@ -317,11 +339,12 @@ class HostAndThemeUiRobolectricTest {
     @Test
     @Config(qualifiers = "w320dp-h480dp-mdpi")
     fun theKebabStaysTappableAndTheCardStaysCompactOnANarrowScreen() {
-        val host = addHost(
-            "A deliberately long host name that cannot possibly fit",
-            hostname = "a-very-long-hostname.internal.example.test",
-            username = "a-long-username",
-        )
+        val host =
+            addHost(
+                "A deliberately long host name that cannot possibly fit",
+                hostname = "a-very-long-hostname.internal.example.test",
+                username = "a-long-username",
+            )
 
         val kebab = compose.onNodeWithContentDescription("More actions for ${host.name}")
         // Scrolled to first: at 480dp tall this card is the third in a seeded list, so it composes
@@ -338,9 +361,11 @@ class HostAndThemeUiRobolectricTest {
         val touchWidth = with(compose.density) { touch.width.toDp().value }
         val touchHeight = with(compose.density) { touch.height.toDp().value }
         assertWithMessage("the menu button is below the minimum touch target")
-            .that(minOf(touchWidth, touchHeight)).isAtLeast(MIN_TOUCH_TARGET_DP)
+            .that(minOf(touchWidth, touchHeight))
+            .isAtLeast(MIN_TOUCH_TARGET_DP)
         assertWithMessage("the menu button is off the right edge of a 320dp screen")
-            .that(bounds.right.value).isAtMost(320f)
+            .that(bounds.right.value)
+            .isAtMost(320f)
         // Compactness, stated structurally rather than as a magic height. The change that was asked
         // for was to take a full-width Connect button off the bottom of the card and put its actions
         // inline; a card that had grown one back would put the kebab on a row of its own, below the
@@ -348,14 +373,18 @@ class HostAndThemeUiRobolectricTest {
         // holds at any font scale or screen size, which a pixel bound would not.
         val nameBounds = compose.onNodeWithText(host.name, useUnmergedTree = true).getUnclippedBoundsInRoot()
         assertWithMessage("the actions are no longer on the same row as the host name")
-            .that(bounds.top.value).isLessThan(nameBounds.bottom.value)
+            .that(bounds.top.value)
+            .isLessThan(nameBounds.bottom.value)
         assertWithMessage("the actions are no longer on the same row as the host name")
-            .that(nameBounds.top.value).isLessThan(bounds.bottom.value)
+            .that(nameBounds.top.value)
+            .isLessThan(bounds.bottom.value)
         // One line, ellipsized: a name this long must not wrap and make every card in the list taller.
         assertWithMessage("the host name wrapped instead of ellipsizing")
-            .that(nameBounds.height.value).isAtMost(SINGLE_LINE_MAX_HEIGHT_DP)
+            .that(nameBounds.height.value)
+            .isAtMost(SINGLE_LINE_MAX_HEIGHT_DP)
         assertWithMessage("the host name runs past the screen")
-            .that(nameBounds.right.value).isAtMost(320f)
+            .that(nameBounds.right.value)
+            .isAtMost(320f)
 
         // And it still opens there, at that size.
         kebab.performClick()
@@ -388,9 +417,11 @@ class HostAndThemeUiRobolectricTest {
         lastChip.performScrollTo().assertIsDisplayed()
 
         assertWithMessage("the content column is inset like the 20dp margin never left")
-            .that(firstLabel.getUnclippedBoundsInRoot().left.value).isAtMost(28f)
+            .that(firstLabel.getUnclippedBoundsInRoot().left.value)
+            .isAtMost(28f)
         assertWithMessage("the content column does not reach the right edge of the screen")
-            .that(lastChip.getUnclippedBoundsInRoot().right.value).isAtLeast(290f)
+            .that(lastChip.getUnclippedBoundsInRoot().right.value)
+            .isAtLeast(290f)
     }
 
     // ---------------------------------------------------------------- pasting a credential
@@ -453,15 +484,18 @@ class HostAndThemeUiRobolectricTest {
 
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("Details did not open ${HostDetailsActivity::class.simpleName}")
-            .that(intent?.component?.className).isEqualTo(HostDetailsActivity::class.java.name)
+            .that(intent?.component?.className)
+            .isEqualTo(HostDetailsActivity::class.java.name)
         // The subject travels as a token rather than an extra, because the stats half of it has no
         // singleton behind it. Resolving the token is therefore the only way to assert *which* host the
         // window was opened on - and taking it here is safe: the test never launches the window itself.
         val subject = ActionRequests.take(intent?.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
         assertWithMessage("Details did not carry the host it was opened from")
-            .that((subject as? ActionSubject.HostDetails)?.hostId).isEqualTo(host.id)
+            .that((subject as? ActionSubject.HostDetails)?.hostId)
+            .isEqualTo(host.id)
         assertWithMessage("Details still opened as a dialog over the list")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 
     /**
@@ -480,14 +514,20 @@ class HostAndThemeUiRobolectricTest {
         openKebabMenu(host.name, "Favorite")
         compose.onNodeWithText("Favorite").performClick()
         pumpUntil(describe = { "the star never appeared" }) {
-            viewModel().uiState.value.hosts.firstOrNull { it.id == host.id }?.isFavorite == true
+            viewModel()
+                .uiState.value.hosts
+                .firstOrNull { it.id == host.id }
+                ?.isFavorite == true
         }
 
         // And back off, through the item's other label.
         openKebabMenu(host.name, "Unfavorite")
         compose.onNodeWithText("Unfavorite").performClick()
         pumpUntil(describe = { "the star never left" }) {
-            viewModel().uiState.value.hosts.firstOrNull { it.id == host.id }?.isFavorite == false
+            viewModel()
+                .uiState.value.hosts
+                .firstOrNull { it.id == host.id }
+                ?.isFavorite == false
         }
     }
 
@@ -536,7 +576,10 @@ class HostAndThemeUiRobolectricTest {
             compose.onAllNodesWithContentDescription("More actions for Original (copy)").fetchSemanticsNodes().isNotEmpty()
         }
 
-        val copies = viewModel().uiState.value.hosts.filter { it.host == "dup.example.test" }
+        val copies =
+            viewModel()
+                .uiState.value.hosts
+                .filter { it.host == "dup.example.test" }
         assertThat(copies).hasSize(2)
         assertThat(copies.map { it.id }.toSet()).hasSize(2)
         assertThat(copies.map { it.name }).containsExactly("Original", "Original (copy)")
@@ -565,13 +608,15 @@ class HostAndThemeUiRobolectricTest {
 
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("Port forwarding did not open ${PortForwardManagerActivity::class.simpleName}")
-            .that(intent?.component?.className).isEqualTo(PortForwardManagerActivity::class.java.name)
+            .that(intent?.component?.className)
+            .isEqualTo(PortForwardManagerActivity::class.java.name)
         // The token carries the host id *and* the runtime snapshot, and taking it is how this level can
         // see which host the manager was opened on at all - an id extra would have been readable, but
         // the statuses behind it are not something an intent can carry.
         val subject = ActionRequests.take(intent?.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
         assertWithMessage("Port forwarding did not carry the host it was opened from")
-            .that((subject as? ActionSubject.ForwardManager)?.hostId).isEqualTo(host.id)
+            .that((subject as? ActionSubject.ForwardManager)?.hostId)
+            .isEqualTo(host.id)
     }
 
     /**
@@ -590,7 +635,9 @@ class HostAndThemeUiRobolectricTest {
             viewModel().saveHost(host.copy(savedForwards = "L:8080:intranet.example:80\nD:1080"))
         }
         pumpUntil(describe = { "the rules never reached the host" }) {
-            viewModel().uiState.value.hosts.any { it.id == host.id && it.savedForwards.isNotBlank() }
+            viewModel()
+                .uiState.value.hosts
+                .any { it.id == host.id && it.savedForwards.isNotBlank() }
         }
 
         openKebabMenu(host.name, "Duplicate")
@@ -598,10 +645,15 @@ class HostAndThemeUiRobolectricTest {
         pump()
 
         assertWithMessage("Duplicate copied the host's rules without asking")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
         // No copy yet: the question is still open, and the profile list behind it is unchanged.
-        assertThat(viewModel().uiState.value.hosts.filter { it.host == "tun.example.test" }).hasSize(1)
+        assertThat(
+            viewModel()
+                .uiState.value.hosts
+                .filter { it.host == "tun.example.test" },
+        ).hasSize(1)
     }
 
     // ---------------------------------------------------------------- driving the app
@@ -617,16 +669,18 @@ class HostAndThemeUiRobolectricTest {
     ): HostProfile {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = ID_PREFIX + nextId++,
-            name = name,
-            host = hostname,
-            username = username,
-            port = port,
-        )
+        val profile =
+            HostProfile(
+                id = ID_PREFIX + nextId++,
+                name = name,
+                host = hostname,
+                username = username,
+                port = port,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host never reached the list" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
         pumpUntil(describe = { "the card never appeared for $name" }) {
             compose.onAllNodesWithContentDescription("More actions for $name").fetchSemanticsNodes().isNotEmpty()
@@ -671,7 +725,10 @@ class HostAndThemeUiRobolectricTest {
      * was never going to open. Each attempt re-finds the kebab for fresh coordinates; a menu that
      * does open is still asserted to hold the item, so a missing item stays a failure.
      */
-    private fun openKebabMenu(hostName: String, offering: String) {
+    private fun openKebabMenu(
+        hostName: String,
+        offering: String,
+    ) {
         val kebab = "More actions for $hostName"
         repeat(KEBAB_OPEN_ATTEMPTS) {
             compose.onNodeWithContentDescription(kebab).performClick()
@@ -694,12 +751,19 @@ class HostAndThemeUiRobolectricTest {
      * exception thrown during composition. `idleFor` rather than `idle` so the real `delay`s in the
      * DataStore and Room flows come due.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         check(waitFor(timeoutMs, condition)) { "timed out after ${timeoutMs}ms: ${describe()}" }
     }
 
     /** [pumpUntil]'s loop without the failure, for callers that retry rather than give up. */
-    private fun waitFor(timeoutMs: Long, condition: () -> Boolean): Boolean {
+    private fun waitFor(
+        timeoutMs: Long,
+        condition: () -> Boolean,
+    ): Boolean {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()

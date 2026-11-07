@@ -14,8 +14,10 @@ import kotlin.math.abs
  * thing that can change which face draws the cluster, and it is rare enough that measuring it costs
  * nothing worth avoiding.
  */
-internal fun clusterIsCertainlyOneCell(value: Char, combining: String): Boolean =
-    combining.isEmpty() && value.code in 0x20..0x7E
+internal fun clusterIsCertainlyOneCell(
+    value: Char,
+    combining: String,
+): Boolean = combining.isEmpty() && value.code in 0x20..0x7E
 
 /**
  * Whether a cluster of glyphs the renderer measured occupies the one cell the terminal allotted it.
@@ -47,7 +49,10 @@ internal fun clusterIsCertainlyOneCell(value: Char, combining: String): Boolean 
  * of a cell sits well above the sub-pixel rounding of a single measurement and well below the
  * difference a fallback or a wide glyph makes, which is at least two fifths of a cell.
  */
-internal fun clusterFitsOneCell(measuredWidth: Float, cellWidth: Float): Boolean {
+internal fun clusterFitsOneCell(
+    measuredWidth: Float,
+    cellWidth: Float,
+): Boolean {
     if (cellWidth <= 0f) return true
     return abs(measuredWidth - cellWidth) <= cellWidth * CELL_WIDTH_TOLERANCE_FRACTION
 }

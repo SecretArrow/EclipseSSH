@@ -32,11 +32,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEvent
@@ -69,7 +69,11 @@ import dev.eclipse.ssh.terminal.rowOverflow
  * reachable with one thumb.
  */
 @Stable
-class TerminalLatches(ctrl: Boolean = false, alt: Boolean = false, shift: Boolean = false) {
+class TerminalLatches(
+    ctrl: Boolean = false,
+    alt: Boolean = false,
+    shift: Boolean = false,
+) {
     var ctrl by mutableStateOf(ctrl)
         private set
     var alt by mutableStateOf(alt)
@@ -77,9 +81,17 @@ class TerminalLatches(ctrl: Boolean = false, alt: Boolean = false, shift: Boolea
     var shift by mutableStateOf(shift)
         private set
 
-    fun toggleCtrl() { ctrl = !ctrl }
-    fun toggleAlt() { alt = !alt }
-    fun toggleShift() { shift = !shift }
+    fun toggleCtrl() {
+        ctrl = !ctrl
+    }
+
+    fun toggleAlt() {
+        alt = !alt
+    }
+
+    fun toggleShift() {
+        shift = !shift
+    }
 
     /**
      * Toggle by latch id, for callers holding a [KeyBarCap] rather than a direct reference - the
@@ -95,12 +107,13 @@ class TerminalLatches(ctrl: Boolean = false, alt: Boolean = false, shift: Boolea
     }
 
     /** Whether [id] is armed, by the same ids [toggle] accepts. */
-    fun armed(id: String): Boolean = when (id) {
-        "CTRL" -> ctrl
-        "ALT" -> alt
-        "SHIFT" -> shift
-        else -> false
-    }
+    fun armed(id: String): Boolean =
+        when (id) {
+            "CTRL" -> ctrl
+            "ALT" -> alt
+            "SHIFT" -> shift
+            else -> false
+        }
 
     /** Reads the armed modifiers and disarms them, which is what pressing any other key does. */
     fun consume(): Triple<Boolean, Boolean, Boolean> {
@@ -116,16 +129,16 @@ class TerminalLatches(ctrl: Boolean = false, alt: Boolean = false, shift: Boolea
          * Survives rotation. An armed Ctrl is invisible state the user is relying on - losing it
          * because the device turned would send a bare `c` to a program they were trying to interrupt.
          */
-        val Saver: Saver<TerminalLatches, List<Boolean>> = Saver(
-            save = { listOf(it.ctrl, it.alt, it.shift) },
-            restore = { TerminalLatches(it[0], it[1], it[2]) },
-        )
+        val Saver: Saver<TerminalLatches, List<Boolean>> =
+            Saver(
+                save = { listOf(it.ctrl, it.alt, it.shift) },
+                restore = { TerminalLatches(it[0], it[1], it[2]) },
+            )
     }
 }
 
 @Composable
-fun rememberTerminalLatches(): TerminalLatches =
-    rememberSaveable(saver = TerminalLatches.Saver) { TerminalLatches() }
+fun rememberTerminalLatches(): TerminalLatches = rememberSaveable(saver = TerminalLatches.Saver) { TerminalLatches() }
 
 /**
  * The invisible field that owns the IME session, translating everything it produces into terminal
@@ -189,6 +202,7 @@ fun TerminalInputBridge(
     onComposing: (String) -> Unit = {},
 ) {
     var field by remember { mutableStateOf(sentinelValue()) }
+
     /**
      * The field content a reset has not reached yet. Setting [field] back to the sentinel is a
      * programmatic edit, and Compose pushes those to the platform on the next recomposition - so
@@ -198,6 +212,7 @@ fun TerminalInputBridge(
      * adopted value is exactly what the platform holds.
      */
     var resetPendingFrom by remember { mutableStateOf<String?>(null) }
+
     /**
      * The field's text as of the last edit, with the IME's provisional region cut out: the diff base
      * for the next one.
@@ -208,6 +223,7 @@ fun TerminalInputBridge(
      * deciding what to tell it next, and it is what keeps a composing region out of the pty.
      */
     var committedHeld by remember { mutableStateOf(SENTINEL) }
+
     /** What the IME last reported as provisional, which is what a reset must not tear. */
     var composingHeld by remember { mutableStateOf("") }
     BasicTextField(
@@ -245,51 +261,53 @@ fun TerminalInputBridge(
             composingHeld = step.composing
             onComposing(step.composing)
         },
-        modifier = modifier
-            .size(1.dp)
-            .focusRequester(focusRequester)
-            // Before the requester in the chain would report the focus of whatever is above it; after
-            // it, this observes the field itself. Losing focus ends the IME's session, so whatever it
-            // was holding goes with it: nothing will report the composition again, and a word left
-            // drawn at the cursor would be an artefact of a keyboard the user has already put away.
-            .onFocusChanged { state ->
-                if (!state.isFocused) {
-                    composingHeld = ""
-                    onComposing("")
-                }
-                onFocusChanged(state.isFocused)
-            }
-            .semantics { contentDescription = "Terminal input" }
-            .onPreviewKeyEvent { event ->
-                val handled = handleKeyEvent(event, latches, onKey, onChar)
-                // Enter that arrived as a key event is the moment the line is finished and the
-                // buffer's tail becomes history, which is the safe point to clear it: the IME has
-                // finished any composition before sending the key, and the next keystroke is a new
-                // line rather than the same frame. KeyDown only - the up event of the same press
-                // must not clear twice.
-                if (handled && event.type == KeyEventType.KeyDown &&
-                    TERMINAL_NAMED_KEYS[event.key] == TerminalKey.ENTER
-                ) {
-                    // Never while a composition is live: the reset is a programmatic edit, and the
-                    // IME's composition is a range *into* the text it replaces - tearing the field
-                    // out from under one is what makes a keyboard drop the word it was holding, so
-                    // the line is finished on the commit that follows instead.
-                    if (resetPendingFrom == null && composingHeld.isEmpty() &&
-                        field.text.length > SENTINEL.length
-                    ) {
-                        resetPendingFrom = committedHeld
-                        field = sentinelValue()
-                        committedHeld = SENTINEL
+        modifier =
+            modifier
+                .size(1.dp)
+                .focusRequester(focusRequester)
+                // Before the requester in the chain would report the focus of whatever is above it; after
+                // it, this observes the field itself. Losing focus ends the IME's session, so whatever it
+                // was holding goes with it: nothing will report the composition again, and a word left
+                // drawn at the cursor would be an artefact of a keyboard the user has already put away.
+                .onFocusChanged { state ->
+                    if (!state.isFocused) {
+                        composingHeld = ""
+                        onComposing("")
                     }
-                }
-                handled
-            },
+                    onFocusChanged(state.isFocused)
+                }.semantics { contentDescription = "Terminal input" }
+                .onPreviewKeyEvent { event ->
+                    val handled = handleKeyEvent(event, latches, onKey, onChar)
+                    // Enter that arrived as a key event is the moment the line is finished and the
+                    // buffer's tail becomes history, which is the safe point to clear it: the IME has
+                    // finished any composition before sending the key, and the next keystroke is a new
+                    // line rather than the same frame. KeyDown only - the up event of the same press
+                    // must not clear twice.
+                    if (handled && event.type == KeyEventType.KeyDown &&
+                        TERMINAL_NAMED_KEYS[event.key] == TerminalKey.ENTER
+                    ) {
+                        // Never while a composition is live: the reset is a programmatic edit, and the
+                        // IME's composition is a range *into* the text it replaces - tearing the field
+                        // out from under one is what makes a keyboard drop the word it was holding, so
+                        // the line is finished on the commit that follows instead.
+                        if (resetPendingFrom == null && composingHeld.isEmpty() &&
+                            field.text.length > SENTINEL.length
+                        ) {
+                            resetPendingFrom = committedHeld
+                            field = sentinelValue()
+                            committedHeld = SENTINEL
+                        }
+                    }
+                    handled
+                },
         // A terminal is not prose: autocorrect would rewrite commands, capitalisation would rewrite
         // paths, and an IME action would insert a newline the shell did not ask for. The type is what
         // carries that, and why - see [TERMINAL_KEYBOARD_OPTIONS].
         keyboardOptions = TERMINAL_KEYBOARD_OPTIONS,
         singleLine = true,
-        cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.Transparent),
+        cursorBrush =
+            androidx.compose.ui.graphics
+                .SolidColor(Color.Transparent),
     )
 }
 
@@ -357,17 +375,19 @@ private fun handleKeyEvent(
     onKey: (TerminalKey, Boolean, Boolean, Boolean) -> Unit,
     onChar: (Char, Boolean, Boolean) -> Unit,
 ): Boolean {
-    val action = mapTerminalKeyEvent(
-        keyDown = event.type == KeyEventType.KeyDown,
-        key = event.key,
-        codePoint = event.utf16CodePoint,
-        held = TerminalModifiers(
-            ctrl = event.isCtrlPressed,
-            alt = event.isAltPressed,
-            shift = event.isShiftPressed,
-        ),
-        armed = TerminalModifiers(ctrl = latches.ctrl, alt = latches.alt, shift = latches.shift),
-    )
+    val action =
+        mapTerminalKeyEvent(
+            keyDown = event.type == KeyEventType.KeyDown,
+            key = event.key,
+            codePoint = event.utf16CodePoint,
+            held =
+                TerminalModifiers(
+                    ctrl = event.isCtrlPressed,
+                    alt = event.isAltPressed,
+                    shift = event.isShiftPressed,
+                ),
+            armed = TerminalModifiers(ctrl = latches.ctrl, alt = latches.alt, shift = latches.shift),
+        )
     return when (action) {
         // Declined, so the latches are left alone: they are armed for the key the user is about to
         // type, and this was not it.
@@ -416,7 +436,10 @@ private fun sentinelValue() = TextFieldValue(SENTINEL, TextRange(SENTINEL.length
  * which is the deliberate choice - the alternative, clamping at the padding, is a terminal that
  * swallows the last few presses of a long hold instead of passing them on.
  */
-internal data class TerminalEdit(val deleted: Int, val inserted: String)
+internal data class TerminalEdit(
+    val deleted: Int,
+    val inserted: String,
+)
 
 /**
  * One incoming edit, decided: what the shell is told, what the field becomes, and what is provisional.
@@ -493,7 +516,10 @@ internal fun fieldStep(
  * composition and what came after it, and a keyboard that composed around existing text (none does
  * here) would get a diff against that, not against the guess.
  */
-internal fun committedFieldText(text: String, composition: TextRange?): String {
+internal fun committedFieldText(
+    text: String,
+    composition: TextRange?,
+): String {
     val range = composition ?: return text
     if (range.collapsed) return text
     val from = minOf(range.start, range.end).coerceIn(0, text.length)
@@ -509,7 +535,10 @@ internal fun committedFieldText(text: String, composition: TextRange?): String {
  * transparent nothing. Empty whenever the keyboard composes nothing, which is every keyboard that
  * types directly.
  */
-internal fun composingFieldText(text: String, composition: TextRange?): String {
+internal fun composingFieldText(
+    text: String,
+    composition: TextRange?,
+): String {
     val range = composition ?: return ""
     if (range.collapsed) return ""
     val from = minOf(range.start, range.end).coerceIn(0, text.length)
@@ -524,12 +553,17 @@ internal fun composingFieldText(text: String, composition: TextRange?): String {
  * reset, autocorrect rewriting a tail - are assertions in `TerminalCourierFieldTest` rather than
  * field reports of doubled symbols and eaten characters.
  */
-internal fun diffTerminalEdit(base: String, incoming: String): TerminalEdit {
+internal fun diffTerminalEdit(
+    base: String,
+    incoming: String,
+): TerminalEdit {
     // The shared prefix: everything up to where the two texts stop agreeing.
     var common = 0
     while (common < base.length && common < incoming.length &&
         base[common] == incoming[common] && common < SENTINEL_LENGTH + FIELD_HARD_CAP
-    ) common++
+    ) {
+        common++
+    }
     val deleted = base.length - common
     val inserted = incoming.substring(common)
     return TerminalEdit(deleted, inserted)
@@ -553,12 +587,17 @@ internal fun diffTerminalEdit(base: String, incoming: String): TerminalEdit {
  * reset-landed-then-backspace-into-the-padding case, where guessing "raced" would send a handful
  * of spurious Backspaces for what was one press.
  */
-internal fun pendingResetBase(resetPendingFrom: String?, adopted: String, incoming: String): String {
+internal fun pendingResetBase(
+    resetPendingFrom: String?,
+    adopted: String,
+    incoming: String,
+): String {
     if (resetPendingFrom == null) return adopted
     val preResetTail = resetPendingFrom.drop(SENTINEL_LENGTH)
     val incomingTail = incoming.drop(SENTINEL_LENGTH)
-    val raced = preResetTail.isNotEmpty() && incomingTail.isNotEmpty() &&
-        (incomingTail.startsWith(preResetTail) || preResetTail.startsWith(incomingTail))
+    val raced =
+        preResetTail.isNotEmpty() && incomingTail.isNotEmpty() &&
+            (incomingTail.startsWith(preResetTail) || preResetTail.startsWith(incomingTail))
     return if (raced) resetPendingFrom else adopted
 }
 
@@ -595,11 +634,12 @@ internal fun nextFieldValue(change: TextFieldValue): TextFieldValue {
     // A reset, at one of the two safe moments (a finished line, the hard cap) or because the
     // sentinel was somehow consumed. The new tail is the keystrokes that survive the reset - none,
     // when the line is finished - so the shell's next Backspace still has something to eat.
-    val tail = if (resetsOnNewline) {
-        ""
-    } else {
-        change.text.filter { it != SENTINEL_CHAR }.takeLast(FIELD_HARD_CAP - SENTINEL_LENGTH)
-    }
+    val tail =
+        if (resetsOnNewline) {
+            ""
+        } else {
+            change.text.filter { it != SENTINEL_CHAR }.takeLast(FIELD_HARD_CAP - SENTINEL_LENGTH)
+        }
     return TextFieldValue(SENTINEL + tail, TextRange(SENTINEL.length + tail.length))
 }
 
@@ -637,13 +677,14 @@ fun TerminalKeyRow(
                     row.forEach { cap ->
                         key(cap.id) {
                             when (cap.kind) {
-                                KeyBarCapKind.LATCH -> LatchKey(
-                                    cap.id,
-                                    latches.armed(cap.id),
-                                    { latches.toggle(cap.id) },
-                                    prefs.size,
-                                    scrolling,
-                                )
+                                KeyBarCapKind.LATCH ->
+                                    LatchKey(
+                                        cap.id,
+                                        latches.armed(cap.id),
+                                        { latches.toggle(cap.id) },
+                                        prefs.size,
+                                        scrolling,
+                                    )
                                 KeyBarCapKind.KEY -> {
                                     // An id no key answers to draws nothing: the bar's cap list is
                                     // decoded from an untrusted blob, and a cap that cannot be sent
@@ -731,21 +772,23 @@ private fun KeyRowScroller(
                     val fade = KEY_ROW_FADE_WIDTH.toPx().coerceAtMost(width / 2f)
                     if (overflow.atStart) {
                         drawRect(
-                            brush = Brush.horizontalGradient(
-                                listOf(background, Color.Transparent),
-                                startX = 0f,
-                                endX = fade,
-                            ),
+                            brush =
+                                Brush.horizontalGradient(
+                                    listOf(background, Color.Transparent),
+                                    startX = 0f,
+                                    endX = fade,
+                                ),
                             size = Size(fade, height),
                         )
                     }
                     if (overflow.atEnd) {
                         drawRect(
-                            brush = Brush.horizontalGradient(
-                                listOf(Color.Transparent, background),
-                                startX = width - fade,
-                                endX = width,
-                            ),
+                            brush =
+                                Brush.horizontalGradient(
+                                    listOf(Color.Transparent, background),
+                                    startX = width - fade,
+                                    endX = width,
+                                ),
                             topLeft = Offset(width - fade, 0f),
                             size = Size(fade, height),
                         )
@@ -763,21 +806,22 @@ private fun KeyRowScroller(
  * there is no other way to reach Esc, Tab, the arrows or Page Up, so a cap quietly dropped from this
  * list is a key that no longer exists on the device.
  */
-internal val NAMED_ROW: List<Pair<String, TerminalKey>> = listOf(
-    "ESC" to TerminalKey.ESCAPE,
-    "TAB" to TerminalKey.TAB,
-    "←" to TerminalKey.ARROW_LEFT,
-    "↓" to TerminalKey.ARROW_DOWN,
-    "↑" to TerminalKey.ARROW_UP,
-    "→" to TerminalKey.ARROW_RIGHT,
-    "HOME" to TerminalKey.HOME,
-    "END" to TerminalKey.END,
-    "PGUP" to TerminalKey.PAGE_UP,
-    "PGDN" to TerminalKey.PAGE_DOWN,
-    "DEL" to TerminalKey.DELETE,
-    "BKSP" to TerminalKey.BACKSPACE,
-    "ENTER" to TerminalKey.ENTER,
-)
+internal val NAMED_ROW: List<Pair<String, TerminalKey>> =
+    listOf(
+        "ESC" to TerminalKey.ESCAPE,
+        "TAB" to TerminalKey.TAB,
+        "←" to TerminalKey.ARROW_LEFT,
+        "↓" to TerminalKey.ARROW_DOWN,
+        "↑" to TerminalKey.ARROW_UP,
+        "→" to TerminalKey.ARROW_RIGHT,
+        "HOME" to TerminalKey.HOME,
+        "END" to TerminalKey.END,
+        "PGUP" to TerminalKey.PAGE_UP,
+        "PGDN" to TerminalKey.PAGE_DOWN,
+        "DEL" to TerminalKey.DELETE,
+        "BKSP" to TerminalKey.BACKSPACE,
+        "ENTER" to TerminalKey.ENTER,
+    )
 
 @Composable
 private fun LatchKey(
@@ -823,12 +867,13 @@ private fun TerminalKeyCap(
     var pressed by remember { mutableStateOf(false) }
     LaunchedEffect(source) {
         source.interactions.collect { interaction ->
-            pressed = when (interaction) {
-                is PressInteraction.Press -> capPressed(pressed, CapPress.DOWN)
-                is PressInteraction.Release, is PressInteraction.Cancel ->
-                    capPressed(pressed, CapPress.UP)
-                else -> pressed
-            }
+            pressed =
+                when (interaction) {
+                    is PressInteraction.Press -> capPressed(pressed, CapPress.DOWN)
+                    is PressInteraction.Release, is PressInteraction.Cancel ->
+                        capPressed(pressed, CapPress.UP)
+                    else -> pressed
+                }
         }
     }
     // Keyed on the flag rather than read inside the collector above, because the drag is not an
@@ -838,17 +883,19 @@ private fun TerminalKeyCap(
         if (rowScrolling) pressed = capPressed(pressed, CapPress.ROW_MOVED)
     }
     Surface(
-        modifier = Modifier
-            .clickable(interactionSource = source, indication = null, onClick = onClick)
-            .semantics { contentDescription = description ?: label },
+        modifier =
+            Modifier
+                .clickable(interactionSource = source, indication = null, onClick = onClick)
+                .semantics { contentDescription = description ?: label },
         shape = RoundedCornerShape(8.dp),
         // Armed wins over pressed: an armed latch is a mode the next key will read, and the moment
         // the finger is down is not the moment to stop showing it.
-        color = when {
-            armed -> MaterialTheme.colorScheme.primary
-            pressed -> KEY_PRESSED_BACKGROUND
-            else -> KEY_BACKGROUND
-        },
+        color =
+            when {
+                armed -> MaterialTheme.colorScheme.primary
+                pressed -> KEY_PRESSED_BACKGROUND
+                else -> KEY_BACKGROUND
+            },
     ) {
         Text(
             label,
@@ -858,12 +905,13 @@ private fun TerminalKeyCap(
             // keeps its height, so a `sudo` button and a `/` button read as the same control.
             softWrap = false,
             maxLines = 1,
-            modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = size.verticalPaddingDp.dp)
-                // A thumb misses; the size's minimum height is the floor that keeps even a compact
-                // cap easy to hit, and every cap in a row the same height is what makes the row read
-                // as one firm, even strip.
-                .heightIn(min = size.minHeightDp.dp),
+            modifier =
+                Modifier
+                    .padding(horizontal = 12.dp, vertical = size.verticalPaddingDp.dp)
+                    // A thumb misses; the size's minimum height is the floor that keeps even a compact
+                    // cap easy to hit, and every cap in a row the same height is what makes the row read
+                    // as one firm, even strip.
+                    .heightIn(min = size.minHeightDp.dp),
         )
     }
 }

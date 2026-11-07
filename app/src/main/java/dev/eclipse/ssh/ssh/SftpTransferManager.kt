@@ -2,17 +2,17 @@ package dev.eclipse.ssh.ssh
 
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.feature.bandwidth.RateLimiter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import org.apache.sshd.sftp.client.SftpClient
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.EnumSet
-import kotlin.coroutines.coroutineContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.first
 import javax.inject.Singleton
-import kotlinx.coroutines.withContext
-import org.apache.sshd.sftp.client.SftpClient
+import kotlin.coroutines.coroutineContext
 
 /**
  * Moves file bytes over SFTP, and is the one place the bandwidth cap is enforced.

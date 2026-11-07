@@ -13,9 +13,11 @@ import dev.eclipse.ssh.terminal.TerminalModifiers
  * as a bare `false` is what lets the latch rule below be stated once and tested.
  */
 sealed interface TerminalKeyAction {
-
     /** A key with no character of its own, encoded by `TerminalKeys.encode`. */
-    data class Named(val key: TerminalKey, val modifiers: TerminalModifiers) : TerminalKeyAction
+    data class Named(
+        val key: TerminalKey,
+        val modifiers: TerminalModifiers,
+    ) : TerminalKeyAction
 
     /**
      * A printable character whose modifier changes the byte it sends - Ctrl-C, Alt-B.
@@ -24,7 +26,10 @@ sealed interface TerminalKeyAction {
      * produced the shifted form, so re-applying Shift would encode `A` as a chord instead of as itself;
      * `TerminalModifiers` documents the same rule from the encoding side.
      */
-    data class Chord(val char: Char, val modifiers: TerminalModifiers) : TerminalKeyAction
+    data class Chord(
+        val char: Char,
+        val modifiers: TerminalModifiers,
+    ) : TerminalKeyAction
 
     /** Not the terminal's key. The event is passed on, and any armed latch stays armed. */
     data object Decline : TerminalKeyAction
@@ -66,8 +71,7 @@ internal fun mapTerminalKeyEvent(
 }
 
 /** Both sets of modifiers, since a latched Ctrl and a held Ctrl mean the same key. */
-private operator fun TerminalModifiers.plus(other: TerminalModifiers): TerminalModifiers =
-    if (other.none) this else TerminalModifiers(ctrl || other.ctrl, alt || other.alt, shift || other.shift)
+private operator fun TerminalModifiers.plus(other: TerminalModifiers): TerminalModifiers = if (other.none) this else TerminalModifiers(ctrl || other.ctrl, alt || other.alt, shift || other.shift)
 
 /**
  * The printable ASCII range, which is the only range a chord is formed from.
@@ -84,32 +88,33 @@ private val PRINTABLE_RANGE = 0x20..0x7E
  * `internal` so a test can check it against [TerminalKey] rather than against a second copy of the same
  * list: a key missing from here is not a compile error, it is a key that does nothing.
  */
-internal val TERMINAL_NAMED_KEYS: Map<Key, TerminalKey> = mapOf(
-    Key.Enter to TerminalKey.ENTER,
-    Key.NumPadEnter to TerminalKey.ENTER,
-    Key.Backspace to TerminalKey.BACKSPACE,
-    Key.Tab to TerminalKey.TAB,
-    Key.Escape to TerminalKey.ESCAPE,
-    Key.DirectionUp to TerminalKey.ARROW_UP,
-    Key.DirectionDown to TerminalKey.ARROW_DOWN,
-    Key.DirectionLeft to TerminalKey.ARROW_LEFT,
-    Key.DirectionRight to TerminalKey.ARROW_RIGHT,
-    Key.MoveHome to TerminalKey.HOME,
-    Key.MoveEnd to TerminalKey.END,
-    Key.PageUp to TerminalKey.PAGE_UP,
-    Key.PageDown to TerminalKey.PAGE_DOWN,
-    Key.Insert to TerminalKey.INSERT,
-    Key.Delete to TerminalKey.DELETE,
-    Key.F1 to TerminalKey.F1,
-    Key.F2 to TerminalKey.F2,
-    Key.F3 to TerminalKey.F3,
-    Key.F4 to TerminalKey.F4,
-    Key.F5 to TerminalKey.F5,
-    Key.F6 to TerminalKey.F6,
-    Key.F7 to TerminalKey.F7,
-    Key.F8 to TerminalKey.F8,
-    Key.F9 to TerminalKey.F9,
-    Key.F10 to TerminalKey.F10,
-    Key.F11 to TerminalKey.F11,
-    Key.F12 to TerminalKey.F12,
-)
+internal val TERMINAL_NAMED_KEYS: Map<Key, TerminalKey> =
+    mapOf(
+        Key.Enter to TerminalKey.ENTER,
+        Key.NumPadEnter to TerminalKey.ENTER,
+        Key.Backspace to TerminalKey.BACKSPACE,
+        Key.Tab to TerminalKey.TAB,
+        Key.Escape to TerminalKey.ESCAPE,
+        Key.DirectionUp to TerminalKey.ARROW_UP,
+        Key.DirectionDown to TerminalKey.ARROW_DOWN,
+        Key.DirectionLeft to TerminalKey.ARROW_LEFT,
+        Key.DirectionRight to TerminalKey.ARROW_RIGHT,
+        Key.MoveHome to TerminalKey.HOME,
+        Key.MoveEnd to TerminalKey.END,
+        Key.PageUp to TerminalKey.PAGE_UP,
+        Key.PageDown to TerminalKey.PAGE_DOWN,
+        Key.Insert to TerminalKey.INSERT,
+        Key.Delete to TerminalKey.DELETE,
+        Key.F1 to TerminalKey.F1,
+        Key.F2 to TerminalKey.F2,
+        Key.F3 to TerminalKey.F3,
+        Key.F4 to TerminalKey.F4,
+        Key.F5 to TerminalKey.F5,
+        Key.F6 to TerminalKey.F6,
+        Key.F7 to TerminalKey.F7,
+        Key.F8 to TerminalKey.F8,
+        Key.F9 to TerminalKey.F9,
+        Key.F10 to TerminalKey.F10,
+        Key.F11 to TerminalKey.F11,
+        Key.F12 to TerminalKey.F12,
+    )

@@ -48,6 +48,5 @@ object QuickConnectContract {
      * rule: any intent whose action is `ACTION_VIEW` with the extra
      * set, or a direct `ACTION_MAIN` with the extra, qualifies.
      */
-    fun isQuickConnect(intent: Intent?): Boolean =
-        intent?.getBooleanExtra(EXTRA_QUICK_CONNECT_LAST, false) == true
+    fun isQuickConnect(intent: Intent?): Boolean = intent?.getBooleanExtra(EXTRA_QUICK_CONNECT_LAST, false) == true
 }

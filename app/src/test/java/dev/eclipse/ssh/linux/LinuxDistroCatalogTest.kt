@@ -14,7 +14,6 @@ import org.junit.Test
  * i386 Base image, so mapping it would be a lie with a download progress bar.
  */
 class LinuxDistroCatalogTest {
-
     @Test
     fun `arm64 devices get the arm64 rootfs`() {
         val distro = LinuxDistroCatalog.forDevice(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
@@ -90,12 +89,13 @@ class LinuxDistroCatalogTest {
         // The chooser's contract: the list is the installable versions for THIS device's arch,
         // newest LTS first, so "the latest" is always element zero and nothing has to sort.
         val versions = LinuxDistroCatalog.versionsFor(listOf("arm64-v8a", "armeabi-v7a"))
-        assertThat(versions.map { it.id }).containsExactly(
-            "ubuntu-26.04",
-            "ubuntu-24.04",
-            "ubuntu-22.04",
-            "ubuntu-20.04",
-        ).inOrder()
+        assertThat(versions.map { it.id })
+            .containsExactly(
+                "ubuntu-26.04",
+                "ubuntu-24.04",
+                "ubuntu-22.04",
+                "ubuntu-20.04",
+            ).inOrder()
         assertThat(versions.all { it.ubuntuArch == "arm64" }).isTrue()
     }
 

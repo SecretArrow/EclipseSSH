@@ -42,7 +42,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SystemBarAppearanceTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -60,8 +59,10 @@ class SystemBarAppearanceTest {
     private fun lightBarIcons(scenario: ActivityScenario<MainActivity>): Boolean {
         var light = false
         scenario.onActivity { activity ->
-            light = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-                .isAppearanceLightStatusBars
+            light =
+                WindowCompat
+                    .getInsetsController(activity.window, activity.window.decorView)
+                    .isAppearanceLightStatusBars
         }
         return light
     }
@@ -95,7 +96,10 @@ class SystemBarAppearanceTest {
      * shape as `MainActivitySecureWindowTest.pumpUntil`. Returns whether it got there, so the
      * caller can report the state it settled on rather than only that it never arrived.
      */
-    private fun awaitLightBarIcons(scenario: ActivityScenario<MainActivity>, expected: Boolean): Boolean {
+    private fun awaitLightBarIcons(
+        scenario: ActivityScenario<MainActivity>,
+        expected: Boolean,
+    ): Boolean {
         val deadline = SystemClock.uptimeMillis() + 10_000
         while (SystemClock.uptimeMillis() < deadline) {
             if (lightBarIcons(scenario) == expected) return true

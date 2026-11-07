@@ -9,7 +9,6 @@ import org.junit.Test
  * only a device can exercise honestly, and these are the decisions underneath.
  */
 class EditorOptionsHelpersTest {
-
     @Test
     fun `delay stepping walks the offered choices in order`() {
         // 2 s is the default, so one step down and one step up must land on its neighbours.

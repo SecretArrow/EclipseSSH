@@ -4,13 +4,11 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class SilenceDetectorTest {
-
     /** A clock the test moves by hand, in the `() -> Long` shape the detector injects. */
     private var now = 0L
     private val clock: () -> Long = { now }
 
-    private fun detector(silenceMs: Long = SilenceDetector.SILENCE_MS) =
-        SilenceDetector(silenceMs = silenceMs, clock = clock)
+    private fun detector(silenceMs: Long = SilenceDetector.SILENCE_MS) = SilenceDetector(silenceMs = silenceMs, clock = clock)
 
     @Test
     fun `fires after output then silence`() {

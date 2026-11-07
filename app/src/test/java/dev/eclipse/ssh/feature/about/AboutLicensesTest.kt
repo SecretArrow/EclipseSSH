@@ -9,7 +9,6 @@ import org.junit.Test
  * screen.
  */
 class AboutLicensesTest {
-
     @Test
     fun `every license has a non-empty name, version, license, and url`() {
         // An About screen that omits one of these is a partial copy of the real one. A test

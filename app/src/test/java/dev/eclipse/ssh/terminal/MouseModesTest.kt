@@ -15,7 +15,6 @@ import org.junit.Test
  * tracking modes from collapsing into "the mouse is on".
  */
 class MouseModesTest {
-
     @Test
     fun `each tracking mode is reported as itself`() {
         assertThat(MouseModes.modeOf(setOf(MouseModes.X10))).isEqualTo(MouseMode.X10)
@@ -119,13 +118,14 @@ class MouseModesTest {
     @Test
     fun `each tracking mode covers exactly the gestures it names`() {
         // mode -> press, release, movement with a button down, movement with none
-        val expected = mapOf(
-            MouseMode.OFF to listOf(false, false, false, false),
-            MouseMode.X10 to listOf(true, false, false, false),
-            MouseMode.NORMAL to listOf(true, true, false, false),
-            MouseMode.BUTTON to listOf(true, true, true, false),
-            MouseMode.ANY to listOf(true, true, true, true),
-        )
+        val expected =
+            mapOf(
+                MouseMode.OFF to listOf(false, false, false, false),
+                MouseMode.X10 to listOf(true, false, false, false),
+                MouseMode.NORMAL to listOf(true, true, false, false),
+                MouseMode.BUTTON to listOf(true, true, true, false),
+                MouseMode.ANY to listOf(true, true, true, true),
+            )
         // Every mode is in the table, so a mode added later cannot pass this by being left out.
         assertThat(expected.keys).containsExactlyElementsIn(MouseMode.entries)
         // And no two answer alike: a mode that added nothing to the one below it would be a distinction
@@ -133,12 +133,13 @@ class MouseModesTest {
         assertThat(expected.values.toSet()).hasSize(MouseMode.entries.size)
 
         for ((mode, answers) in expected) {
-            val cases = listOf(
-                Triple(MouseGesture.PRESS, true, answers[0]),
-                Triple(MouseGesture.RELEASE, true, answers[1]),
-                Triple(MouseGesture.MOTION, true, answers[2]),
-                Triple(MouseGesture.MOTION, false, answers[3]),
-            )
+            val cases =
+                listOf(
+                    Triple(MouseGesture.PRESS, true, answers[0]),
+                    Triple(MouseGesture.RELEASE, true, answers[1]),
+                    Triple(MouseGesture.MOTION, true, answers[2]),
+                    Triple(MouseGesture.MOTION, false, answers[3]),
+                )
             for ((gesture, held, wanted) in cases) {
                 assertThat(MouseModes.reports(mode, sgr = true, gesture = gesture, buttonHeld = held))
                     .isEqualTo(wanted)

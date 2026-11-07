@@ -17,7 +17,6 @@ import org.junit.Test
  * (the two test suites that do are exercising the connectors, not the wiring).
  */
 class ProxyConfigTest {
-
     private fun profile(
         type: ProxyType = ProxyType.SOCKS5,
         host: String? = "proxy.internal",
@@ -92,10 +91,11 @@ class ProxyConfigTest {
     fun `neither proxy config can print its password`() {
         val secret = "s0cks-Pa55phrase-sentinel"
         val socks = socksProxyConfig(profile(username = "proxyuser", password = secret), 30L)
-        val http = httpProxyConfig(
-            profile(ProxyType.HTTP_CONNECT, username = "proxyuser", password = secret),
-            30L,
-        )
+        val http =
+            httpProxyConfig(
+                profile(ProxyType.HTTP_CONNECT, username = "proxyuser", password = secret),
+                30L,
+            )
 
         listOf(socks.toString(), http.toString()).forEach { rendered ->
             assertThat(rendered).doesNotContain(secret)
@@ -115,10 +115,11 @@ class ProxyConfigTest {
      */
     @Test
     fun `a redacted config still identifies the proxy and the budget`() {
-        val rendered = socksProxyConfig(
-            profile(host = "bastion.example.com", port = 8080, username = "proxyuser", password = "x"),
-            45L,
-        ).toString()
+        val rendered =
+            socksProxyConfig(
+                profile(host = "bastion.example.com", port = 8080, username = "proxyuser", password = "x"),
+                45L,
+            ).toString()
 
         assertThat(rendered).contains("bastion.example.com")
         assertThat(rendered).contains("8080")
@@ -189,10 +190,11 @@ class ProxyConfigTest {
      */
     @Test
     fun `a pasted proxy host is trimmed but credentials are left exactly as entered`() {
-        val config = socksProxyConfig(
-            profile(host = "  proxy.internal\n", username = " padded ", password = " secret "),
-            30L,
-        )
+        val config =
+            socksProxyConfig(
+                profile(host = "  proxy.internal\n", username = " padded ", password = " secret "),
+                30L,
+            )
 
         assertThat(config.host).isEqualTo("proxy.internal")
         assertThat(config.username).isEqualTo(" padded ")

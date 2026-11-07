@@ -1,10 +1,10 @@
 package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
-import org.junit.Test
 
 /**
  * What [RuntimeStorageManager.ensureReady] promises when a runtime directory cannot be created:
@@ -19,11 +19,13 @@ import org.junit.Test
  * it — the loader symlink these directories exist to hold is exactly the shape that would.
  */
 class RuntimeStorageManagerTest {
-
     private fun newRoot(): File = Files.createTempDirectory("linux-storage").toFile().apply { deleteOnExit() }
 
     /** A `tmp` directory holding one directory per name, ready to be swept. */
-    private fun tmpWith(root: File, vararg names: String): File {
+    private fun tmpWith(
+        root: File,
+        vararg names: String,
+    ): File {
         val tmp = File(root, "tmp").apply { mkdirs() }
         names.forEach { File(tmp, it).mkdirs() }
         return tmp
@@ -66,10 +68,11 @@ class RuntimeStorageManagerTest {
         RuntimeStorageManager(root).ensureReady()
         val tmp = File(root, "tmp")
         tmp.deleteRecursively()
-        val link = Files.createSymbolicLink(
-            tmp.toPath(),
-            root.toPath().resolve("tmp-does-not-exist"),
-        )
+        val link =
+            Files.createSymbolicLink(
+                tmp.toPath(),
+                root.toPath().resolve("tmp-does-not-exist"),
+            )
         val error = runCatching { RuntimeStorageManager(root).requireReady() }.exceptionOrNull()
 
         assertThat(error).isInstanceOf(IOException::class.java)

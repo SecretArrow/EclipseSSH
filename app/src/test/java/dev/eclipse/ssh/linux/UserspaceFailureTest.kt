@@ -2,8 +2,8 @@ package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.ssh.SessionEnd
-import java.io.IOException
 import org.junit.Test
+import java.io.IOException
 
 /**
  * The failure taxonomy's classifier, pinned evidence shape by evidence shape: what the pty
@@ -14,7 +14,6 @@ import org.junit.Test
  * failure log and apt's own wording), not a summary of it.
  */
 class UserspaceFailureTest {
-
     // ------------------------------------------------------------------ the launcher (F2)
 
     @Test
@@ -62,12 +61,13 @@ class UserspaceFailureTest {
 
     @Test
     fun `apt's own lock refusals name the files and the holder`() {
-        val failure = UserspaceFailure.fromAptRun(
-            "http://x.example/ubuntu",
-            100,
-            "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4321 (apt-get)\n" +
-                "E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?\n",
-        )
+        val failure =
+            UserspaceFailure.fromAptRun(
+                "http://x.example/ubuntu",
+                100,
+                "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4321 (apt-get)\n" +
+                    "E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?\n",
+            )
 
         assertThat(failure).isInstanceOf(UserspaceFailure.PackageLocksHeld::class.java)
         assertThat((failure as UserspaceFailure.PackageLocksHeld).holderPid).isEqualTo(4321)
@@ -85,12 +85,13 @@ class UserspaceFailureTest {
         // The other arm, and the reason the two are split: nothing holds this lock — apt never got as
         // far as asking for it. The path is a directory, so the refusal names no process at all, and
         // telling the user to wait for one would send them to wait for something that does not exist.
-        val failure = UserspaceFailure.fromAptRun(
-            "http://x.example/ubuntu",
-            100,
-            "E: Could not open lock file /var/lib/dpkg/lock - open (21: Is a directory)\n" +
-                "E: Unable to lock the administration directory (/var/lib/dpkg/), are you root?\n",
-        )
+        val failure =
+            UserspaceFailure.fromAptRun(
+                "http://x.example/ubuntu",
+                100,
+                "E: Could not open lock file /var/lib/dpkg/lock - open (21: Is a directory)\n" +
+                    "E: Unable to lock the administration directory (/var/lib/dpkg/), are you root?\n",
+            )
 
         assertThat(failure).isInstanceOf(UserspaceFailure.PackageLocksHeld::class.java)
         assertThat((failure as UserspaceFailure.PackageLocksHeld).openFailed).isTrue()
@@ -102,11 +103,12 @@ class UserspaceFailureTest {
 
     @Test
     fun `a database dpkg cannot open is the repair pass's subject, not a mirror's`() {
-        val failure = UserspaceFailure.fromCommandOutput(
-            "Installing base packages",
-            2,
-            "dpkg: failed to open package info file '/var/lib/dpkg/status' for reading: No such file or directory\n",
-        )
+        val failure =
+            UserspaceFailure.fromCommandOutput(
+                "Installing base packages",
+                2,
+                "dpkg: failed to open package info file '/var/lib/dpkg/status' for reading: No such file or directory\n",
+            )
 
         assertThat(failure).isInstanceOf(UserspaceFailure.PackageDbBroken::class.java)
         assertThat(failure!!.message).contains("repair pass")
@@ -116,20 +118,22 @@ class UserspaceFailureTest {
 
     @Test
     fun `an index that expired and one that is not valid yet are told apart`() {
-        val expired = UserspaceFailure.fromAptRun(
-            "http://x.example/ubuntu",
-            100,
-            "E: Release file for http://x.example/ubuntu/dists/jammy/InRelease is expired (invalid since 3d 4h).\n",
-        )
+        val expired =
+            UserspaceFailure.fromAptRun(
+                "http://x.example/ubuntu",
+                100,
+                "E: Release file for http://x.example/ubuntu/dists/jammy/InRelease is expired (invalid since 3d 4h).\n",
+            )
         assertThat(expired).isInstanceOf(UserspaceFailure.ClockSkew::class.java)
         assertThat((expired as UserspaceFailure.ClockSkew).expired).isTrue()
         assertThat(expired.message).contains("automatic date and time")
 
-        val behind = UserspaceFailure.fromAptRun(
-            "http://x.example/ubuntu",
-            100,
-            "E: Release file for http://x.example/ubuntu/dists/jammy/InRelease is not valid yet (invalid for another 2h).\n",
-        )
+        val behind =
+            UserspaceFailure.fromAptRun(
+                "http://x.example/ubuntu",
+                100,
+                "E: Release file for http://x.example/ubuntu/dists/jammy/InRelease is not valid yet (invalid for another 2h).\n",
+            )
         assertThat((behind as UserspaceFailure.ClockSkew).expired).isFalse()
         // The clock is nobody's to fix inside the rootfs, and the sentence has to say so.
         assertThat(behind.message).contains("automatic date and time")
@@ -139,11 +143,12 @@ class UserspaceFailureTest {
 
     @Test
     fun `a hash mismatch is a corrupted download, and the indexes are what is cleared`() {
-        val failure = UserspaceFailure.fromAptRun(
-            "http://x.example/ubuntu",
-            100,
-            "E: Failed to fetch http://x.example/ubuntu/dists/jammy/main/binary-arm64/Packages.gz  Hash Sum mismatch\n",
-        )
+        val failure =
+            UserspaceFailure.fromAptRun(
+                "http://x.example/ubuntu",
+                100,
+                "E: Failed to fetch http://x.example/ubuntu/dists/jammy/main/binary-arm64/Packages.gz  Hash Sum mismatch\n",
+            )
 
         assertThat(failure).isInstanceOf(UserspaceFailure.IndexHashMismatch::class.java)
         assertThat((failure as UserspaceFailure.IndexHashMismatch).uri).isEqualTo("http://x.example/ubuntu")
@@ -165,13 +170,14 @@ class UserspaceFailureTest {
 
     @Test
     fun `apt's temporary-failure-resolving text is a DNS failure naming the written resolvers`() {
-        val failure = UserspaceFailure.fromAptRun(
-            "http://ports.ubuntu.com/ubuntu-ports",
-            100,
-            "Err:1 http://ports.ubuntu.com/ubuntu-ports jammy InRelease\n" +
-                "  Temporary failure resolving 'ports.ubuntu.com'\n",
-            dnsServers = listOf("192.168.1.1", "1.1.1.1"),
-        )
+        val failure =
+            UserspaceFailure.fromAptRun(
+                "http://ports.ubuntu.com/ubuntu-ports",
+                100,
+                "Err:1 http://ports.ubuntu.com/ubuntu-ports jammy InRelease\n" +
+                    "  Temporary failure resolving 'ports.ubuntu.com'\n",
+                dnsServers = listOf("192.168.1.1", "1.1.1.1"),
+            )
 
         assertThat(failure).isInstanceOf(UserspaceFailure.DnsUnresolved::class.java)
         assertThat((failure as UserspaceFailure.DnsUnresolved).servers).containsExactly("192.168.1.1", "1.1.1.1")
@@ -202,11 +208,12 @@ class UserspaceFailureTest {
 
     @Test
     fun `an unsigned repository is never classified as unreachable`() {
-        val failure = UserspaceFailure.fromAptRun(
-            "http://m.example/ubuntu",
-            100,
-            "W: GPG error: http://m.example/ubuntu jammy InRelease: The following signatures couldn't be verified … NO_PUBKEY 1655A0AB68576280\n",
-        )
+        val failure =
+            UserspaceFailure.fromAptRun(
+                "http://m.example/ubuntu",
+                100,
+                "W: GPG error: http://m.example/ubuntu jammy InRelease: The following signatures couldn't be verified … NO_PUBKEY 1655A0AB68576280\n",
+            )
 
         assertThat(failure).isInstanceOf(UserspaceFailure.RepositoryUnsigned::class.java)
         assertThat((failure as UserspaceFailure.RepositoryUnsigned).uri).isEqualTo("http://m.example/ubuntu")
@@ -224,11 +231,12 @@ class UserspaceFailureTest {
         val disk = UserspaceFailure.fromCommandOutput("Installing base packages", 100, "dpkg: error processing … No space left on device\n")
         assertThat(disk).isInstanceOf(UserspaceFailure.DiskFull::class.java)
 
-        val db = UserspaceFailure.fromCommandOutput(
-            "Installing base packages",
-            100,
-            "E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem. \n",
-        )
+        val db =
+            UserspaceFailure.fromCommandOutput(
+                "Installing base packages",
+                100,
+                "E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem. \n",
+            )
         assertThat(db).isInstanceOf(UserspaceFailure.PackageDbBroken::class.java)
         assertThat(db!!.message).contains("dpkg was interrupted")
     }
@@ -263,13 +271,14 @@ class UserspaceFailureTest {
         // A userspace sound except for its account name: the install and the repair both fail on it,
         // and no rung of the ladder can change it. The sentence is the one the untyped throw carried
         // — the caller's own words, then the probe's account of what is wrong.
-        val wrongAccount = HealthReport(
-            shellWorks = true,
-            account = "ubuntu",
-            accountCorrect = false,
-            networkUp = true,
-            aptUsable = true,
-        )
+        val wrongAccount =
+            HealthReport(
+                shellWorks = true,
+                account = "ubuntu",
+                accountCorrect = false,
+                networkUp = true,
+                aptUsable = true,
+            )
         val sentence = "Ubuntu installed but failed its health check"
         val failure = UserspaceFailure.GuestUnhealthy(wrongAccount, sentence)
 
@@ -341,10 +350,11 @@ class UserspaceFailureTest {
         // answer by rebuilding, because the archive *is* what a rebuild is made of. What it is not
         // is a sentence — "HTTP 503" names the fault and not the response — so the boundary types it
         // too, and the round trip is what this pins.
-        val unfetched = PinnedArchiveUnavailable(
-            "downloading https://fixtures.invalid/rootfs.tar.gz failed: HTTP 503",
-            attempts = 3,
-        )
+        val unfetched =
+            PinnedArchiveUnavailable(
+                "downloading https://fixtures.invalid/rootfs.tar.gz failed: HTTP 503",
+                attempts = 3,
+            )
 
         // Through a wrapper, because that is how it arrives: the ladder records a rung's failure
         // inside its own prose, and the wrapping exception is the less specific fact.
@@ -370,10 +380,11 @@ class UserspaceFailureTest {
         // The repair ladder's own gate walks the chain for these; the classifier that feeds the user
         // their sentence has to agree with it, or one boundary says "not enough disk" and the other
         // reports the wrapper's prose.
-        val wrapped = IOException(
-            "rung 3 failed",
-            IOException("runtime storage not ready: the tmp probe could not write"),
-        )
+        val wrapped =
+            IOException(
+                "rung 3 failed",
+                IOException("runtime storage not ready: the tmp probe could not write"),
+            )
 
         val failure = UserspaceFailure.fromThrowable(wrapped)
 

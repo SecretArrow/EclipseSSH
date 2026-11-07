@@ -18,7 +18,6 @@ import dev.eclipse.ssh.ui.settings.TerminalFontSizeActivity
 import dev.eclipse.ssh.ui.settings.TerminalHeightActivity
 import dev.eclipse.ssh.ui.settings.TerminalWidthActivity
 import dev.eclipse.ssh.ui.settings.VaultAutoLockActivity
-import java.time.Duration
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -28,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /*
  * The six screens the promoted Settings rows open, each in its own window.
@@ -78,7 +78,11 @@ private fun AndroidComposeTestRule<*, *>.pump(frames: Int = 12) {
  * the store, so a screen's *static* text is there when `waitForIdle` returns while anything derived
  * from a stored value is a hop behind it.
  */
-private fun AndroidComposeTestRule<*, *>.pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+private fun AndroidComposeTestRule<*, *>.pumpUntil(
+    timeoutMs: Long = 20_000,
+    describe: () -> String,
+    condition: () -> Boolean,
+) {
     val deadline = System.nanoTime() + timeoutMs * 1_000_000
     while (System.nanoTime() < deadline && !condition()) pump(frames = 1)
     check(condition()) { "timed out after ${timeoutMs}ms: ${describe()}" }
@@ -95,7 +99,8 @@ private fun AndroidComposeTestRule<*, *>.pumpUntil(timeoutMs: Long = 20_000, des
 private fun AndroidComposeTestRule<*, *>.assertTitled(title: String) {
     val named = onAllNodesWithText(title)
     assertWithMessage("the window does not name itself: nothing reads \"$title\"")
-        .that(named.fetchSemanticsNodes().size).isAtLeast(2)
+        .that(named.fetchSemanticsNodes().size)
+        .isAtLeast(2)
     repeat(named.fetchSemanticsNodes().size) { named[it].assertIsDisplayed() }
 }
 
@@ -127,7 +132,8 @@ private fun AndroidComposeTestRule<*, *>.assertSectionHeader(title: String) {
 private fun AndroidComposeTestRule<*, *>.assertChoiceOffered(label: String) {
     val matches = onAllNodesWithText(label)
     assertWithMessage("the screen offers no choice labelled \"$label\"")
-        .that(matches.fetchSemanticsNodes()).isNotEmpty()
+        .that(matches.fetchSemanticsNodes())
+        .isNotEmpty()
     matches.onFirst().assertIsDisplayed()
 }
 
@@ -142,7 +148,6 @@ private fun AndroidComposeTestRule<*, *>.assertChoiceOffered(label: String) {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class KeepAliveScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<KeepAliveActivity>()
 
@@ -170,7 +175,6 @@ class KeepAliveScreenRobolectricTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ClipboardClearScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<ClipboardClearActivity>()
 
@@ -202,7 +206,6 @@ class ClipboardClearScreenRobolectricTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TerminalFontSizeScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<TerminalFontSizeActivity>()
 
@@ -213,7 +216,8 @@ class TerminalFontSizeScreenRobolectricTest {
         compose.waitForIdle()
 
         compose.assertTitled("Terminal font size")
-        compose.onNodeWithText("Pinch the terminal with two fingers to zoom without opening this screen")
+        compose
+            .onNodeWithText("Pinch the terminal with two fingers to zoom without opening this screen")
             .assertIsDisplayed()
         compose.assertSectionHeader("Terminal font size")
 
@@ -239,7 +243,6 @@ class TerminalFontSizeScreenRobolectricTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TerminalWidthScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<TerminalWidthActivity>()
 
@@ -248,13 +251,15 @@ class TerminalWidthScreenRobolectricTest {
         compose.waitForIdle()
 
         compose.assertTitled("Terminal width")
-        compose.onNodeWithText("The narrowest the server is told it has; drag the grid sideways for the rest")
+        compose
+            .onNodeWithText("The narrowest the server is told it has; drag the grid sideways for the rest")
             .assertIsDisplayed()
         compose.assertSectionHeader("Terminal width")
 
         val labels = listOf("Fit screen", "80 cols", "100 cols", "120 cols", "132 cols", "160 cols")
         assertWithMessage("the offered widths and the labels asserted here have drifted apart")
-            .that(labels.size).isEqualTo(SettingsRepository.TERMINAL_MIN_COLUMN_CHOICES.size)
+            .that(labels.size)
+            .isEqualTo(SettingsRepository.TERMINAL_MIN_COLUMN_CHOICES.size)
         labels.forEach { compose.assertChoiceOffered(it) }
     }
 }
@@ -273,7 +278,6 @@ class TerminalWidthScreenRobolectricTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TerminalHeightScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<TerminalHeightActivity>()
 
@@ -282,16 +286,27 @@ class TerminalHeightScreenRobolectricTest {
         compose.waitForIdle()
 
         compose.assertTitled("Terminal height")
-        compose.onNodeWithText("At least this many rows; the screen shows what fits and scrolls the rest")
+        compose
+            .onNodeWithText("At least this many rows; the screen shows what fits and scrolls the rest")
             .assertIsDisplayed()
         compose.assertSectionHeader("Terminal height")
 
-        val labels = listOf(
-            "Fit screen", "24 rows", "30 rows", "40 rows", "50 rows", "60 rows",
-            "100 rows", "200 rows", "500 rows", "1000 rows",
-        )
+        val labels =
+            listOf(
+                "Fit screen",
+                "24 rows",
+                "30 rows",
+                "40 rows",
+                "50 rows",
+                "60 rows",
+                "100 rows",
+                "200 rows",
+                "500 rows",
+                "1000 rows",
+            )
         assertWithMessage("the offered heights and the labels asserted here have drifted apart")
-            .that(labels.size).isEqualTo(SettingsRepository.TERMINAL_ROW_CHOICES.size)
+            .that(labels.size)
+            .isEqualTo(SettingsRepository.TERMINAL_ROW_CHOICES.size)
         labels.forEach { compose.assertChoiceOffered(it) }
     }
 }
@@ -306,7 +321,6 @@ class TerminalHeightScreenRobolectricTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ReconnectDelayScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<ReconnectDelayActivity>()
 
@@ -315,13 +329,15 @@ class ReconnectDelayScreenRobolectricTest {
         compose.waitForIdle()
 
         compose.assertTitled("Reconnect delay")
-        compose.onNodeWithText("Wait before the first reconnect attempt; each further attempt doubles it")
+        compose
+            .onNodeWithText("Wait before the first reconnect attempt; each further attempt doubles it")
             .assertIsDisplayed()
         compose.assertSectionHeader("Reconnect delay")
 
         val labels = listOf("1 s", "2 s", "5 s", "10 s", "30 s", "60 s")
         assertWithMessage("the offered delays and the labels asserted here have drifted apart")
-            .that(labels.size).isEqualTo(SettingsRepository.RECONNECT_BASE_CHOICES.size)
+            .that(labels.size)
+            .isEqualTo(SettingsRepository.RECONNECT_BASE_CHOICES.size)
         labels.forEach { compose.assertChoiceOffered(it) }
     }
 }
@@ -339,7 +355,6 @@ class ReconnectDelayScreenRobolectricTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class VaultAutoLockScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<VaultAutoLockActivity>()
 
@@ -348,13 +363,15 @@ class VaultAutoLockScreenRobolectricTest {
         compose.waitForIdle()
 
         compose.assertTitled("Auto-lock vault")
-        compose.onNodeWithText("Starts counting when you leave the app; the vault re-locks when you come back")
+        compose
+            .onNodeWithText("Starts counting when you leave the app; the vault re-locks when you come back")
             .assertIsDisplayed()
         compose.assertSectionHeader("Auto-lock vault")
 
         val labels = listOf("1 min", "5 min", "15 min", "60 min", "Never")
         assertWithMessage("the offered delays and the labels asserted here have drifted apart")
-            .that(labels.size).isEqualTo(SettingsRepository.VAULT_AUTO_LOCK_CHOICES.size)
+            .that(labels.size)
+            .isEqualTo(SettingsRepository.VAULT_AUTO_LOCK_CHOICES.size)
         labels.forEach { compose.assertChoiceOffered(it) }
     }
 }

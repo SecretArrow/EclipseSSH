@@ -68,7 +68,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class HostDetailsActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var hostRepository: HostRepository
@@ -78,8 +77,9 @@ class HostDetailsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val subject = ActionRequests.take(intent?.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
-            as? ActionSubject.HostDetails
+        val subject =
+            ActionRequests.take(intent?.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
+                as? ActionSubject.HostDetails
         if (subject == null) {
             finish()
             return
@@ -119,7 +119,6 @@ class HostDetailsActivity : ComponentActivity() {
     }
 
     companion object {
-
         /**
          * The intent that opens this window on [host].
          *
@@ -128,7 +127,11 @@ class HostDetailsActivity : ComponentActivity() {
          * owns: the server stats it last heard, or null when it has heard nothing yet. Null is not
          * the same as "no stats exist" and the window says so by offering to load them.
          */
-        fun intent(context: Context, host: HostProfile, stats: ServerStats?): Intent =
+        fun intent(
+            context: Context,
+            host: HostProfile,
+            stats: ServerStats?,
+        ): Intent =
             Intent(context, HostDetailsActivity::class.java)
                 .putExtra(
                     ActionRequests.EXTRA_SUBJECT_TOKEN,
@@ -200,7 +203,10 @@ private fun HostDetailsBody(
 
 /** One label/value pair, the shape every row of this window takes. */
 @Composable
-private fun DetailLine(label: String, value: String) {
+private fun DetailLine(
+    label: String,
+    value: String,
+) {
     Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Text(
             label,

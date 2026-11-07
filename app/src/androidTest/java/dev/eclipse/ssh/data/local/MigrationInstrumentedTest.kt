@@ -19,13 +19,14 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MigrationInstrumentedTest {
-
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private var database: EclipseDatabase? = null
 
     @Before
     fun clearAnyLeftovers() {
-        context.getDatabasePath(DB_NAME).parentFile
+        context
+            .getDatabasePath(DB_NAME)
+            .parentFile
             ?.listFiles { f -> f.name.startsWith(DB_NAME) }
             ?.forEach { it.delete() }
     }
@@ -37,80 +38,103 @@ class MigrationInstrumentedTest {
     }
 
     @Test
-    fun aVersion2DatabaseUpgradesToTheCurrentSchema() = runTest {
-        seedVersion2()
+    fun aVersion2DatabaseUpgradesToTheCurrentSchema() =
+        runTest {
+            seedVersion2()
 
-        val db = open()
+            val db = open()
 
-        // Room validates the migrated schema against the entities as it opens, so reaching
-        // this line at all means every ALTER TABLE produced the column Room expects.
-        val host = db.hostDao().observeAll().first().single()
-        assertThat(host.id).isEqualTo("legacy-host")
-        assertThat(host.port).isEqualTo(2022)
-        assertThat(host.toDomain().tags).containsExactly("legacy", "eu")
-        assertThat(host.proxyType).isEqualTo("NONE")
-        assertThat(host.socksPort).isEqualTo(1080)
-        assertThat(host.accentColor).isNull()
-        // Version 11: on by default, so an upgraded profile still opens its file browser on connect.
-        assertThat(host.autoLoginSftp).isTrue()
-        // Version 12 and 13: an upgrade must not change how an existing host connects, and on a real
-        // device that is the claim worth checking - `ALTER TABLE ... ADD COLUMN` with a NOT NULL
-        // default is the statement whose behaviour varies most between SQLite builds.
-        assertThat(host.compression).isFalse()
-        assertThat(host.terminalType).isEqualTo("xterm-256color")
-        assertThat(host.hostKeyPolicy).isEqualTo("ASK")
-        assertThat(host.ciphers).isNull()
-        assertThat(host.hostKeyAlgorithms).isNull()
-        assertThat(host.startupCommand).isEmpty()
-        assertThat(host.environment).isEmpty()
-        assertThat(host.savedForwards).isEmpty()
+            // Room validates the migrated schema against the entities as it opens, so reaching
+            // this line at all means every ALTER TABLE produced the column Room expects.
+            val host =
+                db
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
+            assertThat(host.id).isEqualTo("legacy-host")
+            assertThat(host.port).isEqualTo(2022)
+            assertThat(host.toDomain().tags).containsExactly("legacy", "eu")
+            assertThat(host.proxyType).isEqualTo("NONE")
+            assertThat(host.socksPort).isEqualTo(1080)
+            assertThat(host.accentColor).isNull()
+            // Version 11: on by default, so an upgraded profile still opens its file browser on connect.
+            assertThat(host.autoLoginSftp).isTrue()
+            // Version 12 and 13: an upgrade must not change how an existing host connects, and on a real
+            // device that is the claim worth checking - `ALTER TABLE ... ADD COLUMN` with a NOT NULL
+            // default is the statement whose behaviour varies most between SQLite builds.
+            assertThat(host.compression).isFalse()
+            assertThat(host.terminalType).isEqualTo("xterm-256color")
+            assertThat(host.hostKeyPolicy).isEqualTo("ASK")
+            assertThat(host.ciphers).isNull()
+            assertThat(host.hostKeyAlgorithms).isNull()
+            assertThat(host.startupCommand).isEmpty()
+            assertThat(host.environment).isEmpty()
+            assertThat(host.savedForwards).isEmpty()
 
-        val transfer = db.transferDao().observeAll().first().single()
-        assertThat(transfer.name).isEqualTo("old.log")
-        assertThat(transfer.transferredBytes).isEqualTo(0L)
-        assertThat(transfer.retryCount).isEqualTo(0)
-        assertThat(transfer.repeatMinutes).isNull()
-    }
+            val transfer =
+                db
+                    .transferDao()
+                    .observeAll()
+                    .first()
+                    .single()
+            assertThat(transfer.name).isEqualTo("old.log")
+            assertThat(transfer.transferredBytes).isEqualTo(0L)
+            assertThat(transfer.retryCount).isEqualTo(0)
+            assertThat(transfer.repeatMinutes).isNull()
+        }
 
     @Test
-    fun aFreshInstallOpensAtTheCurrentVersion() = runTest {
-        // No seeding: the onCreate path, which is what a clean install actually runs.
-        val db = open()
+    fun aFreshInstallOpensAtTheCurrentVersion() =
+        runTest {
+            // No seeding: the onCreate path, which is what a clean install actually runs.
+            val db = open()
 
-        assertThat(db.hostDao().count()).isEqualTo(0)
-        assertThat(db.transferDao().count()).isEqualTo(0)
-    }
+            assertThat(db.hostDao().count()).isEqualTo(0)
+            assertThat(db.transferDao().count()).isEqualTo(0)
+        }
 
     @Test
-    fun aDatabaseFromANewerBuildIsResetRatherThanRefused() = runTest {
-        // The production fallback is now downgrade-only (see AppModule.provideDatabase). On real SQLite
-        // as on the JVM, a downgrade - a file left by a build one version ahead, e.g. after a Play
-        // Store rollback - has no migration path back and never can, so refusing to open it would be
-        // a crash loop with no way out from inside the app. Resetting is the recoverable direction.
-        // user_version 19 is that newer build; the row shape beneath it is irrelevant, because a
-        // destructive downgrade drops every table first. One *ahead* of this build's own 18, not
-        // equal to or behind it: a file at 17 would take the 17_18 upgrade against a v2 table shape
-        // and die in schema validation (exactly what the first hosted run of this test caught -
-        // the seed said 17 from when 16 was current and nobody noticed, because this suite had
-        // never executed anywhere).
-        seedVersion2(userVersion = 19)
+    fun aDatabaseFromANewerBuildIsResetRatherThanRefused() =
+        runTest {
+            // The production fallback is now downgrade-only (see AppModule.provideDatabase). On real SQLite
+            // as on the JVM, a downgrade - a file left by a build one version ahead, e.g. after a Play
+            // Store rollback - has no migration path back and never can, so refusing to open it would be
+            // a crash loop with no way out from inside the app. Resetting is the recoverable direction.
+            // user_version 19 is that newer build; the row shape beneath it is irrelevant, because a
+            // destructive downgrade drops every table first. One *ahead* of this build's own 18, not
+            // equal to or behind it: a file at 17 would take the 17_18 upgrade against a v2 table shape
+            // and die in schema validation (exactly what the first hosted run of this test caught -
+            // the seed said 17 from when 16 was current and nobody noticed, because this suite had
+            // never executed anywhere).
+            seedVersion2(userVersion = 19)
 
-        val db = openLikeProduction()
+            val db = openLikeProduction()
 
-        assertThat(db.hostDao().count()).isEqualTo(0)
-        assertThat(db.transferDao().count()).isEqualTo(0)
-    }
+            assertThat(db.hostDao().count()).isEqualTo(0)
+            assertThat(db.transferDao().count()).isEqualTo(0)
+        }
 
     private fun open(): EclipseDatabase =
-        Room.databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
+        Room
+            .databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
             .addMigrations(
-                Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5,
-                Migrations.MIGRATION_5_6, Migrations.MIGRATION_6_7, Migrations.MIGRATION_7_8,
+                Migrations.MIGRATION_2_3,
+                Migrations.MIGRATION_3_4,
+                Migrations.MIGRATION_4_5,
+                Migrations.MIGRATION_5_6,
+                Migrations.MIGRATION_6_7,
+                Migrations.MIGRATION_7_8,
                 Migrations.MIGRATION_8_9,
-                Migrations.MIGRATION_9_10, Migrations.MIGRATION_10_11,
-                Migrations.MIGRATION_11_12, Migrations.MIGRATION_12_13,
-                Migrations.MIGRATION_13_14, Migrations.MIGRATION_14_15, Migrations.MIGRATION_15_16,
-                Migrations.MIGRATION_16_17, Migrations.MIGRATION_17_18,
+                Migrations.MIGRATION_9_10,
+                Migrations.MIGRATION_10_11,
+                Migrations.MIGRATION_11_12,
+                Migrations.MIGRATION_12_13,
+                Migrations.MIGRATION_13_14,
+                Migrations.MIGRATION_14_15,
+                Migrations.MIGRATION_15_16,
+                Migrations.MIGRATION_16_17,
+                Migrations.MIGRATION_17_18,
             )
             // Deliberately no destructive fallback: a broken migration must fail, not wipe data.
             .build()
@@ -118,17 +142,26 @@ class MigrationInstrumentedTest {
 
     /** Opens as `AppModule.provideDatabase` does, so the downgrade fallback is exercised on-device. */
     private fun openLikeProduction(): EclipseDatabase =
-        Room.databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
+        Room
+            .databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
             .addMigrations(
-                Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5,
-                Migrations.MIGRATION_5_6, Migrations.MIGRATION_6_7, Migrations.MIGRATION_7_8,
+                Migrations.MIGRATION_2_3,
+                Migrations.MIGRATION_3_4,
+                Migrations.MIGRATION_4_5,
+                Migrations.MIGRATION_5_6,
+                Migrations.MIGRATION_6_7,
+                Migrations.MIGRATION_7_8,
                 Migrations.MIGRATION_8_9,
-                Migrations.MIGRATION_9_10, Migrations.MIGRATION_10_11,
-                Migrations.MIGRATION_11_12, Migrations.MIGRATION_12_13,
-                Migrations.MIGRATION_13_14, Migrations.MIGRATION_14_15, Migrations.MIGRATION_15_16,
-                Migrations.MIGRATION_16_17, Migrations.MIGRATION_17_18,
-            )
-            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+                Migrations.MIGRATION_9_10,
+                Migrations.MIGRATION_10_11,
+                Migrations.MIGRATION_11_12,
+                Migrations.MIGRATION_12_13,
+                Migrations.MIGRATION_13_14,
+                Migrations.MIGRATION_14_15,
+                Migrations.MIGRATION_15_16,
+                Migrations.MIGRATION_16_17,
+                Migrations.MIGRATION_17_18,
+            ).fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()
             .also { database = it }
 

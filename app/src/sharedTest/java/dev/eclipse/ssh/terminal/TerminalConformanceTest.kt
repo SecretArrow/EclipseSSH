@@ -53,6 +53,7 @@ private const val NONE = "...................."
  * - **The alternate screen.** It is a family of its own with its own fixture, and
  *   [AlternateScreenSwitchTest] is where its rules live.
  */
+
 /**
  * One case of the table: its name, its bytes, and the screen it must leave.
  *
@@ -140,7 +141,9 @@ private fun List<TerminalCell>.text(): String {
 }
 
 @RunWith(Parameterized::class)
-class TerminalConformanceTest(private val case: ConformanceCase) {
+class TerminalConformanceTest(
+    private val case: ConformanceCase,
+) {
     companion object {
         @JvmStatic
         @Parameters(name = "{0}")
@@ -166,119 +169,136 @@ class TerminalConformanceTest(private val case: ConformanceCase) {
  * The cases, grouped by family. Every row is one line so that a family reads as a block and a new case
  * is an insertion rather than an edit.
  */
-private val CASES = listOf(
-    // --- ED: the whole screen, and every cell it vacates takes the pen ---------------------------
-
-    c(
-        "ED 2 fills the screen with the pen, wherever the cursor is",
-        "$E[44m$E[1;1HHELLO$E[46m$E[3;4H$E[2J",
-        "", "", "", "", "",
-        painted = listOf(P, P, P, P, P),
-    ),
-    c(
-        "ED 0 fills from the cursor to the end of the screen with the pen",
-        "$E[44m$E[2J$E[46m$E[2;5H$E[0J",
-        "", "", "", "", "",
-        painted = listOf(P, "aaaabbbbbbbbbbbbbbbb", P, P, P),
-    ),
-    c(
-        "ED 1 fills from the start of the screen to the cursor inclusive",
-        "$E[44m$E[2J$E[43m$E[3;5H$E[1J",
-        "", "", "", "", "",
-        painted = listOf(P, P, "aaaaabbbbbbbbbbbbbbb", P, P),
-    ),
-
-    // --- EL: one line, the same three ranges -----------------------------------------------------
-
-    c("EL 0 blanks from the cursor to the margin", "$E[44mABCDEFGH$E[1;5H$E[0K", "ABCD", painted = listOf(P)),
-    c("EL 1 blanks from the start of the line to the cursor inclusive", "$E[42mABCDEFGH$E[1;4H$E[1K", "    EFGH", painted = listOf("aaaaaaaa............")),
-    c("EL 2 blanks the whole line", "$E[43mABCDEFGH$E[1;4H$E[2K", "", painted = listOf(P)),
-    c("EL 0 with the cursor on a wide character's left half takes the whole character", "$E[46m0123${WIDE}67$E[1;5H$E[0K", "0123", painted = listOf(P)),
-    c("EL 1 with the cursor on a wide character's right half takes the whole character", "$E[46m0123${WIDE}67$E[1;6H$E[1K", "      67", painted = listOf("aaaaaaaa............")),
-    c("EL 1 with the cursor before a wide character leaves it whole", "$E[46m0123${WIDE}67$E[1;2H$E[1K", "  23${WIDE}67", painted = listOf("aaaaaaaa............")),
-
-    // --- ECH: exactly the cells it names, and no widening ---------------------------------------
-
-    c("ECH 1 blanks the one cell it names", "$E[41mABCDEFGH$E[1;3H$E[1X", "AB DEFGH", painted = listOf("aaaaaaaa............")),
-    c("ECH 0 is ECH 1", "$E[41mABCDEFGH$E[1;3H$E[0X", "AB DEFGH", painted = listOf("aaaaaaaa............")),
-    c("ECH past the text blanks the cells it names", "$E[41mABCDEFGH$E[1;9H$E[3X", "ABCDEFGH", painted = listOf("aaaaaaaaaaa.........")),
-    c("ECH past the last column stops at the margin", "$E[41mABCDEFGH$E[1;18H$E[10X", "ABCDEFGH", painted = listOf("aaaaaaaa.........aaa")),
-    c("ECH 99 from the third column blanks to the margin", "$E[41mABCDEFGH$E[1;3H$E[99X", "AB", painted = listOf(P)),
-    c("ECH 2 covering a whole wide character takes it", "$E[41m0123${WIDE}67$E[1;5H$E[2X", "0123  67", painted = listOf("aaaaaaaa............")),
-
-    // --- DCH: the range is widened to whole characters, and the tail takes the pen ---------------
-
-    c("DCH 1 on an ordinary cell shifts the line one cell", "$E[41mABCDEFGH$E[1;3H$E[1P", "ABDEFGH", painted = listOf("aaaaaaa............a")),
-    c("DCH 0 is DCH 1", "$E[41mABCDEFGH$E[1;3H$E[0P", "ABDEFGH", painted = listOf("aaaaaaa............a")),
-    c("DCH on a full line shifts it and blanks the last cell", "$E[42mABCDEFGHIJKLMNOPQRST$E[1;5H$E[1P", "ABCDFGHIJKLMNOPQRST", painted = listOf(P)),
-    c("DCH on a wide character's left half takes the whole character", "$E[41m0123${WIDE}67$E[1;5H$E[1P", "012367", painted = listOf("aaaaaa............aa")),
-    c("DCH 2 on a wide character's left half is the same delete", "$E[41m0123${WIDE}67$E[1;5H$E[2P", "012367", painted = listOf("aaaaaa............aa")),
-    c("DCH on a wide character's right half leaves the line alone", "$E[44m0123${WIDE}67$E[1;6H$E[1P", "0123${WIDE}67", painted = listOf("aaaaaaaa............")),
-    c("DCH 3 from a wide character's right half spends one cell on the half", "$E[41m0123${WIDE}67$E[1;6H$E[3P", "0123${WIDE}", painted = listOf("aaaaaa............aa")),
-
-    // --- ICH: the cells shift, and a whole character moves with them -----------------------------
-
-    c("ICH 1 on an ordinary cell shifts the line one cell", "$E[41mABCDEFGH$E[1;3H$E[1@", "AB CDEFGH", painted = listOf("aaaaaaaaa...........")),
-    c("ICH 0 is ICH 1", "$E[41mABCDEFGH$E[1;3H$E[0@", "AB CDEFGH", painted = listOf("aaaaaaaaa...........")),
-    c("ICH on a full line drops the last cell", "$E[44mABCDEFGHIJKLMNOPQRST$E[1;5H$E[1@", "ABCD EFGHIJKLMNOPQRS", painted = listOf(P)),
-    c("ICH on a wide character's left half pushes the pair along", "$E[43m0123${WIDE}67$E[1;5H$E[1@", "0123 ${WIDE}67", painted = listOf("aaaaaaaaa...........")),
-
-    // --- IL, DL, SU and SD: what a scroll vacates takes the pen, and the region is the bounds ----
-
-    c(
-        "IL 1 at the top margin drops the region's last line",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1L$E[r",
-        "", "AAA", "BBB",
-        painted = listOf(P, P3, P3),
-        cursor = 0 to 0,
-    ),
-    c(
-        "IL 2 drops the region's last two lines",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[2L$E[r",
-        "", "", "AAA",
-        painted = listOf(P, P, P3),
-        cursor = 0 to 0,
-    ),
-    c(
-        "DL 1 at the top margin drops the region's first line",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1M$E[r",
-        "BBB", "CCC", "",
-        painted = listOf(P3, P3, P),
-        cursor = 0 to 0,
-    ),
-    c(
-        "DL 2 drops the region's first two lines",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[2M$E[r",
-        "CCC", "", "",
-        painted = listOf(P3, P, P),
-        cursor = 0 to 0,
-    ),
-    c(
-        "SU 1 scrolls the region up",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1S$E[r",
-        "BBB", "CCC", "",
-        painted = listOf(P3, P3, P),
-        cursor = 0 to 0,
-    ),
-    c(
-        "SD 1 scrolls the region down",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1T$E[r",
-        "", "AAA", "BBB",
-        painted = listOf(P, P3, P3),
-        cursor = 0 to 0,
-    ),
-    c(
-        "IL 1 with the cursor on the bottom margin blanks only that line",
-        "$E[41mAAA$E[2;1HBBB$E[1;2r$E[2;1H$E[1L$E[r",
-        "AAA", "",
-        painted = listOf(P3, P),
-        cursor = 0 to 0,
-    ),
-    c(
-        "IL past the region's height blanks the region",
-        "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[99L$E[r",
-        "", "", "",
-        painted = listOf(P, P, P),
-        cursor = 0 to 0,
-    ),
-)
+private val CASES =
+    listOf(
+        // --- ED: the whole screen, and every cell it vacates takes the pen ---------------------------
+        c(
+            "ED 2 fills the screen with the pen, wherever the cursor is",
+            "$E[44m$E[1;1HHELLO$E[46m$E[3;4H$E[2J",
+            "",
+            "",
+            "",
+            "",
+            "",
+            painted = listOf(P, P, P, P, P),
+        ),
+        c(
+            "ED 0 fills from the cursor to the end of the screen with the pen",
+            "$E[44m$E[2J$E[46m$E[2;5H$E[0J",
+            "",
+            "",
+            "",
+            "",
+            "",
+            painted = listOf(P, "aaaabbbbbbbbbbbbbbbb", P, P, P),
+        ),
+        c(
+            "ED 1 fills from the start of the screen to the cursor inclusive",
+            "$E[44m$E[2J$E[43m$E[3;5H$E[1J",
+            "",
+            "",
+            "",
+            "",
+            "",
+            painted = listOf(P, P, "aaaaabbbbbbbbbbbbbbb", P, P),
+        ),
+        // --- EL: one line, the same three ranges -----------------------------------------------------
+        c("EL 0 blanks from the cursor to the margin", "$E[44mABCDEFGH$E[1;5H$E[0K", "ABCD", painted = listOf(P)),
+        c("EL 1 blanks from the start of the line to the cursor inclusive", "$E[42mABCDEFGH$E[1;4H$E[1K", "    EFGH", painted = listOf("aaaaaaaa............")),
+        c("EL 2 blanks the whole line", "$E[43mABCDEFGH$E[1;4H$E[2K", "", painted = listOf(P)),
+        c("EL 0 with the cursor on a wide character's left half takes the whole character", "$E[46m0123${WIDE}67$E[1;5H$E[0K", "0123", painted = listOf(P)),
+        c("EL 1 with the cursor on a wide character's right half takes the whole character", "$E[46m0123${WIDE}67$E[1;6H$E[1K", "      67", painted = listOf("aaaaaaaa............")),
+        c("EL 1 with the cursor before a wide character leaves it whole", "$E[46m0123${WIDE}67$E[1;2H$E[1K", "  23${WIDE}67", painted = listOf("aaaaaaaa............")),
+        // --- ECH: exactly the cells it names, and no widening ---------------------------------------
+        c("ECH 1 blanks the one cell it names", "$E[41mABCDEFGH$E[1;3H$E[1X", "AB DEFGH", painted = listOf("aaaaaaaa............")),
+        c("ECH 0 is ECH 1", "$E[41mABCDEFGH$E[1;3H$E[0X", "AB DEFGH", painted = listOf("aaaaaaaa............")),
+        c("ECH past the text blanks the cells it names", "$E[41mABCDEFGH$E[1;9H$E[3X", "ABCDEFGH", painted = listOf("aaaaaaaaaaa.........")),
+        c("ECH past the last column stops at the margin", "$E[41mABCDEFGH$E[1;18H$E[10X", "ABCDEFGH", painted = listOf("aaaaaaaa.........aaa")),
+        c("ECH 99 from the third column blanks to the margin", "$E[41mABCDEFGH$E[1;3H$E[99X", "AB", painted = listOf(P)),
+        c("ECH 2 covering a whole wide character takes it", "$E[41m0123${WIDE}67$E[1;5H$E[2X", "0123  67", painted = listOf("aaaaaaaa............")),
+        // --- DCH: the range is widened to whole characters, and the tail takes the pen ---------------
+        c("DCH 1 on an ordinary cell shifts the line one cell", "$E[41mABCDEFGH$E[1;3H$E[1P", "ABDEFGH", painted = listOf("aaaaaaa............a")),
+        c("DCH 0 is DCH 1", "$E[41mABCDEFGH$E[1;3H$E[0P", "ABDEFGH", painted = listOf("aaaaaaa............a")),
+        c("DCH on a full line shifts it and blanks the last cell", "$E[42mABCDEFGHIJKLMNOPQRST$E[1;5H$E[1P", "ABCDFGHIJKLMNOPQRST", painted = listOf(P)),
+        c("DCH on a wide character's left half takes the whole character", "$E[41m0123${WIDE}67$E[1;5H$E[1P", "012367", painted = listOf("aaaaaa............aa")),
+        c("DCH 2 on a wide character's left half is the same delete", "$E[41m0123${WIDE}67$E[1;5H$E[2P", "012367", painted = listOf("aaaaaa............aa")),
+        c("DCH on a wide character's right half leaves the line alone", "$E[44m0123${WIDE}67$E[1;6H$E[1P", "0123${WIDE}67", painted = listOf("aaaaaaaa............")),
+        c("DCH 3 from a wide character's right half spends one cell on the half", "$E[41m0123${WIDE}67$E[1;6H$E[3P", "0123$WIDE", painted = listOf("aaaaaa............aa")),
+        // --- ICH: the cells shift, and a whole character moves with them -----------------------------
+        c("ICH 1 on an ordinary cell shifts the line one cell", "$E[41mABCDEFGH$E[1;3H$E[1@", "AB CDEFGH", painted = listOf("aaaaaaaaa...........")),
+        c("ICH 0 is ICH 1", "$E[41mABCDEFGH$E[1;3H$E[0@", "AB CDEFGH", painted = listOf("aaaaaaaaa...........")),
+        c("ICH on a full line drops the last cell", "$E[44mABCDEFGHIJKLMNOPQRST$E[1;5H$E[1@", "ABCD EFGHIJKLMNOPQRS", painted = listOf(P)),
+        c("ICH on a wide character's left half pushes the pair along", "$E[43m0123${WIDE}67$E[1;5H$E[1@", "0123 ${WIDE}67", painted = listOf("aaaaaaaaa...........")),
+        // --- IL, DL, SU and SD: what a scroll vacates takes the pen, and the region is the bounds ----
+        c(
+            "IL 1 at the top margin drops the region's last line",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1L$E[r",
+            "",
+            "AAA",
+            "BBB",
+            painted = listOf(P, P3, P3),
+            cursor = 0 to 0,
+        ),
+        c(
+            "IL 2 drops the region's last two lines",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[2L$E[r",
+            "",
+            "",
+            "AAA",
+            painted = listOf(P, P, P3),
+            cursor = 0 to 0,
+        ),
+        c(
+            "DL 1 at the top margin drops the region's first line",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1M$E[r",
+            "BBB",
+            "CCC",
+            "",
+            painted = listOf(P3, P3, P),
+            cursor = 0 to 0,
+        ),
+        c(
+            "DL 2 drops the region's first two lines",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[2M$E[r",
+            "CCC",
+            "",
+            "",
+            painted = listOf(P3, P, P),
+            cursor = 0 to 0,
+        ),
+        c(
+            "SU 1 scrolls the region up",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1S$E[r",
+            "BBB",
+            "CCC",
+            "",
+            painted = listOf(P3, P3, P),
+            cursor = 0 to 0,
+        ),
+        c(
+            "SD 1 scrolls the region down",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[1T$E[r",
+            "",
+            "AAA",
+            "BBB",
+            painted = listOf(P, P3, P3),
+            cursor = 0 to 0,
+        ),
+        c(
+            "IL 1 with the cursor on the bottom margin blanks only that line",
+            "$E[41mAAA$E[2;1HBBB$E[1;2r$E[2;1H$E[1L$E[r",
+            "AAA",
+            "",
+            painted = listOf(P3, P),
+            cursor = 0 to 0,
+        ),
+        c(
+            "IL past the region's height blanks the region",
+            "$E[41mAAA$E[2;1HBBB$E[3;1HCCC$E[1;3r$E[1;1H$E[99L$E[r",
+            "",
+            "",
+            "",
+            painted = listOf(P, P, P),
+            cursor = 0 to 0,
+        ),
+    )

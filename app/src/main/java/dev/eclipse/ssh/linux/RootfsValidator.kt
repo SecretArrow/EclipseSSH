@@ -32,7 +32,10 @@ class RootfsValidator(
     private val expectedArch: String? = null,
 ) {
     /** One broken expectation: [path] on disk does not satisfy [problem]. */
-    data class Finding(val path: String, val problem: String)
+    data class Finding(
+        val path: String,
+        val problem: String,
+    )
 
     /**
      * Validates the extracted tree at [root]; an empty list is a valid rootfs. Each finding names
@@ -89,13 +92,18 @@ class RootfsValidator(
      * ld-linux-x86-64.so.2), so the search is for the prefix, under the two directories the
      * Ubuntu filesystem hierarchy puts it in.
      */
-    private fun findDynamicLinker(root: File): File? =
-        findNamed(root) { it.startsWith("ld-linux") }
+    private fun findDynamicLinker(root: File): File? = findNamed(root) { it.startsWith("ld-linux") }
 
     /** The one file the manifest wants when the architecture is pinned: the linker by exact name. */
-    private fun findFileNamed(root: File, name: String): File? = findNamed(root) { it == name }
+    private fun findFileNamed(
+        root: File,
+        name: String,
+    ): File? = findNamed(root) { it == name }
 
-    private fun findNamed(root: File, matches: (String) -> Boolean): File? =
+    private fun findNamed(
+        root: File,
+        matches: (String) -> Boolean,
+    ): File? =
         listOf(File(root, "lib"), File(root, "usr/lib"))
             .asSequence()
             // isDirectory follows deliberately: on a merged-/usr rootfs `lib` *is* a link to
@@ -110,8 +118,10 @@ class RootfsValidator(
             .firstOrNull()
 
     /** A rootfs-inside path ("/lib/ld-linux-aarch64.so.1"), the form findings name paths in. */
-    private fun pathInsideRoot(root: File, file: File): String =
-        "/" + root.toPath().relativize(file.toPath()).joinToString("/")
+    private fun pathInsideRoot(
+        root: File,
+        file: File,
+    ): String = "/" + root.toPath().relativize(file.toPath()).joinToString("/")
 
     /**
      * Bytes of real content under [root], for the floor that notices a truncated extraction.

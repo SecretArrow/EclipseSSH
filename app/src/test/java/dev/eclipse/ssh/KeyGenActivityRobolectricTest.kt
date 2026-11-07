@@ -48,7 +48,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class KeyGenActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<KeyGenActivity>()
 
@@ -108,7 +107,8 @@ class KeyGenActivityRobolectricTest {
 
         val labels = listOf("RSA 2048-bit", "RSA 4096-bit", "ECDSA P-256")
         assertWithMessage("the offered algorithms and the labels asserted here have drifted apart")
-            .that(labels.size).isEqualTo(SshKeyAlgorithm.entries.size)
+            .that(labels.size)
+            .isEqualTo(SshKeyAlgorithm.entries.size)
         labels.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
     }
 
@@ -128,7 +128,8 @@ class KeyGenActivityRobolectricTest {
 
         compose.onNodeWithText("Generate & save").assertIsDisplayed().assertIsEnabled()
         assertWithMessage("the screen opened claiming a generation was already in flight")
-            .that(compose.onAllNodesWithText("Generating the key pair").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Generating the key pair").fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**

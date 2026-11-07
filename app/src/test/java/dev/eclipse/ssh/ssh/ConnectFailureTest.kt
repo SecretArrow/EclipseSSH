@@ -1,14 +1,14 @@
 package dev.eclipse.ssh.ssh
 
 import com.google.common.truth.Truth.assertThat
+import org.apache.sshd.common.SshConstants
+import org.apache.sshd.common.SshException
+import org.junit.Test
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeoutException
-import org.apache.sshd.common.SshConstants
-import org.apache.sshd.common.SshException
-import org.junit.Test
 
 /**
  * Which connect failures the retry loop is allowed to try again.
@@ -21,13 +21,13 @@ import org.junit.Test
  * final ones stop.
  */
 class ConnectFailureTest {
-
     @Test
     fun `a rejected credential is not offered again`() {
-        val byCode = SshException(
-            SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,
-            "No more authentication methods available",
-        )
+        val byCode =
+            SshException(
+                SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,
+                "No more authentication methods available",
+            )
         assertThat(connectFailureIsFinal(byCode)).isTrue()
         // The same rejection raised locally, without a disconnect packet to carry the code.
         assertThat(connectFailureIsFinal(SshException("No more authentication methods available"))).isTrue()
@@ -45,27 +45,29 @@ class ConnectFailureTest {
      */
     @Test
     fun `a refused credential is told apart from a transport failure`() {
-        val refusals = listOf(
-            SshException(SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE, "No more authentication methods available"),
-            SshException("No more authentication methods available"),
-            SshException("Permission denied"),
-            IOException("wrapped", SshException("Authentication failed")),
-            SshException("Too many authentication failures"),
-        )
+        val refusals =
+            listOf(
+                SshException(SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE, "No more authentication methods available"),
+                SshException("No more authentication methods available"),
+                SshException("Permission denied"),
+                IOException("wrapped", SshException("Authentication failed")),
+                SshException("Too many authentication failures"),
+            )
         refusals.forEach { error ->
             assertThat(isCredentialRejection(error)).isTrue()
         }
 
-        val transport = listOf(
-            null,
-            ConnectException("Connection refused"),
-            SocketTimeoutException("connect timed out"),
-            UnknownHostException("no.such.host"),
-            TimeoutException("timeout"),
-            IOException("Connection reset by peer"),
-            SshException(SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED, "Unable to negotiate"),
-            SshException("Server key did not validate"),
-        )
+        val transport =
+            listOf(
+                null,
+                ConnectException("Connection refused"),
+                SocketTimeoutException("connect timed out"),
+                UnknownHostException("no.such.host"),
+                TimeoutException("timeout"),
+                IOException("Connection reset by peer"),
+                SshException(SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED, "Unable to negotiate"),
+                SshException("Server key did not validate"),
+            )
         transport.forEach { error ->
             assertThat(isCredentialRejection(error)).isFalse()
         }
@@ -73,12 +75,13 @@ class ConnectFailureTest {
 
     @Test
     fun `a refused login names the credential as what was rejected`() {
-        val message = describeConnectFailure(
-            SshException(
-                SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,
-                "No more authentication methods available",
-            ),
-        )
+        val message =
+            describeConnectFailure(
+                SshException(
+                    SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,
+                    "No more authentication methods available",
+                ),
+            )
         // The sentence says what to fix rather than quoting the protocol's reason code; the server's
         // own text survives it for anyone diagnosing the account.
         assertThat(message).contains("refused the login")
@@ -98,10 +101,11 @@ class ConnectFailureTest {
 
     @Test
     fun `a failed algorithm negotiation is not retried`() {
-        val negotiation = SshException(
-            SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED,
-            "Unable to negotiate key exchange for encryption client to server (client: aes128-ctr / server: aes256-cbc)",
-        )
+        val negotiation =
+            SshException(
+                SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED,
+                "Unable to negotiate key exchange for encryption client to server (client: aes128-ctr / server: aes256-cbc)",
+            )
         assertThat(connectFailureIsFinal(negotiation)).isTrue()
     }
 
@@ -115,23 +119,25 @@ class ConnectFailureTest {
     fun `a cause chain that points at itself does not hang the classifier`() {
         // Not hypothetical enough to ignore: some libraries initialise a cause to the exception
         // itself. Walking the chain unbounded would spin here instead of returning a verdict.
-        val looping = object : IOException("stalled") {
-            override val cause: Throwable get() = this
-        }
+        val looping =
+            object : IOException("stalled") {
+                override val cause: Throwable get() = this
+            }
         assertThat(connectFailureIsFinal(looping)).isFalse()
     }
 
     @Test
     fun `transient failures keep all three attempts`() {
-        val transient = listOf(
-            SocketTimeoutException("connect timed out"),
-            ConnectException("Connection refused"),
-            UnknownHostException("no.such.host"),
-            TimeoutException("timeout"),
-            IOException("Connection reset by peer"),
-            SshException(SshConstants.SSH2_DISCONNECT_CONNECTION_LOST, "connection lost"),
-            SshException(SshConstants.SSH2_DISCONNECT_MAC_ERROR, "corrupt packet"),
-        )
+        val transient =
+            listOf(
+                SocketTimeoutException("connect timed out"),
+                ConnectException("Connection refused"),
+                UnknownHostException("no.such.host"),
+                TimeoutException("timeout"),
+                IOException("Connection reset by peer"),
+                SshException(SshConstants.SSH2_DISCONNECT_CONNECTION_LOST, "connection lost"),
+                SshException(SshConstants.SSH2_DISCONNECT_MAC_ERROR, "corrupt packet"),
+            )
         transient.forEach { error ->
             assertThat(connectFailureIsFinal(error)).isFalse()
         }
@@ -139,12 +145,13 @@ class ConnectFailureTest {
 
     @Test
     fun `a negotiation failure points the user at the setting that fixes it`() {
-        val message = describeConnectFailure(
-            SshException(
-                SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED,
-                "Unable to negotiate key exchange for encryption client to server",
-            ),
-        )
+        val message =
+            describeConnectFailure(
+                SshException(
+                    SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED,
+                    "Unable to negotiate key exchange for encryption client to server",
+                ),
+            )
         assertThat(message).contains("Legacy algorithms")
         // The hint comes first, but SSHD's own text has to survive: it is the only place the missing
         // algorithm is actually named.
@@ -163,12 +170,13 @@ class ConnectFailureTest {
      */
     @Test
     fun `an unavailable sftp subsystem is explained without blaming the session`() {
-        val refusals = listOf(
-            SshException("Failed to open subsystem sftp"),
-            SshException("SSH_OPEN_UNKNOWN_CHANNEL_TYPE"),
-            SshException("open failed: SSH_OPEN_ADMINISTRATIVELY_PROHIBITED"),
-            IllegalStateException("unknown channel type"),
-        )
+        val refusals =
+            listOf(
+                SshException("Failed to open subsystem sftp"),
+                SshException("SSH_OPEN_UNKNOWN_CHANNEL_TYPE"),
+                SshException("open failed: SSH_OPEN_ADMINISTRATIVELY_PROHIBITED"),
+                IllegalStateException("unknown channel type"),
+            )
         refusals.forEach { error ->
             val message = describeSftpFailure(error)
             assertThat(message).contains("does not offer SFTP")
@@ -221,8 +229,9 @@ class ConnectFailureTest {
             // The one message that is replaced rather than passed through. MINA's text names an internal
             // exception class and prints both socket addresses - the second of which is the device's own
             // address on the local network - and says nothing a user can act on.
-            val raw = "DefaultConnectFuture[me@/10.1.2.3:22]: Failed (MissingAttachedSessionException) " +
-                "to execute: No session attached to Nio2Session[local=/192.168.1.24:41234, remote=/10.1.2.3:22]"
+            val raw =
+                "DefaultConnectFuture[me@/10.1.2.3:22]: Failed (MissingAttachedSessionException) " +
+                    "to execute: No session attached to Nio2Session[local=/192.168.1.24:41234, remote=/10.1.2.3:22]"
             val described = describeConnectFailure(SshException(raw))
             assertThat(described).contains("closed it during the SSH handshake")
             assertThat(described).doesNotContain("192.168.1.24")

@@ -41,7 +41,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class KnownHostsActivity : SettingsDestinationActivity() {
-
     /**
      * The host key store itself, injected here rather than reached through the Settings view model.
      *
@@ -55,7 +54,10 @@ class KnownHostsActivity : SettingsDestinationActivity() {
     override val screenTitle = "Known hosts"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         // Pulled, not subscribed. The store is an in-memory map plus a SharedPreferences file and
         // neither announces a change, so there is no Flow here to collect: the snapshot is read once
         // when the window opens and read *again* after every mutation below. Because the read and the
@@ -73,10 +75,11 @@ class KnownHostsActivity : SettingsDestinationActivity() {
         // left in the list rather than forgotten under a guessed host - the same guard the Settings
         // view model applies.
         fun forget(key: String) {
-            val (host, port) = runCatching {
-                val separator = key.lastIndexOf(':')
-                key.substring(0, separator) to key.substring(separator + 1).toInt()
-            }.getOrNull() ?: return
+            val (host, port) =
+                runCatching {
+                    val separator = key.lastIndexOf(':')
+                    key.substring(0, separator) to key.substring(separator + 1).toInt()
+                }.getOrNull() ?: return
             // The store's own answer, not an assumption. It drops the key from its in-memory map
             // whatever happens and reports separately whether the write reached disk, so a `false`
             // here means the fingerprint is forgotten only until the app restarts - and it is a

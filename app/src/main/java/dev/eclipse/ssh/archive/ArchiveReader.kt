@@ -1,8 +1,8 @@
 package dev.eclipse.ssh.archive
 
-import java.util.zip.Inflater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.zip.Inflater
 
 /**
  * The format-agnostic front door: name an archive, get its entries.
@@ -17,9 +17,11 @@ import kotlinx.coroutines.withContext
  * the session (see the browser layer). One object, no state, callable from anywhere.
  */
 object ArchiveReader {
-
     /** The container formats View Archive can browse. The label is what the properties sheet shows. */
-    enum class Format(val label: String, val extensions: List<String>) {
+    enum class Format(
+        val label: String,
+        val extensions: List<String>,
+    ) {
         ZIP("ZIP", listOf("zip", "jar")),
         TAR("TAR", listOf("tar")),
         TAR_GZ("TAR.GZ", listOf("tar.gz", "tgz")),
@@ -47,8 +49,7 @@ object ArchiveReader {
      * ranged read. Compressed TAR: never - seeking into a gzip stream means re-decompressing from
      * the start, which is the full download the feature forbids.
      */
-    fun supportsRandomAccess(format: Format): Boolean =
-        format == Format.ZIP || format == Format.TAR
+    fun supportsRandomAccess(format: Format): Boolean = format == Format.ZIP || format == Format.TAR
 
     /**
      * Lists the archive's entries, dispatching to the engine [format] names.
@@ -61,25 +62,27 @@ object ArchiveReader {
         format: Format,
         source: ArchiveByteSource,
         onProgress: (ArchiveScanProgress) -> Unit = {},
-    ): List<ArchiveEntry> = when (format) {
-        Format.ZIP -> ZipArchive(source).listEntries(onProgress)
-        Format.TAR -> TarArchive(source).listEntries(TarCompression.NONE, onProgress)
-        Format.TAR_GZ -> TarArchive(source).listEntries(TarCompression.GZIP, onProgress)
-        Format.TAR_BZ2 -> TarArchive(source).listEntries(TarCompression.BZIP2, onProgress)
-        Format.TAR_XZ -> TarArchive(source).listEntries(TarCompression.XZ, onProgress)
-    }
+    ): List<ArchiveEntry> =
+        when (format) {
+            Format.ZIP -> ZipArchive(source).listEntries(onProgress)
+            Format.TAR -> TarArchive(source).listEntries(TarCompression.NONE, onProgress)
+            Format.TAR_GZ -> TarArchive(source).listEntries(TarCompression.GZIP, onProgress)
+            Format.TAR_BZ2 -> TarArchive(source).listEntries(TarCompression.BZIP2, onProgress)
+            Format.TAR_XZ -> TarArchive(source).listEntries(TarCompression.XZ, onProgress)
+        }
 
     /**
      * The compression a [Format]'s streaming extract needs, or null when the format is not the
      * TAR family. The twin of the mapping inside [list] - same single place to add a format.
      */
-    fun tarCompressionOf(format: Format): TarCompression? = when (format) {
-        Format.TAR -> TarCompression.NONE
-        Format.TAR_GZ -> TarCompression.GZIP
-        Format.TAR_BZ2 -> TarCompression.BZIP2
-        Format.TAR_XZ -> TarCompression.XZ
-        Format.ZIP -> null
-    }
+    fun tarCompressionOf(format: Format): TarCompression? =
+        when (format) {
+            Format.TAR -> TarCompression.NONE
+            Format.TAR_GZ -> TarCompression.GZIP
+            Format.TAR_BZ2 -> TarCompression.BZIP2
+            Format.TAR_XZ -> TarCompression.XZ
+            Format.ZIP -> null
+        }
 
     /**
      * Reads one entry's bytes - the single-file preview and selective-extract path.
@@ -96,7 +99,11 @@ object ArchiveReader {
      * label the compressed-TAR preview honestly ("extract it instead") rather than discovering a
      * hidden full download.
      */
-    suspend fun readEntry(format: Format, source: ArchiveByteSource, entry: ArchiveEntry): ByteArray? {
+    suspend fun readEntry(
+        format: Format,
+        source: ArchiveByteSource,
+        entry: ArchiveEntry,
+    ): ByteArray? {
         if (format == Format.TAR) {
             // An uncompressed TAR's entry carries the byte offset its data starts at, tracked by
             // the record-aligned listing - so one ranged read moves exactly the entry's bytes,
@@ -144,57 +151,60 @@ object ArchiveReader {
      * the error that names it. [Inflater] is fed on the caller's dispatcher by its own
      * `withContext` - the call is CPU work on what may be megabytes.
      */
-    private suspend fun inflateDeflate(compressed: ByteArray, entry: ArchiveEntry): ByteArray =
+    private suspend fun inflateDeflate(
+        compressed: ByteArray,
+        entry: ArchiveEntry,
+    ): ByteArray =
         withContext(Dispatchers.Default) {
-        // Above 2 GB the size cannot be a ByteArray length at all, and the entry is past every
-        // preview/extract ceiling this feature has - corrupt-or-oversized reads identically here.
-        val declared = entry.size
-        if (declared < 0 || declared > Int.MAX_VALUE) {
-            throw ArchiveCorruptException("Entry '${entry.path}' declares $declared byte(s) of data")
-        }
-        // An empty file deflates to an empty stream - ZipOutputStream and Python's zipfile both emit
-        // one (the two-byte final empty block) - and there is nothing to inflate. The loop below only
-        // runs while produced < output.size, so for a zero-length entry it never enters, inflater is
-        // still !finished() at the check, and a valid empty file (a .gitkeep, an __init__.py, an empty
-        // .nojekyll) would be reported corrupt. Return the empty array its header declares; the size
-        // check still guards every non-zero entry.
-        if (declared == 0L) return@withContext ByteArray(0)
-        // Inflater implements AutoCloseable (JNI-held native state), and the stdlib's use{} runs on
-        // Closeable only - so the release is spelled by hand. Same shape as ByteArray above: the
-        // block's exceptions must not leak the inflater's native memory.
-        // ZIP stores raw deflate streams (no zlib wrapper), so the inflater must be told it is
-        // unwrapped - the wrapped default fails these exact bytes with "incorrect header check"
-        // before producing anything. nowrap=true is raw deflate.
-        val inflater = Inflater(true)
-        try {
-            inflater.setInput(compressed)
-            // The declared size is the output bound as well as the check: allocating it up front
-            // means no growing reallocations, and an archive that declares something absurd
-            // (a 4 GB "size" over 200 compressed bytes) fails on the check below rather than by
-            // OOM'ing the app - but only after allocating, so the size cap is the caller's job
-            // (the preview sheet refuses oversized entries before reading).
-            val output = ByteArray(declared.toInt())
-            var produced = 0
-            while (produced < output.size) {
-                if (inflater.needsInput() && inflater.remaining == 0) break
-                val count = inflater.inflate(output, produced, output.size - produced)
-                if (count == 0) {
-                    if (inflater.finished()) break
-                    if (inflater.needsDictionary() || inflater.needsInput()) break
+            // Above 2 GB the size cannot be a ByteArray length at all, and the entry is past every
+            // preview/extract ceiling this feature has - corrupt-or-oversized reads identically here.
+            val declared = entry.size
+            if (declared < 0 || declared > Int.MAX_VALUE) {
+                throw ArchiveCorruptException("Entry '${entry.path}' declares $declared byte(s) of data")
+            }
+            // An empty file deflates to an empty stream - ZipOutputStream and Python's zipfile both emit
+            // one (the two-byte final empty block) - and there is nothing to inflate. The loop below only
+            // runs while produced < output.size, so for a zero-length entry it never enters, inflater is
+            // still !finished() at the check, and a valid empty file (a .gitkeep, an __init__.py, an empty
+            // .nojekyll) would be reported corrupt. Return the empty array its header declares; the size
+            // check still guards every non-zero entry.
+            if (declared == 0L) return@withContext ByteArray(0)
+            // Inflater implements AutoCloseable (JNI-held native state), and the stdlib's use{} runs on
+            // Closeable only - so the release is spelled by hand. Same shape as ByteArray above: the
+            // block's exceptions must not leak the inflater's native memory.
+            // ZIP stores raw deflate streams (no zlib wrapper), so the inflater must be told it is
+            // unwrapped - the wrapped default fails these exact bytes with "incorrect header check"
+            // before producing anything. nowrap=true is raw deflate.
+            val inflater = Inflater(true)
+            try {
+                inflater.setInput(compressed)
+                // The declared size is the output bound as well as the check: allocating it up front
+                // means no growing reallocations, and an archive that declares something absurd
+                // (a 4 GB "size" over 200 compressed bytes) fails on the check below rather than by
+                // OOM'ing the app - but only after allocating, so the size cap is the caller's job
+                // (the preview sheet refuses oversized entries before reading).
+                val output = ByteArray(declared.toInt())
+                var produced = 0
+                while (produced < output.size) {
+                    if (inflater.needsInput() && inflater.remaining == 0) break
+                    val count = inflater.inflate(output, produced, output.size - produced)
+                    if (count == 0) {
+                        if (inflater.finished()) break
+                        if (inflater.needsDictionary() || inflater.needsInput()) break
+                    }
+                    produced += count
                 }
-                produced += count
+                if (!inflater.finished() || produced != output.size) {
+                    throw ArchiveCorruptException(
+                        "Entry '${entry.path}' decompresses to $produced byte(s), not the " +
+                            "${entry.size} its header declares",
+                    )
+                }
+                output
+            } finally {
+                inflater.end()
             }
-            if (!inflater.finished() || produced != output.size) {
-                throw ArchiveCorruptException(
-                    "Entry '${entry.path}' decompresses to $produced byte(s), not the " +
-                        "${entry.size} its header declares",
-                )
-            }
-            output
-        } finally {
-            inflater.end()
         }
-    }
 
     /** ZIP method codes this reader can decode; see [readEntry]. */
     private const val METHOD_STORED = 0

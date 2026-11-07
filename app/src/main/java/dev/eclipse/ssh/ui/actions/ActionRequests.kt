@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicReference
  * a subject and read back by token.
  */
 sealed interface ActionSubject {
-
     /**
      * The session tab whose "why?" window is open.
      *
@@ -37,7 +36,9 @@ sealed interface ActionSubject {
      * half that changes while the window is open - a reconnect ladder still climbing is exactly when
      * somebody is looking at it - and a frozen trace would be worse than no window at all.
      */
-    data class SessionWhy(val tab: SessionTab) : ActionSubject
+    data class SessionWhy(
+        val tab: SessionTab,
+    ) : ActionSubject
 
     /**
      * The port-forwarding manager for one host, and the half of its subject that has no singleton
@@ -78,7 +79,10 @@ sealed interface ActionSubject {
      * this window's one asymmetry honest - "Load server stats" *is* a request back to the workspace,
      * and the window closes to let it be answered.
      */
-    data class HostDetails(val hostId: String, val stats: ServerStats?) : ActionSubject
+    data class HostDetails(
+        val hostId: String,
+        val stats: ServerStats?,
+    ) : ActionSubject
 
     /**
      * The explorer row whose action window is open.
@@ -89,7 +93,9 @@ sealed interface ActionSubject {
      * booleans, so they ride the intent as extras and are not repeated here. That split is the rule
      * stated above, applied literally: a subject carries exactly what an intent cannot.
      */
-    data class FileActions(val entry: FsEntry) : ActionSubject
+    data class FileActions(
+        val entry: FsEntry,
+    ) : ActionSubject
 
     /**
      * The archive row whose action window is open.
@@ -97,7 +103,9 @@ sealed interface ActionSubject {
      * The same shape as [FileActions] and for the same reason - an [ArchiveEntry] is a row of a tree
      * the archive browser owns - with `canReadEntry`, a boolean, travelling in the intent.
      */
-    data class ArchiveEntryActions(val entry: ArchiveEntry) : ActionSubject
+    data class ArchiveEntryActions(
+        val entry: ArchiveEntry,
+    ) : ActionSubject
 }
 
 /**
@@ -117,9 +125,11 @@ sealed interface ActionSubject {
  * a provider resolved from the session on screen, or a dialog only that screen draws.
  */
 sealed interface ActionAnswer {
-
     /** One row of the transfer actions window, named rather than expressed as a lambda. */
-    data class TransferAction(val transferId: String, val action: TransferActionKind) : ActionAnswer
+    data class TransferAction(
+        val transferId: String,
+        val action: TransferActionKind,
+    ) : ActionAnswer
 
     /**
      * One row of the port-forwarding manager.
@@ -143,7 +153,10 @@ sealed interface ActionAnswer {
      * what makes its stop-the-removed-keep-the-unchanged behaviour apply to this window exactly as it
      * applies to a connect.
      */
-    data class ForwardRules(val hostId: String, val rules: List<ForwardEntry>) : ActionAnswer
+    data class ForwardRules(
+        val hostId: String,
+        val rules: List<ForwardEntry>,
+    ) : ActionAnswer
 
     /**
      * One row of the host details window.
@@ -152,7 +165,10 @@ sealed interface ActionAnswer {
      * well as dropping the secrets, and a stats refresh is a connection the workspace owns - so
      * neither is something this window could have done for itself.
      */
-    data class HostDetailsAction(val hostId: String, val action: HostDetailsKind) : ActionAnswer
+    data class HostDetailsAction(
+        val hostId: String,
+        val action: HostDetailsKind,
+    ) : ActionAnswer
 
     /**
      * One row of the snippets window.
@@ -161,7 +177,10 @@ sealed interface ActionAnswer {
      * that is not a verb on a snippet: it names the command the user has typed into the terminal's
      * command bar, which no snippet id could stand for.
      */
-    data class SnippetAction(val snippetId: String?, val action: SnippetActionKind) : ActionAnswer
+    data class SnippetAction(
+        val snippetId: String?,
+        val action: SnippetActionKind,
+    ) : ActionAnswer
 
     /**
      * One row of the explorer's action window.
@@ -170,10 +189,14 @@ sealed interface ActionAnswer {
      * entry it opened it on. A window cannot be opened on one row and answer for another, because the
      * workspace has to come back to the foreground for a second window to be opened at all.
      */
-    data class FileAction(val action: FileActionKind) : ActionAnswer
+    data class FileAction(
+        val action: FileActionKind,
+    ) : ActionAnswer
 
     /** One row of the archive entry's action window. The same reasoning as [FileAction]. */
-    data class ArchiveEntryAction(val action: ArchiveEntryActionKind) : ActionAnswer
+    data class ArchiveEntryAction(
+        val action: ArchiveEntryActionKind,
+    ) : ActionAnswer
 }
 
 /**
@@ -291,7 +314,6 @@ enum class ArchiveEntryActionKind {
  * small object per process death - the same trade [dev.eclipse.ssh.ui.preview.PreviewRequests] makes.
  */
 object ActionRequests {
-
     /** The intent extra a window reads its subject token out of. */
     const val EXTRA_SUBJECT_TOKEN = "dev.eclipse.ssh.actions.SUBJECT_TOKEN"
 

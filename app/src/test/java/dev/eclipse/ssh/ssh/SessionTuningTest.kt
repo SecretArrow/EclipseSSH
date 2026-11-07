@@ -20,7 +20,6 @@ import org.junit.Test
  * are stated here directly.
  */
 class SessionTuningTest {
-
     @Test
     fun `a host with no interval of its own follows the app wide one`() {
         assertThat(resolveKeepAliveSeconds(profile(), globalSeconds = 45)).isEqualTo(45)
@@ -115,10 +114,11 @@ class SessionTuningTest {
 
     @Test
     fun `a host that authenticates by keyboard interactive keeps the method it was configured to use`() {
-        val profile = profile().copy(
-            authMethod = AuthMethod.KEYBOARD_INTERACTIVE,
-            keyboardInteractiveAuth = false,
-        )
+        val profile =
+            profile().copy(
+                authMethod = AuthMethod.KEYBOARD_INTERACTIVE,
+                keyboardInteractiveAuth = false,
+            )
 
         assertThat(preferredAuths(profile)).contains("keyboard-interactive")
     }
@@ -244,11 +244,15 @@ class SessionTuningTest {
     fun `an environment column becomes the variables it names, in the order it names them`() {
         val environment = parseEnvironment("LANG=en_US.UTF-8\nTZ=Europe/Amsterdam\nEDITOR=vim")
 
-        assertThat(environment).containsExactly(
-            "LANG", "en_US.UTF-8",
-            "TZ", "Europe/Amsterdam",
-            "EDITOR", "vim",
-        ).inOrder()
+        assertThat(environment)
+            .containsExactly(
+                "LANG",
+                "en_US.UTF-8",
+                "TZ",
+                "Europe/Amsterdam",
+                "EDITOR",
+                "vim",
+            ).inOrder()
     }
 
     @Test
@@ -289,20 +293,21 @@ class SessionTuningTest {
         // A name is a protocol field, not a shell word: a channel request carrying a space or a newline in
         // its name is a malformed request and MINA would send it. And one bad line must not cost the login
         // - a host whose environment has a typo in the third line should still get the other two.
-        val environment = parseEnvironment(
-            listOf(
-                "LANG=en_US.UTF-8",   // fine
-                "has space=1",        // a space in a name
-                "1STARTS_WITH_DIGIT=1",
-                "LÄNG=1",             // non-ASCII
-                "WITH-DASH=1",
-                "NO_EQUALS_AT_ALL",   // nothing it could mean
-                "=orphan",            // a value with no name
-                "  ",
-                "# a comment=1",
-                "TZ=Europe/Amsterdam", // fine
-            ).joinToString("\n"),
-        )
+        val environment =
+            parseEnvironment(
+                listOf(
+                    "LANG=en_US.UTF-8", // fine
+                    "has space=1", // a space in a name
+                    "1STARTS_WITH_DIGIT=1",
+                    "LÄNG=1", // non-ASCII
+                    "WITH-DASH=1",
+                    "NO_EQUALS_AT_ALL", // nothing it could mean
+                    "=orphan", // a value with no name
+                    "  ",
+                    "# a comment=1",
+                    "TZ=Europe/Amsterdam", // fine
+                ).joinToString("\n"),
+            )
 
         assertThat(environment.keys).containsExactly("LANG", "TZ").inOrder()
     }
@@ -359,10 +364,11 @@ class SessionTuningTest {
         assertThat(bytes).isEqualTo("cd /srv/données\r".toByteArray(Charsets.UTF_8))
     }
 
-    private fun profile() = HostProfile(
-        id = "tuning-host",
-        name = "Tuning",
-        host = "tuning.example.com",
-        username = "root",
-    )
+    private fun profile() =
+        HostProfile(
+            id = "tuning-host",
+            name = "Tuning",
+            host = "tuning.example.com",
+            username = "root",
+        )
 }

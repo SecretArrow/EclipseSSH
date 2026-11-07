@@ -42,8 +42,8 @@ import dev.eclipse.ssh.ui.actions.SnippetActionKind
 import dev.eclipse.ssh.ui.settings.LocalSettingsReport
 import dev.eclipse.ssh.ui.settings.SettingsDestinationWindow
 import dev.eclipse.ssh.ui.settings.reportFailure
-import javax.inject.Inject
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * The saved commands, in a window of their own.
@@ -70,7 +70,6 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class SnippetsActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var snippetRepository: SnippetRepository

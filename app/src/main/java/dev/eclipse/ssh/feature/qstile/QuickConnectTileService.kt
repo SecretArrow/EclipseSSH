@@ -3,16 +3,14 @@ package dev.eclipse.ssh.feature.qstile
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.TileService
-import androidx.annotation.RequiresApi
 import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.MainActivity
 import dev.eclipse.ssh.feature.quickconnect.QuickConnectContract
-import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
+import javax.inject.Inject
 
 /**
  * Quick Settings tile for "connect to the most-recently-used host".
@@ -32,7 +30,6 @@ import kotlinx.coroutines.flow.first
  */
 @AndroidEntryPoint
 class QuickConnectTileService : TileService() {
-
     @Inject lateinit var lastHostProvider: LastHostProvider
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -54,21 +51,23 @@ class QuickConnectTileService : TileService() {
         // Open the main activity with the quick-connect intent extra.
         // The activity handles the actual dial; the tile itself is
         // stateless.
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(QuickConnectContract.EXTRA_QUICK_CONNECT_LAST, true)
-        }
+        val intent =
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(QuickConnectContract.EXTRA_QUICK_CONNECT_LAST, true)
+            }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             // API 34+: collapse the shade on unlockAndLaunch. The
             // (PendingIntent) overload is the one Android wants; the
             // (Intent) overload is deprecated. PendingIntent.FLAG_IMMUTABLE
             // is required from API 31+ and harmless below.
-            val pendingIntent = android.app.PendingIntent.getActivity(
-                this,
-                QuickConnectContract.REQUEST_LAST_HOST,
-                intent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
-            )
+            val pendingIntent =
+                android.app.PendingIntent.getActivity(
+                    this,
+                    QuickConnectContract.REQUEST_LAST_HOST,
+                    intent,
+                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+                )
             startActivityAndCollapse(pendingIntent)
         } else {
             startActivity(intent)

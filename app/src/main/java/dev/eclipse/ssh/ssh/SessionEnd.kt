@@ -29,7 +29,6 @@ import org.apache.sshd.common.SshConstants
  * could possibly help.
  */
 sealed interface SessionEnd {
-
     /**
      * The remote shell finished while its transport was still up.
      *
@@ -39,7 +38,10 @@ sealed interface SessionEnd {
      * thing for recovery: the far end is finished with this shell, and dialling another one would end
      * the same way.
      */
-    data class ShellEnded(val status: Int?, val signal: String?) : SessionEnd
+    data class ShellEnded(
+        val status: Int?,
+        val signal: String?,
+    ) : SessionEnd
 
     /**
      * The transport was ended by an `SSH_MSG_DISCONNECT`, which carries a reason and a message.
@@ -49,13 +51,19 @@ sealed interface SessionEnd {
      * the first is the server's decision — an idle timeout, a shutdown, an administrator — and the
      * second says the connection was corrupted on the way.
      */
-    data class Disconnected(val reason: Int, val message: String?, val byPeer: Boolean) : SessionEnd
+    data class Disconnected(
+        val reason: Int,
+        val message: String?,
+        val byPeer: Boolean,
+    ) : SessionEnd
 
     /**
      * MINA raised an exception on the transport: the heartbeat gave up, the socket failed, a packet
      * did not parse. The earliest and most specific signal of a genuine drop.
      */
-    data class TransportFailed(val cause: Throwable) : SessionEnd
+    data class TransportFailed(
+        val cause: Throwable,
+    ) : SessionEnd
 
     /**
      * The network the session was bound to went away, and the app is the one that noticed.
@@ -104,28 +112,34 @@ sealed interface SessionEnd {
  * text is passed through because a server that says *why* it hung up ("Timeout, your session not
  * responding") is telling the user something no sentence this app could invent would.
  */
-fun describeSessionEnd(end: SessionEnd): String = when (end) {
-    is SessionEnd.ShellEnded -> when {
-        end.signal != null -> "The remote shell was ended by SIG${end.signal.removePrefix("SIG")}"
-        end.status == null -> "The remote shell closed the session. Connect again to start a new one."
-        end.status == 0 -> "Session ended"
-        else -> "Session ended (exit ${end.status})"
+fun describeSessionEnd(end: SessionEnd): String =
+    when (end) {
+        is SessionEnd.ShellEnded ->
+            when {
+                end.signal != null -> "The remote shell was ended by SIG${end.signal.removePrefix("SIG")}"
+                end.status == null -> "The remote shell closed the session. Connect again to start a new one."
+                end.status == 0 -> "Session ended"
+                else -> "Session ended (exit ${end.status})"
+            }
+        is SessionEnd.TransportFailed ->
+            // Named rather than dressed up as an outage. See [isAppFault] for why this one ending gets its
+            // own sentence: "Connection lost" would send the user to look at a server and a link that are
+            // both fine, and it is the app that has to be fixed.
+            if (end.isAppFault) {
+                "App bug: Eclipse SSH used the network on its UI thread — not your server or your link"
+            } else {
+                "Connection lost: ${transportMessage(end.cause)}"
+            }
+        is SessionEnd.Disconnected -> {
+            val reason =
+                end.message?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: SshConstants.getDisconnectReasonName(end.reason).takeIf { it.isNotBlank() }
+                    ?: "reason ${end.reason}"
+            if (end.byPeer) "The server disconnected: $reason" else "Disconnected: $reason"
+        }
+        SessionEnd.NetworkLost -> "The network went away. Reconnecting when it comes back…"
+        SessionEnd.TransportClosed, SessionEnd.Released -> "Disconnected from the remote host"
     }
-    is SessionEnd.TransportFailed ->
-        // Named rather than dressed up as an outage. See [isAppFault] for why this one ending gets its
-        // own sentence: "Connection lost" would send the user to look at a server and a link that are
-        // both fine, and it is the app that has to be fixed.
-        if (end.isAppFault) "App bug: Eclipse SSH used the network on its UI thread — not your server or your link"
-        else "Connection lost: ${transportMessage(end.cause)}"
-    is SessionEnd.Disconnected -> {
-        val reason = end.message?.trim()?.takeIf { it.isNotEmpty() }
-            ?: SshConstants.getDisconnectReasonName(end.reason).takeIf { it.isNotBlank() }
-            ?: "reason ${end.reason}"
-        if (end.byPeer) "The server disconnected: $reason" else "Disconnected: $reason"
-    }
-    SessionEnd.NetworkLost -> "The network went away. Reconnecting when it comes back…"
-    SessionEnd.TransportClosed, SessionEnd.Released -> "Disconnected from the remote host"
-}
 
 /**
  * The most specific sentence in a transport failure's cause chain.
@@ -200,11 +214,12 @@ private const val MAX_TRANSPORT_CAUSE_DEPTH = 8
  * closes never reach this, since the collector returns early on them.
  */
 val SessionEnd.isFault: Boolean
-    get() = when (this) {
-        is SessionEnd.ShellEnded -> signal != null
-        is SessionEnd.Disconnected -> true
-        is SessionEnd.TransportFailed -> true
-        SessionEnd.NetworkLost -> true
-        SessionEnd.TransportClosed -> true
-        SessionEnd.Released -> true
-    }
+    get() =
+        when (this) {
+            is SessionEnd.ShellEnded -> signal != null
+            is SessionEnd.Disconnected -> true
+            is SessionEnd.TransportFailed -> true
+            SessionEnd.NetworkLost -> true
+            SessionEnd.TransportClosed -> true
+            SessionEnd.Released -> true
+        }

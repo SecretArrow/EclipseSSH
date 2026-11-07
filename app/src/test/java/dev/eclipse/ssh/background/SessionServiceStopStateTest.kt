@@ -14,7 +14,6 @@ import org.junit.Test
  * `Service` is close to untestable in a JVM suite.
  */
 class SessionServiceStopStateTest {
-
     @Test
     fun `a fresh service is running and not stopping`() {
         val state = SessionServiceStopState()

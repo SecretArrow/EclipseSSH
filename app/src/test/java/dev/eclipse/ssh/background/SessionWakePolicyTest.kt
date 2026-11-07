@@ -14,7 +14,6 @@ import org.junit.Test
  * that is live, on an app the user is not looking at, that is not already shutting down.
  */
 class SessionWakePolicyTest {
-
     @Test
     fun `a hidden app with a live session holds the CPU`() {
         assertThat(wakeNeed(appVisible = false, liveSessions = 1, stopping = false)).isEqualTo(WakeNeed.PARTIAL)

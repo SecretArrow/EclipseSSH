@@ -24,7 +24,6 @@ import kotlin.concurrent.thread
  * client checks for it, so the failure paths matter as much as the tunnel itself.
  */
 class HttpConnectHandshakeTest {
-
     private val servers = mutableListOf<ServerSocket>()
     private val channels = mutableListOf<AsynchronousSocketChannel>()
 
@@ -102,14 +101,15 @@ class HttpConnectHandshakeTest {
         // link, from an imported vault and from an imported OpenSSH config, so it is attacker-supplied
         // on all three paths. Interpolated unchecked, this appended a header of the sender's choosing
         // to the proxy's own request.
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(
-                channel,
-                "good.example.com:22 HTTP/1.1\r\nX-Injected: yes\r\nHost: evil.example.com",
-                22,
-                HttpProxyConfig("127.0.0.1", proxyPort),
-            )
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(
+                    channel,
+                    "good.example.com:22 HTTP/1.1\r\nX-Injected: yes\r\nHost: evil.example.com",
+                    22,
+                    HttpProxyConfig("127.0.0.1", proxyPort),
+                )
+            }
 
         assertThat(error).hasMessageThat().contains("Illegal character")
         // Nothing was sent, so there is nothing for a proxy to have misparsed.
@@ -122,9 +122,10 @@ class HttpConnectHandshakeTest {
         // loop would leave the second attempt blocked in connect() rather than reaching the check.
         listOf("evil host", "tab\ttarget", "null\u0000byte", "del\u007f").forEach { host ->
             val proxyPort = startScriptedProxy(ESTABLISHED)
-            val error = assertThrows(IOException::class.java) {
-                HttpConnectHandshake.perform(connect(proxyPort), host, 22, HttpProxyConfig("127.0.0.1", proxyPort))
-            }
+            val error =
+                assertThrows(IOException::class.java) {
+                    HttpConnectHandshake.perform(connect(proxyPort), host, 22, HttpProxyConfig("127.0.0.1", proxyPort))
+                }
             assertThat(error).hasMessageThat().contains("Illegal character")
         }
     }
@@ -136,9 +137,10 @@ class HttpConnectHandshakeTest {
 
         // The request is encoded US-ASCII, so an IDN host would have gone out as "?????" and connected
         // somewhere unintended. It has to be punycode by the time it reaches here.
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "münchen.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "münchen.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
 
         assertThat(error).hasMessageThat().contains("Illegal character")
     }
@@ -148,9 +150,10 @@ class HttpConnectHandshakeTest {
         val proxyPort = startScriptedProxy(ESTABLISHED)
         val channel = connect(proxyPort)
 
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
 
         assertThat(error).hasMessageThat().contains("requires a target host")
     }
@@ -183,14 +186,16 @@ class HttpConnectHandshakeTest {
 
     @Test
     fun `an authentication challenge fails the handshake instead of tunnelling`() {
-        val proxyPort = startScriptedProxy(
-            "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n",
-        )
+        val proxyPort =
+            startScriptedProxy(
+                "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n",
+            )
         val channel = connect(proxyPort)
 
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
         assertThat(error).hasMessageThat().contains("407")
     }
 
@@ -199,9 +204,10 @@ class HttpConnectHandshakeTest {
         val proxyPort = startScriptedProxy("HTTP/1.1 502 Bad Gateway\r\n\r\n")
         val channel = connect(proxyPort)
 
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
         assertThat(error).hasMessageThat().contains("502")
     }
 
@@ -211,9 +217,10 @@ class HttpConnectHandshakeTest {
         val proxyPort = startScriptedProxy("SSH-2.0-OpenSSH_9.6\r\n")
         val channel = connect(proxyPort)
 
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
         assertThat(error).hasMessageThat().contains("Invalid HTTP proxy response")
     }
 
@@ -221,14 +228,16 @@ class HttpConnectHandshakeTest {
     fun `a header block that never ends is abandoned instead of hanging`() {
         // Every individual read succeeds inside its timeout, so only a bound on the number of
         // header lines stops this from holding the connect attempt open forever.
-        val proxyPort = startScriptedProxy(
-            ESTABLISHED_STATUS + (1..500).joinToString("") { "X-Filler-$it: padding\r\n" },
-        )
+        val proxyPort =
+            startScriptedProxy(
+                ESTABLISHED_STATUS + (1..500).joinToString("") { "X-Filler-$it: padding\r\n" },
+            )
         val channel = connect(proxyPort)
 
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
         assertThat(error).hasMessageThat().contains("response headers")
     }
 
@@ -237,9 +246,10 @@ class HttpConnectHandshakeTest {
         val proxyPort = startScriptedProxy(response = null)
         val channel = connect(proxyPort)
 
-        val error = assertThrows(IOException::class.java) {
-            HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
-        }
+        val error =
+            assertThrows(IOException::class.java) {
+                HttpConnectHandshake.perform(channel, "edge.example.com", 22, HttpProxyConfig("127.0.0.1", proxyPort))
+            }
         assertThat(error).hasMessageThat().contains("closed")
     }
 
@@ -254,8 +264,7 @@ class HttpConnectHandshakeTest {
         return channel
     }
 
-    private fun takeRequest(): List<String> =
-        requireNotNull(requests.poll(5, TimeUnit.SECONDS)) { "proxy never received a request" }
+    private fun takeRequest(): List<String> = requireNotNull(requests.poll(5, TimeUnit.SECONDS)) { "proxy never received a request" }
 
     /** Accepts one connection, records the request block, then hands off to [respond]. */
     private fun startProxy(respond: (List<String>, Socket) -> Unit): Int {
@@ -280,27 +289,30 @@ class HttpConnectHandshakeTest {
     }
 
     /** Replies with a fixed byte-for-byte response, or closes without replying when null. */
-    private fun startScriptedProxy(response: String?): Int = startProxy { _, client ->
-        if (response != null) {
-            client.getOutputStream().write(response.toByteArray(Charsets.US_ASCII))
-            client.getOutputStream().flush()
+    private fun startScriptedProxy(response: String?): Int =
+        startProxy { _, client ->
+            if (response != null) {
+                client.getOutputStream().write(response.toByteArray(Charsets.US_ASCII))
+                client.getOutputStream().flush()
+            }
         }
-    }
 
     /** Honours the CONNECT request and relays bytes both ways, like a real proxy. */
-    private fun startTunnellingProxy(): Int = startProxy { lines, client ->
-        val authority = lines.first().split(" ")[1]
-        val target = Socket(authority.substringBeforeLast(':'), authority.substringAfterLast(':').toInt())
-        client.getOutputStream().write(ESTABLISHED.toByteArray(Charsets.US_ASCII))
-        client.getOutputStream().flush()
+    private fun startTunnellingProxy(): Int =
+        startProxy { lines, client ->
+            val authority = lines.first().split(" ")[1]
+            val target = Socket(authority.substringBeforeLast(':'), authority.substringAfterLast(':').toInt())
+            client.getOutputStream().write(ESTABLISHED.toByteArray(Charsets.US_ASCII))
+            client.getOutputStream().flush()
 
-        val upstream = thread(isDaemon = true) {
-            runCatching { client.getInputStream().relayTo(target.getOutputStream()) }
+            val upstream =
+                thread(isDaemon = true) {
+                    runCatching { client.getInputStream().relayTo(target.getOutputStream()) }
+                }
+            runCatching { target.getInputStream().relayTo(client.getOutputStream()) }
+            upstream.join(2_000)
+            target.close()
         }
-        runCatching { target.getInputStream().relayTo(client.getOutputStream()) }
-        upstream.join(2_000)
-        target.close()
-    }
 
     /** Accepts one connection, reads a line, and echoes it back with a prefix. */
     private fun startEchoTarget(): Int {

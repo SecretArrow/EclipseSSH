@@ -5,15 +5,17 @@ import android.content.pm.ApplicationInfo
 import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
 import dev.eclipse.ssh.background.NotificationChannels
-import java.nio.file.Path
-import java.security.Security
-import javax.inject.Inject
 import org.apache.sshd.common.util.io.PathUtils
 import org.apache.sshd.common.util.security.SecurityProviderRegistrar
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.nio.file.Path
+import java.security.Security
+import javax.inject.Inject
 
 @HiltAndroidApp
-class EclipseApp : Application(), Configuration.Provider {
+class EclipseApp :
+    Application(),
+    Configuration.Provider {
     @Inject
     lateinit var workerFactory: androidx.hilt.work.HiltWorkerFactory
 
@@ -161,10 +163,12 @@ class EclipseApp : Application(), Configuration.Provider {
     }
 
     override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .setMinimumLoggingLevel(android.util.Log.INFO)
-            .build()
+        get() =
+            Configuration
+                .Builder()
+                .setWorkerFactory(workerFactory)
+                .setMinimumLoggingLevel(android.util.Log.INFO)
+                .build()
 
     internal companion object {
         const val SLF4J_LEVEL_PROPERTY = "org.slf4j.simpleLogger.defaultLogLevel"
@@ -186,10 +190,11 @@ class EclipseApp : Application(), Configuration.Provider {
          * Only the two optional ones: sshd registers no others, and naming a provider it does not
          * know is harmless but says something untrue about what the app is configuring.
          */
-        val SSHD_PROVIDER_SCOPING: Map<String, String> = listOf("BC", "EdDSA").associate { provider ->
-            "${SecurityProviderRegistrar.CONFIG_PROP_BASE}.$provider." +
-                SecurityProviderRegistrar.NAMED_PROVIDER_PROPERTY to "false"
-        }
+        val SSHD_PROVIDER_SCOPING: Map<String, String> =
+            listOf("BC", "EdDSA").associate { provider ->
+                "${SecurityProviderRegistrar.CONFIG_PROP_BASE}.$provider." +
+                    SecurityProviderRegistrar.NAMED_PROVIDER_PROPERTY to "false"
+            }
 
         /**
          * Puts the bundled full Bouncy Castle into the provider registry under the platform's

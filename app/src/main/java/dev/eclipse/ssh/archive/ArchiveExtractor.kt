@@ -1,10 +1,10 @@
 package dev.eclipse.ssh.archive
 
-import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.OutputStream
 
 /**
  * Selective extraction: writing chosen entries' bytes out through a sink, without the archive
@@ -24,7 +24,6 @@ import kotlinx.coroutines.withContext
  * it with SAF's [androidx.documentfile.provider.DocumentFile]s.
  */
 object ArchiveExtractor {
-
     /**
      * The destination contract: what the engine needs a filesystem to do, and nothing more.
      *
@@ -48,16 +47,25 @@ object ArchiveExtractor {
     /** One entry's extract outcome, in the vocabulary a person can be told something useful about. */
     sealed interface Outcome {
         /** The entry's bytes were written (a folder entry needs no bytes and reports this too). */
-        data class Extracted(val bytes: Long) : Outcome
+        data class Extracted(
+            val bytes: Long,
+        ) : Outcome
 
         /** The entry's path was refused by [SafeArchivePath] - hostile or unrepresentable. */
-        data class Refused(val path: String) : Outcome
+        data class Refused(
+            val path: String,
+        ) : Outcome
 
         /** The destination could not create the file or folder. */
-        data class DestinationRefused(val path: String) : Outcome
+        data class DestinationRefused(
+            val path: String,
+        ) : Outcome
 
         /** The entry's bytes could not be read or written. */
-        data class Failed(val path: String, val reason: String) : Outcome
+        data class Failed(
+            val path: String,
+            val reason: String,
+        ) : Outcome
     }
 
     /**
@@ -95,21 +103,23 @@ object ArchiveExtractor {
         entries: List<ArchiveEntry>,
         destination: Destination,
         onProgress: suspend (bytesWritten: Long, entry: ArchiveEntry) -> Unit,
-    ): List<Outcome> = withContext(Dispatchers.IO) {
-        val outcomes = mutableListOf<Outcome>()
-        var written = 0L
-        for (entry in entries) {
-            coroutineContext.ensureActive()
-            outcomes += extractOne(source, entry, destination) { bytes ->
-                written += bytes
+    ): List<Outcome> =
+        withContext(Dispatchers.IO) {
+            val outcomes = mutableListOf<Outcome>()
+            var written = 0L
+            for (entry in entries) {
+                coroutineContext.ensureActive()
+                outcomes +=
+                    extractOne(source, entry, destination) { bytes ->
+                        written += bytes
+                    }
+                // Reported per entry rather than per chunk: the chunk-level number belongs to the
+                // transfer UI once extraction rides it, and a per-entry count is already enough to
+                // keep a browser-side label honest ("3 of 10 files").
+                onProgress(written, entry)
             }
-            // Reported per entry rather than per chunk: the chunk-level number belongs to the
-            // transfer UI once extraction rides it, and a per-entry count is already enough to
-            // keep a browser-side label honest ("3 of 10 files").
-            onProgress(written, entry)
+            outcomes
         }
-        outcomes
-    }
 
     /**
      * The TAR-family walk: one forward pass over the whole stream, keyed by the set of wanted
@@ -147,10 +157,11 @@ object ArchiveExtractor {
         // Tally by the asked order, with every never-met entry named as a miss. The progress
         // callback rides the tally so a caller that never looks at outcomes still sees bytes.
         return entries.map { entry ->
-            val outcome = landed.remove(entry.path)
-                // The pass ended without meeting this path: the archive under the extract is
-                // not the archive that was listed. Said plainly, not guessed around.
-                ?: Outcome.Failed(entry.path, "the entry is not in the archive any more")
+            val outcome =
+                landed.remove(entry.path)
+                    // The pass ended without meeting this path: the archive under the extract is
+                    // not the archive that was listed. Said plainly, not guessed around.
+                    ?: Outcome.Failed(entry.path, "the entry is not in the archive any more")
             onProgress(written, entry)
             outcome
         }
@@ -192,15 +203,16 @@ object ArchiveExtractor {
         destination: Destination,
         onBytes: (Long) -> Unit,
     ): Outcome {
-        val bytes = try {
-            ArchiveReader.readEntry(ArchiveReader.Format.ZIP, source, entry)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: ArchiveException) {
-            return Outcome.Failed(safe, failure.message ?: "the entry could not be read")
-        } catch (failure: Throwable) {
-            return Outcome.Failed(safe, failure.message ?: "the entry could not be read")
-        } ?: return Outcome.Failed(safe, "the compression method is not supported")
+        val bytes =
+            try {
+                ArchiveReader.readEntry(ArchiveReader.Format.ZIP, source, entry)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: ArchiveException) {
+                return Outcome.Failed(safe, failure.message ?: "the entry could not be read")
+            } catch (failure: Throwable) {
+                return Outcome.Failed(safe, failure.message ?: "the entry could not be read")
+            } ?: return Outcome.Failed(safe, "the compression method is not supported")
         val target = destination.openFile(safe) ?: return Outcome.DestinationRefused(safe)
         try {
             target.use { stream ->

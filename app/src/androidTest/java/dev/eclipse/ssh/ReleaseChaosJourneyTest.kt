@@ -19,13 +19,13 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
 
 /**
  * Chaos journeys for the release APK: orientation changes, rapid navigation, and
@@ -40,7 +40,6 @@ import androidx.test.runner.lifecycle.Stage
  */
 @RunWith(AndroidJUnit4::class)
 class ReleaseChaosJourneyTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -68,7 +67,10 @@ class ReleaseChaosJourneyTest {
      * screen it had just left — the whole of a red API 35 leg that was green on API 30 from the same
      * code. Waiting here fails at the tap that did not land, and names the destination it wanted.
      */
-    private fun open(label: String, marker: String) {
+    private fun open(
+        label: String,
+        marker: String,
+    ) {
         tab(label).performClick()
         awaitText(marker)
     }
@@ -98,7 +100,8 @@ class ReleaseChaosJourneyTest {
 
     /** [resumedActivity] for a caller already on the main thread. */
     private fun resumedActivityOnMainThread(): Activity? =
-        ActivityLifecycleMonitorRegistry.getInstance()
+        ActivityLifecycleMonitorRegistry
+            .getInstance()
             .getActivitiesInStage(Stage.RESUMED)
             .lastOrNull()
 
@@ -141,8 +144,7 @@ class ReleaseChaosJourneyTest {
         compose.waitForIdle()
     }
 
-    private fun foregroundActivity(): Activity =
-        requireNotNull(resumedActivity()) { "no resumed activity to rotate" }
+    private fun foregroundActivity(): Activity = requireNotNull(resumedActivity()) { "no resumed activity to rotate" }
 
     /**
      * Waits for [window] to be the window in front again — the counterpart of [rotate]'s problem, one
@@ -171,11 +173,12 @@ class ReleaseChaosJourneyTest {
      * either, and the window's own configuration is the only thing that reports the change.
      */
     private fun rotate(orientation: Int) {
-        val expected = if (orientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
-            Configuration.ORIENTATION_LANDSCAPE
-        } else {
-            Configuration.ORIENTATION_PORTRAIT
-        }
+        val expected =
+            if (orientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                Configuration.ORIENTATION_LANDSCAPE
+            } else {
+                Configuration.ORIENTATION_PORTRAIT
+            }
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val activity = foregroundActivity()
         instrumentation.runOnMainSync { activity.requestedOrientation = orientation }
@@ -305,7 +308,8 @@ class ReleaseChaosJourneyTest {
         // later. The action runs the button's own onClick, so what this asserts — that Cancel closes
         // the form — is unchanged; what is no longer covered is that a finger aimed at the middle of
         // the row reaches it.
-        compose.onNode(hasText("Cancel") and hasClickAction())
+        compose
+            .onNode(hasText("Cancel") and hasClickAction())
             .performSemanticsAction(SemanticsActions.OnClick)
         // Cancel finishes this window. The workspace behind it comes back asynchronously, and an
         // assertion that does not wait for it is an assertion about whichever window is in front.

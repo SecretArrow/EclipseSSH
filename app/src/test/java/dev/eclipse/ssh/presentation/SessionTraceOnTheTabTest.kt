@@ -17,7 +17,6 @@ import org.junit.Test
  * now, so both are pinned here rather than through a screen.
  */
 class SessionTraceOnTheTabTest {
-
     @Test
     fun `a reconnecting tab keeps its reason in a compact row`() {
         // The regression test for the bug behind three releases of reports that could only say "it keeps
@@ -25,12 +24,13 @@ class SessionTraceOnTheTabTest {
         // the only caller that asks for compact, and the screen the user is on while a session drops -
         // was therefore the one place in the app that showed the bare word. The reason must survive.
         val reason = "The server disconnected: Timeout, your session not responding"
-        val compact = statusLine(
-            SessionConnectionState.RECONNECTING,
-            startedAt = null,
-            lastError = reason,
-            compact = true,
-        )
+        val compact =
+            statusLine(
+                SessionConnectionState.RECONNECTING,
+                startedAt = null,
+                lastError = reason,
+                compact = true,
+            )
 
         assertThat(compact).contains(reason)
         // And it still says which state it is in, because the row it goes in has no other label.
@@ -95,13 +95,14 @@ class SessionTraceOnTheTabTest {
         // The word means "your session is gone", and a held session is not gone: if the network returns
         // to the same address the shell carries on mid-command.
         listOf(true, false).forEach { compact ->
-            val held = statusLine(
-                SessionConnectionState.CONNECTED,
-                startedAt = "09:41",
-                lastError = null,
-                compact = compact,
-                networkHeld = true,
-            )
+            val held =
+                statusLine(
+                    SessionConnectionState.CONNECTED,
+                    startedAt = "09:41",
+                    lastError = null,
+                    compact = compact,
+                    networkHeld = true,
+                )
             assertThat(held).startsWith("Connected")
             assertThat(held).doesNotContain("Reconnecting")
         }
@@ -117,13 +118,14 @@ class SessionTraceOnTheTabTest {
         // Two hosts failing at once is the normal case for this app - a tab per host, all reconnecting
         // over the same dead Wi-Fi - and a sheet that mixed them would be worse than no sheet: the user
         // would read another host's ending as this host's cause.
-        val events = listOf(
-            event(1, "s1", SessionEvent.CONNECT_REQUESTED),
-            event(2, "s2", SessionEvent.CONNECT_REQUESTED),
-            event(3, "s1", SessionEvent.HANDSHAKE),
-            event(4, "s2", SessionEvent.ENDED, detail = "TransportClosed"),
-            event(5, "s1", SessionEvent.SHELL_OPEN),
-        )
+        val events =
+            listOf(
+                event(1, "s1", SessionEvent.CONNECT_REQUESTED),
+                event(2, "s2", SessionEvent.CONNECT_REQUESTED),
+                event(3, "s1", SessionEvent.HANDSHAKE),
+                event(4, "s2", SessionEvent.ENDED, detail = "TransportClosed"),
+                event(5, "s1", SessionEvent.SHELL_OPEN),
+            )
 
         assertThat(sessionDiagnostics(events, "s1").map { it.sequence }).containsExactly(5L, 3L, 1L)
         assertThat(sessionDiagnostics(events, "s2").map { it.sequence }).containsExactly(4L, 2L)

@@ -17,12 +17,15 @@ import org.junit.Test
  * the token count stays proportional to color changes through the accumulator's merging.
  */
 class SyntaxHighlighterTest {
+    private fun highlight(
+        language: SyntaxLanguage,
+        source: String,
+    ) = SyntaxHighlighter(language).highlight(source)
 
-    private fun highlight(language: SyntaxLanguage, source: String) =
-        SyntaxHighlighter(language).highlight(source)
-
-    private fun spans(source: String, tokens: List<Token>) =
-        tokens.map { it.kind to source.substring(it.start, it.end) }
+    private fun spans(
+        source: String,
+        tokens: List<Token>,
+    ) = tokens.map { it.kind to source.substring(it.start, it.end) }
 
     /**
      * The structural contract every lexer output must satisfy: tokens are ordered,
@@ -30,7 +33,10 @@ class SyntaxHighlighterTest {
      * token is whitespace - so coloring can apply spans without double-painting or dropping
      * characters, and without wondering what the gaps contain.
      */
-    private fun assertWellFormed(source: String, tokens: List<Token>) {
+    private fun assertWellFormed(
+        source: String,
+        tokens: List<Token>,
+    ) {
         var cursor = 0
         tokens.forEach { token ->
             assertThat(token.end).isGreaterThan(token.start)
@@ -53,18 +59,20 @@ class SyntaxHighlighterTest {
         // light up. `val x = 1` is the smallest line that exercises four different kinds.
         val source = "val x = 1"
         val tokens = highlight(SyntaxLanguages.KOTLIN, source)
-        assertThat(tokens).containsExactly(
-            Token(TokenKind.KEYWORD, 0, 3),
-            Token(TokenKind.PLAIN, 4, 5),
-            Token(TokenKind.OPERATOR, 6, 7),
-            Token(TokenKind.NUMBER, 8, 9),
-        ).inOrder()
-        assertThat(spans(source, tokens)).containsExactly(
-            TokenKind.KEYWORD to "val",
-            TokenKind.PLAIN to "x",
-            TokenKind.OPERATOR to "=",
-            TokenKind.NUMBER to "1",
-        ).inOrder()
+        assertThat(tokens)
+            .containsExactly(
+                Token(TokenKind.KEYWORD, 0, 3),
+                Token(TokenKind.PLAIN, 4, 5),
+                Token(TokenKind.OPERATOR, 6, 7),
+                Token(TokenKind.NUMBER, 8, 9),
+            ).inOrder()
+        assertThat(spans(source, tokens))
+            .containsExactly(
+                TokenKind.KEYWORD to "val",
+                TokenKind.PLAIN to "x",
+                TokenKind.OPERATOR to "=",
+                TokenKind.NUMBER to "1",
+            ).inOrder()
     }
 
     @Test
@@ -120,12 +128,13 @@ class SyntaxHighlighterTest {
         // string-colored - that is the documented reason unterminated strings stop at the
         // newline. The line after is ordinary code, unpainted by the accident above it.
         val source = "\"abc\nnext = 1"
-        assertThat(spans(source, highlight(SyntaxLanguages.KOTLIN, source))).containsExactly(
-            TokenKind.STRING to "\"abc",
-            TokenKind.PLAIN to "next",
-            TokenKind.OPERATOR to "=",
-            TokenKind.NUMBER to "1",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.KOTLIN, source)))
+            .containsExactly(
+                TokenKind.STRING to "\"abc",
+                TokenKind.PLAIN to "next",
+                TokenKind.OPERATOR to "=",
+                TokenKind.NUMBER to "1",
+            ).inOrder()
     }
 
     @Test
@@ -172,17 +181,18 @@ class SyntaxHighlighterTest {
         // colored differently for exactly that reason, so each must come out as its own kind,
         // and the code after the newline must be untouched by the comment above it.
         val source = "val x = 1 // note\nval y = 2"
-        assertThat(spans(source, highlight(SyntaxLanguages.KOTLIN, source))).containsExactly(
-            TokenKind.KEYWORD to "val",
-            TokenKind.PLAIN to "x",
-            TokenKind.OPERATOR to "=",
-            TokenKind.NUMBER to "1",
-            TokenKind.LINE_COMMENT to "// note",
-            TokenKind.KEYWORD to "val",
-            TokenKind.PLAIN to "y",
-            TokenKind.OPERATOR to "=",
-            TokenKind.NUMBER to "2",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.KOTLIN, source)))
+            .containsExactly(
+                TokenKind.KEYWORD to "val",
+                TokenKind.PLAIN to "x",
+                TokenKind.OPERATOR to "=",
+                TokenKind.NUMBER to "1",
+                TokenKind.LINE_COMMENT to "// note",
+                TokenKind.KEYWORD to "val",
+                TokenKind.PLAIN to "y",
+                TokenKind.OPERATOR to "=",
+                TokenKind.NUMBER to "2",
+            ).inOrder()
         val block = "/* a\nb */"
         assertThat(spans(block, highlight(SyntaxLanguages.KOTLIN, block)))
             .containsExactly(TokenKind.COMMENT to block)
@@ -195,12 +205,13 @@ class SyntaxHighlighterTest {
         // consumes it - that ordering is the whole fix for this class of bug.
         val source = "val url = \"http://x\""
         val tokens = highlight(SyntaxLanguages.KOTLIN, source)
-        assertThat(spans(source, tokens)).containsExactly(
-            TokenKind.KEYWORD to "val",
-            TokenKind.PLAIN to "url",
-            TokenKind.OPERATOR to "=",
-            TokenKind.STRING to "\"http://x\"",
-        ).inOrder()
+        assertThat(spans(source, tokens))
+            .containsExactly(
+                TokenKind.KEYWORD to "val",
+                TokenKind.PLAIN to "url",
+                TokenKind.OPERATOR to "=",
+                TokenKind.STRING to "\"http://x\"",
+            ).inOrder()
         assertThat(tokens.none { it.kind == TokenKind.LINE_COMMENT }).isTrue()
     }
 
@@ -211,13 +222,14 @@ class SyntaxHighlighterTest {
         // a line comment stops at its newline, an unterminated-looking `/*` must not swallow
         // the rest of the file - the line after is ordinary code.
         val line = "// /* not opened\nval x = 1"
-        assertThat(spans(line, highlight(SyntaxLanguages.KOTLIN, line))).containsExactly(
-            TokenKind.LINE_COMMENT to "// /* not opened",
-            TokenKind.KEYWORD to "val",
-            TokenKind.PLAIN to "x",
-            TokenKind.OPERATOR to "=",
-            TokenKind.NUMBER to "1",
-        ).inOrder()
+        assertThat(spans(line, highlight(SyntaxLanguages.KOTLIN, line)))
+            .containsExactly(
+                TokenKind.LINE_COMMENT to "// /* not opened",
+                TokenKind.KEYWORD to "val",
+                TokenKind.PLAIN to "x",
+                TokenKind.OPERATOR to "=",
+                TokenKind.NUMBER to "1",
+            ).inOrder()
         val block = "/* \"str\" */"
         assertThat(spans(block, highlight(SyntaxLanguages.KOTLIN, block)))
             .containsExactly(TokenKind.COMMENT to block)
@@ -230,16 +242,17 @@ class SyntaxHighlighterTest {
         // a fractional part only when a digit follows the dot, an exponent with an optional
         // sign, and `.5`, whose dot is checked before the operator branch can eat it.
         val source = "42 0xFF 0b1010 3.14 2.5e-3 1e10 1_000 .5"
-        assertThat(spans(source, highlight(SyntaxLanguages.KOTLIN, source))).containsExactly(
-            TokenKind.NUMBER to "42",
-            TokenKind.NUMBER to "0xFF",
-            TokenKind.NUMBER to "0b1010",
-            TokenKind.NUMBER to "3.14",
-            TokenKind.NUMBER to "2.5e-3",
-            TokenKind.NUMBER to "1e10",
-            TokenKind.NUMBER to "1_000",
-            TokenKind.NUMBER to ".5",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.KOTLIN, source)))
+            .containsExactly(
+                TokenKind.NUMBER to "42",
+                TokenKind.NUMBER to "0xFF",
+                TokenKind.NUMBER to "0b1010",
+                TokenKind.NUMBER to "3.14",
+                TokenKind.NUMBER to "2.5e-3",
+                TokenKind.NUMBER to "1e10",
+                TokenKind.NUMBER to "1_000",
+                TokenKind.NUMBER to ".5",
+            ).inOrder()
     }
 
     @Test
@@ -338,11 +351,12 @@ class SyntaxHighlighterTest {
         // separator is a key; the space must not demote `name` to plain and leave the `=` an
         // unexplained operator.
         val source = "name = \"tom\""
-        assertThat(spans(source, highlight(SyntaxLanguages.TOML, source))).containsExactly(
-            TokenKind.KEYWORD to "name",
-            TokenKind.OPERATOR to "=",
-            TokenKind.STRING to "\"tom\"",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.TOML, source)))
+            .containsExactly(
+                TokenKind.KEYWORD to "name",
+                TokenKind.OPERATOR to "=",
+                TokenKind.STRING to "\"tom\"",
+            ).inOrder()
     }
 
     @Test
@@ -393,15 +407,16 @@ class SyntaxHighlighterTest {
         // `!` comments; both separators must promote their key, or half of every .properties
         // file on earth would color wrong.
         val source = "port = 8080\n# a comment\ntag: prod"
-        assertThat(spans(source, highlight(SyntaxLanguages.PROPERTIES, source))).containsExactly(
-            TokenKind.KEYWORD to "port",
-            TokenKind.OPERATOR to "=",
-            TokenKind.NUMBER to "8080",
-            TokenKind.LINE_COMMENT to "# a comment",
-            TokenKind.KEYWORD to "tag",
-            TokenKind.OPERATOR to ":",
-            TokenKind.PLAIN to "prod",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.PROPERTIES, source)))
+            .containsExactly(
+                TokenKind.KEYWORD to "port",
+                TokenKind.OPERATOR to "=",
+                TokenKind.NUMBER to "8080",
+                TokenKind.LINE_COMMENT to "# a comment",
+                TokenKind.KEYWORD to "tag",
+                TokenKind.OPERATOR to ":",
+                TokenKind.PLAIN to "prod",
+            ).inOrder()
         assertThat(spans("! loud", highlight(SyntaxLanguages.PROPERTIES, "! loud")))
             .containsExactly(TokenKind.LINE_COMMENT to "! loud")
     }
@@ -413,18 +428,19 @@ class SyntaxHighlighterTest {
         // PLAIN. The closing tag repeats the pattern, and every bracket of the syntax itself
         // is an operator - including the two-character `</`.
         val source = "<tag attr=\"value\">text</tag>"
-        assertThat(spans(source, highlight(SyntaxLanguages.XML, source))).containsExactly(
-            TokenKind.OPERATOR to "<",
-            TokenKind.TYPE_NAME to "tag",
-            TokenKind.BUILTIN to "attr",
-            TokenKind.OPERATOR to "=",
-            TokenKind.STRING to "\"value\"",
-            TokenKind.OPERATOR to ">",
-            TokenKind.PLAIN to "text",
-            TokenKind.OPERATOR to "</",
-            TokenKind.TYPE_NAME to "tag",
-            TokenKind.OPERATOR to ">",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.XML, source)))
+            .containsExactly(
+                TokenKind.OPERATOR to "<",
+                TokenKind.TYPE_NAME to "tag",
+                TokenKind.BUILTIN to "attr",
+                TokenKind.OPERATOR to "=",
+                TokenKind.STRING to "\"value\"",
+                TokenKind.OPERATOR to ">",
+                TokenKind.PLAIN to "text",
+                TokenKind.OPERATOR to "</",
+                TokenKind.TYPE_NAME to "tag",
+                TokenKind.OPERATOR to ">",
+            ).inOrder()
     }
 
     @Test
@@ -446,17 +462,18 @@ class SyntaxHighlighterTest {
         // `&amp;` is the one thing in element text that is not prose; the plain run breaks
         // around it so entities color like the markup vocabulary they are.
         val source = "<p>a &amp; b</p>"
-        assertThat(spans(source, highlight(SyntaxLanguages.XML, source))).containsExactly(
-            TokenKind.OPERATOR to "<",
-            TokenKind.TYPE_NAME to "p",
-            TokenKind.OPERATOR to ">",
-            TokenKind.PLAIN to "a ",
-            TokenKind.BUILTIN to "&amp;",
-            TokenKind.PLAIN to " b",
-            TokenKind.OPERATOR to "</",
-            TokenKind.TYPE_NAME to "p",
-            TokenKind.OPERATOR to ">",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.XML, source)))
+            .containsExactly(
+                TokenKind.OPERATOR to "<",
+                TokenKind.TYPE_NAME to "p",
+                TokenKind.OPERATOR to ">",
+                TokenKind.PLAIN to "a ",
+                TokenKind.BUILTIN to "&amp;",
+                TokenKind.PLAIN to " b",
+                TokenKind.OPERATOR to "</",
+                TokenKind.TYPE_NAME to "p",
+                TokenKind.OPERATOR to ">",
+            ).inOrder()
     }
 
     @Test
@@ -465,13 +482,14 @@ class SyntaxHighlighterTest {
         // still a tag, so the attribute name and the half-typed value keep their colors to
         // EOF - the value string included, unterminated quote and all.
         val source = "<tag attr=\"val"
-        assertThat(spans(source, highlight(SyntaxLanguages.XML, source))).containsExactly(
-            TokenKind.OPERATOR to "<",
-            TokenKind.TYPE_NAME to "tag",
-            TokenKind.BUILTIN to "attr",
-            TokenKind.OPERATOR to "=",
-            TokenKind.STRING to "\"val",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.XML, source)))
+            .containsExactly(
+                TokenKind.OPERATOR to "<",
+                TokenKind.TYPE_NAME to "tag",
+                TokenKind.BUILTIN to "attr",
+                TokenKind.OPERATOR to "=",
+                TokenKind.STRING to "\"val",
+            ).inOrder()
     }
 
     @Test
@@ -505,11 +523,12 @@ class SyntaxHighlighterTest {
         // LINE_COMMENT and the body STRING, so a code block reads as a unit without the
         // editor needing a language for the fenced content.
         val source = "```\ncode\n```"
-        assertThat(spans(source, highlight(SyntaxLanguages.MARKDOWN, source))).containsExactly(
-            TokenKind.LINE_COMMENT to "```",
-            TokenKind.STRING to "code",
-            TokenKind.LINE_COMMENT to "```",
-        ).inOrder()
+        assertThat(spans(source, highlight(SyntaxLanguages.MARKDOWN, source)))
+            .containsExactly(
+                TokenKind.LINE_COMMENT to "```",
+                TokenKind.STRING to "code",
+                TokenKind.LINE_COMMENT to "```",
+            ).inOrder()
     }
 
     @Test

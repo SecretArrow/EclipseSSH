@@ -24,11 +24,22 @@ import java.io.IOException
  *    [awaitExit], not a step after it.
  */
 interface PtyProcess {
-    fun read(buffer: ByteArray, offset: Int, length: Int): Int
+    fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int
 
-    fun write(buffer: ByteArray, offset: Int, length: Int): Int
+    fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int
 
-    fun resize(rows: Int, columns: Int)
+    fun resize(
+        rows: Int,
+        columns: Int,
+    )
 
     fun awaitExit(): Int
 
@@ -46,7 +57,13 @@ fun interface PtySpawner {
      *   — the latter being [PTY_TABLE_FULL_MESSAGE], which [ProotRuntime] maps to a typed refusal
      *   rather than letting a bare native string reach the user
      */
-    fun spawn(argv: List<String>, envp: List<String>, cwd: String, rows: Int, columns: Int): PtyProcess
+    fun spawn(
+        argv: List<String>,
+        envp: List<String>,
+        cwd: String,
+        rows: Int,
+        columns: Int,
+    ): PtyProcess
 }
 
 /**
@@ -70,18 +87,32 @@ object LinuxPtySpawner : PtySpawner {
         cwd: String,
         rows: Int,
         columns: Int,
-    ): PtyProcess = LinuxPtyProcess(
-        LinuxPty.spawn(argv.toTypedArray(), envp.toTypedArray(), cwd, rows, columns),
-    )
+    ): PtyProcess =
+        LinuxPtyProcess(
+            LinuxPty.spawn(argv.toTypedArray(), envp.toTypedArray(), cwd, rows, columns),
+        )
 }
 
 /** A [PtyProcess] over one master fd from the native bridge. */
-private class LinuxPtyProcess(private val fd: Int) : PtyProcess {
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = LinuxPty.read(fd, buffer, offset, length)
+private class LinuxPtyProcess(
+    private val fd: Int,
+) : PtyProcess {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = LinuxPty.read(fd, buffer, offset, length)
 
-    override fun write(buffer: ByteArray, offset: Int, length: Int): Int = LinuxPty.write(fd, buffer, offset, length)
+    override fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int = LinuxPty.write(fd, buffer, offset, length)
 
-    override fun resize(rows: Int, columns: Int) = LinuxPty.resize(fd, rows, columns)
+    override fun resize(
+        rows: Int,
+        columns: Int,
+    ) = LinuxPty.resize(fd, rows, columns)
 
     override fun awaitExit(): Int = LinuxPty.awaitExit(fd)
 

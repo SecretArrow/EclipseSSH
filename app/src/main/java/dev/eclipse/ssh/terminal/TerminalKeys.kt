@@ -139,44 +139,45 @@ object TerminalKeys {
         key: TerminalKey,
         modifiers: TerminalModifiers,
         applicationCursorKeys: Boolean,
-    ): ByteArray = when (key) {
-        // The three keys that send a plain byte. Alt still prefixes them - Alt-Enter and
-        // Alt-Backspace ("delete previous word") are both bindings people rely on.
-        TerminalKey.ENTER -> withAlt(modifiers, bytesOf(CR))
-        TerminalKey.TAB -> if (modifiers.shift) csi("Z") else withAlt(modifiers, bytesOf(HT))
-        TerminalKey.BACKSPACE ->
-            withAlt(modifiers, bytesOf(if (modifiers.ctrl) 0x08 else DEL))
+    ): ByteArray =
+        when (key) {
+            // The three keys that send a plain byte. Alt still prefixes them - Alt-Enter and
+            // Alt-Backspace ("delete previous word") are both bindings people rely on.
+            TerminalKey.ENTER -> withAlt(modifiers, bytesOf(CR))
+            TerminalKey.TAB -> if (modifiers.shift) csi("Z") else withAlt(modifiers, bytesOf(HT))
+            TerminalKey.BACKSPACE ->
+                withAlt(modifiers, bytesOf(if (modifiers.ctrl) 0x08 else DEL))
 
-        // Esc is its own byte, and Alt-Esc is genuinely two of them.
-        TerminalKey.ESCAPE -> withAlt(modifiers, bytesOf(ESC))
+            // Esc is its own byte, and Alt-Esc is genuinely two of them.
+            TerminalKey.ESCAPE -> withAlt(modifiers, bytesOf(ESC))
 
-        TerminalKey.ARROW_UP -> cursorKey("A", modifiers, applicationCursorKeys)
-        TerminalKey.ARROW_DOWN -> cursorKey("B", modifiers, applicationCursorKeys)
-        TerminalKey.ARROW_RIGHT -> cursorKey("C", modifiers, applicationCursorKeys)
-        TerminalKey.ARROW_LEFT -> cursorKey("D", modifiers, applicationCursorKeys)
-        TerminalKey.HOME -> cursorKey("H", modifiers, applicationCursorKeys)
-        TerminalKey.END -> cursorKey("F", modifiers, applicationCursorKeys)
+            TerminalKey.ARROW_UP -> cursorKey("A", modifiers, applicationCursorKeys)
+            TerminalKey.ARROW_DOWN -> cursorKey("B", modifiers, applicationCursorKeys)
+            TerminalKey.ARROW_RIGHT -> cursorKey("C", modifiers, applicationCursorKeys)
+            TerminalKey.ARROW_LEFT -> cursorKey("D", modifiers, applicationCursorKeys)
+            TerminalKey.HOME -> cursorKey("H", modifiers, applicationCursorKeys)
+            TerminalKey.END -> cursorKey("F", modifiers, applicationCursorKeys)
 
-        TerminalKey.INSERT -> tildeKey(2, modifiers)
-        TerminalKey.DELETE -> tildeKey(3, modifiers)
-        TerminalKey.PAGE_UP -> tildeKey(5, modifiers)
-        TerminalKey.PAGE_DOWN -> tildeKey(6, modifiers)
+            TerminalKey.INSERT -> tildeKey(2, modifiers)
+            TerminalKey.DELETE -> tildeKey(3, modifiers)
+            TerminalKey.PAGE_UP -> tildeKey(5, modifiers)
+            TerminalKey.PAGE_DOWN -> tildeKey(6, modifiers)
 
-        // F1-F4 are SS3 keys like the arrows; F5 upwards are numbered. Nothing about that is
-        // principled - it is what the VT220 did and what every terminal has copied since.
-        TerminalKey.F1 -> functionKey("P", modifiers)
-        TerminalKey.F2 -> functionKey("Q", modifiers)
-        TerminalKey.F3 -> functionKey("R", modifiers)
-        TerminalKey.F4 -> functionKey("S", modifiers)
-        TerminalKey.F5 -> tildeKey(15, modifiers)
-        TerminalKey.F6 -> tildeKey(17, modifiers)
-        TerminalKey.F7 -> tildeKey(18, modifiers)
-        TerminalKey.F8 -> tildeKey(19, modifiers)
-        TerminalKey.F9 -> tildeKey(20, modifiers)
-        TerminalKey.F10 -> tildeKey(21, modifiers)
-        TerminalKey.F11 -> tildeKey(23, modifiers)
-        TerminalKey.F12 -> tildeKey(24, modifiers)
-    }
+            // F1-F4 are SS3 keys like the arrows; F5 upwards are numbered. Nothing about that is
+            // principled - it is what the VT220 did and what every terminal has copied since.
+            TerminalKey.F1 -> functionKey("P", modifiers)
+            TerminalKey.F2 -> functionKey("Q", modifiers)
+            TerminalKey.F3 -> functionKey("R", modifiers)
+            TerminalKey.F4 -> functionKey("S", modifiers)
+            TerminalKey.F5 -> tildeKey(15, modifiers)
+            TerminalKey.F6 -> tildeKey(17, modifiers)
+            TerminalKey.F7 -> tildeKey(18, modifiers)
+            TerminalKey.F8 -> tildeKey(19, modifiers)
+            TerminalKey.F9 -> tildeKey(20, modifiers)
+            TerminalKey.F10 -> tildeKey(21, modifiers)
+            TerminalKey.F11 -> tildeKey(23, modifiers)
+            TerminalKey.F12 -> tildeKey(24, modifiers)
+        }
 
     /**
      * The bytes for a printable [char] held with [modifiers].
@@ -208,7 +209,10 @@ object TerminalKeys {
         ) ?: legacy
     }
 
-    private fun legacyChar(char: Char, modifiers: TerminalModifiers): ByteArray {
+    private fun legacyChar(
+        char: Char,
+        modifiers: TerminalModifiers,
+    ): ByteArray {
         val base = if (modifiers.ctrl) controlByte(char) ?: utf8(char) else utf8(char)
         return withAlt(modifiers, base)
     }
@@ -234,7 +238,10 @@ object TerminalKeys {
      * silently loses seven bytes is a far smaller surprise than one that silently runs a command. The
      * start marker goes too: a nested one is not dangerous, only confusing to the remote side.
      */
-    fun paste(text: String, bracketed: Boolean): ByteArray {
+    fun paste(
+        text: String,
+        bracketed: Boolean,
+    ): ByteArray {
         val normalized = normalizeNewlines(text)
         if (!bracketed) return normalized.toByteArray(Charsets.UTF_8)
         val guarded = normalized.replace(PASTE_END_MARKER, "").replace(PASTE_START_MARKER, "")
@@ -268,25 +275,34 @@ object TerminalKeys {
         final: String,
         modifiers: TerminalModifiers,
         applicationCursorKeys: Boolean,
-    ): ByteArray = when {
-        // A modified cursor key is always a CSI sequence: SS3 has nowhere to put a parameter.
-        !modifiers.none && !modifiers.alt -> csi("1;${modifierParameter(modifiers)}$final")
-        modifiers.alt -> withAlt(modifiers, cursorKey(final, modifiers.copy(alt = false), applicationCursorKeys))
-        applicationCursorKeys -> ss3(final)
-        else -> csi(final)
-    }
+    ): ByteArray =
+        when {
+            // A modified cursor key is always a CSI sequence: SS3 has nowhere to put a parameter.
+            !modifiers.none && !modifiers.alt -> csi("1;${modifierParameter(modifiers)}$final")
+            modifiers.alt -> withAlt(modifiers, cursorKey(final, modifiers.copy(alt = false), applicationCursorKeys))
+            applicationCursorKeys -> ss3(final)
+            else -> csi(final)
+        }
 
-    private fun functionKey(final: String, modifiers: TerminalModifiers): ByteArray = when {
-        !modifiers.none && !modifiers.alt -> csi("1;${modifierParameter(modifiers)}$final")
-        modifiers.alt -> withAlt(modifiers, functionKey(final, modifiers.copy(alt = false)))
-        else -> ss3(final)
-    }
+    private fun functionKey(
+        final: String,
+        modifiers: TerminalModifiers,
+    ): ByteArray =
+        when {
+            !modifiers.none && !modifiers.alt -> csi("1;${modifierParameter(modifiers)}$final")
+            modifiers.alt -> withAlt(modifiers, functionKey(final, modifiers.copy(alt = false)))
+            else -> ss3(final)
+        }
 
-    private fun tildeKey(number: Int, modifiers: TerminalModifiers): ByteArray = when {
-        !modifiers.none && !modifiers.alt -> csi("$number;${modifierParameter(modifiers)}~")
-        modifiers.alt -> withAlt(modifiers, tildeKey(number, modifiers.copy(alt = false)))
-        else -> csi("$number~")
-    }
+    private fun tildeKey(
+        number: Int,
+        modifiers: TerminalModifiers,
+    ): ByteArray =
+        when {
+            !modifiers.none && !modifiers.alt -> csi("$number;${modifierParameter(modifiers)}~")
+            modifiers.alt -> withAlt(modifiers, tildeKey(number, modifiers.copy(alt = false)))
+            else -> csi("$number~")
+        }
 
     /**
      * [char] folded into the C0 control range, or null if Ctrl means nothing with it.
@@ -312,17 +328,17 @@ object TerminalKeys {
         }
     }
 
-    private fun withAlt(modifiers: TerminalModifiers, bytes: ByteArray): ByteArray =
-        if (modifiers.alt) bytesOf(ESC) + bytes else bytes
+    private fun withAlt(
+        modifiers: TerminalModifiers,
+        bytes: ByteArray,
+    ): ByteArray = if (modifiers.alt) bytesOf(ESC) + bytes else bytes
 
     private fun utf8(char: Char): ByteArray = char.toString().toByteArray(Charsets.UTF_8)
 
-    private fun bytesOf(vararg codes: Int): ByteArray =
-        ByteArray(codes.size) { codes[it].toByte() }
+    private fun bytesOf(vararg codes: Int): ByteArray = ByteArray(codes.size) { codes[it].toByte() }
 
     /** `ESC O` followed by [final] - the "single shift 3" form the application keypad uses. */
-    private fun ss3(final: String): ByteArray =
-        bytesOf(ESC, UPPER_O) + final.toByteArray(Charsets.US_ASCII)
+    private fun ss3(final: String): ByteArray = bytesOf(ESC, UPPER_O) + final.toByteArray(Charsets.US_ASCII)
 
     private const val UPPER_O = 0x4F
 

@@ -295,27 +295,28 @@ data class HostProfile(
      * `Log.d(TAG, "connecting to $host")` should not be able to publish a credential by accident.
      * Every other field is either public information or already on screen.
      */
-    override fun toString(): String = "HostProfile(id=$id, name=$name, host=$host, username=$username, " +
-        "port=$port, authMethod=$authMethod, group=$group, tags=$tags, isFavorite=$isFavorite, " +
-        "lastConnectedAt=$lastConnectedAt, fingerprint=$fingerprint, proxyType=$proxyType, " +
-        "proxyJump=$proxyJump, socksHost=$socksHost, socksPort=$socksPort, socksUsername=$socksUsername, " +
-        "socksPassword=${if (socksPassword == null) "null" else "***"}, accentColor=$accentColor, " +
-        "connectTimeoutSeconds=$connectTimeoutSeconds, keepAliveSeconds=$keepAliveSeconds, " +
-        "autoLoginSftp=$autoLoginSftp, compression=$compression, keepAliveEnabled=$keepAliveEnabled, " +
-        "serverAliveCountMax=$serverAliveCountMax, authTimeoutSeconds=$authTimeoutSeconds, " +
-        "autoReconnect=$autoReconnect, maxReconnectAttempts=$maxReconnectAttempts, " +
-        "reconnectBackoffSeconds=$reconnectBackoffSeconds, usePty=$usePty, terminalType=$terminalType, " +
-        "terminalColumns=$terminalColumns, terminalRows=$terminalRows, " +
-        "keyboardInteractiveAuth=$keyboardInteractiveAuth, legacyAlgorithms=$legacyAlgorithms, " +
-        "ciphers=$ciphers, kexAlgorithms=$kexAlgorithms, macs=$macs, " +
-        "hostKeyAlgorithms=$hostKeyAlgorithms, " +
-        // Both can hold a token or a password the user typed into a command line, so neither is
-        // printed. Their *presence* is, because "the startup command did not run" is a real report and
-        // an answer of `null` versus `***` is the first thing that narrows it.
-        "startupCommand=${redacted(startupCommand)}, environment=${redacted(environment)}, " +
-        "savedForwards=$savedForwards, remoteDesktop=$remoteDesktop, wakeOnLanMac=$wakeOnLanMac, " +
+    override fun toString(): String =
+        "HostProfile(id=$id, name=$name, host=$host, username=$username, " +
+            "port=$port, authMethod=$authMethod, group=$group, tags=$tags, isFavorite=$isFavorite, " +
+            "lastConnectedAt=$lastConnectedAt, fingerprint=$fingerprint, proxyType=$proxyType, " +
+            "proxyJump=$proxyJump, socksHost=$socksHost, socksPort=$socksPort, socksUsername=$socksUsername, " +
+            "socksPassword=${if (socksPassword == null) "null" else "***"}, accentColor=$accentColor, " +
+            "connectTimeoutSeconds=$connectTimeoutSeconds, keepAliveSeconds=$keepAliveSeconds, " +
+            "autoLoginSftp=$autoLoginSftp, compression=$compression, keepAliveEnabled=$keepAliveEnabled, " +
+            "serverAliveCountMax=$serverAliveCountMax, authTimeoutSeconds=$authTimeoutSeconds, " +
+            "autoReconnect=$autoReconnect, maxReconnectAttempts=$maxReconnectAttempts, " +
+            "reconnectBackoffSeconds=$reconnectBackoffSeconds, usePty=$usePty, terminalType=$terminalType, " +
+            "terminalColumns=$terminalColumns, terminalRows=$terminalRows, " +
+            "keyboardInteractiveAuth=$keyboardInteractiveAuth, legacyAlgorithms=$legacyAlgorithms, " +
+            "ciphers=$ciphers, kexAlgorithms=$kexAlgorithms, macs=$macs, " +
+            "hostKeyAlgorithms=$hostKeyAlgorithms, " +
+            // Both can hold a token or a password the user typed into a command line, so neither is
+            // printed. Their *presence* is, because "the startup command did not run" is a real report and
+            // an answer of `null` versus `***` is the first thing that narrows it.
+            "startupCommand=${redacted(startupCommand)}, environment=${redacted(environment)}, " +
+            "savedForwards=$savedForwards, remoteDesktop=$remoteDesktop, wakeOnLanMac=$wakeOnLanMac, " +
             "agentForwarding=$agentForwarding, " +
-        "hostKeyPolicy=$hostKeyPolicy)"
+            "hostKeyPolicy=$hostKeyPolicy)"
 
     companion object {
         /**
@@ -333,11 +334,12 @@ data class HostProfile(
  * `null` and `""` are printed as themselves because neither can leak anything and both answer a real
  * question - "was this host ever given a startup command?" - that `***` for every state would hide.
  */
-private fun redacted(value: String?): String = when {
-    value == null -> "null"
-    value.isEmpty() -> "\"\""
-    else -> "***"
-}
+private fun redacted(value: String?): String =
+    when {
+        value == null -> "null"
+        value.isEmpty() -> "\"\""
+        else -> "***"
+    }
 
 /** Bounds shared by the UI validation and the engine, so neither can accept what the other rejects. */
 const val DEFAULT_CONNECT_TIMEOUT_SECONDS = 15
@@ -378,15 +380,16 @@ const val DEFAULT_TERMINAL_TYPE = "xterm-256color"
  * terminfo, finds nothing, and either refuses to run `vim` or draws with the wrong escapes. Every
  * entry here exists in a stock terminfo database.
  */
-val TERMINAL_TYPE_CHOICES = listOf(
-    "xterm-256color",
-    "xterm",
-    "screen-256color",
-    "screen",
-    "vt100",
-    "linux",
-    "dumb",
-)
+val TERMINAL_TYPE_CHOICES =
+    listOf(
+        "xterm-256color",
+        "xterm",
+        "screen-256color",
+        "screen",
+        "vt100",
+        "linux",
+        "dumb",
+    )
 
 /**
  * A forced pty size, where 0 means "whatever fits the screen".
@@ -459,7 +462,9 @@ fun HostProfile.matchesQuery(query: String): Boolean {
         .any { it.contains(normalized, ignoreCase = true) }
 }
 
-enum class AuthMethod(val label: String) {
+enum class AuthMethod(
+    val label: String,
+) {
     PASSWORD("Password"),
     SSH_KEY("SSH key"),
     KEYBOARD_INTERACTIVE("Keyboard interactive"),
@@ -471,7 +476,10 @@ enum class AuthMethod(val label: String) {
  * A key that *changed* is refused whatever this says - that is the attack pinning exists to catch,
  * and no per-host setting turns it off.
  */
-enum class HostKeyPolicy(val label: String, val detail: String) {
+enum class HostKeyPolicy(
+    val label: String,
+    val detail: String,
+) {
     ASK(
         label = "Ask me",
         detail = "Show the fingerprint and wait for an answer before connecting.",
@@ -486,14 +494,18 @@ enum class HostKeyPolicy(val label: String, val detail: String) {
     ),
 }
 
-enum class ProxyType(val label: String) {
+enum class ProxyType(
+    val label: String,
+) {
     NONE("Direct connection"),
     PROXY_JUMP("ProxyJump"),
     SOCKS5("SOCKS5 proxy"),
     HTTP_CONNECT("HTTP CONNECT proxy"),
 }
 
-enum class ForwardType(val label: String) {
+enum class ForwardType(
+    val label: String,
+) {
     LOCAL("Local"),
     REMOTE("Remote"),
     DYNAMIC("Dynamic (SOCKS5)"),
@@ -541,18 +553,25 @@ data class ForwardEntry(
  * What one rule is doing right now, independent of every other rule and of the session's own
  * state - a tunnel that cannot bind is not a connection failure, it is one row's bad day.
  */
-enum class ForwardRuntime(val label: String) {
+enum class ForwardRuntime(
+    val label: String,
+) {
     DISABLED("Disabled"),
     STARTING("Starting"),
     RUNNING("Running"),
     STOPPED("Stopped"),
     FAILED("Failed"),
+
     /** Was running; the session it rode dropped and the reconnect will bring it back. */
     RECONNECTING("Reconnecting"),
 }
 
 /** One rule paired with what it is doing, for the forwarding sheet. */
-data class ForwardStatus(val entry: ForwardEntry, val state: ForwardRuntime, val error: String? = null)
+data class ForwardStatus(
+    val entry: ForwardEntry,
+    val state: ForwardRuntime,
+    val error: String? = null,
+)
 
 data class Snippet(
     val id: String = UUID.randomUUID().toString(),
@@ -731,10 +750,11 @@ val SessionConnectionState.isLive: Boolean
 
 /** Whether this state is one a session is *working through* rather than resting in. */
 val SessionConnectionState.isBusy: Boolean
-    get() = this == SessionConnectionState.CONNECTING ||
-        this == SessionConnectionState.AUTHENTICATING ||
-        this == SessionConnectionState.CHANNEL_PTY_INITIALIZING ||
-        this == SessionConnectionState.RECONNECTING
+    get() =
+        this == SessionConnectionState.CONNECTING ||
+            this == SessionConnectionState.AUTHENTICATING ||
+            this == SessionConnectionState.CHANNEL_PTY_INITIALIZING ||
+            this == SessionConnectionState.RECONNECTING
 
 /**
  * Whether the session is over and only the user can restart it.
@@ -798,9 +818,12 @@ data class TransferItem(
     val errorMessage: String? = null,
 )
 
-enum class TransferDirection(val label: String) {
+enum class TransferDirection(
+    val label: String,
+) {
     UPLOAD("Upload"),
     DOWNLOAD("Download"),
+
     /**
      * Server-to-server: neither half of the transfer touches the device. The label is a sentence
      * rather than a word because the notification line it lands in ("... finished: name") has to
@@ -809,8 +832,15 @@ enum class TransferDirection(val label: String) {
      */
     CROSS_HOST("Server-to-server transfer"),
 }
+
 enum class TransferStatus { RUNNING, PAUSED, COMPLETE, FAILED, QUEUED }
-enum class SyncDirection(val label: String) { LOCAL_TO_REMOTE("Local → Remote"), REMOTE_TO_LOCAL("Remote → Local") }
+
+enum class SyncDirection(
+    val label: String,
+) {
+    LOCAL_TO_REMOTE("Local → Remote"),
+    REMOTE_TO_LOCAL("Remote → Local"),
+}
 
 data class AppSettings(
     val isLocked: Boolean = false,
@@ -1033,7 +1063,11 @@ data class AppSettings(
  * name, and a name that no longer exists falls back to [DARK] at every read site. That is what makes
  * this list safe to extend and reorder.
  */
-enum class TerminalTheme(val label: String, val background: Long, val foreground: Long) {
+enum class TerminalTheme(
+    val label: String,
+    val background: Long,
+    val foreground: Long,
+) {
     DARK("Dark", 0xFF090D16, 0xFFB3C1D9),
     LIGHT("Light", 0xFFF6F7FB, 0xFF1B2434),
     AMBER("Amber", 0xFF101008, 0xFFFFC966),
@@ -1042,7 +1076,8 @@ enum class TerminalTheme(val label: String, val background: Long, val foreground
     SOLARIZED_DARK("Solarized dark", 0xFF002B36, 0xFF93A1A1),
     SOLARIZED_LIGHT("Solarized light", 0xFFFDF6E3, 0xFF586E75),
     MONOKAI("Monokai", 0xFF272822, 0xFFF8F8F2),
-    HIGH_CONTRAST("High contrast", 0xFF000000, 0xFFFFFFFF);
+    HIGH_CONTRAST("High contrast", 0xFF000000, 0xFFFFFFFF),
+    ;
 
     companion object {
         /** The theme [name] refers to, or [DARK] for a name written by a newer or older build. */

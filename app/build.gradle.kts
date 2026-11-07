@@ -82,20 +82,21 @@ android {
             // the dontwarn this file carries.
             testProguardFiles("test-proguard-rules.pro")
             val releaseSigning = signingConfigs.getByName("release")
-            signingConfig = if (releaseSigning.storeFile != null) {
-                releaseSigning
-            } else {
-                // The fallback itself is intended (see signingConfigs), but it must not be silent:
-                // a debug-signed artifact called "release" cannot be updated over a Play-signed
-                // install and carries the debug key's identity, and nothing else in the build output
-                // says so. Warn loudly rather than change the behaviour.
-                logger.warn(
-                    "WARNING: keystore.properties is missing, so the release APK will be signed " +
-                        "with the DEBUG key. It is not publishable and cannot upgrade an existing " +
-                        "install. Provide keystore.properties to sign it for real.",
-                )
-                signingConfigs.getByName("debug")
-            }
+            signingConfig =
+                if (releaseSigning.storeFile != null) {
+                    releaseSigning
+                } else {
+                    // The fallback itself is intended (see signingConfigs), but it must not be silent:
+                    // a debug-signed artifact called "release" cannot be updated over a Play-signed
+                    // install and carries the debug key's identity, and nothing else in the build output
+                    // says so. Warn loudly rather than change the behaviour.
+                    logger.warn(
+                        "WARNING: keystore.properties is missing, so the release APK will be signed " +
+                            "with the DEBUG key. It is not publishable and cannot upgrade an existing " +
+                            "install. Provide keystore.properties to sign it for real.",
+                    )
+                    signingConfigs.getByName("debug")
+                }
         }
     }
 
@@ -177,25 +178,27 @@ android {
             // extract to nativeLibraryDir under useLegacyPackaging. Strip them
             // before packaging to keep the APK lean and to avoid shipping a
             // native binary the app never calls.
-            excludes += setOf(
-                "lib/*/libtermux.so",
-                "lib/*/liblocal-socket.so",
-            )
+            excludes +=
+                setOf(
+                    "lib/*/libtermux.so",
+                    "lib/*/liblocal-socket.so",
+                )
         }
         resources {
-            excludes += setOf(
-                "/META-INF/{AL2.0,LGPL2.1}",
-                "META-INF/DEPENDENCIES",
-                "META-INF/LICENSE*",
-                "META-INF/NOTICE*",
-                "META-INF/INDEX.LIST",
-                "META-INF/*.kotlin_module",
-                // bcprov-jdk18on (pulled in by vernacular-vnc) and jspecify both ship an OSGi
-                // container manifest at this multi-release-jar path. Android is not an OSGi
-                // runtime, so both copies are dead weight - but only this resource is dropped,
-                // not the whole `META-INF/versions/9` tree, whose classes D8 does consume.
-                "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
-            )
+            excludes +=
+                setOf(
+                    "/META-INF/{AL2.0,LGPL2.1}",
+                    "META-INF/DEPENDENCIES",
+                    "META-INF/LICENSE*",
+                    "META-INF/NOTICE*",
+                    "META-INF/INDEX.LIST",
+                    "META-INF/*.kotlin_module",
+                    // bcprov-jdk18on (pulled in by vernacular-vnc) and jspecify both ship an OSGi
+                    // container manifest at this multi-release-jar path. Android is not an OSGi
+                    // runtime, so both copies are dead weight - but only this resource is dropped,
+                    // not the whole `META-INF/versions/9` tree, whose classes D8 does consume.
+                    "META-INF/versions/9/OSGI-INF/MANIFEST.MF",
+                )
             // MINA SSHD resolves its security providers / factories through
             // META-INF/services, so those entries must survive packaging.
             pickFirsts += setOf("META-INF/services/**")
@@ -262,7 +265,11 @@ android {
                 // Robolectric test for a reason that looks nothing like disk pressure.
                 // Keeping the temp directory under build/ makes it independent of the host's
                 // /tmp and lets `clean` reclaim it.
-                val jvmTmpDir = layout.buildDirectory.dir("tmp/unit-test-jvm").get().asFile
+                val jvmTmpDir =
+                    layout.buildDirectory
+                        .dir("tmp/unit-test-jvm")
+                        .get()
+                        .asFile
                 test.doFirst { jvmTmpDir.mkdirs() }
                 test.systemProperty("java.io.tmpdir", jvmTmpDir.absolutePath)
                 // Gradle gives test JVMs 512m. That is enough for plain JVM tests but not for
@@ -342,41 +349,49 @@ android {
 // Gradle 9.6 deprecates the `by configurations.creating` / `by tasks.registering`
 // property delegates; create()/register() with the same name keeps the val's
 // type (Configuration / TaskProvider) and the config-cache discipline below.
-val strippedSshd = configurations.create("strippedSshd") {
-    isCanBeConsumed = false
-    isCanBeResolved = true
+val strippedSshd =
+    configurations.create("strippedSshd") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
+dependencies {
+    strippedSshd(libs.sshd.common)
+    strippedSshd(libs.sshd.sftp)
 }
-dependencies { strippedSshd(libs.sshd.common); strippedSshd(libs.sshd.sftp) }
 
-val stripSshdServices = tasks.register("stripSshdServices") {
-    val outCommon = layout.buildDirectory.file("sshd-nosvc/sshd-common-nosvc.jar")
-    val outSftp = layout.buildDirectory.file("sshd-nosvc/sshd-sftp-nosvc.jar")
-    inputs.files(strippedSshd.incoming.artifacts.artifactFiles)
-    outputs.file(outCommon)
-    outputs.file(outSftp)
-    doLast {
-        // Local function: keeps the closure free of script-object references so
-        // the task stays configuration-cache compatible.
-        fun stripProviderRegistrations(src: File, dest: File) {
-            dest.parentFile.mkdirs()
-            ZipFile(src).use { zip ->
-                ZipOutputStream(dest.outputStream().buffered()).use { zos ->
-                    val entries = zip.entries()
-                    while (entries.hasMoreElements()) {
-                        val e = entries.nextElement()
-                        if (e.name == "META-INF/services/java.nio.file.spi.FileSystemProvider") continue
-                        zos.putNextEntry(ZipEntry(e.name))
-                        zip.getInputStream(e).use { it.copyTo(zos) }
-                        zos.closeEntry()
+val stripSshdServices =
+    tasks.register("stripSshdServices") {
+        val outCommon = layout.buildDirectory.file("sshd-nosvc/sshd-common-nosvc.jar")
+        val outSftp = layout.buildDirectory.file("sshd-nosvc/sshd-sftp-nosvc.jar")
+        inputs.files(strippedSshd.incoming.artifacts.artifactFiles)
+        outputs.file(outCommon)
+        outputs.file(outSftp)
+        doLast {
+            // Local function: keeps the closure free of script-object references so
+            // the task stays configuration-cache compatible.
+            fun stripProviderRegistrations(
+                src: File,
+                dest: File,
+            ) {
+                dest.parentFile.mkdirs()
+                ZipFile(src).use { zip ->
+                    ZipOutputStream(dest.outputStream().buffered()).use { zos ->
+                        val entries = zip.entries()
+                        while (entries.hasMoreElements()) {
+                            val e = entries.nextElement()
+                            if (e.name == "META-INF/services/java.nio.file.spi.FileSystemProvider") continue
+                            zos.putNextEntry(ZipEntry(e.name))
+                            zip.getInputStream(e).use { it.copyTo(zos) }
+                            zos.closeEntry()
+                        }
                     }
                 }
             }
+            val sshdJars = inputs.files.filter { it.name.startsWith("sshd-") && it.name.endsWith(".jar") }
+            stripProviderRegistrations(sshdJars.first { it.name.startsWith("sshd-common") }, outCommon.get().asFile)
+            stripProviderRegistrations(sshdJars.first { it.name.startsWith("sshd-sftp") }, outSftp.get().asFile)
         }
-        val sshdJars = inputs.files.filter { it.name.startsWith("sshd-") && it.name.endsWith(".jar") }
-        stripProviderRegistrations(sshdJars.first { it.name.startsWith("sshd-common") }, outCommon.get().asFile)
-        stripProviderRegistrations(sshdJars.first { it.name.startsWith("sshd-sftp") }, outSftp.get().asFile)
     }
-}
 
 configurations.configureEach {
     // Keep the full jars for the app; tests use the stripped copies above.

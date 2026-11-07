@@ -45,7 +45,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class KnownHostsActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<KnownHostsActivity>()
 
@@ -108,7 +107,8 @@ class KnownHostsActivityRobolectricTest {
         compose.waitForIdle()
 
         assertWithMessage("the window offers to clear a list that is already empty")
-            .that(compose.onAllNodesWithText("Forget all").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Forget all").fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**

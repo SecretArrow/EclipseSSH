@@ -78,10 +78,10 @@ import dev.eclipse.ssh.ssh.PortForwardingManager
 import dev.eclipse.ssh.vnc.VncFrame
 import dev.eclipse.ssh.vnc.VncTunnel
 import dev.eclipse.ssh.vnc.VncTunnelState
-import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * How the desktop is fitted into the screen. The fit modes own the scale until the user takes it
@@ -89,7 +89,9 @@ import kotlinx.coroutines.flow.StateFlow
  * whose scale survives across frames (a fit mode is recomputed every time, because "width" and
  * "height" mean the screen's, which rotation can change).
  */
-private enum class DisplayMode(val label: String) {
+private enum class DisplayMode(
+    val label: String,
+) {
     FIT_SCREEN("Fit screen"),
     FIT_WIDTH("Fit width"),
     FIT_HEIGHT("Fit height"),
@@ -127,10 +129,15 @@ private sealed interface DesktopState {
     data object AwaitingInput : DesktopState
 
     /** Session live; frames begin delivering as updates arrive. */
-    data class Connected(val width: Int, val height: Int) : DesktopState
+    data class Connected(
+        val width: Int,
+        val height: Int,
+    ) : DesktopState
 
     /** The session ended against the user's will; [reason] is one line for the screen. */
-    data class Failed(val reason: String) : DesktopState
+    data class Failed(
+        val reason: String,
+    ) : DesktopState
 
     /** The session ended because the viewer left it. */
     data object Closed : DesktopState
@@ -144,24 +151,26 @@ private data class DesktopFrame(
 )
 
 /** The VNC engine's state as the shell's. */
-private fun VncTunnelState.asDesktopState(): DesktopState = when (this) {
-    VncTunnelState.Idle -> DesktopState.Idle
-    VncTunnelState.Connecting -> DesktopState.Connecting
-    VncTunnelState.AwaitingPassword -> DesktopState.AwaitingInput
-    is VncTunnelState.Connected -> DesktopState.Connected(width, height)
-    is VncTunnelState.Failed -> DesktopState.Failed(reason)
-    VncTunnelState.Closed -> DesktopState.Closed
-}
+private fun VncTunnelState.asDesktopState(): DesktopState =
+    when (this) {
+        VncTunnelState.Idle -> DesktopState.Idle
+        VncTunnelState.Connecting -> DesktopState.Connecting
+        VncTunnelState.AwaitingPassword -> DesktopState.AwaitingInput
+        is VncTunnelState.Connected -> DesktopState.Connected(width, height)
+        is VncTunnelState.Failed -> DesktopState.Failed(reason)
+        VncTunnelState.Closed -> DesktopState.Closed
+    }
 
 /** The RDP engine's state as the shell's. */
-private fun RdpTunnelState.asDesktopState(): DesktopState = when (this) {
-    RdpTunnelState.Idle -> DesktopState.Idle
-    RdpTunnelState.Connecting -> DesktopState.Connecting
-    RdpTunnelState.AwaitingCredentials -> DesktopState.AwaitingInput
-    is RdpTunnelState.Connected -> DesktopState.Connected(width, height)
-    is RdpTunnelState.Failed -> DesktopState.Failed(reason)
-    RdpTunnelState.Closed -> DesktopState.Closed
-}
+private fun RdpTunnelState.asDesktopState(): DesktopState =
+    when (this) {
+        RdpTunnelState.Idle -> DesktopState.Idle
+        RdpTunnelState.Connecting -> DesktopState.Connecting
+        RdpTunnelState.AwaitingCredentials -> DesktopState.AwaitingInput
+        is RdpTunnelState.Connected -> DesktopState.Connected(width, height)
+        is RdpTunnelState.Failed -> DesktopState.Failed(reason)
+        RdpTunnelState.Closed -> DesktopState.Closed
+    }
 
 /** One VNC frame as the shell's. */
 private fun VncFrame.asDesktopFrame(): DesktopFrame = DesktopFrame(bitmap, width, height)
@@ -263,9 +272,10 @@ fun RemoteDesktopScreen(
 ) {
     // Built here, from the two values the hosting window read once at startup, so the protocol
     // halves below never see the clipboard itself - only the two operations they perform on it.
-    val phoneClipboard = remember(secureClipboard, clearClipboardAfterSeconds) {
-        PhoneClipboard(secureClipboard, clearClipboardAfterSeconds)
-    }
+    val phoneClipboard =
+        remember(secureClipboard, clearClipboardAfterSeconds) {
+            PhoneClipboard(secureClipboard, clearClipboardAfterSeconds)
+        }
     when (request) {
         is RemoteDesktopRequest.Vnc -> VncViewer(request, phoneClipboard, onClose)
         is RemoteDesktopRequest.Rdp -> RdpViewer(request, phoneClipboard, onClose)
@@ -311,15 +321,16 @@ private fun VncViewer(
         request = request,
         state = state.asDesktopState(),
         frame = frame?.asDesktopFrame(),
-        input = remember(tunnel) {
-            DesktopInput(
-                moveMouse = tunnel::moveMouse,
-                mouseButton = tunnel::mouseButton,
-                scroll = tunnel::scroll,
-                type = tunnel::type,
-                requestResolution = tunnel::requestResolution,
-            )
-        },
+        input =
+            remember(tunnel) {
+                DesktopInput(
+                    moveMouse = tunnel::moveMouse,
+                    mouseButton = tunnel::mouseButton,
+                    scroll = tunnel::scroll,
+                    type = tunnel::type,
+                    requestResolution = tunnel::requestResolution,
+                )
+            },
         clipboard = remember(tunnel) { DesktopClipboard(tunnel::copyText, tunnel.remoteClipboard) },
         phoneClipboard = phoneClipboard,
         onReconnect = { reconnects++ },
@@ -327,14 +338,15 @@ private fun VncViewer(
     )
 
     when (state) {
-        VncTunnelState.AwaitingPassword -> PasswordDialog(
-            hostName = request.hostName,
-            onSubmit = { password ->
-                rememberedPassword = password
-                tunnel.submitPassword(password)
-            },
-            onDisconnect = onClose,
-        )
+        VncTunnelState.AwaitingPassword ->
+            PasswordDialog(
+                hostName = request.hostName,
+                onSubmit = { password ->
+                    rememberedPassword = password
+                    tunnel.submitPassword(password)
+                },
+                onDisconnect = onClose,
+            )
         else -> {}
     }
 }
@@ -371,8 +383,9 @@ private fun RdpViewer(
         if (session == null) {
             tunnel.abandon("${request.hostName} is not connected - connect the host first")
         } else {
-            val credentials = rememberedCredentials
-                ?: request.credentials?.takeIf { request.credentialsComplete }
+            val credentials =
+                rememberedCredentials
+                    ?: request.credentials?.takeIf { request.credentialsComplete }
             tunnel.start(
                 appContext,
                 session,
@@ -390,15 +403,16 @@ private fun RdpViewer(
         request = request,
         state = state.asDesktopState(),
         frame = frame?.asDesktopFrame(),
-        input = remember(tunnel) {
-            DesktopInput(
-                moveMouse = tunnel::moveMouse,
-                mouseButton = tunnel::mouseButton,
-                scroll = tunnel::scroll,
-                type = tunnel::type,
-                requestResolution = tunnel::requestResolution,
-            )
-        },
+        input =
+            remember(tunnel) {
+                DesktopInput(
+                    moveMouse = tunnel::moveMouse,
+                    mouseButton = tunnel::mouseButton,
+                    scroll = tunnel::scroll,
+                    type = tunnel::type,
+                    requestResolution = tunnel::requestResolution,
+                )
+            },
         clipboard = remember(tunnel) { DesktopClipboard(tunnel::copyText, tunnel.remoteClipboard) },
         phoneClipboard = phoneClipboard,
         onReconnect = { reconnects++ },
@@ -406,19 +420,21 @@ private fun RdpViewer(
     )
 
     when (state) {
-        RdpTunnelState.AwaitingCredentials -> RdpCredentialsDialog(
-            hostName = request.hostName,
-            prefill = rememberedCredentials ?: request.credentials,
-            onSubmit = { username, domain, password ->
-                rememberedCredentials = RdpCredentials(
-                    username = username,
-                    domain = domain.ifBlank { null },
-                    password = password,
-                )
-                tunnel.submitCredentials(username, domain, password)
-            },
-            onDisconnect = onClose,
-        )
+        RdpTunnelState.AwaitingCredentials ->
+            RdpCredentialsDialog(
+                hostName = request.hostName,
+                prefill = rememberedCredentials ?: request.credentials,
+                onSubmit = { username, domain, password ->
+                    rememberedCredentials =
+                        RdpCredentials(
+                            username = username,
+                            domain = domain.ifBlank { null },
+                            password = password,
+                        )
+                    tunnel.submitCredentials(username, domain, password)
+                },
+                onDisconnect = onClose,
+            )
         else -> {}
     }
 }
@@ -559,72 +575,75 @@ private fun ViewerShell(
             .onSizeChanged { containerSize = it },
     ) {
         when (val s = state) {
-            is DesktopState.Failed -> FailurePanel(
-                reason = s.reason,
-                onReconnect = onReconnect,
-                onClose = onClose,
-            )
+            is DesktopState.Failed ->
+                FailurePanel(
+                    reason = s.reason,
+                    onReconnect = onReconnect,
+                    onClose = onClose,
+                )
             DesktopState.Closed -> Box(Modifier.fillMaxSize()) // dispose is imminent; panels would only flash
-            else -> DesktopSurface(
-                frame = frame,
-                scale = scale,
-                offset = offset,
-                onScroll = if (request is RemoteDesktopRequest.Rdp) input.scroll else null,
-                onTap = { imagePos ->
-                    interaction++
-                    val f = frame
-                    if (!request.target.viewOnly && state is DesktopState.Connected && f != null) {
-                        // Where this position lands in the desktop: undo the zoom. The position
-                        // arrives in the image's own coordinates, so this is the whole mapping -
-                        // the centring and the pan are already spent. Clamped so a tap on a
-                        // rounded pixel at the edge is an edge click, not a click at -3.
-                        val fx = (imagePos.x / scale).roundToInt().coerceIn(0, f.width - 1)
-                        val fy = (imagePos.y / scale).roundToInt().coerceIn(0, f.height - 1)
-                        input.moveMouse(fx, fy)
-                        // Positional, because `mouseButton` is a function-type property and
-                        // those take no named arguments - the tunnel's own method does.
-                        input.mouseButton(1, true)
-                        input.mouseButton(1, false)
-                    }
-                },
-                onDoubleTap = { imagePos ->
-                    interaction++
-                    val f = frame
-                    if (f == null) {
-                        return@DesktopSurface
-                    } else if (mode == DisplayMode.FREE && freeScale > 1.01f) {
-                        // Zoomed in: the way back is the fit, not another stop on the way out.
-                        mode = DisplayMode.FIT_SCREEN
-                    } else {
-                        // Zooming in on the tap means the point under the finger stays under the
-                        // finger: the offset moves by how much that point's distance from the
-                        // centre grows, which is (scale - newScale) per desktop unit.
-                        val newScale = (scale * DOUBLE_TAP_SCALE).coerceAtMost(MAX_SCALE)
-                        val vX = imagePos.x / scale - f.width / 2f
-                        val vY = imagePos.y / scale - f.height / 2f
-                        offset = clampOffset(
-                            Offset(
-                                offset.x + vX * (scale - newScale),
-                                offset.y + vY * (scale - newScale),
-                            ),
-                        )
+            else ->
+                DesktopSurface(
+                    frame = frame,
+                    scale = scale,
+                    offset = offset,
+                    onScroll = if (request is RemoteDesktopRequest.Rdp) input.scroll else null,
+                    onTap = { imagePos ->
+                        interaction++
+                        val f = frame
+                        if (!request.target.viewOnly && state is DesktopState.Connected && f != null) {
+                            // Where this position lands in the desktop: undo the zoom. The position
+                            // arrives in the image's own coordinates, so this is the whole mapping -
+                            // the centring and the pan are already spent. Clamped so a tap on a
+                            // rounded pixel at the edge is an edge click, not a click at -3.
+                            val fx = (imagePos.x / scale).roundToInt().coerceIn(0, f.width - 1)
+                            val fy = (imagePos.y / scale).roundToInt().coerceIn(0, f.height - 1)
+                            input.moveMouse(fx, fy)
+                            // Positional, because `mouseButton` is a function-type property and
+                            // those take no named arguments - the tunnel's own method does.
+                            input.mouseButton(1, true)
+                            input.mouseButton(1, false)
+                        }
+                    },
+                    onDoubleTap = { imagePos ->
+                        interaction++
+                        val f = frame
+                        if (f == null) {
+                            return@DesktopSurface
+                        } else if (mode == DisplayMode.FREE && freeScale > 1.01f) {
+                            // Zoomed in: the way back is the fit, not another stop on the way out.
+                            mode = DisplayMode.FIT_SCREEN
+                        } else {
+                            // Zooming in on the tap means the point under the finger stays under the
+                            // finger: the offset moves by how much that point's distance from the
+                            // centre grows, which is (scale - newScale) per desktop unit.
+                            val newScale = (scale * DOUBLE_TAP_SCALE).coerceAtMost(MAX_SCALE)
+                            val vX = imagePos.x / scale - f.width / 2f
+                            val vY = imagePos.y / scale - f.height / 2f
+                            offset =
+                                clampOffset(
+                                    Offset(
+                                        offset.x + vX * (scale - newScale),
+                                        offset.y + vY * (scale - newScale),
+                                    ),
+                                )
+                            takeOverScale(newScale)
+                        }
+                    },
+                    onGesture = { centroid, pan, zoomChange ->
+                        interaction++
+                        // Keep the pinch's focal point stationary: the fingers already moved to
+                        // where the desktop should stay, and the pan the detector reports on top of
+                        // that is the drag, not the growth. The centroid is in container
+                        // coordinates, so the centring and the offset are undone by hand.
+                        val centre = Offset(containerSize.width / 2f, containerSize.height / 2f)
+                        val fromCentre = centroid - centre - offset
+                        val newScale = (scale * zoomChange).coerceIn(MIN_SCALE, MAX_SCALE)
+                        val grown = offset + fromCentre * (1f - newScale / scale) + pan
                         takeOverScale(newScale)
-                    }
-                },
-                onGesture = { centroid, pan, zoomChange ->
-                    interaction++
-                    // Keep the pinch's focal point stationary: the fingers already moved to
-                    // where the desktop should stay, and the pan the detector reports on top of
-                    // that is the drag, not the growth. The centroid is in container
-                    // coordinates, so the centring and the offset are undone by hand.
-                    val centre = Offset(containerSize.width / 2f, containerSize.height / 2f)
-                    val fromCentre = centroid - centre - offset
-                    val newScale = (scale * zoomChange).coerceIn(MIN_SCALE, MAX_SCALE)
-                    val grown = offset + fromCentre * (1f - newScale / scale) + pan
-                    takeOverScale(newScale)
-                    offset = clampOffset(grown)
-                },
-            )
+                        offset = clampOffset(grown)
+                    },
+                )
         }
 
         if (state is DesktopState.Connecting) {
@@ -639,9 +658,10 @@ private fun ViewerShell(
         }
 
         ViewerToolbar(
-            visible = toolbarVisible &&
-                state !is DesktopState.Closed &&
-                state !is DesktopState.Failed,
+            visible =
+                toolbarVisible &&
+                    state !is DesktopState.Closed &&
+                    state !is DesktopState.Failed,
             hostName = request.hostName,
             viewOnly = request.target.viewOnly,
             mode = mode,
@@ -661,34 +681,40 @@ private fun ViewerShell(
             },
             onOrientation = {
                 interaction++
-                orientation = when (orientation) {
-                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-                    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                }
+                orientation =
+                    when (orientation) {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                        else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
             },
-            onKeyboard = if (rdpControls) {
-                { interaction++; keyboardOpen = !keyboardOpen }
-            } else {
-                null
-            },
+            onKeyboard =
+                if (rdpControls) {
+                    {
+                        interaction++
+                        keyboardOpen = !keyboardOpen
+                    }
+                } else {
+                    null
+                },
             // The clipboard push is offered to both protocols - VNC's copyText and RDP's
             // /clipboard channel speak the same shape - and hidden for a view-only target, the
             // same rule the input controls follow: a desktop that cannot be typed into cannot
             // be pasted into either.
-            onClipboard = if (!request.target.viewOnly) {
-                {
-                    interaction++
-                    // A clipboard holding only whitespace has nothing to paste on the far side.
-                    val text = phoneClipboard.get()?.takeIf { it.isNotBlank() }
-                    if (text != null) {
-                        lastPushed = text
-                        clipboard.push(text)
+            onClipboard =
+                if (!request.target.viewOnly) {
+                    {
+                        interaction++
+                        // A clipboard holding only whitespace has nothing to paste on the far side.
+                        val text = phoneClipboard.get()?.takeIf { it.isNotBlank() }
+                        if (text != null) {
+                            lastPushed = text
+                            clipboard.push(text)
+                        }
                     }
-                }
-            } else {
-                null
-            },
+                } else {
+                    null
+                },
             onResolution = if (request is RemoteDesktopRequest.Rdp) input.requestResolution else null,
             matchScreen = containerSize,
             onClose = onClose,
@@ -701,9 +727,10 @@ private fun ViewerShell(
             KeyboardStrip(
                 onType = input.type,
                 onClose = { keyboardOpen = false },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(12.dp),
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(12.dp),
             )
         }
 
@@ -711,12 +738,16 @@ private fun ViewerShell(
         // remote clicks it sits on; a button eats exactly its own size, and says what it does.
         if (!toolbarVisible && !keyboardOpen && state is DesktopState.Connected) {
             IconButton(
-                onClick = { interaction++; toolbarVisible = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .size(40.dp)
-                    .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                onClick = {
+                    interaction++
+                    toolbarVisible = true
+                },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                        .size(40.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape),
             ) {
                 Icon(Icons.Default.ZoomIn, "Show toolbar", tint = Color.White)
             }
@@ -758,16 +789,17 @@ private fun DesktopSurface(
                 bitmap = image,
                 contentDescription = "Remote desktop",
                 contentScale = ContentScale.FillBounds,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
-                    .size(drawWidth, drawHeight)
-                    .pointerInput(frame.width, frame.height) {
-                        detectTapGestures(
-                            onTap = onTap,
-                            onDoubleTap = onDoubleTap,
-                        )
-                    },
+                modifier =
+                    Modifier
+                        .align(Alignment.Center)
+                        .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+                        .size(drawWidth, drawHeight)
+                        .pointerInput(frame.width, frame.height) {
+                            detectTapGestures(
+                                onTap = onTap,
+                                onDoubleTap = onDoubleTap,
+                            )
+                        },
             )
         }
         // On top of the image, and after it in composition so it is: the whole container is the
@@ -791,7 +823,11 @@ private fun DesktopSurface(
                                 // A wheel's y is the direction Compose's scroll conventions use:
                                 // positive is the wheel rolled down, which scrolls the remote
                                 // view down - the same direction the desktop under it must go.
-                                val wheelY = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                                val wheelY =
+                                    event.changes
+                                        .firstOrNull()
+                                        ?.scrollDelta
+                                        ?.y ?: 0f
                                 when {
                                     wheelY > 0f -> onScroll(false)
                                     wheelY < 0f -> onScroll(true)
@@ -912,13 +948,14 @@ private fun ViewerToolbar(
             IconButton(onClick = onZoomOut) { Icon(Icons.Default.Remove, "Zoom out") }
             IconButton(onClick = onZoomIn) { Icon(Icons.Default.Add, "Zoom in") }
             IconButton(onClick = onOrientation) {
-                val (icon, label) = when (orientation) {
-                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT ->
-                        Icons.Default.Portrait to "Portrait, tap to lock landscape"
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ->
-                        Icons.Default.Landscape to "Landscape, tap for auto-rotate"
-                    else -> Icons.Default.ScreenRotation to "Auto-rotate, tap to lock portrait"
-                }
+                val (icon, label) =
+                    when (orientation) {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT ->
+                            Icons.Default.Portrait to "Portrait, tap to lock landscape"
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ->
+                            Icons.Default.Landscape to "Landscape, tap for auto-rotate"
+                        else -> Icons.Default.ScreenRotation to "Auto-rotate, tap to lock portrait"
+                    }
                 Icon(icon, label)
             }
             if (onKeyboard != null) {
@@ -939,7 +976,11 @@ private fun ViewerToolbar(
  * there are to do about it - try again on whatever session the host has by then, or leave.
  */
 @Composable
-private fun FailurePanel(reason: String, onReconnect: () -> Unit, onClose: () -> Unit) {
+private fun FailurePanel(
+    reason: String,
+    onReconnect: () -> Unit,
+    onClose: () -> Unit,
+) {
     Surface(color = Color.Black.copy(alpha = 0.75f), modifier = Modifier.fillMaxSize()) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -972,7 +1013,11 @@ private fun FailurePanel(reason: String, onReconnect: () -> Unit, onClose: () ->
  * it by touching outside does neither, which is why it is not dismissible that way.
  */
 @Composable
-private fun PasswordDialog(hostName: String, onSubmit: (String) -> Unit, onDisconnect: () -> Unit) {
+private fun PasswordDialog(
+    hostName: String,
+    onSubmit: (String) -> Unit,
+    onDisconnect: () -> Unit,
+) {
     var password by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = { /* answer or disconnect - there is no third thing to do */ },

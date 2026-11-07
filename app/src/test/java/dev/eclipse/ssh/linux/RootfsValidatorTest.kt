@@ -1,9 +1,9 @@
 package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.io.File
 import java.nio.file.Files
-import org.junit.Test
 
 /**
  * The rootfs validator's manifest, one broken expectation at a time: each finding must name its
@@ -15,7 +15,6 @@ import org.junit.Test
  * own test's job. The byte floor is lowered per test so the fixtures stay bytes, not megabytes.
  */
 class RootfsValidatorTest {
-
     private val validator = RootfsValidator(minExtractedBytes = 1)
 
     /** A tree satisfying every manifest entry; the baseline the broken variants mutate. */

@@ -56,7 +56,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class FileActionsActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,7 +95,6 @@ class FileActionsActivity : ComponentActivity() {
     }
 
     companion object {
-
         /** Whether the explorer was showing the local session's own storage. */
         const val EXTRA_IS_LOCAL = "dev.eclipse.ssh.files.IS_LOCAL"
 
@@ -143,12 +141,13 @@ class FileActionsActivity : ComponentActivity() {
             isUbuntu: Boolean,
             supportsPermissions: Boolean,
             canOpenArchive: Boolean,
-        ): Intent = Intent(context, FileActionsActivity::class.java)
-            .putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, ActionRequests.put(ActionSubject.FileActions(entry)))
-            .putExtra(EXTRA_IS_LOCAL, isLocal)
-            .putExtra(EXTRA_IS_UBUNTU, isUbuntu)
-            .putExtra(EXTRA_SUPPORTS_PERMISSIONS, supportsPermissions)
-            .putExtra(EXTRA_CAN_OPEN_ARCHIVE, canOpenArchive)
+        ): Intent =
+            Intent(context, FileActionsActivity::class.java)
+                .putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, ActionRequests.put(ActionSubject.FileActions(entry)))
+                .putExtra(EXTRA_IS_LOCAL, isLocal)
+                .putExtra(EXTRA_IS_UBUNTU, isUbuntu)
+                .putExtra(EXTRA_SUPPORTS_PERMISSIONS, supportsPermissions)
+                .putExtra(EXTRA_CAN_OPEN_ARCHIVE, canOpenArchive)
     }
 }
 
@@ -224,7 +223,11 @@ private fun FileActions(
 
 /** One row, red where the action removes something. The sheet's own list, in the window's frame. */
 @Composable
-private fun FileActionRow(label: String, destructive: Boolean = false, onClick: () -> Unit) {
+private fun FileActionRow(
+    label: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
     Text(
         label,
         Modifier

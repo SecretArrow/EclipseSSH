@@ -55,7 +55,6 @@ data class EditorPrefs(
  *   so there is nothing for it to refuse.
  */
 object EditorPrefsCodec {
-
     /** Below this a tab stop stops being a tab stop; a 0-width indent also breaks column math. */
     const val TAB_SIZE_MIN = 1
 
@@ -85,24 +84,29 @@ object EditorPrefsCodec {
      * treating it as `false` — the default — is the predictable outcome; silently reinterpreting
      * it would be a guess dressed up as a read.
      */
-    fun decode(json: String): EditorPrefs = try {
-        val root = JSONObject(json)
-        EditorPrefs(
-            wordWrap = root.booleanOr("wordWrap", false),
-            showLineNumbers = root.booleanOr("showLineNumbers", true),
-            tabSize = root.intIn("tabSize", 4, TAB_SIZE_MIN, TAB_SIZE_MAX),
-            spacesInsteadOfTabs = root.booleanOr("spacesInsteadOfTabs", false),
-            autoSaveEnabled = root.booleanOr("autoSaveEnabled", true),
-            autoSaveDelayMillis = root.longIn(
-                "autoSaveDelayMillis", 2_000L, AUTO_SAVE_DELAY_MIN_MILLIS, AUTO_SAVE_DELAY_MAX_MILLIS,
-            ),
-            encoding = root.encodingOr("encoding", "UTF-8"),
-        )
-    } catch (error: JSONException) {
-        // Not an object, or not parseable at all. Both mean "we never agreed on what this was",
-        // so the defaults — not a half-parsed anything — are the answer.
-        EditorPrefs()
-    }
+    fun decode(json: String): EditorPrefs =
+        try {
+            val root = JSONObject(json)
+            EditorPrefs(
+                wordWrap = root.booleanOr("wordWrap", false),
+                showLineNumbers = root.booleanOr("showLineNumbers", true),
+                tabSize = root.intIn("tabSize", 4, TAB_SIZE_MIN, TAB_SIZE_MAX),
+                spacesInsteadOfTabs = root.booleanOr("spacesInsteadOfTabs", false),
+                autoSaveEnabled = root.booleanOr("autoSaveEnabled", true),
+                autoSaveDelayMillis =
+                    root.longIn(
+                        "autoSaveDelayMillis",
+                        2_000L,
+                        AUTO_SAVE_DELAY_MIN_MILLIS,
+                        AUTO_SAVE_DELAY_MAX_MILLIS,
+                    ),
+                encoding = root.encodingOr("encoding", "UTF-8"),
+            )
+        } catch (error: JSONException) {
+            // Not an object, or not parseable at all. Both mean "we never agreed on what this was",
+            // so the defaults — not a half-parsed anything — are the answer.
+            EditorPrefs()
+        }
 
     /**
      * Encodes [prefs] as the persisted blob, writing all seven fields.
@@ -112,23 +116,26 @@ object EditorPrefsCodec {
      * values cannot fail and cannot lose precision, so there is no failure mode to handle — the
      * one asymmetry with [decode] is deliberate and documented there.
      */
-    fun encode(prefs: EditorPrefs): String = JSONObject()
-        .put("wordWrap", prefs.wordWrap)
-        .put("showLineNumbers", prefs.showLineNumbers)
-        .put("tabSize", prefs.tabSize)
-        .put("spacesInsteadOfTabs", prefs.spacesInsteadOfTabs)
-        .put("autoSaveEnabled", prefs.autoSaveEnabled)
-        .put("autoSaveDelayMillis", prefs.autoSaveDelayMillis)
-        .put("encoding", prefs.encoding)
-        .toString()
+    fun encode(prefs: EditorPrefs): String =
+        JSONObject()
+            .put("wordWrap", prefs.wordWrap)
+            .put("showLineNumbers", prefs.showLineNumbers)
+            .put("tabSize", prefs.tabSize)
+            .put("spacesInsteadOfTabs", prefs.spacesInsteadOfTabs)
+            .put("autoSaveEnabled", prefs.autoSaveEnabled)
+            .put("autoSaveDelayMillis", prefs.autoSaveDelayMillis)
+            .put("encoding", prefs.encoding)
+            .toString()
 
     /**
      * Reads a boolean field, or [fallback] when the field is absent or not a boolean. `opt` + a
      * type check, not [JSONObject.optBoolean], for the reason [decode]'s doc gives: no coercion
      * of strings that merely look like booleans.
      */
-    private fun JSONObject.booleanOr(key: String, fallback: Boolean): Boolean =
-        if (opt(key) is Boolean) getBoolean(key) else fallback
+    private fun JSONObject.booleanOr(
+        key: String,
+        fallback: Boolean,
+    ): Boolean = if (opt(key) is Boolean) getBoolean(key) else fallback
 
     /**
      * Reads an integer field clamped into [min]..[max], or [fallback] when absent or not an
@@ -136,7 +143,12 @@ object EditorPrefsCodec {
      * not a wrong magnitude, so it falls back rather than being truncated. The fallbacks used by
      * [decode] sit inside their own range, so clamping never touches an absent field.
      */
-    private fun JSONObject.intIn(key: String, fallback: Int, min: Int, max: Int): Int {
+    private fun JSONObject.intIn(
+        key: String,
+        fallback: Int,
+        min: Int,
+        max: Int,
+    ): Int {
         val value = integralValueOf(key) ?: return fallback
         // Long throughout, Int only at the boundary: integralValueOf speaks Long (the delay
         // field needs it), and the Int bounds widen without loss — Int.MAX_VALUE fits a Long.
@@ -148,7 +160,12 @@ object EditorPrefsCodec {
      * still lands on a delay the editor can act on; both ends of the clamp are documented at the
      * constants that define them.
      */
-    private fun JSONObject.longIn(key: String, fallback: Long, min: Long, max: Long): Long {
+    private fun JSONObject.longIn(
+        key: String,
+        fallback: Long,
+        min: Long,
+        max: Long,
+    ): Long {
         val value = integralValueOf(key) ?: return fallback
         return value.coerceIn(min, max)
     }
@@ -159,11 +176,12 @@ object EditorPrefsCodec {
      * a fractional literal (`4.5`) arrives as Double and is a wrong type, not a wrong magnitude,
      * so it is rejected rather than truncated.
      */
-    private fun JSONObject.integralValueOf(key: String): Long? = when (val raw = opt(key)) {
-        is Int -> raw.toLong()
-        is Long -> raw
-        else -> null
-    }
+    private fun JSONObject.integralValueOf(key: String): Long? =
+        when (val raw = opt(key)) {
+            is Int -> raw.toLong()
+            is Long -> raw
+            else -> null
+        }
 
     /**
      * Reads the encoding field, or [fallback] when absent, not a string, or not a label the file
@@ -172,7 +190,10 @@ object EditorPrefsCodec {
      * the read would crash the first save made under it. The fallback is also the reason a blob
      * written by an older version — no `encoding` key at all — still decodes.
      */
-    private fun JSONObject.encodingOr(key: String, fallback: String): String {
+    private fun JSONObject.encodingOr(
+        key: String,
+        fallback: String,
+    ): String {
         val raw = opt(key)
         return if (raw is String && FileEncoding.fromLabel(raw) != null) raw else fallback
     }

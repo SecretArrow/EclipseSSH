@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class DiffTest {
-
     @Test
     fun `identical texts produce no hunks`() {
         val hunks = Diff.lineDiff("a\nb\nc", "a\nb\nc")
@@ -16,22 +15,24 @@ class DiffTest {
         val hunks = Diff.lineDiff("", "a\nb\nc")
         assertThat(hunks).hasSize(1)
         val changes = hunks[0].changes
-        assertThat(changes).containsExactly(
-            Diff.Change.Insert("a"),
-            Diff.Change.Insert("b"),
-            Diff.Change.Insert("c"),
-        ).inOrder()
+        assertThat(changes)
+            .containsExactly(
+                Diff.Change.Insert("a"),
+                Diff.Change.Insert("b"),
+                Diff.Change.Insert("c"),
+            ).inOrder()
     }
 
     @Test
     fun `empty new produces only deletes`() {
         val hunks = Diff.lineDiff("a\nb\nc", "")
         assertThat(hunks).hasSize(1)
-        assertThat(hunks[0].changes).containsExactly(
-            Diff.Change.Delete("a"),
-            Diff.Change.Delete("b"),
-            Diff.Change.Delete("c"),
-        ).inOrder()
+        assertThat(hunks[0].changes)
+            .containsExactly(
+                Diff.Change.Delete("a"),
+                Diff.Change.Delete("b"),
+                Diff.Change.Delete("c"),
+            ).inOrder()
     }
 
     @Test
@@ -51,15 +52,16 @@ class DiffTest {
     @Test
     fun `two separated changes form two hunks`() {
         val old = (1..20).joinToString("\n") { "line$it" } + "\n"
-        val new = buildString {
-            (1..20).forEach { i ->
-                when (i) {
-                    6 -> append("CHANGED-A\n")
-                    13 -> append("CHANGED-B\n")
-                    else -> append("line$i\n")
+        val new =
+            buildString {
+                (1..20).forEach { i ->
+                    when (i) {
+                        6 -> append("CHANGED-A\n")
+                        13 -> append("CHANGED-B\n")
+                        else -> append("line$i\n")
+                    }
                 }
             }
-        }
         val hunks = Diff.lineDiff(old, new, contextLines = 3)
         assertThat(hunks).hasSize(2)
         // Each hunk has the change plus its surrounding context.
@@ -109,11 +111,12 @@ class DiffTest {
     @Test
     fun `a 2000 line file diffs without blowing memory`() {
         val a = (1..2000).joinToString("\n") { "L$it" }
-        val b = buildString {
-            (1..2000).forEach { i ->
-                if (i == 1000) append("CHANGED\n") else append("L$i\n")
+        val b =
+            buildString {
+                (1..2000).forEach { i ->
+                    if (i == 1000) append("CHANGED\n") else append("L$i\n")
+                }
             }
-        }
         // The trailing newline adds an empty line to b's split, so
         // the diff has at most 3 hunks: the change on line 1000, the
         // trailing context, and the trailing empty line.

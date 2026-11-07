@@ -13,7 +13,6 @@ import org.junit.Test
  * function and is pinned here.
  */
 class LivenessEvidenceTest {
-
     private val probeStartedAt = 1_700_000_000_000L
 
     @Test

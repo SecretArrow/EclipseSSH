@@ -78,7 +78,9 @@ private const val C0_ESC = 0x1B
 val TERMINAL_COLUMN_RANGE = 20..400
 val TERMINAL_ROW_RANGE = 5..1000
 
-data class TerminalColor(val value: Int = COLOR_DEFAULT) {
+data class TerminalColor(
+    val value: Int = COLOR_DEFAULT,
+) {
     val isDefault: Boolean get() = value == COLOR_DEFAULT
     val isTrueColor: Boolean get() = value and TRUE_COLOR_MASK == TRUE_COLOR_MASK
     val rgb: Int get() = value and RGB_MASK
@@ -99,7 +101,10 @@ data class TerminalColor(val value: Int = COLOR_DEFAULT) {
  * that does not implement them says, and an invented colour is worse than none, since the asking
  * program uses the reply to pick colours that have to contrast with what this display paints.
  */
-data class TerminalColors(val foreground: Int, val background: Int)
+data class TerminalColors(
+    val foreground: Int,
+    val background: Int,
+)
 
 data class TerminalStyle(
     val foreground: TerminalColor = TerminalColor(),
@@ -375,17 +380,18 @@ data class TerminalFrame(
     val damageFull: Boolean = true,
 ) {
     companion object {
-        val EMPTY = TerminalFrame(
-            lines = emptyList(),
-            firstLine = 0,
-            totalLines = 0,
-            cursorRow = -1,
-            cursorColumn = 0,
-            columns = DEFAULT_COLUMNS,
-            rows = DEFAULT_ROWS,
-            cursorVisible = false,
-            revision = 0L,
-        )
+        val EMPTY =
+            TerminalFrame(
+                lines = emptyList(),
+                firstLine = 0,
+                totalLines = 0,
+                cursorRow = -1,
+                cursorColumn = 0,
+                columns = DEFAULT_COLUMNS,
+                rows = DEFAULT_ROWS,
+                cursorVisible = false,
+                revision = 0L,
+            )
     }
 
     /**
@@ -534,7 +540,10 @@ class AnsiTerminalBuffer(
         }
     }
 
-    private fun markDamageRange(from: Int, to: Int) {
+    private fun markDamageRange(
+        from: Int,
+        to: Int,
+    ) {
         if (damageFull) return
         if (damageFrom == -1) {
             damageFrom = from
@@ -738,7 +747,10 @@ class AnsiTerminalBuffer(
     }
 
     @Synchronized
-    fun resize(newColumns: Int, newRows: Int) {
+    fun resize(
+        newColumns: Int,
+        newRows: Int,
+    ) {
         val previousRows = rows
         val wasFullRegion = topMargin == 0 && bottomMargin == previousRows - 1
         columns = newColumns.coerceIn(TERMINAL_COLUMN_RANGE)
@@ -816,8 +828,10 @@ class AnsiTerminalBuffer(
             //
             // Joined only in the normal state, too. The escape states are an ASCII grammar in which a
             // surrogate is noise, and pairing one there would swallow the byte after it.
-            if (escapeState == EscapeState.NORMAL && Character.isHighSurrogate(char) &&
-                index + 1 < value.length && Character.isLowSurrogate(value[index + 1])
+            if (escapeState == EscapeState.NORMAL &&
+                Character.isHighSurrogate(char) &&
+                index + 1 < value.length &&
+                Character.isLowSurrogate(value[index + 1])
             ) {
                 val pair = Character.toCodePoint(char, value[index + 1])
                 if (terminalCharWidth(pair) == 0) {
@@ -839,13 +853,14 @@ class AnsiTerminalBuffer(
     }
 
     @Synchronized
-    fun snapshot(): TerminalSnapshot = TerminalSnapshot(
-        lines = lines.map { it.toList() },
-        cursorRow = cursorRow,
-        cursorColumn = cursorColumn,
-        columns = columns,
-        rows = rows,
-    )
+    fun snapshot(): TerminalSnapshot =
+        TerminalSnapshot(
+            lines = lines.map { it.toList() },
+            cursorRow = cursorRow,
+            cursorColumn = cursorColumn,
+            columns = columns,
+            rows = rows,
+        )
 
     /**
      * Every line of the session - its text and whatever the shell said about it - read together so that
@@ -861,11 +876,12 @@ class AnsiTerminalBuffer(
      * walks: the buffer is fed from another thread.
      */
     @Synchronized
-    fun sessionLines(): List<SessionLine> = lines.mapIndexed { index, line ->
-        val out = StringBuilder(columns)
-        appendLineText(out, line)
-        SessionLine(out.toString(), marks[index])
-    }
+    fun sessionLines(): List<SessionLine> =
+        lines.mapIndexed { index, line ->
+            val out = StringBuilder(columns)
+            appendLineText(out, line)
+            SessionLine(out.toString(), marks[index])
+        }
 
     /**
      * The window the view can actually draw: [viewportRows] lines ending at the cursor, [scrollOffset]
@@ -905,7 +921,11 @@ class AnsiTerminalBuffer(
      * snapshot, the export renderer and the tests that drive this class directly all want.
      */
     @Synchronized
-    fun frame(scrollOffset: Int = 0, viewportRows: Int = rows, windowColumns: Int = 0): TerminalFrame {
+    fun frame(
+        scrollOffset: Int = 0,
+        viewportRows: Int = rows,
+        windowColumns: Int = 0,
+    ): TerminalFrame {
         val budget = viewportRows.coerceIn(1, lines.size)
         // A painted screen is never re-wrapped by the view - see [wrapsForDisplay] - so a window fitted
         // for wrapping would cut `vim`'s screen in half. The rule is asked, not repeated.
@@ -923,18 +943,19 @@ class AnsiTerminalBuffer(
         // So the bottommost inked line is a floor as well as the cursor. Both are wanted and the taller
         // of the two wins; a cursor more than a windowful above the last line is then off-screen, which
         // is what a real terminal does with a cursor that has been left behind by its own output.
-        val anchor = windowAnchorEnd().let { end ->
-            if (fitWidth > 0) {
-                // The fit decides where the window starts, so there is no lower bound to hold it away
-                // from the buffer's own beginning.
-                end.coerceIn(1, lines.size)
-            } else {
-                // Never so near the start that the window would begin before the buffer does - the lower
-                // bound is what stops a cursor on row 3 of a tall screen from pulling the window up past
-                // the first line the terminal ever wrote.
-                end.coerceIn(budget, lines.size)
+        val anchor =
+            windowAnchorEnd().let { end ->
+                if (fitWidth > 0) {
+                    // The fit decides where the window starts, so there is no lower bound to hold it away
+                    // from the buffer's own beginning.
+                    end.coerceIn(1, lines.size)
+                } else {
+                    // Never so near the start that the window would begin before the buffer does - the lower
+                    // bound is what stops a cursor on row 3 of a tall screen from pulling the window up past
+                    // the first line the terminal ever wrote.
+                    end.coerceIn(budget, lines.size)
+                }
             }
-        }
         val ceiling = scrollCeiling(anchor, budget, fitWidth)
         val offset = scrollOffset.coerceIn(0, ceiling)
         val here = windowAt(anchor, offset, budget, fitWidth)
@@ -1006,11 +1027,12 @@ class AnsiTerminalBuffer(
             // text to slide into the strip it opens. The one above is the whole walk the back step would
             // make - not one line, because a short line can be replaced by several - and the one below is
             // taken until it covers the forward step.
-            marginAbove = if (backFirst < first) {
-                lines.subList(backFirst, first).map { it.toList() }
-            } else {
-                emptyList()
-            },
+            marginAbove =
+                if (backFirst < first) {
+                    lines.subList(backFirst, first).map { it.toList() }
+                } else {
+                    emptyList()
+                },
             marginBelow = marginBelow(end, stepRowsForward, fitWidth),
             stepRowsBack = stepRowsBack,
             stepRowsForward = stepRowsForward,
@@ -1021,7 +1043,12 @@ class AnsiTerminalBuffer(
     }
 
     /** The window's `first` line and its `end`, as `[first, end)`, for an offset already clamped. */
-    private fun windowAt(anchor: Int, offset: Int, budget: Int, fitWidth: Int): Long {
+    private fun windowAt(
+        anchor: Int,
+        offset: Int,
+        budget: Int,
+        fitWidth: Int,
+    ): Long {
         var end = anchor - offset
         var first = if (fitWidth > 0) fittedStart(end, budget, fitWidth) else end - budget
         if (first <= 0) {
@@ -1040,7 +1067,11 @@ class AnsiTerminalBuffer(
     private fun windowEnd(window: Long): Int = window.toInt()
 
     /** How many wrapped rows the lines `[from, to)` occupy at [width]. */
-    private fun rowsBetween(from: Int, to: Int, width: Int): Int {
+    private fun rowsBetween(
+        from: Int,
+        to: Int,
+        width: Int,
+    ): Int {
         var rows = 0
         var index = from.coerceAtLeast(0)
         val last = to.coerceAtMost(lines.size)
@@ -1059,7 +1090,11 @@ class AnsiTerminalBuffer(
      * paper over: past the end of the output there is genuinely nothing to reveal, and the screen shows
      * its own background there, exactly as it does at rest one row below a window that did not fill.
      */
-    private fun marginBelow(end: Int, enoughRows: Int, width: Int): List<List<TerminalCell>> {
+    private fun marginBelow(
+        end: Int,
+        enoughRows: Int,
+        width: Int,
+    ): List<List<TerminalCell>> {
         if (enoughRows <= 0) return emptyList()
         val margin = ArrayList<List<TerminalCell>>(enoughRows)
         var rows = 0
@@ -1082,7 +1117,11 @@ class AnsiTerminalBuffer(
      * line above it is kept only while the screen has room for it whole - which is what makes the top
      * row of the screen the first row of a line rather than the middle of one.
      */
-    private fun fittedStart(end: Int, budget: Int, width: Int): Int {
+    private fun fittedStart(
+        end: Int,
+        budget: Int,
+        width: Int,
+    ): Int {
         var rows = 0
         var index = end
         while (index > 0) {
@@ -1099,7 +1138,11 @@ class AnsiTerminalBuffer(
      * other end, for the case where the cursor is near the top of a tall screen and the screen has to
      * be filled downward.
      */
-    private fun fittedEnd(start: Int, budget: Int, width: Int): Int {
+    private fun fittedEnd(
+        start: Int,
+        budget: Int,
+        width: Int,
+    ): Int {
         var rows = 0
         var index = start
         while (index < lines.size) {
@@ -1118,8 +1161,11 @@ class AnsiTerminalBuffer(
      * allowed to set that the frame then clamps away is a scroll that stops responding at the point the
      * user is trying hardest to reach - the top of the scrollback.
      */
-    private fun windowCeiling(anchor: Int, budget: Int, width: Int): Int =
-        if (width > 0) (anchor - fittedEnd(0, budget, width)).coerceAtLeast(0) else anchor - budget
+    private fun windowCeiling(
+        anchor: Int,
+        budget: Int,
+        width: Int,
+    ): Int = if (width > 0) (anchor - fittedEnd(0, budget, width)).coerceAtLeast(0) else anchor - budget
 
     /**
      * Whether these lines belong to a program rather than to the shell's scrollback.
@@ -1154,8 +1200,11 @@ class AnsiTerminalBuffer(
      * believed there were thirty rows of scrollback would be a gesture that moved an offset nothing
      * drew.
      */
-    private fun scrollCeiling(anchor: Int, budget: Int, width: Int): Int =
-        if (primary != null) 0 else windowCeiling(anchor, budget, width)
+    private fun scrollCeiling(
+        anchor: Int,
+        budget: Int,
+        width: Int,
+    ): Int = if (primary != null) 0 else windowCeiling(anchor, budget, width)
 
     /**
      * How many columns of the line at [index] the view has to place: its painted width, plus the cell
@@ -1169,11 +1218,12 @@ class AnsiTerminalBuffer(
     private fun windowExtent(index: Int): Int {
         val line = lines[index]
         val painted = terminalPaintedWidth(line)
-        val withCursor = if (index == cursorRow && cursorVisible) {
-            maxOf(painted, cursorColumn.coerceIn(0, columns - 1) + 1)
-        } else {
-            painted
-        }
+        val withCursor =
+            if (index == cursorRow && cursorVisible) {
+                maxOf(painted, cursorColumn.coerceIn(0, columns - 1) + 1)
+            } else {
+                painted
+            }
         return withCursor.coerceAtMost(line.size)
     }
 
@@ -1263,8 +1313,7 @@ class AnsiTerminalBuffer(
      * cursor in it - which is what the ink floor was added for, and it still does that job for the screen
      * that has not scrolled yet.
      */
-    private fun windowAnchorEnd(): Int =
-        if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())
+    private fun windowAnchorEnd(): Int = if (lines.size > rows) lines.size else maxOf(cursorRow + 1, bottomInkedEnd())
 
     /**
      * The viewport height the buffer is sized to, without building a frame to find out.
@@ -1293,16 +1342,20 @@ class AnsiTerminalBuffer(
      * one place a reader is certainly trying to reach.
      */
     @Synchronized
-    fun maxScrollOffset(viewportRows: Int, windowColumns: Int = 0): Int {
+    fun maxScrollOffset(
+        viewportRows: Int,
+        windowColumns: Int = 0,
+    ): Int {
         val budget = viewportRows.coerceIn(1, lines.size)
         val fitWidth = if (wrapsForDisplay(primary != null, positionalScreen, windowColumns)) windowColumns else 0
-        val anchor = windowAnchorEnd().let { end ->
-            if (fitWidth > 0) {
-                end.coerceIn(1, lines.size)
-            } else {
-                end.coerceIn(budget, lines.size)
+        val anchor =
+            windowAnchorEnd().let { end ->
+                if (fitWidth > 0) {
+                    end.coerceIn(1, lines.size)
+                } else {
+                    end.coerceIn(budget, lines.size)
+                }
             }
-        }
         return scrollCeiling(anchor, budget, fitWidth)
     }
 
@@ -1386,7 +1439,12 @@ class AnsiTerminalBuffer(
      * saved to a file has to come out the same, or the user has to learn which of the two to trust.
      */
     @Synchronized
-    fun textIn(fromLine: Int, fromColumn: Int, toLine: Int, toColumn: Int): String {
+    fun textIn(
+        fromLine: Int,
+        fromColumn: Int,
+        toLine: Int,
+        toColumn: Int,
+    ): String {
         if (lines.isEmpty()) return ""
         val startLine = fromLine.coerceIn(0, lines.lastIndex)
         val endLine = toLine.coerceIn(0, lines.lastIndex)
@@ -1453,7 +1511,10 @@ class AnsiTerminalBuffer(
      * because [plainText] is called once per frame over up to 2 000 lines, and a `String` per line is
      * the allocation this shape exists to avoid - see [plainText].
      */
-    private fun appendLineText(out: StringBuilder, line: List<TerminalCell>) {
+    private fun appendLineText(
+        out: StringBuilder,
+        line: List<TerminalCell>,
+    ) {
         val lineStart = out.length
         line.forEachIndexed { column, cell ->
             // The right half of a wide character is a cell rather than a character, and the space it is
@@ -1471,77 +1532,119 @@ class AnsiTerminalBuffer(
 
     private fun consume(char: Char) {
         when (escapeState) {
-            EscapeState.NORMAL -> when (char.code) {
-                C0_ESC -> escapeState = EscapeState.ESC
-                // VT and FF move down a line exactly as LF does on every terminal in practice.
-                C0_LF, C0_VT, C0_FF -> lineFeed()
-                // CR and BS are the two cursor moves that arrive as bare control bytes rather than as
-                // a CSI, and they go through [setCursorColumn] so they advance the revision like every
-                // other move. BS in particular is what a left arrow costs: readline's `cub1` is `^H`
-                // while its `cuf1` is `ESC [ C`, so this branch is the only thing standing between a
-                // left arrow and a cursor that visibly moves. Setting the column directly here left the
-                // revision untouched, the frame was drawn from a layout memoized on that revision, and
-                // the cursor sat still until the next character was typed.
-                C0_CR -> setCursorColumn(0)
-                C0_BS -> setCursorColumn(cursorColumn - 1)
-                C0_HT -> tabForward(1)
-                // A bell has no display; padding NULs must not print as blanks over real output.
-                C0_NUL, C0_BEL -> Unit
-                // SO / SI, which shift the alternate character set in and out. `ncurses` draws every
-                // box and every menu border through these, and ignoring them printed the raw letters:
-                // `lqqqk` across the top of a dialog instead of a line.
-                C0_SO -> { shiftedOut = true; revision++ }
-                C0_SI -> { shiftedOut = false; revision++ }
-                else -> if (!char.isISOControl()) put(char)
-            }
-            EscapeState.ESC -> when (char) {
-                '[' -> { controlBuffer.clear(); escapeState = EscapeState.CSI }
-                ']' -> { controlBuffer.clear(); escapeState = EscapeState.OSC }
-                // DCS / SOS / PM / APC: payloads this terminal has no use for, skipped as a unit so
-                // that what follows them is still printed instead of being taken for text.
-                'P', 'X', '^', '_' -> { controlBuffer.clear(); escapeState = EscapeState.STRING }
-                // Any intermediate byte (0x20..0x2F) opens a longer sequence: `ESC ( B`, `ESC # 8`,
-                // `ESC % G`. Recognising only `(` and `)` printed the byte that followed the others.
-                in ' '..'/' -> {
-                    escapeIntermediates.setLength(0)
-                    escapeIntermediates.append(char)
-                    escapeState = EscapeState.ESC_INTERMEDIATE
+            EscapeState.NORMAL ->
+                when (char.code) {
+                    C0_ESC -> escapeState = EscapeState.ESC
+                    // VT and FF move down a line exactly as LF does on every terminal in practice.
+                    C0_LF, C0_VT, C0_FF -> lineFeed()
+                    // CR and BS are the two cursor moves that arrive as bare control bytes rather than as
+                    // a CSI, and they go through [setCursorColumn] so they advance the revision like every
+                    // other move. BS in particular is what a left arrow costs: readline's `cub1` is `^H`
+                    // while its `cuf1` is `ESC [ C`, so this branch is the only thing standing between a
+                    // left arrow and a cursor that visibly moves. Setting the column directly here left the
+                    // revision untouched, the frame was drawn from a layout memoized on that revision, and
+                    // the cursor sat still until the next character was typed.
+                    C0_CR -> setCursorColumn(0)
+                    C0_BS -> setCursorColumn(cursorColumn - 1)
+                    C0_HT -> tabForward(1)
+                    // A bell has no display; padding NULs must not print as blanks over real output.
+                    C0_NUL, C0_BEL -> Unit
+                    // SO / SI, which shift the alternate character set in and out. `ncurses` draws every
+                    // box and every menu border through these, and ignoring them printed the raw letters:
+                    // `lqqqk` across the top of a dialog instead of a line.
+                    C0_SO -> {
+                        shiftedOut = true
+                        revision++
+                    }
+                    C0_SI -> {
+                        shiftedOut = false
+                        revision++
+                    }
+                    else -> if (!char.isISOControl()) put(char)
                 }
-                // SS3, the three-byte single-shift sequences. `ESC O` had no case at all, so its final
-                // byte fell through to the printer: a program that sends `ESC O D` for cursor-left put
-                // a literal `D` on screen instead of moving anything. See [consumeSs3].
-                'O' -> escapeState = EscapeState.SS3
-                '7' -> { saveCursor(); escapeState = EscapeState.NORMAL }
-                '8' -> { restoreCursor(); escapeState = EscapeState.NORMAL }
-                'c' -> reset()
-                'D' -> { index(); escapeState = EscapeState.NORMAL }
-                'E' -> { lineFeed(); escapeState = EscapeState.NORMAL }
-                'M' -> { reverseIndex(); escapeState = EscapeState.NORMAL }
-                'H' -> { setTabStop(cursorColumn); escapeState = EscapeState.NORMAL }
-                '=' -> { applicationKeypad = true; escapeState = EscapeState.NORMAL }
-                '>' -> { applicationKeypad = false; escapeState = EscapeState.NORMAL }
-                else -> escapeState = EscapeState.NORMAL
-            }
-            EscapeState.ESC_INTERMEDIATE -> when {
-                // A second intermediate extends the run rather than ending it: `ESC SP F`, `ESC ( 0`.
-                char in ' '..'/' -> {
-                    escapeIntermediates.append(char)
-                    // The same bound as CSI and OSC: a run this long is corruption, not a sequence.
-                    if (escapeIntermediates.length > MAX_CONTROL_LENGTH) abandonControlSequence()
+            EscapeState.ESC ->
+                when (char) {
+                    '[' -> {
+                        controlBuffer.clear()
+                        escapeState = EscapeState.CSI
+                    }
+                    ']' -> {
+                        controlBuffer.clear()
+                        escapeState = EscapeState.OSC
+                    }
+                    // DCS / SOS / PM / APC: payloads this terminal has no use for, skipped as a unit so
+                    // that what follows them is still printed instead of being taken for text.
+                    'P', 'X', '^', '_' -> {
+                        controlBuffer.clear()
+                        escapeState = EscapeState.STRING
+                    }
+                    // Any intermediate byte (0x20..0x2F) opens a longer sequence: `ESC ( B`, `ESC # 8`,
+                    // `ESC % G`. Recognising only `(` and `)` printed the byte that followed the others.
+                    in ' '..'/' -> {
+                        escapeIntermediates.setLength(0)
+                        escapeIntermediates.append(char)
+                        escapeState = EscapeState.ESC_INTERMEDIATE
+                    }
+                    // SS3, the three-byte single-shift sequences. `ESC O` had no case at all, so its final
+                    // byte fell through to the printer: a program that sends `ESC O D` for cursor-left put
+                    // a literal `D` on screen instead of moving anything. See [consumeSs3].
+                    'O' -> escapeState = EscapeState.SS3
+                    '7' -> {
+                        saveCursor()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    '8' -> {
+                        restoreCursor()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    'c' -> reset()
+                    'D' -> {
+                        index()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    'E' -> {
+                        lineFeed()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    'M' -> {
+                        reverseIndex()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    'H' -> {
+                        setTabStop(cursorColumn)
+                        escapeState = EscapeState.NORMAL
+                    }
+                    '=' -> {
+                        applicationKeypad = true
+                        escapeState = EscapeState.NORMAL
+                    }
+                    '>' -> {
+                        applicationKeypad = false
+                        escapeState = EscapeState.NORMAL
+                    }
+                    else -> escapeState = EscapeState.NORMAL
                 }
-                char in '0'..'~' -> {
-                    executeEscIntermediate(escapeIntermediates.toString(), char)
-                    escapeIntermediates.setLength(0)
-                    escapeState = EscapeState.NORMAL
+            EscapeState.ESC_INTERMEDIATE ->
+                when {
+                    // A second intermediate extends the run rather than ending it: `ESC SP F`, `ESC ( 0`.
+                    char in ' '..'/' -> {
+                        escapeIntermediates.append(char)
+                        // The same bound as CSI and OSC: a run this long is corruption, not a sequence.
+                        if (escapeIntermediates.length > MAX_CONTROL_LENGTH) abandonControlSequence()
+                    }
+                    char in '0'..'~' -> {
+                        executeEscIntermediate(escapeIntermediates.toString(), char)
+                        escapeIntermediates.setLength(0)
+                        escapeState = EscapeState.NORMAL
+                    }
+                    // Any other control byte ends the sequence and is then handled as the control it is,
+                    // so the ESC that starts a new sequence over a truncated one still works.
+                    else -> {
+                        escapeIntermediates.setLength(0)
+                        escapeState = EscapeState.NORMAL
+                        consume(char)
+                    }
                 }
-                // Any other control byte ends the sequence and is then handled as the control it is,
-                // so the ESC that starts a new sequence over a truncated one still works.
-                else -> {
-                    escapeIntermediates.setLength(0)
-                    escapeState = EscapeState.NORMAL
-                    consume(char)
-                }
-            }
             EscapeState.SS3 -> {
                 consumeSs3(char)
                 escapeState = EscapeState.NORMAL
@@ -1561,38 +1664,53 @@ class AnsiTerminalBuffer(
                     abandonControlSequence()
                 }
             }
-            EscapeState.OSC -> when {
-                char.code == C0_BEL -> { finishOsc(); escapeState = EscapeState.NORMAL }
-                // ST, i.e. ESC backslash, arrives as the ESC state failing to recognise the backslash.
-                char.code == C0_ESC -> { finishOsc(); escapeState = EscapeState.ESC }
-                // An OSC that never terminates used to swallow every byte after it for the life of
-                // the session. One stray "ESC ]" in a corrupted stream blanked the terminal
-                // permanently; now the run gives up and output resumes.
-                controlBuffer.length > MAX_CONTROL_LENGTH -> abandonControlSequence()
-                else -> controlBuffer.append(char)
-            }
-            EscapeState.STRING -> when {
-                // The one byte that can end a control string, and only as half of a pair: ST is `ESC \`,
-                // so an ESC here is a *maybe* and the decision moves to [EscapeState.STRING_ESC]. tmux
-                // frames a passthrough as `ESC P tmux; <payload>` with every ESC in the payload doubled
-                // for exactly this reason. A parser that ends the string at the ESC instead prints the
-                // rest of the payload - `[?25l`, `[>4;2m`, a colour reply - into the grid and advances
-                // its cursor past where the far end believes it is, and a far end that disagrees about
-                // the cursor never sends those cells again: the damage is permanent for the session.
-                char.code == C0_ESC -> escapeState = EscapeState.STRING_ESC
-                char.code == C0_BEL -> { controlBuffer.clear(); escapeState = EscapeState.NORMAL }
-                controlBuffer.length > MAX_CONTROL_LENGTH -> abandonControlSequence()
-                else -> controlBuffer.append(char)
-            }
+            EscapeState.OSC ->
+                when {
+                    char.code == C0_BEL -> {
+                        finishOsc()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    // ST, i.e. ESC backslash, arrives as the ESC state failing to recognise the backslash.
+                    char.code == C0_ESC -> {
+                        finishOsc()
+                        escapeState = EscapeState.ESC
+                    }
+                    // An OSC that never terminates used to swallow every byte after it for the life of
+                    // the session. One stray "ESC ]" in a corrupted stream blanked the terminal
+                    // permanently; now the run gives up and output resumes.
+                    controlBuffer.length > MAX_CONTROL_LENGTH -> abandonControlSequence()
+                    else -> controlBuffer.append(char)
+                }
+            EscapeState.STRING ->
+                when {
+                    // The one byte that can end a control string, and only as half of a pair: ST is `ESC \`,
+                    // so an ESC here is a *maybe* and the decision moves to [EscapeState.STRING_ESC]. tmux
+                    // frames a passthrough as `ESC P tmux; <payload>` with every ESC in the payload doubled
+                    // for exactly this reason. A parser that ends the string at the ESC instead prints the
+                    // rest of the payload - `[?25l`, `[>4;2m`, a colour reply - into the grid and advances
+                    // its cursor past where the far end believes it is, and a far end that disagrees about
+                    // the cursor never sends those cells again: the damage is permanent for the session.
+                    char.code == C0_ESC -> escapeState = EscapeState.STRING_ESC
+                    char.code == C0_BEL -> {
+                        controlBuffer.clear()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    controlBuffer.length > MAX_CONTROL_LENGTH -> abandonControlSequence()
+                    else -> controlBuffer.append(char)
+                }
             // The byte after an ESC inside a control string, which is a decision this state holds for
             // exactly one character - across reads, like every other partial sequence. A backslash
             // completes ST and ends the string; anything else, a second ESC included, is taken with the
             // ESC as an unknown two-byte sequence and the string goes on. The payload is discarded
             // either way, so what the pair *meant* never has to be decided.
-            EscapeState.STRING_ESC -> when (char) {
-                '\\' -> { controlBuffer.clear(); escapeState = EscapeState.NORMAL }
-                else -> escapeState = EscapeState.STRING
-            }
+            EscapeState.STRING_ESC ->
+                when (char) {
+                    '\\' -> {
+                        controlBuffer.clear()
+                        escapeState = EscapeState.NORMAL
+                    }
+                    else -> escapeState = EscapeState.STRING
+                }
         }
     }
 
@@ -1623,12 +1741,21 @@ class AnsiTerminalBuffer(
      * 96-character-set forms. Only the designations have something to obey; the rest are consumed
      * rather than printed, which is what a terminal that does not implement a sequence owes the stream.
      */
-    private fun executeEscIntermediate(intermediate: String, final: Char) {
+    private fun executeEscIntermediate(
+        intermediate: String,
+        final: Char,
+    ) {
         when (intermediate) {
             // `ESC ( 0` is what ncurses draws every box and menu border with, and `ESC ( B` puts the
             // letters back.
-            "(" -> { g0Graphics = final == '0'; revision++ }
-            ")" -> { g1Graphics = final == '0'; revision++ }
+            "(" -> {
+                g0Graphics = final == '0'
+                revision++
+            }
+            ")" -> {
+                g1Graphics = final == '0'
+                revision++
+            }
             // The one sequence in this family with something to draw. #3, #4, #5 and #6 are the
             // double-width and double-height line attributes, which this display has no room for and
             // does not claim to have.
@@ -1665,9 +1792,10 @@ class AnsiTerminalBuffer(
         // and request-mode families. Kept as the leading byte rather than stripped blindly, because the
         // answer to CSI c depends on which of them introduced it - and so does whether `u` is a cursor
         // restore or a keyboard query.
-        val prefix = raw.firstOrNull()?.takeIf {
-            it == '?' || it == '>' || it == '<' || it == '=' || it == '!' || it == '$'
-        }
+        val prefix =
+            raw.firstOrNull()?.takeIf {
+                it == '?' || it == '>' || it == '<' || it == '=' || it == '!' || it == '$'
+            }
         val body = if (prefix == null) raw else raw.substring(1)
         // Clamped at zero, and that is a crash fix rather than tidiness. ECMA-48 parameter bytes are
         // 0x30..0x3F, so "-" is not part of a number at all - but it still reaches here inside the
@@ -1677,10 +1805,12 @@ class AnsiTerminalBuffer(
         // printable character indexed `lines` out of bounds, and that throw surfaces inside the
         // terminal output collector - a plain `launch`, so it reached the thread's default handler and
         // killed the process. One malformed sequence from a server was enough to crash the app.
-        val params = body.takeIf { it.isNotEmpty() }
-            ?.split(';')
-            ?.map { it.toIntOrNull()?.coerceAtLeast(0) ?: 0 }
-            ?: emptyList()
+        val params =
+            body
+                .takeIf { it.isNotEmpty() }
+                ?.split(';')
+                ?.map { it.toIntOrNull()?.coerceAtLeast(0) ?: 0 }
+                ?: emptyList()
         val first = params.firstOrNull()?.takeIf { it != 0 } ?: 1
         val private = prefix == '?'
         revision++
@@ -1689,8 +1819,14 @@ class AnsiTerminalBuffer(
             'B', 'e' -> setCursorRow(cursorRow + first)
             'C', 'a' -> setCursorColumn(cursorColumn + first)
             'D' -> setCursorColumn(cursorColumn - first)
-            'E' -> { setCursorRow(cursorRow + first); setCursorColumn(0) }
-            'F' -> { setCursorRow(cursorRow - first); setCursorColumn(0) }
+            'E' -> {
+                setCursorRow(cursorRow + first)
+                setCursorColumn(0)
+            }
+            'F' -> {
+                setCursorRow(cursorRow - first)
+                setCursorColumn(0)
+            }
             'G', '`' -> setCursorColumn((params.firstOrNull() ?: 1) - 1)
             'd' -> addressScreenRow((params.firstOrNull() ?: 1) - 1)
             'H', 'f' -> {
@@ -1718,71 +1854,80 @@ class AnsiTerminalBuffer(
             // `ESC [ = 1 u` are the kitty keyboard protocol's query, pop, push and set. Only the bare
             // and the two keyboard forms are implemented; an unimplemented prefixed form is ignored -
             // which is what makes the program fall back to plain output.
-            'm' -> when (prefix) {
-                null -> applySgr(params.ifEmpty { listOf(0) })
-                '>' -> if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
-                    setModifyOtherKeys(params.getOrNull(1) ?: ModifyOtherKeys.OFF)
+            'm' ->
+                when (prefix) {
+                    null -> applySgr(params.ifEmpty { listOf(0) })
+                    '>' ->
+                        if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
+                            setModifyOtherKeys(params.getOrNull(1) ?: ModifyOtherKeys.OFF)
+                        }
+                    '?' ->
+                        if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
+                            queueReply(csi(">4;${modifyOtherKeys}m"))
+                        }
+                    else -> Unit
                 }
-                '?' -> if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
-                    queueReply(csi(">4;${modifyOtherKeys}m"))
-                }
-                else -> Unit
-            }
             'r' -> if (prefix == null) setScrollRegion(params)
             'g' -> clearTabStop(params.firstOrNull() ?: 0)
-            'c' -> when (prefix) {
-                // Secondary DA: "a VT220, firmware 95". Primary DA: "a VT100 with AVO", which is what
-                // xterm answers and what every terminfo entry for xterm-256color expects.
-                '>' -> queueReply(csi(">0;95;0c"))
-                null -> queueReply(csi("?1;2c"))
-                else -> Unit
-            }
+            'c' ->
+                when (prefix) {
+                    // Secondary DA: "a VT220, firmware 95". Primary DA: "a VT100 with AVO", which is what
+                    // xterm answers and what every terminfo entry for xterm-256color expects.
+                    '>' -> queueReply(csi(">0;95;0c"))
+                    null -> queueReply(csi("?1;2c"))
+                    else -> Unit
+                }
             // `CSI > 4 n` is xterm's other spelling of "modifyOtherKeys off", and the one a program
             // uses when it wants the resource unset rather than set to zero. Ignoring it would leave a
             // program's own request in force after it asked for it to be dropped.
-            'n' -> when {
-                prefix == '>' -> if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
-                    setModifyOtherKeys(ModifyOtherKeys.OFF)
+            'n' ->
+                when {
+                    prefix == '>' ->
+                        if (params.firstOrNull() == ModifyOtherKeys.RESOURCE) {
+                            setModifyOtherKeys(ModifyOtherKeys.OFF)
+                        }
+                    !private -> deviceStatus(params.firstOrNull() ?: 0)
+                    else -> Unit
                 }
-                !private -> deviceStatus(params.firstOrNull() ?: 0)
-                else -> Unit
-            }
             's' -> if (prefix == null) saveCursor()
-            'u' -> when (prefix) {
-                null -> restoreCursor()
-                // The flags default to zero here rather than to `first`'s one: `ESC [ > u` is a legal
-                // push of the empty set, and reading it as 1 would turn on a flag nobody asked for.
-                '>' -> pushKeyboardFlags(params.firstOrNull() ?: 0)
-                '<' -> popKeyboardFlags(params.firstOrNull() ?: 1)
-                '=' -> setKeyboardFlags(params.getOrNull(0) ?: 0, params.getOrNull(1) ?: 1)
-                '?' -> queueReply(csi("?${keyboardFlags}u"))
-                else -> Unit
-            }
+            'u' ->
+                when (prefix) {
+                    null -> restoreCursor()
+                    // The flags default to zero here rather than to `first`'s one: `ESC [ > u` is a legal
+                    // push of the empty set, and reading it as 1 would turn on a flag nobody asked for.
+                    '>' -> pushKeyboardFlags(params.firstOrNull() ?: 0)
+                    '<' -> popKeyboardFlags(params.firstOrNull() ?: 1)
+                    '=' -> setKeyboardFlags(params.getOrNull(0) ?: 0, params.getOrNull(1) ?: 1)
+                    '?' -> queueReply(csi("?${keyboardFlags}u"))
+                    else -> Unit
+                }
             // XTVERSION. Answered with this emulator's own name rather than an xterm's: the name
             // travels on the wire and a program may branch on it, and claiming to be an xterm is a
             // claim this terminal cannot back with features. DECLL (`CSI Ps q`) and every other `q`
             // form stay unanswered, which is what a terminal that does not implement them says.
-            'q' -> when {
-                prefix == '>' && (params.firstOrNull() ?: 0) == 0 ->
-                    queueReply(dcs(">|$TERMINAL_IDENTITY"))
-                // DECSCUSR, whose parameter is separated from the `q` by a space - the one thing that
-                // tells it from DECLL, which is the same final byte with no intermediate. The space
-                // arrives inside the body rather than as a prefix, so it is looked for there.
-                prefix == null && body.endsWith(' ') -> setCursorShape(body.trimEnd())
-                else -> Unit
-            }
+            'q' ->
+                when {
+                    prefix == '>' && (params.firstOrNull() ?: 0) == 0 ->
+                        queueReply(dcs(">|$TERMINAL_IDENTITY"))
+                    // DECSCUSR, whose parameter is separated from the `q` by a space - the one thing that
+                    // tells it from DECLL, which is the same final byte with no intermediate. The space
+                    // arrives inside the body rather than as a prefix, so it is looked for there.
+                    prefix == null && body.endsWith(' ') -> setCursorShape(body.trimEnd())
+                    else -> Unit
+                }
             'h' -> setMode(params, private, true)
             'l' -> setMode(params, private, false)
             // `CSI ! p` is DECSTR, the soft reset - stronger than the standard asks for, and that is
             // the safer direction, since it is sent by programs recovering from a confused terminal.
             // A `$` in front of the `p` makes it DECRQM instead, and that `$` is an intermediate byte
             // rather than one of the prefixes this parser reads, so it is looked for in the body.
-            'p' -> when {
-                prefix == '!' -> reset()
-                body.endsWith('$') && (prefix == null || private) ->
-                    body.dropLast(1).split(';').forEach { reportMode(it.toIntOrNull() ?: 0, private) }
-                else -> Unit
-            }
+            'p' ->
+                when {
+                    prefix == '!' -> reset()
+                    body.endsWith('$') && (prefix == null || private) ->
+                        body.dropLast(1).split(';').forEach { reportMode(it.toIntOrNull() ?: 0, private) }
+                    else -> Unit
+                }
             // XTWINOPS. The size and title questions are answered, the requests to move, resize or
             // raise the user's window are refused, and a prefix makes it a different sequence.
             't' -> if (prefix == null) windowOperation(params)
@@ -1802,7 +1947,11 @@ class AnsiTerminalBuffer(
      * that total: a mode this terminal does not implement leaves [mouseModes] untouched, so an app
      * asking for something newer than this does not silently turn the ones it also asked for off.
      */
-    private fun setMode(params: List<Int>, private: Boolean, enable: Boolean) {
+    private fun setMode(
+        params: List<Int>,
+        private: Boolean,
+        enable: Boolean,
+    ) {
         params.ifEmpty { listOf(0) }.forEach { mode ->
             if (!private) {
                 // IRM. The only ANSI mode with a visible effect here; LNM is a line-discipline
@@ -1835,8 +1984,11 @@ class AnsiTerminalBuffer(
                 // 1047 and 1048 are the two halves that 1049 does together; all three are accepted so
                 // an app using the older pair is not left drawing onto the primary screen.
                 1047, 1049 ->
-                    if (enable) enterAlternateScreen(withCursor = mode == 1049)
-                    else leaveAlternateScreen(withCursor = mode == 1049)
+                    if (enable) {
+                        enterAlternateScreen(withCursor = mode == 1049)
+                    } else {
+                        leaveAlternateScreen(withCursor = mode == 1049)
+                    }
                 1048 -> if (enable) saveCursor() else restoreCursor()
                 47 -> if (enable) enterAlternateScreen(withCursor = false) else leaveAlternateScreen(withCursor = false)
             }
@@ -1875,15 +2027,16 @@ class AnsiTerminalBuffer(
         val digits = parameter.trimEnd()
         if (digits.any { it !in '0'..'9' }) return
         val ps = digits.toIntOrNull() ?: 0
-        val (shape, blink) = when (ps) {
-            0, 1 -> TerminalCursorShape.BLOCK to true
-            2 -> TerminalCursorShape.BLOCK to false
-            3 -> TerminalCursorShape.UNDERLINE to true
-            4 -> TerminalCursorShape.UNDERLINE to false
-            5 -> TerminalCursorShape.BAR to true
-            6 -> TerminalCursorShape.BAR to false
-            else -> return
-        }
+        val (shape, blink) =
+            when (ps) {
+                0, 1 -> TerminalCursorShape.BLOCK to true
+                2 -> TerminalCursorShape.BLOCK to false
+                3 -> TerminalCursorShape.UNDERLINE to true
+                4 -> TerminalCursorShape.UNDERLINE to false
+                5 -> TerminalCursorShape.BAR to true
+                6 -> TerminalCursorShape.BAR to false
+                else -> return
+            }
         cursorShape = shape
         cursorBlink = blink
     }
@@ -1895,8 +2048,7 @@ class AnsiTerminalBuffer(
      * crashes before popping cannot leave the shell's keyboard in the wrong mode - the shell's own
      * flags live in the other stack and are put back when it gets the screen back.
      */
-    private fun screenKeyboardStack(): ArrayList<Int> =
-        if (primary == null) keyboardStack else alternateKeyboardStack
+    private fun screenKeyboardStack(): ArrayList<Int> = if (primary == null) keyboardStack else alternateKeyboardStack
 
     /**
      * `ESC [ > flags u`: save the flags in effect and adopt [flags].
@@ -1937,13 +2089,17 @@ class AnsiTerminalBuffer(
      * is treated as 1 rather than ignored, since 1 is the default for an omitted parameter and a
      * program asking for a mode this terminal has never heard of still wants the flags it named.
      */
-    private fun setKeyboardFlags(flags: Int, mode: Int) {
+    private fun setKeyboardFlags(
+        flags: Int,
+        mode: Int,
+    ) {
         val named = flags and KittyKeyboard.SUPPORTED
-        keyboardFlags = when (mode) {
-            2 -> keyboardFlags or named
-            3 -> keyboardFlags and named.inv()
-            else -> named
-        }
+        keyboardFlags =
+            when (mode) {
+                2 -> keyboardFlags or named
+                3 -> keyboardFlags and named.inv()
+                else -> named
+            }
     }
 
     /**
@@ -1981,14 +2137,15 @@ class AnsiTerminalBuffer(
     private fun enterAlternateScreen(withCursor: Boolean) {
         if (primary != null) return
         if (withCursor) saveCursor()
-        primary = PrimaryScreen(
-            lines = lines,
-            marks = marks,
-            cursorRow = cursorRow,
-            cursorColumn = cursorColumn,
-            topMargin = topMargin,
-            bottomMargin = bottomMargin,
-        )
+        primary =
+            PrimaryScreen(
+                lines = lines,
+                marks = marks,
+                cursorRow = cursorRow,
+                cursorColumn = cursorColumn,
+                topMargin = topMargin,
+                bottomMargin = bottomMargin,
+            )
         lines = ArrayList(rows)
         marks = ArrayList(rows)
         repeat(rows) { appendDefaultLine() }
@@ -2082,27 +2239,32 @@ class AnsiTerminalBuffer(
      * keeps a state for are reported as set or reset; everything else answers [MODE_UNRECOGNIZED],
      * including 1048, which saves a cursor rather than switching anything.
      */
-    private fun reportMode(mode: Int, private: Boolean) {
-        val state = when {
-            !private -> if (mode == 4) onOff(insertMode) else MODE_UNRECOGNIZED
-            mode in MouseModes.handled -> onOff(mode in mouseModes)
-            else -> when (mode) {
-                1 -> onOff(applicationCursorKeys)
-                6 -> onOff(originMode)
-                7 -> onOff(autoWrap)
-                12 -> onOff(cursorBlink)
-                25 -> onOff(cursorVisible)
-                2004 -> onOff(bracketedPaste)
-                // Answered from the latch rather than claimed as supported: a program that asks and
-                // is told 1 goes on to wrap its repaint in a batch, which is the behaviour the latch
-                // exists for.
-                2026 -> onOff(synchronizedOutput)
-                // 47, 1047 and 1049 are one state here: enterAlternateScreen is what all three call,
-                // and reporting them apart would claim a distinction this terminal does not draw.
-                47, 1047, 1049 -> onOff(primary != null)
-                else -> MODE_UNRECOGNIZED
+    private fun reportMode(
+        mode: Int,
+        private: Boolean,
+    ) {
+        val state =
+            when {
+                !private -> if (mode == 4) onOff(insertMode) else MODE_UNRECOGNIZED
+                mode in MouseModes.handled -> onOff(mode in mouseModes)
+                else ->
+                    when (mode) {
+                        1 -> onOff(applicationCursorKeys)
+                        6 -> onOff(originMode)
+                        7 -> onOff(autoWrap)
+                        12 -> onOff(cursorBlink)
+                        25 -> onOff(cursorVisible)
+                        2004 -> onOff(bracketedPaste)
+                        // Answered from the latch rather than claimed as supported: a program that asks and
+                        // is told 1 goes on to wrap its repaint in a batch, which is the behaviour the latch
+                        // exists for.
+                        2026 -> onOff(synchronizedOutput)
+                        // 47, 1047 and 1049 are one state here: enterAlternateScreen is what all three call,
+                        // and reporting them apart would claim a distinction this terminal does not draw.
+                        47, 1047, 1049 -> onOff(primary != null)
+                        else -> MODE_UNRECOGNIZED
+                    }
             }
-        }
         val prefix = if (private) "?" else ""
         queueReply(csi("$prefix$mode;$state\$y"))
     }
@@ -2219,19 +2381,21 @@ class AnsiTerminalBuffer(
      * failure as a success would be worse than one that reported nothing.
      */
     private fun setPromptMark(payload: String) {
-        val kind = when (payload.firstOrNull()) {
-            'A' -> PromptMarkKind.PROMPT
-            'B' -> PromptMarkKind.INPUT
-            'C' -> PromptMarkKind.OUTPUT
-            'D' -> PromptMarkKind.FINISHED
-            else -> return
-        }
+        val kind =
+            when (payload.firstOrNull()) {
+                'A' -> PromptMarkKind.PROMPT
+                'B' -> PromptMarkKind.INPUT
+                'C' -> PromptMarkKind.OUTPUT
+                'D' -> PromptMarkKind.FINISHED
+                else -> return
+            }
         if (cursorRow !in marks.indices) return
-        val mark = PromptMark(
-            kinds = setOf(kind),
-            inputColumn = if (kind == PromptMarkKind.INPUT) cursorColumn.coerceIn(0, columns - 1) else null,
-            exitCode = if (kind == PromptMarkKind.FINISHED) exitStatusOf(payload) else null,
-        )
+        val mark =
+            PromptMark(
+                kinds = setOf(kind),
+                inputColumn = if (kind == PromptMarkKind.INPUT) cursorColumn.coerceIn(0, columns - 1) else null,
+                exitCode = if (kind == PromptMarkKind.FINISHED) exitStatusOf(payload) else null,
+            )
         marks[cursorRow] = marks[cursorRow]?.and(mark) ?: mark
         revision++
     }
@@ -2292,7 +2456,10 @@ class AnsiTerminalBuffer(
      * The mask matters: a theme colour arrives as a signed Int, and shifting a negative one right
      * would smear its sign bits over the low byte without it.
      */
-    private fun rgb16(argb: Int, shift: Int): String {
+    private fun rgb16(
+        argb: Int,
+        shift: Int,
+    ): String {
         val pair = ((argb shr shift) and 0xFF).toString(16).uppercase().padStart(2, '0')
         return pair + pair
     }
@@ -2327,18 +2494,21 @@ class AnsiTerminalBuffer(
                 38, 48 -> {
                     val isForeground = code == 38
                     when (params.getOrNull(index + 1)) {
-                        5 -> params.getOrNull(index + 2)?.let { color ->
-                            val terminalColor = TerminalColor(ansi256(color))
-                            next = if (isForeground) next.copy(foreground = terminalColor) else next.copy(background = terminalColor)
-                            index += 2
-                        }
-                        2 -> if (index + 4 < params.size) {
-                            val rgb = (params[index + 2].coerceIn(0, 255) shl 16) or
-                                (params[index + 3].coerceIn(0, 255) shl 8) or params[index + 4].coerceIn(0, 255)
-                            val terminalColor = TerminalColor(TerminalColor.TRUE_COLOR_MASK or rgb)
-                            next = if (isForeground) next.copy(foreground = terminalColor) else next.copy(background = terminalColor)
-                            index += 4
-                        }
+                        5 ->
+                            params.getOrNull(index + 2)?.let { color ->
+                                val terminalColor = TerminalColor(ansi256(color))
+                                next = if (isForeground) next.copy(foreground = terminalColor) else next.copy(background = terminalColor)
+                                index += 2
+                            }
+                        2 ->
+                            if (index + 4 < params.size) {
+                                val rgb =
+                                    (params[index + 2].coerceIn(0, 255) shl 16) or
+                                        (params[index + 3].coerceIn(0, 255) shl 8) or params[index + 4].coerceIn(0, 255)
+                                val terminalColor = TerminalColor(TerminalColor.TRUE_COLOR_MASK or rgb)
+                                next = if (isForeground) next.copy(foreground = terminalColor) else next.copy(background = terminalColor)
+                                index += 4
+                            }
                     }
                 }
             }
@@ -2383,13 +2553,14 @@ class AnsiTerminalBuffer(
      */
     private fun setCursorRow(row: Int) {
         val top = screenTop()
-        cursorRow = if (row < cursorRow) {
-            val floor = top + topMargin
-            if (cursorRow >= floor) row.coerceAtLeast(floor) else row.coerceAtLeast(top)
-        } else {
-            val ceiling = top + bottomMargin
-            if (cursorRow <= ceiling) row.coerceAtMost(ceiling) else row.coerceAtMost(lines.lastIndex)
-        }
+        cursorRow =
+            if (row < cursorRow) {
+                val floor = top + topMargin
+                if (cursorRow >= floor) row.coerceAtLeast(floor) else row.coerceAtLeast(top)
+            } else {
+                val ceiling = top + bottomMargin
+                if (cursorRow <= ceiling) row.coerceAtMost(ceiling) else row.coerceAtMost(lines.lastIndex)
+            }
         // A move of any kind cancels the pending wrap, the same way [setCursorColumn] does for a
         // horizontal one: the cell the cursor was left in is no longer where the next character goes.
         wrapPending = false
@@ -2584,7 +2755,10 @@ class AnsiTerminalBuffer(
      * Deliberately narrow. It clears the cell asked for and, only when that cell is half of a wide
      * character, the other half; it does not clear neighbours of ordinary cells.
      */
-    private fun clearUnit(line: MutableList<TerminalCell>, column: Int) {
+    private fun clearUnit(
+        line: MutableList<TerminalCell>,
+        column: Int,
+    ) {
         if (column !in line.indices) return
         if (line[column].wide) {
             if (column + 1 < line.size) line[column + 1] = eraseBlank()
@@ -2626,7 +2800,10 @@ class AnsiTerminalBuffer(
     }
 
     /** Whether the cell at [index] is still followed by the blank half its pair was written with. */
-    private fun hasRightHalf(line: List<TerminalCell>, index: Int): Boolean {
+    private fun hasRightHalf(
+        line: List<TerminalCell>,
+        index: Int,
+    ): Boolean {
         val next = line.getOrNull(index + 1) ?: return false
         return !next.wide && next.value == ' ' && next.combining.isEmpty()
     }
@@ -2695,11 +2872,12 @@ class AnsiTerminalBuffer(
         // once it has been written - so a mark arriving after one lands on the right half and has to
         // be handed back to the left. A mark on the right half alone would be drawn twice over two
         // columns and copied as a character of its own.
-        val column = if (written > 0 && written in lines[cursorRow].indices && lines[cursorRow][written - 1].wide) {
-            written - 1
-        } else {
-            written
-        }
+        val column =
+            if (written > 0 && written in lines[cursorRow].indices && lines[cursorRow][written - 1].wide) {
+                written - 1
+            } else {
+                written
+            }
         val line = lines[cursorRow]
         if (column !in line.indices) return
         val cell = line[column]
@@ -2852,14 +3030,23 @@ class AnsiTerminalBuffer(
             // Only the screen, never the scrollback: `clear` at a shell prompt must not throw away
             // the history the user scrolled back to read.
             2 -> for (row in top until lines.size) blankLine(row, blank)
-            0 -> { eraseLine(0); for (row in cursorRow + 1 until lines.size) blankLine(row, blank) }
-            1 -> { eraseLine(1); for (row in top until cursorRow) blankLine(row, blank) }
+            0 -> {
+                eraseLine(0)
+                for (row in cursorRow + 1 until lines.size) blankLine(row, blank)
+            }
+            1 -> {
+                eraseLine(1)
+                for (row in top until cursorRow) blankLine(row, blank)
+            }
             // `ESC [ 3 J` is the explicit "and drop the scrollback too" that `clear` sends on a modern
             // system, and the only sequence allowed to discard history. It also releases
             // [positionalScreen]: throwing the history away is a statement that nothing on the way out
             // needs preserving, which is the opposite of a program repainting a screen it means to keep.
             3 -> {
-                while (lines.size > rows) { dropLine(0); cursorRow = (cursorRow - 1).coerceAtLeast(0) }
+                while (lines.size > rows) {
+                    dropLine(0)
+                    cursorRow = (cursorRow - 1).coerceAtLeast(0)
+                }
                 positionalScreen = false
             }
         }
@@ -3069,7 +3256,10 @@ class AnsiTerminalBuffer(
      * blanks. A *partial* erase is not this - clearing from the cursor rightward leaves the line's
      * beginning, and with it the prompt the shell printed there, so the mark stands.
      */
-    private fun blankLine(row: Int, blank: TerminalCell) {
+    private fun blankLine(
+        row: Int,
+        blank: TerminalCell,
+    ) {
         lines[row].fill(blank)
         marks[row] = null
     }
@@ -3146,12 +3336,41 @@ class AnsiTerminalBuffer(
          * re-encodes this file, and these are exactly the glyphs most likely to be mishandled: box
          * corners, the horizontal rules `ncurses` draws menus with, and the control pictures.
          */
-        val DEC_SPECIAL_GRAPHICS = intArrayOf(
-            0x0020, 0x25C6, 0x2592, 0x2409, 0x240C, 0x240D, 0x240A, 0x00B0,
-            0x00B1, 0x2424, 0x240B, 0x2518, 0x2510, 0x250C, 0x2514, 0x253C,
-            0x23BA, 0x23BB, 0x2500, 0x23BC, 0x23BD, 0x251C, 0x2524, 0x2534,
-            0x252C, 0x2502, 0x2264, 0x2265, 0x03C0, 0x2260, 0x00A3, 0x00B7,
-        )
+        val DEC_SPECIAL_GRAPHICS =
+            intArrayOf(
+                0x0020,
+                0x25C6,
+                0x2592,
+                0x2409,
+                0x240C,
+                0x240D,
+                0x240A,
+                0x00B0,
+                0x00B1,
+                0x2424,
+                0x240B,
+                0x2518,
+                0x2510,
+                0x250C,
+                0x2514,
+                0x253C,
+                0x23BA,
+                0x23BB,
+                0x2500,
+                0x23BC,
+                0x23BD,
+                0x251C,
+                0x2524,
+                0x2534,
+                0x252C,
+                0x2502,
+                0x2264,
+                0x2265,
+                0x03C0,
+                0x2260,
+                0x00A3,
+                0x00B7,
+            )
 
         /**
          * The 16 ANSI colours.
@@ -3161,24 +3380,25 @@ class AnsiTerminalBuffer(
          * came out as pure black on a black background and was simply invisible. They are separate
          * entries now, and the normal half is darkened slightly so the pair is distinguishable.
          */
-        fun ansiColor(code: Int): Int = when (code) {
-            30 -> 0x00232838
-            31 -> 0x00E05561
-            32 -> 0x0038C172
-            33 -> 0x00D9A343
-            34 -> 0x005B8CFF
-            35 -> 0x00C678DD
-            36 -> 0x0056B6C2
-            37 -> 0x00C7CEDB
-            90 -> 0x00666F85
-            91 -> 0x00FF5555
-            92 -> 0x0050FA7B
-            93 -> 0x00F1FA8C
-            94 -> 0x006FA8FF
-            95 -> 0x00FF79C6
-            96 -> 0x008BE9FD
-            else -> 0x00F8F8F2
-        }
+        fun ansiColor(code: Int): Int =
+            when (code) {
+                30 -> 0x00232838
+                31 -> 0x00E05561
+                32 -> 0x0038C172
+                33 -> 0x00D9A343
+                34 -> 0x005B8CFF
+                35 -> 0x00C678DD
+                36 -> 0x0056B6C2
+                37 -> 0x00C7CEDB
+                90 -> 0x00666F85
+                91 -> 0x00FF5555
+                92 -> 0x0050FA7B
+                93 -> 0x00F1FA8C
+                94 -> 0x006FA8FF
+                95 -> 0x00FF79C6
+                96 -> 0x008BE9FD
+                else -> 0x00F8F8F2
+            }
 
         /** The xterm 256-colour cube: 16 named, then 6x6x6, then 24 greys. */
         fun ansi256(index: Int): Int {
@@ -3242,5 +3462,4 @@ internal fun terminalPaintedWidth(line: List<TerminalCell>): Int {
  * is empty; a foreground colour on a space is drawn by neither, so a screen that was painted only in
  * foreground on blanks has to read as blank to both.
  */
-internal fun TerminalCell.isPainted(): Boolean =
-    value != ' ' || !style.background.isDefault || style.inverse
+internal fun TerminalCell.isPainted(): Boolean = value != ' ' || !style.background.isDefault || style.inverse

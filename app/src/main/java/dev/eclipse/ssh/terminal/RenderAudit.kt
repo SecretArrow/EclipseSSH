@@ -32,8 +32,7 @@ internal data class FrameSample(
  * `a   b` is four columns wide and two cells of ink, and it is the second number that tells a screen
  * that lost its text from one that kept a skeleton of it.
  */
-internal fun paintedCells(lines: List<List<TerminalCell>>): Int =
-    lines.sumOf { line -> line.count { it.isPainted() } }
+internal fun paintedCells(lines: List<List<TerminalCell>>): Int = lines.sumOf { line -> line.count { it.isPainted() } }
 
 /**
  * The screen a frame belongs to, from the two flags the frame carries.
@@ -42,11 +41,15 @@ internal fun paintedCells(lines: List<List<TerminalCell>>): Int =
  * too, and of the two names, "alternate" is the one that says why the primary screen's text is not on
  * display. See [ScreenKind] for why the distinction is kept at all.
  */
-internal fun screenKind(alternateScreen: Boolean, positionalScreen: Boolean): ScreenKind = when {
-    alternateScreen -> ScreenKind.ALTERNATE
-    positionalScreen -> ScreenKind.POSITIONAL
-    else -> ScreenKind.PRIMARY
-}
+internal fun screenKind(
+    alternateScreen: Boolean,
+    positionalScreen: Boolean,
+): ScreenKind =
+    when {
+        alternateScreen -> ScreenKind.ALTERNATE
+        positionalScreen -> ScreenKind.POSITIONAL
+        else -> ScreenKind.PRIMARY
+    }
 
 /** The things worth writing down. Not errors: a record of what the screen did. */
 internal enum class RenderNoteKind {
@@ -96,7 +99,6 @@ internal class RenderAudit(
     private val capacity: Int = DEFAULT_CAPACITY,
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
-
     init {
         require(capacity > 0) { "capacity must be positive" }
     }
@@ -154,10 +156,11 @@ internal class RenderAudit(
             val sinceFrame = lastOutput - outputAtFrame
             when {
                 previous == null -> Unit
-                sample.revision < previous.revision -> note(
-                    RenderNoteKind.REVISION_REWIND,
-                    "${previous.revision} -> ${sample.revision}",
-                )
+                sample.revision < previous.revision ->
+                    note(
+                        RenderNoteKind.REVISION_REWIND,
+                        "${previous.revision} -> ${sample.revision}",
+                    )
                 sample.revision == previous.revision -> {
                     if (sinceFrame > 0) unchangedWithOutput++
                     if (unchangedWithOutput >= STALL_FRAMES && !stretchReported) {
@@ -195,30 +198,41 @@ internal class RenderAudit(
      * user saved. Omit it and the positions stay in the session's own numbering, which is still exact
      * but names a character the export no longer has.
      */
-    fun report(droppedChars: Long? = null): String = synchronized(lock) {
-        val newest = last
-        buildString {
-            append("render audit · frames ").append(frames).append(" · notes ").append(noteCount)
-            if (droppedNotes > 0) append(" (last ").append(capacity).append(" kept)")
-            append('\n')
-            if (newest == null) {
-                append("nothing observed - no frame was published while this session was live\n")
-                return@buildString
-            }
-            append("last frame · revision ").append(newest.revision)
-            append(" · ink ").append(newest.inkCells)
-            append(" · cursor ").append(newest.cursorRow).append(',').append(newest.cursorColumn)
-            append(" · ").append(where(lastOutput, droppedChars))
-            append(" · ").append(word(newest.screen))
-            append('\n')
-            notes.forEach {
-                append("  t=").append(it.atMillis).append("  ").append(it.kind.label()).append(' ')
-                    .append(it.detail).append(" · ").append(where(it.outputPosition, droppedChars)).append('\n')
+    fun report(droppedChars: Long? = null): String =
+        synchronized(lock) {
+            val newest = last
+            buildString {
+                append("render audit · frames ").append(frames).append(" · notes ").append(noteCount)
+                if (droppedNotes > 0) append(" (last ").append(capacity).append(" kept)")
+                append('\n')
+                if (newest == null) {
+                    append("nothing observed - no frame was published while this session was live\n")
+                    return@buildString
+                }
+                append("last frame · revision ").append(newest.revision)
+                append(" · ink ").append(newest.inkCells)
+                append(" · cursor ").append(newest.cursorRow).append(',').append(newest.cursorColumn)
+                append(" · ").append(where(lastOutput, droppedChars))
+                append(" · ").append(word(newest.screen))
+                append('\n')
+                notes.forEach {
+                    append("  t=")
+                        .append(it.atMillis)
+                        .append("  ")
+                        .append(it.kind.label())
+                        .append(' ')
+                        .append(it.detail)
+                        .append(" · ")
+                        .append(where(it.outputPosition, droppedChars))
+                        .append('\n')
+                }
             }
         }
-    }
 
-    private fun note(kind: RenderNoteKind, detail: String) {
+    private fun note(
+        kind: RenderNoteKind,
+        detail: String,
+    ) {
         noteCount++
         if (notes.size == capacity) {
             notes.removeFirst()
@@ -234,24 +248,30 @@ internal class RenderAudit(
      * point early in a long session is simply not in the export, and saying "log char -412" would send
      * whoever replays it to a real character that is the wrong one.
      */
-    private fun where(position: Long, droppedChars: Long?): String = when {
-        droppedChars == null -> "output #$position"
-        position < droppedChars -> "output #$position -> evicted"
-        else -> "output #$position -> log char ${position - droppedChars}"
-    }
+    private fun where(
+        position: Long,
+        droppedChars: Long?,
+    ): String =
+        when {
+            droppedChars == null -> "output #$position"
+            position < droppedChars -> "output #$position -> evicted"
+            else -> "output #$position -> log char ${position - droppedChars}"
+        }
 
-    private fun word(screen: ScreenKind): String = when (screen) {
-        ScreenKind.PRIMARY -> "primary"
-        ScreenKind.ALTERNATE -> "alternate"
-        ScreenKind.POSITIONAL -> "positional"
-    }
+    private fun word(screen: ScreenKind): String =
+        when (screen) {
+            ScreenKind.PRIMARY -> "primary"
+            ScreenKind.ALTERNATE -> "alternate"
+            ScreenKind.POSITIONAL -> "positional"
+        }
 
-    private fun RenderNoteKind.label(): String = when (this) {
-        RenderNoteKind.BLANKED -> "blanked"
-        RenderNoteKind.REPAINTED -> "repainted"
-        RenderNoteKind.REVISION_REWIND -> "rewind"
-        RenderNoteKind.OUTPUT_WITHOUT_FRAME -> "stalled ·"
-    }
+    private fun RenderNoteKind.label(): String =
+        when (this) {
+            RenderNoteKind.BLANKED -> "blanked"
+            RenderNoteKind.REPAINTED -> "repainted"
+            RenderNoteKind.REVISION_REWIND -> "rewind"
+            RenderNoteKind.OUTPUT_WITHOUT_FRAME -> "stalled ·"
+        }
 
     companion object {
         /**

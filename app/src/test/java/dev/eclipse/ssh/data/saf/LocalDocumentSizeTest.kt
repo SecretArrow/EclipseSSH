@@ -9,14 +9,14 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import com.google.common.truth.Truth.assertThat
-import java.io.File
-import java.io.FileNotFoundException
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.File
+import java.io.FileNotFoundException
 
 /**
  * A resumed download appends to the partially written local file, so the offset it starts
@@ -26,7 +26,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class LocalDocumentSizeTest {
-
     private val context get() = RuntimeEnvironment.getApplication()
 
     @Test
@@ -72,9 +71,14 @@ class LocalDocumentSizeTest {
 
     /** Registers the fake provider for this test and returns it for configuration. */
     private fun provider(): FakeDocumentProvider =
-        Robolectric.buildContentProvider(FakeDocumentProvider::class.java)
-            .create(ProviderInfo().apply { authority = AUTHORITY; grantUriPermissions = true })
-            .get()
+        Robolectric
+            .buildContentProvider(FakeDocumentProvider::class.java)
+            .create(
+                ProviderInfo().apply {
+                    authority = AUTHORITY
+                    grantUriPermissions = true
+                },
+            ).get()
 
     /** Stands in for a SAF document provider with configurable capabilities. */
     class FakeDocumentProvider : ContentProvider() {
@@ -84,7 +88,10 @@ class LocalDocumentSizeTest {
 
         override fun onCreate() = true
 
-        override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        override fun openFile(
+            uri: Uri,
+            mode: String,
+        ): ParcelFileDescriptor {
             if (failEverything) throw FileNotFoundException("revoked")
             val file = backing ?: throw FileNotFoundException("stream only")
             return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -103,9 +110,24 @@ class LocalDocumentSizeTest {
         }
 
         override fun getType(uri: Uri): String = "application/octet-stream"
-        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
-        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
-        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
+
+        override fun insert(
+            uri: Uri,
+            values: ContentValues?,
+        ): Uri? = null
+
+        override fun delete(
+            uri: Uri,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ) = 0
+
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ) = 0
     }
 
     private companion object {

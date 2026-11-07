@@ -1,14 +1,6 @@
 package dev.eclipse.ssh.ssh
 
 import com.google.common.truth.Truth.assertThat
-import java.io.IOException
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
-import java.util.Collections
-import java.util.Comparator
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -28,6 +20,14 @@ import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+import java.util.Collections
+import java.util.Comparator
+import java.util.concurrent.TimeUnit
 
 /**
  * The cross-host transfer engine, end to end against two embedded SSH servers in this JVM.
@@ -55,196 +55,236 @@ import org.junit.Test
  * accumulates them starts missing deadlines on a shared two-core box.
  */
 class CrossHostTransferTest {
-
     // ---------------------------------------------------------------- the tests
 
     /** A single file arrives byte for byte, and the result says exactly that. */
     @Test
-    fun aSingleFileIsCopiedByteForByte() = runBlocking {
-        val bytes = ByteArray(300_000) { (it % 251).toByte() }
-        Files.write(sourceRoot.resolve("payload.bin"), bytes)
+    fun aSingleFileIsCopiedByteForByte() =
+        runBlocking {
+            val bytes = ByteArray(300_000) { (it % 251).toByte() }
+            Files.write(sourceRoot.resolve("payload.bin"), bytes)
 
-        val result = engine.transfer(
-            sourceSftp(), destSftp(), "/payload.bin", "/",
-        )
+            val result =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/payload.bin",
+                    "/",
+                )
 
-        assertThat(result.entriesCopied).isEqualTo(1)
-        assertThat(result.entriesSkipped).isEqualTo(0)
-        assertThat(result.entriesFailed).isEqualTo(0)
-        assertThat(result.failures).isEmpty()
-        assertThat(result.bytesTransferred).isEqualTo(bytes.size.toLong())
-        assertSameBytes(bytes, Files.readAllBytes(destRoot.resolve("payload.bin")))
-    }
+            assertThat(result.entriesCopied).isEqualTo(1)
+            assertThat(result.entriesSkipped).isEqualTo(0)
+            assertThat(result.entriesFailed).isEqualTo(0)
+            assertThat(result.failures).isEmpty()
+            assertThat(result.bytesTransferred).isEqualTo(bytes.size.toLong())
+            assertSameBytes(bytes, Files.readAllBytes(destRoot.resolve("payload.bin")))
+        }
 
     /** A folder is recreated with its nesting and its empty directories, nothing invented or lost. */
     @Test
-    fun aNestedFolderIsRecreatedWithItsEmptyDirectories() = runBlocking {
-        val a = "alpha\n".toByteArray()
-        val b = ByteArray(150_000) { (it % 249).toByte() }
-        Files.createDirectories(sourceRoot.resolve("site/sub"))
-        Files.write(sourceRoot.resolve("site/a.txt"), a)
-        Files.write(sourceRoot.resolve("site/sub/b.bin"), b)
-        Files.createDirectories(sourceRoot.resolve("site/empty"))
+    fun aNestedFolderIsRecreatedWithItsEmptyDirectories() =
+        runBlocking {
+            val a = "alpha\n".toByteArray()
+            val b = ByteArray(150_000) { (it % 249).toByte() }
+            Files.createDirectories(sourceRoot.resolve("site/sub"))
+            Files.write(sourceRoot.resolve("site/a.txt"), a)
+            Files.write(sourceRoot.resolve("site/sub/b.bin"), b)
+            Files.createDirectories(sourceRoot.resolve("site/empty"))
 
-        val result = engine.transfer(sourceSftp(), destSftp(), "/site", "/")
+            val result = engine.transfer(sourceSftp(), destSftp(), "/site", "/")
 
-        // The folder itself, a.txt, sub, empty and sub/b.bin: five entries landed.
-        assertThat(result.entriesCopied).isEqualTo(5)
-        assertThat(result.entriesSkipped).isEqualTo(0)
-        assertThat(result.entriesFailed).isEqualTo(0)
-        assertThat(result.bytesTransferred).isEqualTo((a.size + b.size).toLong())
-        assertSameBytes(a, Files.readAllBytes(destRoot.resolve("site/a.txt")))
-        assertSameBytes(b, Files.readAllBytes(destRoot.resolve("site/sub/b.bin")))
-        // An empty directory is a real entry a user made on purpose; a copy that dropped it would
-        // read as files having gone missing.
-        assertThat(Files.isDirectory(destRoot.resolve("site/empty"))).isTrue()
-    }
+            // The folder itself, a.txt, sub, empty and sub/b.bin: five entries landed.
+            assertThat(result.entriesCopied).isEqualTo(5)
+            assertThat(result.entriesSkipped).isEqualTo(0)
+            assertThat(result.entriesFailed).isEqualTo(0)
+            assertThat(result.bytesTransferred).isEqualTo((a.size + b.size).toLong())
+            assertSameBytes(a, Files.readAllBytes(destRoot.resolve("site/a.txt")))
+            assertSameBytes(b, Files.readAllBytes(destRoot.resolve("site/sub/b.bin")))
+            // An empty directory is a real entry a user made on purpose; a copy that dropped it would
+            // read as files having gone missing.
+            assertThat(Files.isDirectory(destRoot.resolve("site/empty"))).isTrue()
+        }
 
     /** Progress climbs monotonically and ends exactly at the total the pre-walk promised. */
     @Test
-    fun progressIsMonotonicAndEndsAtThePreWalkedTotal() = runBlocking {
-        Files.createDirectories(sourceRoot.resolve("batch"))
-        Files.write(sourceRoot.resolve("batch/one.bin"), ByteArray(150_000))
-        // Zero bytes, deliberately: an empty file pumps no chunks, so without the closing report a
-        // watcher could not distinguish a finished copy from one that died beside it.
-        Files.write(sourceRoot.resolve("batch/empty.txt"), ByteArray(0))
-        Files.write(sourceRoot.resolve("batch/two.bin"), ByteArray(50_000))
+    fun progressIsMonotonicAndEndsAtThePreWalkedTotal() =
+        runBlocking {
+            Files.createDirectories(sourceRoot.resolve("batch"))
+            Files.write(sourceRoot.resolve("batch/one.bin"), ByteArray(150_000))
+            // Zero bytes, deliberately: an empty file pumps no chunks, so without the closing report a
+            // watcher could not distinguish a finished copy from one that died beside it.
+            Files.write(sourceRoot.resolve("batch/empty.txt"), ByteArray(0))
+            Files.write(sourceRoot.resolve("batch/two.bin"), ByteArray(50_000))
 
-        val reports = mutableListOf<Pair<Long, Long>>()
-        val result = engine.transfer(
-            sourceSftp(), destSftp(), "/batch", "/",
-        ) { transferred, total -> reports += transferred to total }
+            val reports = mutableListOf<Pair<Long, Long>>()
+            val result =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/batch",
+                    "/",
+                ) { transferred, total -> reports += transferred to total }
 
-        val total = 200_000L
-        assertThat(result.bytesTransferred).isEqualTo(total)
-        assertThat(reports).isNotEmpty()
-        assertThat(reports.map { it.second }.toSet()).containsExactly(total)
-        assertThat(reports.first().second).isEqualTo(total)
-        var previous = 0L
-        reports.forEach { (transferred, _) ->
-            assertThat(transferred).isAtLeast(previous)
-            previous = transferred
+            val total = 200_000L
+            assertThat(result.bytesTransferred).isEqualTo(total)
+            assertThat(reports).isNotEmpty()
+            assertThat(reports.map { it.second }.toSet()).containsExactly(total)
+            assertThat(reports.first().second).isEqualTo(total)
+            var previous = 0L
+            reports.forEach { (transferred, _) ->
+                assertThat(transferred).isAtLeast(previous)
+                previous = transferred
+            }
+            assertThat(reports.last().first).isEqualTo(total)
         }
-        assertThat(reports.last().first).isEqualTo(total)
-    }
 
     /**
      * A cancelled copy stops inside one chunk of the cancellation, and leaves a destination that is
      * still a directory anybody can list - a truncated file, not a corrupted filesystem view.
      */
     @Test
-    fun cancellingMidCopyLeavesATruncatedButListableDestination() = runBlocking {
-        val size = 16 * 1024 * 1024
-        Files.write(sourceRoot.resolve("huge.bin"), ByteArray(size))
+    fun cancellingMidCopyLeavesATruncatedButListableDestination() =
+        runBlocking {
+            val size = 16 * 1024 * 1024
+            Files.write(sourceRoot.resolve("huge.bin"), ByteArray(size))
 
-        val firstChunk = CompletableDeferred<Unit>()
-        val job = launch {
-            engine.transfer(sourceSftp(), destSftp(), "/huge.bin", "/") { bytes, _ ->
-                if (bytes > 0) firstChunk.complete(Unit)
-            }
+            val firstChunk = CompletableDeferred<Unit>()
+            val job =
+                launch {
+                    engine.transfer(sourceSftp(), destSftp(), "/huge.bin", "/") { bytes, _ ->
+                        if (bytes > 0) firstChunk.complete(Unit)
+                    }
+                }
+            // Bounded, because this await is the one place a silent engine failure turns into a hang
+            // rather than a red test: a transfer that ends without ever calling onProgress (it failed
+            // before its first chunk, as a refused stat once did here) leaves this deferred forever
+            // un-completed, and the timeout turns that into a failure with the job's own stack instead
+            // of a suite that sits until the runner is cancelled - which is how this bug first showed
+            // up, as a workflow that ran green-silent for an hour and three quarters.
+            withTimeout(60_000) { firstChunk.await() }
+            job.cancelAndJoin()
+
+            assertThat(job.isCancelled).isTrue()
+            val names =
+                destSftp()
+                    .readDir("/")
+                    .map { it.filename }
+                    .filter { it != "." && it != ".." }
+            assertThat(names).containsExactly("huge.bin")
+            val partial = Files.size(destRoot.resolve("huge.bin"))
+            assertThat(partial).isGreaterThan(0L)
+            // Anywhere short of the full file proves the cancellation was honoured between chunks rather
+            // than after the copy; the exact offset is the race's, not the test's.
+            assertThat(partial).isLessThan(size.toLong())
         }
-        // Bounded, because this await is the one place a silent engine failure turns into a hang
-        // rather than a red test: a transfer that ends without ever calling onProgress (it failed
-        // before its first chunk, as a refused stat once did here) leaves this deferred forever
-        // un-completed, and the timeout turns that into a failure with the job's own stack instead
-        // of a suite that sits until the runner is cancelled - which is how this bug first showed
-        // up, as a workflow that ran green-silent for an hour and three quarters.
-        withTimeout(60_000) { firstChunk.await() }
-        job.cancelAndJoin()
-
-        assertThat(job.isCancelled).isTrue()
-        val names = destSftp().readDir("/")
-            .map { it.filename }
-            .filter { it != "." && it != ".." }
-        assertThat(names).containsExactly("huge.bin")
-        val partial = Files.size(destRoot.resolve("huge.bin"))
-        assertThat(partial).isGreaterThan(0L)
-        // Anywhere short of the full file proves the cancellation was honoured between chunks rather
-        // than after the copy; the exact offset is the race's, not the test's.
-        assertThat(partial).isLessThan(size.toLong())
-    }
 
     /** OVERWRITE replaces a file the destination already holds. */
     @Test
-    fun overwriteReplacesAnExistingDestinationFile() = runBlocking {
-        Files.write(sourceRoot.resolve("cfg.conf"), "new setting".toByteArray())
-        Files.write(destRoot.resolve("cfg.conf"), "old setting".toByteArray())
+    fun overwriteReplacesAnExistingDestinationFile() =
+        runBlocking {
+            Files.write(sourceRoot.resolve("cfg.conf"), "new setting".toByteArray())
+            Files.write(destRoot.resolve("cfg.conf"), "old setting".toByteArray())
 
-        val result = engine.transfer(
-            sourceSftp(), destSftp(), "/cfg.conf", "/",
-            collision = CrossHostTransfer.CollisionPolicy.OVERWRITE,
-        )
+            val result =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/cfg.conf",
+                    "/",
+                    collision = CrossHostTransfer.CollisionPolicy.OVERWRITE,
+                )
 
-        assertThat(result.entriesCopied).isEqualTo(1)
-        assertThat(result.entriesSkipped).isEqualTo(0)
-        assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf")))).isEqualTo("new setting")
-    }
+            assertThat(result.entriesCopied).isEqualTo(1)
+            assertThat(result.entriesSkipped).isEqualTo(0)
+            assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf")))).isEqualTo("new setting")
+        }
 
     /** SKIP leaves the destination exactly as it was and reports the entry as skipped. */
     @Test
-    fun skipLeavesAnExistingDestinationFileUntouched() = runBlocking {
-        Files.write(sourceRoot.resolve("cfg.conf"), "new setting".toByteArray())
-        Files.write(destRoot.resolve("cfg.conf"), "old setting".toByteArray())
+    fun skipLeavesAnExistingDestinationFileUntouched() =
+        runBlocking {
+            Files.write(sourceRoot.resolve("cfg.conf"), "new setting".toByteArray())
+            Files.write(destRoot.resolve("cfg.conf"), "old setting".toByteArray())
 
-        val result = engine.transfer(
-            sourceSftp(), destSftp(), "/cfg.conf", "/",
-            collision = CrossHostTransfer.CollisionPolicy.SKIP,
-        )
+            val result =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/cfg.conf",
+                    "/",
+                    collision = CrossHostTransfer.CollisionPolicy.SKIP,
+                )
 
-        assertThat(result.entriesCopied).isEqualTo(0)
-        assertThat(result.entriesSkipped).isEqualTo(1)
-        assertThat(result.entriesFailed).isEqualTo(0)
-        assertThat(result.bytesTransferred).isEqualTo(0)
-        assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf")))).isEqualTo("old setting")
-    }
+            assertThat(result.entriesCopied).isEqualTo(0)
+            assertThat(result.entriesSkipped).isEqualTo(1)
+            assertThat(result.entriesFailed).isEqualTo(0)
+            assertThat(result.bytesTransferred).isEqualTo(0)
+            assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf")))).isEqualTo("old setting")
+        }
 
     /**
      * RENAME keeps what is already there and takes the first free number - and the second one the
      * next time, so repeating a copy never touches what an earlier copy landed.
      */
     @Test
-    fun renameKeepsBothFilesAndPicksTheFirstFreeNumber() = runBlocking {
-        Files.write(sourceRoot.resolve("cfg.conf"), "new setting".toByteArray())
-        Files.write(destRoot.resolve("cfg.conf"), "old setting".toByteArray())
+    fun renameKeepsBothFilesAndPicksTheFirstFreeNumber() =
+        runBlocking {
+            Files.write(sourceRoot.resolve("cfg.conf"), "new setting".toByteArray())
+            Files.write(destRoot.resolve("cfg.conf"), "old setting".toByteArray())
 
-        val first = engine.transfer(
-            sourceSftp(), destSftp(), "/cfg.conf", "/",
-            collision = CrossHostTransfer.CollisionPolicy.RENAME,
-        )
-        val second = engine.transfer(
-            sourceSftp(), destSftp(), "/cfg.conf", "/",
-            collision = CrossHostTransfer.CollisionPolicy.RENAME,
-        )
+            val first =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/cfg.conf",
+                    "/",
+                    collision = CrossHostTransfer.CollisionPolicy.RENAME,
+                )
+            val second =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/cfg.conf",
+                    "/",
+                    collision = CrossHostTransfer.CollisionPolicy.RENAME,
+                )
 
-        assertThat(first.entriesCopied).isEqualTo(1)
-        assertThat(second.entriesCopied).isEqualTo(1)
-        val names = destSftp().readDir("/")
-            .map { it.filename }
-            .filter { it != "." && it != ".." }
-        assertThat(names).containsExactly("cfg.conf", "cfg.conf (1)", "cfg.conf (2)")
-        assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf")))).isEqualTo("old setting")
-        assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf (1)")))).isEqualTo("new setting")
-        assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf (2)")))).isEqualTo("new setting")
-    }
+            assertThat(first.entriesCopied).isEqualTo(1)
+            assertThat(second.entriesCopied).isEqualTo(1)
+            val names =
+                destSftp()
+                    .readDir("/")
+                    .map { it.filename }
+                    .filter { it != "." && it != ".." }
+            assertThat(names).containsExactly("cfg.conf", "cfg.conf (1)", "cfg.conf (2)")
+            assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf")))).isEqualTo("old setting")
+            assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf (1)")))).isEqualTo("new setting")
+            assertThat(String(Files.readAllBytes(destRoot.resolve("cfg.conf (2)")))).isEqualTo("new setting")
+        }
 
     /** RENAME moves the whole folder - and its subtree - when the folder's own name is taken. */
     @Test
-    fun renameMovesAWholeFolderWhenItsNameIsTaken() = runBlocking {
-        Files.createDirectories(sourceRoot.resolve("notes"))
-        Files.write(sourceRoot.resolve("notes/a.txt"), "the new note".toByteArray())
-        Files.createDirectories(destRoot.resolve("notes"))
-        Files.write(destRoot.resolve("notes/older.txt"), "the old note".toByteArray())
+    fun renameMovesAWholeFolderWhenItsNameIsTaken() =
+        runBlocking {
+            Files.createDirectories(sourceRoot.resolve("notes"))
+            Files.write(sourceRoot.resolve("notes/a.txt"), "the new note".toByteArray())
+            Files.createDirectories(destRoot.resolve("notes"))
+            Files.write(destRoot.resolve("notes/older.txt"), "the old note".toByteArray())
 
-        val result = engine.transfer(
-            sourceSftp(), destSftp(), "/notes", "/",
-            collision = CrossHostTransfer.CollisionPolicy.RENAME,
-        )
+            val result =
+                engine.transfer(
+                    sourceSftp(),
+                    destSftp(),
+                    "/notes",
+                    "/",
+                    collision = CrossHostTransfer.CollisionPolicy.RENAME,
+                )
 
-        assertThat(result.entriesCopied).isEqualTo(2) // the folder and a.txt
-        // What was already there is untouched, and the copy landed whole under the renamed folder.
-        assertThat(String(Files.readAllBytes(destRoot.resolve("notes/older.txt")))).isEqualTo("the old note")
-        assertThat(String(Files.readAllBytes(destRoot.resolve("notes (1)/a.txt")))).isEqualTo("the new note")
-    }
+            assertThat(result.entriesCopied).isEqualTo(2) // the folder and a.txt
+            // What was already there is untouched, and the copy landed whole under the renamed folder.
+            assertThat(String(Files.readAllBytes(destRoot.resolve("notes/older.txt")))).isEqualTo("the old note")
+            assertThat(String(Files.readAllBytes(destRoot.resolve("notes (1)/a.txt")))).isEqualTo("the new note")
+        }
 
     /**
      * A file the source account cannot read fails alone: it is reported, the rest of the tree is
@@ -254,29 +294,30 @@ class CrossHostTransferTest {
      * kernel through the server's own file system, not from anything staged in the client.
      */
     @Test
-    fun anUnreadableFileFailsAloneAndTheWalkContinues() = runBlocking {
-        Files.createDirectories(sourceRoot.resolve("pack/sub"))
-        Files.write(sourceRoot.resolve("pack/first.txt"), "first".toByteArray())
-        Files.write(sourceRoot.resolve("pack/secret.bin"), "classified".toByteArray())
-        Files.setPosixFilePermissions(
-            sourceRoot.resolve("pack/secret.bin"),
-            PosixFilePermissions.fromString("---------"),
-        )
-        Files.write(sourceRoot.resolve("pack/sub/later.txt"), "later".toByteArray())
+    fun anUnreadableFileFailsAloneAndTheWalkContinues() =
+        runBlocking {
+            Files.createDirectories(sourceRoot.resolve("pack/sub"))
+            Files.write(sourceRoot.resolve("pack/first.txt"), "first".toByteArray())
+            Files.write(sourceRoot.resolve("pack/secret.bin"), "classified".toByteArray())
+            Files.setPosixFilePermissions(
+                sourceRoot.resolve("pack/secret.bin"),
+                PosixFilePermissions.fromString("---------"),
+            )
+            Files.write(sourceRoot.resolve("pack/sub/later.txt"), "later".toByteArray())
 
-        val result = engine.transfer(sourceSftp(), destSftp(), "/pack", "/")
+            val result = engine.transfer(sourceSftp(), destSftp(), "/pack", "/")
 
-        // pack itself, first.txt, sub and sub/later.txt landed; secret.bin alone failed.
-        assertThat(result.entriesCopied).isEqualTo(4)
-        assertThat(result.entriesFailed).isEqualTo(1)
-        assertThat(result.entriesSkipped).isEqualTo(0)
-        val failure = result.failures.single()
-        assertThat(failure.path).endsWith("secret.bin")
-        // The server's own sentence, shown to a user one day: it must be something, and readable.
-        assertThat(failure.reason).isNotEmpty()
-        assertThat(String(Files.readAllBytes(destRoot.resolve("pack/first.txt")))).isEqualTo("first")
-        assertThat(String(Files.readAllBytes(destRoot.resolve("pack/sub/later.txt")))).isEqualTo("later")
-    }
+            // pack itself, first.txt, sub and sub/later.txt landed; secret.bin alone failed.
+            assertThat(result.entriesCopied).isEqualTo(4)
+            assertThat(result.entriesFailed).isEqualTo(1)
+            assertThat(result.entriesSkipped).isEqualTo(0)
+            val failure = result.failures.single()
+            assertThat(failure.path).endsWith("secret.bin")
+            // The server's own sentence, shown to a user one day: it must be something, and readable.
+            assertThat(failure.reason).isNotEmpty()
+            assertThat(String(Files.readAllBytes(destRoot.resolve("pack/first.txt")))).isEqualTo("first")
+            assertThat(String(Files.readAllBytes(destRoot.resolve("pack/sub/later.txt")))).isEqualTo("later")
+        }
 
     /**
      * The depth ceiling stops the copy before anything lands, with the walk's own message.
@@ -287,40 +328,43 @@ class CrossHostTransferTest {
      * that to check a line the pre-walk already owns.
      */
     @Test
-    fun aTreePastTheDepthCeilingIsRefusedBeforeAnythingIsCopied() = runBlocking {
-        var deep = sourceRoot.resolve("deep")
-        Files.createDirectories(deep)
-        repeat(70) {
-            deep = deep.resolve("d")
+    fun aTreePastTheDepthCeilingIsRefusedBeforeAnythingIsCopied() =
+        runBlocking {
+            var deep = sourceRoot.resolve("deep")
             Files.createDirectories(deep)
+            repeat(70) {
+                deep = deep.resolve("d")
+                Files.createDirectories(deep)
+            }
+            Files.write(deep.resolve("bottom.txt"), "never copied".toByteArray())
+
+            val thrown =
+                runCatching {
+                    engine.transfer(sourceSftp(), destSftp(), "/deep", "/")
+                }.exceptionOrNull()
+
+            assertThat(thrown).isInstanceOf(IOException::class.java)
+            assertThat(thrown?.message).contains("levels")
+            // Refused *before* anything was copied: the destination has no half-built tree to clean up.
+            assertThat(Files.exists(destRoot.resolve("deep"))).isFalse()
         }
-        Files.write(deep.resolve("bottom.txt"), "never copied".toByteArray())
-
-        val thrown = runCatching {
-            engine.transfer(sourceSftp(), destSftp(), "/deep", "/")
-        }.exceptionOrNull()
-
-        assertThat(thrown).isInstanceOf(IOException::class.java)
-        assertThat(thrown?.message).contains("levels")
-        // Refused *before* anything was copied: the destination has no half-built tree to clean up.
-        assertThat(Files.exists(destRoot.resolve("deep"))).isFalse()
-    }
 
     /** A source that has vanished since the user picked it is a result, not a crash. */
     @Test
-    fun aMissingSourcePathIsACleanFailureResult() = runBlocking {
-        val missing = "/not-there.bin"
+    fun aMissingSourcePathIsACleanFailureResult() =
+        runBlocking {
+            val missing = "/not-there.bin"
 
-        val result = engine.transfer(sourceSftp(), destSftp(), missing, "/")
+            val result = engine.transfer(sourceSftp(), destSftp(), missing, "/")
 
-        assertThat(result.entriesCopied).isEqualTo(0)
-        assertThat(result.entriesSkipped).isEqualTo(0)
-        assertThat(result.entriesFailed).isEqualTo(1)
-        assertThat(result.bytesTransferred).isEqualTo(0)
-        val failure = result.failures.single()
-        assertThat(failure.path).isEqualTo(missing)
-        assertThat(failure.reason).isNotEmpty()
-    }
+            assertThat(result.entriesCopied).isEqualTo(0)
+            assertThat(result.entriesSkipped).isEqualTo(0)
+            assertThat(result.entriesFailed).isEqualTo(1)
+            assertThat(result.bytesTransferred).isEqualTo(0)
+            val failure = result.failures.single()
+            assertThat(failure.path).isEqualTo(missing)
+            assertThat(failure.reason).isNotEmpty()
+        }
 
     // ---------------------------------------------------------------- driving the servers
 
@@ -340,7 +384,8 @@ class CrossHostTransferTest {
     @Before
     fun emptyDestination() {
         Files.walk(destRoot).use { paths ->
-            paths.sorted(Comparator.reverseOrder())
+            paths
+                .sorted(Comparator.reverseOrder())
                 .filter { it != destRoot }
                 .forEach { runCatching { Files.deleteIfExists(it) } }
         }
@@ -382,16 +427,21 @@ class CrossHostTransferTest {
      * differing offset is the whole diagnosis - a hole starts where the copy restarted, a
      * duplicated block one buffer later - so that is what this prints.
      */
-    private fun assertSameBytes(expected: ByteArray, actual: ByteArray) {
-        val firstDifference = (0 until minOf(expected.size, actual.size))
-            .firstOrNull { expected[it] != actual[it] }
+    private fun assertSameBytes(
+        expected: ByteArray,
+        actual: ByteArray,
+    ) {
+        val firstDifference =
+            (0 until minOf(expected.size, actual.size))
+                .firstOrNull { expected[it] != actual[it] }
         if (firstDifference == null && expected.size == actual.size) return
-        val detail = when {
-            firstDifference != null ->
-                "first differs at byte $firstDifference (expected 0x%02X, got 0x%02X)"
-                    .format(expected[firstDifference], actual[firstDifference])
-            else -> "identical up to the shorter length, then truncated or padded"
-        }
+        val detail =
+            when {
+                firstDifference != null ->
+                    "first differs at byte $firstDifference (expected 0x%02X, got 0x%02X)"
+                        .format(expected[firstDifference], actual[firstDifference])
+                else -> "identical up to the shorter length, then truncated or padded"
+            }
         throw AssertionError(
             "destination does not match the source: expected ${expected.size} bytes, got " +
                 "${actual.size}; $detail",
@@ -464,12 +514,14 @@ class CrossHostTransferTest {
         private fun server(root: Path): SshServer =
             SshServer.setUpDefaultServer().apply {
                 port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("cross-host-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    user == USER && password == PASSWORD
-                }
+                keyPairProvider =
+                    SimpleGeneratorHostKeyProvider(
+                        Files.createTempDirectory("cross-host-hostkey").resolve("hostkey.ser"),
+                    )
+                passwordAuthenticator =
+                    PasswordAuthenticator { user, password, _ ->
+                        user == USER && password == PASSWORD
+                    }
                 fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
                 subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
                 start()

@@ -20,12 +20,16 @@ import dev.eclipse.ssh.data.model.isLive
  * how one of them quietly starts disagreeing.
  */
 @Composable
-fun statusColor(state: SessionConnectionState, networkHeld: Boolean = false): Color = when {
-    // A held session is up but unusable until the network is back, which is exactly what amber says
-    // everywhere else in this app. Green would invite the user to type into it.
-    networkHeld && state.isLive -> EclipseWarning
-    state.isLive -> EclipseSuccess
-    state == SessionConnectionState.ERROR -> MaterialTheme.colorScheme.error
-    state.isBusy -> EclipseWarning
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-}
+fun statusColor(
+    state: SessionConnectionState,
+    networkHeld: Boolean = false,
+): Color =
+    when {
+        // A held session is up but unusable until the network is back, which is exactly what amber says
+        // everywhere else in this app. Green would invite the user to type into it.
+        networkHeld && state.isLive -> EclipseWarning
+        state.isLive -> EclipseSuccess
+        state == SessionConnectionState.ERROR -> MaterialTheme.colorScheme.error
+        state.isBusy -> EclipseWarning
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }

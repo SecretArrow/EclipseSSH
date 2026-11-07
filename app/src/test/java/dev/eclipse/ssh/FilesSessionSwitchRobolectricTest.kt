@@ -18,13 +18,6 @@ import dev.eclipse.ssh.data.model.SftpSessionState
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.presentation.files.ExplorerState
 import dev.eclipse.ssh.presentation.files.LOCAL_SESSION_ID
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.time.Duration
-import java.util.Collections
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.Environment
 import org.apache.sshd.server.ExitCallback
@@ -44,6 +37,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Duration
+import java.util.Collections
 
 /**
  * The Files explorer's session model, with two servers open at once, against two local SSH servers
@@ -69,7 +69,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class FilesSessionSwitchRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -90,7 +89,9 @@ class FilesSessionSwitchRobolectricTest {
         runCatching {
             compose.runOnUiThread { viewModel().disconnectAll() }
             pumpUntil(TEARDOWN_TIMEOUT_MS, { "tabs still open: " + viewModel().uiState.value.tabs }) {
-                viewModel().uiState.value.tabs.isEmpty()
+                viewModel()
+                    .uiState.value.tabs
+                    .isEmpty()
             }
         }
     }
@@ -243,7 +244,9 @@ class FilesSessionSwitchRobolectricTest {
     private fun explorer(): ExplorerState = viewModel().filesExplorer.state.value
 
     private fun tabFor(hostId: String): SessionTab? =
-        viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     /** What the explorer is showing: the names of the active session's listing. */
     private fun names(): List<String> = explorer().entries.map { it.name }
@@ -281,7 +284,10 @@ class FilesSessionSwitchRobolectricTest {
      * be ambiguous ("This device", also the local title before any folder is granted) is only
      * clickable as the chip.
      */
-    private fun browse(label: String, proof: String?) {
+    private fun browse(
+        label: String,
+        proof: String?,
+    ) {
         compose.onNode(hasText(label) and hasClickAction()).performClick()
         pumpUntil(describe = { "tapping the $label chip never listed anything: " + diagnose() }) {
             proof == null || names().contains(proof)
@@ -289,7 +295,10 @@ class FilesSessionSwitchRobolectricTest {
     }
 
     /** Opens the subdirectory named [name] the way tapping its row does, and waits for its contents. */
-    private fun openDirectory(name: String, proof: String) {
+    private fun openDirectory(
+        name: String,
+        proof: String,
+    ) {
         compose.onNode(hasText(name) and hasClickAction()).performClick()
         pumpUntil(describe = { "$name never opened: " + diagnose() }) {
             names().contains(proof)
@@ -309,7 +318,10 @@ class FilesSessionSwitchRobolectricTest {
      * Auto-login is on for every host here: it exercises the SFTP channel the explorer rides on, and
      * proves the explorer neither needs nor disturbs it.
      */
-    private fun connect(name: String, port: Int): String {
+    private fun connect(
+        name: String,
+        port: Int,
+    ): String {
         val hostId = saveOnly(name, port)
         compose.runOnUiThread { viewModel().connect(hostFor(hostId), password = PASSWORD) }
 
@@ -328,30 +340,37 @@ class FilesSessionSwitchRobolectricTest {
     }
 
     /** Saves a profile without connecting it — the state a user is in between sessions. */
-    private fun saveOnly(name: String, port: Int): String {
+    private fun saveOnly(
+        name: String,
+        port: Int,
+    ): String {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "files-switch-" + name + "-" + nextHostId++,
-            name = name,
-            host = LOOPBACK,
-            username = USER,
-            port = port,
-            authMethod = AuthMethod.PASSWORD,
-            // Stated rather than defaulted: this suite shares a JVM with every other test, and a
-            // loopback handshake that takes milliseconds alone should not fail on a loaded machine.
-            connectTimeoutSeconds = 60,
-            autoLoginSftp = true,
-        )
+        val profile =
+            HostProfile(
+                id = "files-switch-" + name + "-" + nextHostId++,
+                name = name,
+                host = LOOPBACK,
+                username = USER,
+                port = port,
+                authMethod = AuthMethod.PASSWORD,
+                // Stated rather than defaulted: this suite shares a JVM with every other test, and a
+                // loopback handshake that takes milliseconds alone should not fail on a loaded machine.
+                connectTimeoutSeconds = 60,
+                autoLoginSftp = true,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
         return profile.id
     }
 
     private fun hostFor(hostId: String): HostProfile =
-        viewModel().uiState.value.hosts.first { it.id == hostId }
+        viewModel()
+            .uiState.value.hosts
+            .first { it.id == hostId }
 
     /**
      * Drives frames and main-looper work until [condition] holds, then fails with [describe].
@@ -362,7 +381,11 @@ class FilesSessionSwitchRobolectricTest {
      * what invalidates the recomposer at all. `idleFor` rather than `idle` because this code is full of
      * real `delay`, and `idle()` leaves the looper's virtual clock where it was.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -451,7 +474,12 @@ class FilesSessionSwitchRobolectricTest {
         }
 
         /** A root holding one file, and one subdirectory holding one file. */
-        private fun tree(prefix: String, homeFile: String, dir: String, inside: String): Path {
+        private fun tree(
+            prefix: String,
+            homeFile: String,
+            dir: String,
+            inside: String,
+        ): Path {
             val root = Files.createTempDirectory(prefix)
             Files.write(root.resolve(homeFile), "home\n".toByteArray())
             Files.write(Files.createDirectory(root.resolve(dir)).resolve(inside), "inside\n".toByteArray())
@@ -469,12 +497,14 @@ class FilesSessionSwitchRobolectricTest {
         private fun server(root: Path): SshServer =
             SshServer.setUpDefaultServer().apply {
                 port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("files-switch-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    user == USER && password == PASSWORD
-                }
+                keyPairProvider =
+                    SimpleGeneratorHostKeyProvider(
+                        Files.createTempDirectory("files-switch-hostkey").resolve("hostkey.ser"),
+                    )
+                passwordAuthenticator =
+                    PasswordAuthenticator { user, password, _ ->
+                        user == USER && password == PASSWORD
+                    }
                 fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
                 subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
                 shellFactory = ShellFactory { QuietShell() }
@@ -496,25 +526,41 @@ class FilesSessionSwitchRobolectricTest {
         private var exit: ExitCallback? = null
         private var worker: Thread? = null
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            this.exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             val source = input ?: return
             val sink = output ?: return
-            worker = Thread {
-                runCatching {
-                    sink.write("eclipse-quiet-shell\r\n$ ".toByteArray())
-                    sink.flush()
-                    while (true) {
-                        val byte = source.read()
-                        if (byte < 0) break
+            worker =
+                Thread {
+                    runCatching {
+                        sink.write("eclipse-quiet-shell\r\n$ ".toByteArray())
+                        sink.flush()
+                        while (true) {
+                            val byte = source.read()
+                            if (byte < 0) break
+                        }
                     }
+                    exit?.onExit(0)
+                }.apply {
+                    isDaemon = true
+                    start()
                 }
-                exit?.onExit(0)
-            }.apply { isDaemon = true; start() }
         }
 
         override fun destroy(channel: ChannelSession) {

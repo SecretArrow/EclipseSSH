@@ -8,7 +8,10 @@ package dev.eclipse.ssh.terminal
  * reported - "EN" where "ENTER" was, with nothing to say the rest of it exists off the side of the
  * screen. The fade says the row continues, and which way.
  */
-data class RowOverflow(val atStart: Boolean, val atEnd: Boolean)
+data class RowOverflow(
+    val atStart: Boolean,
+    val atEnd: Boolean,
+)
 
 /**
  * The edges of a row scrolled to [scrollValue] out of [maxScrollValue].
@@ -20,8 +23,10 @@ data class RowOverflow(val atStart: Boolean, val atEnd: Boolean)
  * is hidden. Clamping first would only be a second way to say the same thing, and the version that
  * did clamp threw on a negative range.
  */
-fun rowOverflow(scrollValue: Int, maxScrollValue: Int): RowOverflow =
-    RowOverflow(atStart = scrollValue > 0, atEnd = scrollValue < maxScrollValue)
+fun rowOverflow(
+    scrollValue: Int,
+    maxScrollValue: Int,
+): RowOverflow = RowOverflow(atStart = scrollValue > 0, atEnd = scrollValue < maxScrollValue)
 
 /**
  * How many buffer lines sit between the bottom of this window and the live output; zero at the bottom.

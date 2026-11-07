@@ -18,13 +18,20 @@ object PinHasher {
 
     fun newSalt(): ByteArray = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
 
-    fun hash(pin: String, salt: ByteArray): String {
+    fun hash(
+        pin: String,
+        salt: ByteArray,
+    ): String {
         val spec = PBEKeySpec(pin.toCharArray(), salt, ITERATIONS, KEY_LENGTH_BITS)
         val key = SecretKeyFactory.getInstance(ALGORITHM).generateSecret(spec).encoded
         return Base64.getEncoder().encodeToString(key)
     }
 
-    fun verify(pin: String, salt: ByteArray, expectedHash: String): Boolean =
+    fun verify(
+        pin: String,
+        salt: ByteArray,
+        expectedHash: String,
+    ): Boolean =
         MessageDigest.isEqual(
             hash(pin, salt).toByteArray(Charsets.UTF_8),
             expectedHash.toByteArray(Charsets.UTF_8),

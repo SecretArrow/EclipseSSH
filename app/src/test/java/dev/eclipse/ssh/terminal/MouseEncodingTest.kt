@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class MouseEncodingTest {
-
     @Test
     fun `left click at column 5 row 12 is SGR press at 5 12`() {
         val bytes = MouseEncoding.encode(MouseEncoding.Button.LEFT, 5, 12)
@@ -22,12 +21,13 @@ class MouseEncodingTest {
     @Test
     fun `modifier keys are ORed into the button code`() {
         // Shift = 4, so a left click with shift is 0+4 = 4.
-        val bytes = MouseEncoding.encode(
-            MouseEncoding.Button.LEFT,
-            1,
-            1,
-            modifiers = MouseEncoding.Modifiers.SHIFT,
-        )
+        val bytes =
+            MouseEncoding.encode(
+                MouseEncoding.Button.LEFT,
+                1,
+                1,
+                modifiers = MouseEncoding.Modifiers.SHIFT,
+            )
         assertThat(String(bytes, Charsets.UTF_8)).isEqualTo("\u001B[<4;1;1M")
     }
 

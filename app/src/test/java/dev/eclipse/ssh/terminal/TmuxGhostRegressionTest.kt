@@ -6,8 +6,7 @@ import org.junit.Test
 /** ESC, spelled out so the sequences below stay readable and copy-pasteable. */
 private const val E = "\u001B"
 
-private fun List<TerminalCell>.rowText(): String =
-    joinToString("") { it.value.toString() + it.combining }.trimEnd()
+private fun List<TerminalCell>.rowText(): String = joinToString("") { it.value.toString() + it.combining }.trimEnd()
 
 /**
  * Regression tests for the tmux+Claude ghost-text fixes, ported from libvterm's ideas rather than

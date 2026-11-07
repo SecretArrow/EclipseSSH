@@ -20,7 +20,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class DeepLinkParsingTest {
-
     @Test
     fun `full ssh link populates host user and port`() {
         val profile = parseSshDeepLink("ssh://deploy@example.com:2222".toUri())
@@ -108,26 +107,27 @@ class DeepLinkParsingTest {
     fun `hostile and malformed links are rejected or defaulted but never crash`() {
         // Every one of these must return a usable profile or null — never throw out of the
         // activity's onCreate/onNewIntent, which would crash the app from an untrusted link.
-        val hostile = listOf(
-            "ssh://@example.com",
-            "ssh://:@example.com",
-            "ssh://deploy@",
-            "ssh://deploy@:22",
-            "ssh://example.com:22:22",
-            "ssh://" + "a".repeat(5_000),
-            "ssh://exa mple.com",
-            "ssh://example.com/../../etc/passwd",
-            "ssh://example.com?x=%00",
-            "ssh://example.com#frag",
-            "ssh://exam%00ple.com",
-            // \u0000 rather than a raw NUL byte. The byte was here literally, which made grep
-            // and every other text tool call this file binary and suppress its contents, so the
-            // whole class was invisible to a search of the test suite. It is also the kind of
-            // character a patch, a copy-paste or an editor that refuses NUL silently drops --
-            // and a dropped NUL turns this case into an ordinary hostname that still passes,
-            // which is the test quietly ceasing to test anything. The escape is the same string.
-            "ssh://\u0000example.com",
-        )
+        val hostile =
+            listOf(
+                "ssh://@example.com",
+                "ssh://:@example.com",
+                "ssh://deploy@",
+                "ssh://deploy@:22",
+                "ssh://example.com:22:22",
+                "ssh://" + "a".repeat(5_000),
+                "ssh://exa mple.com",
+                "ssh://example.com/../../etc/passwd",
+                "ssh://example.com?x=%00",
+                "ssh://example.com#frag",
+                "ssh://exam%00ple.com",
+                // \u0000 rather than a raw NUL byte. The byte was here literally, which made grep
+                // and every other text tool call this file binary and suppress its contents, so the
+                // whole class was invisible to a search of the test suite. It is also the kind of
+                // character a patch, a copy-paste or an editor that refuses NUL silently drops --
+                // and a dropped NUL turns this case into an ordinary hostname that still passes,
+                // which is the test quietly ceasing to test anything. The escape is the same string.
+                "ssh://\u0000example.com",
+            )
 
         hostile.forEach { raw ->
             val profile = runCatching { parseSshDeepLink(raw.toUri()) }

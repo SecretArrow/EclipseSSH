@@ -1,9 +1,9 @@
 package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.io.File
 import java.nio.file.Files
-import org.junit.Test
 
 /**
  * The blocked-syscall log's read path, which is the app's only view of what the proot fork decided.
@@ -15,12 +15,9 @@ import org.junit.Test
  * newest complete records, nothing older, and never half a record.
  */
 class ProotRuntimeSigsysLogTest {
+    private fun runtime(root: File): ProotRuntime = ProotRuntime(root, fakeNativeLibraryDir(), ScriptedPtySpawner())
 
-    private fun runtime(root: File): ProotRuntime =
-        ProotRuntime(root, fakeNativeLibraryDir(), ScriptedPtySpawner())
-
-    private fun root(): File =
-        Files.createTempDirectory("proot-sigsys").toFile().apply { deleteOnExit() }
+    private fun root(): File = Files.createTempDirectory("proot-sigsys").toFile().apply { deleteOnExit() }
 
     @Test
     fun `the tail is the newest ten records, oldest first`() {

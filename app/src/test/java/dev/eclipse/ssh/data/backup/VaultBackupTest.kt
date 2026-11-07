@@ -16,7 +16,6 @@ import dev.eclipse.ssh.data.model.HOST_KEY_FINGERPRINT_PATTERN
 import dev.eclipse.ssh.data.model.HostKeyPolicy
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.model.INHERIT_RECONNECT_BACKOFF
-import dev.eclipse.ssh.presentation.HostFormDraft
 import dev.eclipse.ssh.data.model.KEEP_ALIVE_RANGE
 import dev.eclipse.ssh.data.model.MAX_RECONNECT_ATTEMPTS_RANGE
 import dev.eclipse.ssh.data.model.MAX_SAVED_FORWARDS
@@ -30,6 +29,7 @@ import dev.eclipse.ssh.data.model.TerminalTheme
 import dev.eclipse.ssh.data.model.decodeForwardRules
 import dev.eclipse.ssh.linux.LinuxDistroCatalog
 import dev.eclipse.ssh.linux.LocalLinuxHost
+import dev.eclipse.ssh.presentation.HostFormDraft
 import dev.eclipse.ssh.ssh.cipherFactoriesFor
 import org.json.JSONObject
 import org.junit.Assert.assertThrows
@@ -79,9 +79,10 @@ class VaultBackupTest {
     fun `a wrong passphrase surfaces as a readable backup error`() {
         val encrypted = VaultBackup.encrypt("payload", "right-pass")
 
-        val error = assertThrows(BackupFormatException::class.java) {
-            VaultBackup.decrypt(encrypted, "wrong-pass")
-        }
+        val error =
+            assertThrows(BackupFormatException::class.java) {
+                VaultBackup.decrypt(encrypted, "wrong-pass")
+            }
 
         assertThat(error).hasMessageThat().contains("passphrase")
     }
@@ -91,9 +92,10 @@ class VaultBackupTest {
         val encrypted = VaultBackup.encrypt("payload", "pass")
         val truncated = encrypted.substringBeforeLast('.')
 
-        val error = assertThrows(BackupFormatException::class.java) {
-            VaultBackup.decrypt(truncated, "pass")
-        }
+        val error =
+            assertThrows(BackupFormatException::class.java) {
+                VaultBackup.decrypt(truncated, "pass")
+            }
 
         assertThat(error).hasMessageThat().contains("not an Eclipse SSH backup")
     }
@@ -109,11 +111,12 @@ class VaultBackupTest {
     fun `a tampered ciphertext fails the GCM tag check`() {
         val encrypted = VaultBackup.encrypt("payload", "pass")
         val parts = encrypted.split('.')
-        val flipped = parts[2].let { body ->
-            // Change one Base64 character so the authentication tag no longer matches.
-            val replacement = if (body[0] == 'A') 'B' else 'A'
-            replacement + body.substring(1)
-        }
+        val flipped =
+            parts[2].let { body ->
+                // Change one Base64 character so the authentication tag no longer matches.
+                val replacement = if (body[0] == 'A') 'B' else 'A'
+                replacement + body.substring(1)
+            }
 
         assertThrows(BackupFormatException::class.java) {
             VaultBackup.decrypt("${parts[0]}.${parts[1]}.$flipped", "pass")
@@ -145,69 +148,73 @@ class VaultBackupTest {
 
     @Test
     fun `hosts settings and known hosts round trip losslessly`() {
-        val hosts = listOf(
-            HostProfile(
-                id = "host-1",
-                name = "Production edge",
-                host = "edge.example.com",
-                username = "deploy",
-                port = 2222,
-                authMethod = AuthMethod.SSH_KEY,
-                group = "Work",
-                tags = listOf("prod", "eu-west"),
-                isFavorite = true,
-                lastConnectedAt = 1_750_000_000_000L,
-                fingerprint = HOST1_FINGERPRINT,
-                proxyType = ProxyType.SOCKS5,
-                proxyJump = "bastion.example.com",
-                socksHost = "127.0.0.1",
-                socksPort = 9050,
-                socksUsername = "tor",
-                accentColor = 0xFF3366FFL,
-                connectTimeoutSeconds = 60,
-                keepAliveSeconds = 120,
-                // Opposite of the default, so a backup that dropped the field would still fail the
-                // whole-object comparison below instead of matching by coincidence.
-                autoLoginSftp = false,
-            ),
-            HostProfile(id = "host-2", name = "Minimal", host = "10.0.0.5", username = "root"),
-        )
-        val settings = AppSettings(
-            biometricUnlock = false,
-            darkTheme = false,
-            clearClipboardAfterSeconds = 120,
-            keepAliveSeconds = 45,
-            reconnectBaseSeconds = 17,
-            terminalFontSize = 20,
-            // A height, not the default 0: a field whose default is also its "unset" sentinel
-            // round-trips perfectly even when the backup drops it, so it has to be set to something
-            // the reader could only have got from the file.
-            terminalRows = 42,
-            pinEnabled = true,
-            legacyAlgorithms = true,
-            terminalTheme = TerminalTheme.AMBER.name,
-            // Set to the opposite of its default on purpose. The assertion below compares whole
-            // objects, so a field left at its default would match even if the backup dropped it.
-            blockScreenshots = true,
-            reconnectAskFirst = true,
-            // Opposite of its default as well, for the same reason: the whole-object comparison
-            // below is the only thing that would notice the backup dropping this one.
-            terminalScrollbackCountVisible = true,
-            // The last four display/transfer fields, each set away from its default so the
-            // whole-object comparison below fails if the backup drops it. Every value is inside the
-            // range the reader coerces to, so it must come back unchanged, not clamped.
-            terminalKeyRowVisible = false,
-            terminalScrollback = 12_345,
-            terminalCursorStyle = "underline",
-            transferBytesPerSecond = 1_048_576L,
-            vaultAutoLockMinutes = 60,
-            // Every field opposite its default for the same reason as blockScreenshots above.
-            editorPrefsJson = "{\"wordWrap\":true,\"showLineNumbers\":false,\"tabSize\":2," +
-                "\"spacesInsteadOfTabs\":true,\"autoSaveEnabled\":false,\"autoSaveDelayMillis\":5000}",
-            // The key bar blob rides the same way: opaque here, decoded only by its codec.
-            terminalKeyBarJson = "{\"mode\":\"CUSTOM\",\"size\":\"COMPACT\",\"rows\":2," +
-                "\"caps\":[{\"id\":\"c1\",\"kind\":\"TEXT\",\"row\":0,\"order\":0,\"text\":\"../\"}]}",
-        )
+        val hosts =
+            listOf(
+                HostProfile(
+                    id = "host-1",
+                    name = "Production edge",
+                    host = "edge.example.com",
+                    username = "deploy",
+                    port = 2222,
+                    authMethod = AuthMethod.SSH_KEY,
+                    group = "Work",
+                    tags = listOf("prod", "eu-west"),
+                    isFavorite = true,
+                    lastConnectedAt = 1_750_000_000_000L,
+                    fingerprint = HOST1_FINGERPRINT,
+                    proxyType = ProxyType.SOCKS5,
+                    proxyJump = "bastion.example.com",
+                    socksHost = "127.0.0.1",
+                    socksPort = 9050,
+                    socksUsername = "tor",
+                    accentColor = 0xFF3366FFL,
+                    connectTimeoutSeconds = 60,
+                    keepAliveSeconds = 120,
+                    // Opposite of the default, so a backup that dropped the field would still fail the
+                    // whole-object comparison below instead of matching by coincidence.
+                    autoLoginSftp = false,
+                ),
+                HostProfile(id = "host-2", name = "Minimal", host = "10.0.0.5", username = "root"),
+            )
+        val settings =
+            AppSettings(
+                biometricUnlock = false,
+                darkTheme = false,
+                clearClipboardAfterSeconds = 120,
+                keepAliveSeconds = 45,
+                reconnectBaseSeconds = 17,
+                terminalFontSize = 20,
+                // A height, not the default 0: a field whose default is also its "unset" sentinel
+                // round-trips perfectly even when the backup drops it, so it has to be set to something
+                // the reader could only have got from the file.
+                terminalRows = 42,
+                pinEnabled = true,
+                legacyAlgorithms = true,
+                terminalTheme = TerminalTheme.AMBER.name,
+                // Set to the opposite of its default on purpose. The assertion below compares whole
+                // objects, so a field left at its default would match even if the backup dropped it.
+                blockScreenshots = true,
+                reconnectAskFirst = true,
+                // Opposite of its default as well, for the same reason: the whole-object comparison
+                // below is the only thing that would notice the backup dropping this one.
+                terminalScrollbackCountVisible = true,
+                // The last four display/transfer fields, each set away from its default so the
+                // whole-object comparison below fails if the backup drops it. Every value is inside the
+                // range the reader coerces to, so it must come back unchanged, not clamped.
+                terminalKeyRowVisible = false,
+                terminalScrollback = 12_345,
+                terminalCursorStyle = "underline",
+                transferBytesPerSecond = 1_048_576L,
+                vaultAutoLockMinutes = 60,
+                // Every field opposite its default for the same reason as blockScreenshots above.
+                editorPrefsJson =
+                    "{\"wordWrap\":true,\"showLineNumbers\":false,\"tabSize\":2," +
+                        "\"spacesInsteadOfTabs\":true,\"autoSaveEnabled\":false,\"autoSaveDelayMillis\":5000}",
+                // The key bar blob rides the same way: opaque here, decoded only by its codec.
+                terminalKeyBarJson =
+                    "{\"mode\":\"CUSTOM\",\"size\":\"COMPACT\",\"rows\":2," +
+                        "\"caps\":[{\"id\":\"c1\",\"kind\":\"TEXT\",\"row\":0,\"order\":0,\"text\":\"../\"}]}",
+            )
         val knownHosts = mapOf("edge.example.com:2222" to EDGE_FINGERPRINT)
 
         val (restoredHosts, restoredSettings, restoredKnownHosts) =
@@ -222,20 +229,27 @@ class VaultBackupTest {
 
     @Test
     fun `credentials are never written into a vault backup`() {
-        val host = HostProfile(
-            name = "Edge",
-            host = "edge.example.com",
-            username = "deploy",
-            socksHost = "127.0.0.1",
-            socksPassword = "super-secret-proxy-password",
-        )
+        val host =
+            HostProfile(
+                name = "Edge",
+                host = "edge.example.com",
+                username = "deploy",
+                socksHost = "127.0.0.1",
+                socksPassword = "super-secret-proxy-password",
+            )
 
         val json = VaultBackup.toJson(listOf(host), AppSettings(), emptyMap())
 
         assertThat(json).doesNotContain("super-secret-proxy-password")
         assertThat(json).doesNotContain("socksPassword")
         assertThat(json).doesNotContain("credentials")
-        assertThat(VaultBackup.fromJson(json).first.single().socksPassword).isNull()
+        assertThat(
+            VaultBackup
+                .fromJson(json)
+                .first
+                .single()
+                .socksPassword,
+        ).isNull()
     }
 
     @Test
@@ -268,7 +282,8 @@ class VaultBackupTest {
     fun `a version 1 backup still imports with defaults for the newer fields`() {
         // Written by the shipped v1 format: no reconnectBaseSeconds, legacyAlgorithms,
         // terminalTheme, blockScreenshots, proxy fields or accentColor.
-        val v1 = """
+        val v1 =
+            """
             {"version":1,
              "settings":{"biometricUnlock":false,"darkTheme":true,"clipboardSeconds":60,
                          "keepAliveSeconds":20,"terminalFontSize":15,"pinEnabled":true},
@@ -276,7 +291,7 @@ class VaultBackupTest {
                        "username":"admin","port":22,"authMethod":"PASSWORD",
                        "group":"Personal","tags":["legacy"],"isFavorite":false}],
              "knownHosts":{"old.example.com:22":"$OLD_FINGERPRINT"}}
-        """.trimIndent()
+            """.trimIndent()
 
         val (hosts, settings, knownHosts) = VaultBackup.fromJson(v1)
 
@@ -333,14 +348,15 @@ class VaultBackupTest {
 
     @Test
     fun `out of range and unknown values are coerced instead of crashing the import`() {
-        val hostile = """
+        val hostile =
+            """
             {"version":2,
              "settings":{"terminalTheme":"NEON_PURPLE","editorPrefsJson":"truncated-not-json{"},
              "hosts":[{"name":"Bad","host":"h","username":"u","port":99999,
                        "authMethod":"MAGIC","proxyType":"TELEPATHY","socksPort":-3,
                        "group":"   ","accentColor":0,
                        "connectTimeoutSeconds":0,"keepAliveSeconds":100000}]}
-        """.trimIndent()
+            """.trimIndent()
 
         val (hosts, settings, _) = VaultBackup.fromJson(hostile)
         val host = hosts.single()
@@ -374,31 +390,34 @@ class VaultBackupTest {
      */
     @Test
     fun `connection options at the range bounds import unchanged`() {
-        val hosts = listOf(
-            HostProfile(
-                id = "edge-low",
-                name = "Low",
-                host = "low.example.com",
-                username = "u",
-                connectTimeoutSeconds = CONNECT_TIMEOUT_RANGE.first,
-                keepAliveSeconds = KEEP_ALIVE_RANGE.first,
-            ),
-            HostProfile(
-                id = "edge-high",
-                name = "High",
-                host = "high.example.com",
-                username = "u",
-                connectTimeoutSeconds = CONNECT_TIMEOUT_RANGE.last,
-                keepAliveSeconds = KEEP_ALIVE_RANGE.last,
-            ),
-        )
+        val hosts =
+            listOf(
+                HostProfile(
+                    id = "edge-low",
+                    name = "Low",
+                    host = "low.example.com",
+                    username = "u",
+                    connectTimeoutSeconds = CONNECT_TIMEOUT_RANGE.first,
+                    keepAliveSeconds = KEEP_ALIVE_RANGE.first,
+                ),
+                HostProfile(
+                    id = "edge-high",
+                    name = "High",
+                    host = "high.example.com",
+                    username = "u",
+                    connectTimeoutSeconds = CONNECT_TIMEOUT_RANGE.last,
+                    keepAliveSeconds = KEEP_ALIVE_RANGE.last,
+                ),
+            )
 
         val restored = VaultBackup.fromJson(VaultBackup.toJson(hosts, AppSettings(), emptyMap())).first
 
         assertThat(restored.map { it.connectTimeoutSeconds })
-            .containsExactly(CONNECT_TIMEOUT_RANGE.first, CONNECT_TIMEOUT_RANGE.last).inOrder()
+            .containsExactly(CONNECT_TIMEOUT_RANGE.first, CONNECT_TIMEOUT_RANGE.last)
+            .inOrder()
         assertThat(restored.map { it.keepAliveSeconds })
-            .containsExactly(KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last).inOrder()
+            .containsExactly(KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last)
+            .inOrder()
     }
 
     /**
@@ -409,10 +428,11 @@ class VaultBackupTest {
      */
     @Test
     fun `the SFTP auto login toggle survives a backup in both positions`() {
-        val hosts = listOf(
-            HostProfile(id = "on", name = "On", host = "a.example.com", username = "root", autoLoginSftp = true),
-            HostProfile(id = "off", name = "Off", host = "b.example.com", username = "root", autoLoginSftp = false),
-        )
+        val hosts =
+            listOf(
+                HostProfile(id = "on", name = "On", host = "a.example.com", username = "root", autoLoginSftp = true),
+                HostProfile(id = "off", name = "Off", host = "b.example.com", username = "root", autoLoginSftp = false),
+            )
 
         val restored = VaultBackup.fromJson(VaultBackup.toJson(hosts, AppSettings(), emptyMap())).first
 
@@ -426,7 +446,13 @@ class VaultBackupTest {
         val json = VaultBackup.toJson(listOf(host), AppSettings(), emptyMap())
 
         assertThat(json).doesNotContain("keepAliveSeconds\":0")
-        assertThat(VaultBackup.fromJson(json).first.single().keepAliveSeconds).isNull()
+        assertThat(
+            VaultBackup
+                .fromJson(json)
+                .first
+                .single()
+                .keepAliveSeconds,
+        ).isNull()
     }
 
     @Test
@@ -444,15 +470,16 @@ class VaultBackupTest {
 
     @Test
     fun `a profile export round trips one host with nothing saved for it`() {
-        val host = HostProfile(
-            id = "acct-1",
-            name = "Shared box",
-            host = "box.example.com",
-            username = "ci",
-            port = 2200,
-            authMethod = AuthMethod.KEYBOARD_INTERACTIVE,
-            tags = listOf("ci"),
-        )
+        val host =
+            HostProfile(
+                id = "acct-1",
+                name = "Shared box",
+                host = "box.example.com",
+                username = "ci",
+                port = 2200,
+                authMethod = AuthMethod.KEYBOARD_INTERACTIVE,
+                tags = listOf("ci"),
+            )
 
         val restored = VaultBackup.fromProfilesJson(VaultBackup.toProfilesJson(listOf(host)))
 
@@ -474,17 +501,18 @@ class VaultBackupTest {
     @Test
     fun `a profile export carries every stored secret round trip`() {
         val host = HostProfile(id = "acct-2", name = "Keyed box", host = "box.example.com", username = "ci")
-        val credentials = ProfileCredentials(
-            password = "hunter2",
-            keyBase64 = "a2V5IGJ5dGVz",
-            keyLabel = "id_ed25519",
-            keyType = "ED25519",
-            passphrase = "open sesame",
-            socksPassword = "proxy secret",
-            rdpUsername = "CORP\\ci",
-            rdpDomain = "CORP",
-            rdpPassword = "rdp secret",
-        )
+        val credentials =
+            ProfileCredentials(
+                password = "hunter2",
+                keyBase64 = "a2V5IGJ5dGVz",
+                keyLabel = "id_ed25519",
+                keyType = "ED25519",
+                passphrase = "open sesame",
+                socksPassword = "proxy secret",
+                rdpUsername = "CORP\\ci",
+                rdpDomain = "CORP",
+                rdpPassword = "rdp secret",
+            )
 
         val restored = VaultBackup.fromProfilesJson(VaultBackup.toProfilesJson(listOf(host), mapOf(host.id to credentials)))
 
@@ -496,23 +524,25 @@ class VaultBackupTest {
     /** Three profiles, one passphrase, one file: the case the multi-profile door was added for. */
     @Test
     fun `a profile export round trips several hosts against their own credentials`() {
-        val hosts = listOf(
-            HostProfile(id = "multi-1", name = "One", host = "one.example.com", username = "u"),
-            HostProfile(id = "multi-2", name = "Two", host = "two.example.com", username = "u"),
-            HostProfile(id = "multi-3", name = "Three", host = "three.example.com", username = "u"),
-        )
+        val hosts =
+            listOf(
+                HostProfile(id = "multi-1", name = "One", host = "one.example.com", username = "u"),
+                HostProfile(id = "multi-2", name = "Two", host = "two.example.com", username = "u"),
+                HostProfile(id = "multi-3", name = "Three", host = "three.example.com", username = "u"),
+            )
 
-        val restored = VaultBackup.fromProfilesJson(
-            VaultBackup.toProfilesJson(
-                hosts,
-                mapOf(
-                    "multi-1" to ProfileCredentials(password = "first"),
-                    // No entry for multi-2: a profile with nothing saved, beside two that have
-                    // something, must not pick up a neighbour's password on the way back in.
-                    "multi-3" to ProfileCredentials(password = "third", socksPassword = "proxy"),
+        val restored =
+            VaultBackup.fromProfilesJson(
+                VaultBackup.toProfilesJson(
+                    hosts,
+                    mapOf(
+                        "multi-1" to ProfileCredentials(password = "first"),
+                        // No entry for multi-2: a profile with nothing saved, beside two that have
+                        // something, must not pick up a neighbour's password on the way back in.
+                        "multi-3" to ProfileCredentials(password = "third", socksPassword = "proxy"),
+                    ),
                 ),
-            ),
-        )
+            )
 
         assertThat(restored.map { it.host.id }).containsExactly("multi-1", "multi-2", "multi-3").inOrder()
         assertThat(restored[0].credentials?.password).isEqualTo("first")
@@ -561,9 +591,10 @@ class VaultBackupTest {
     /** Refused, not misread: a file written by another door is not a profile export. */
     @Test
     fun `a profile export rejects a payload that names a different kind`() {
-        val json = JSONObject(VaultBackup.toJson(listOf(HostProfile(id = "k", name = "B", host = "b", username = "u")), AppSettings(), emptyMap()))
-            .put("kind", "something-else")
-            .toString()
+        val json =
+            JSONObject(VaultBackup.toJson(listOf(HostProfile(id = "k", name = "B", host = "b", username = "u")), AppSettings(), emptyMap()))
+                .put("kind", "something-else")
+                .toString()
 
         val error = assertThrows(BackupFormatException::class.java) { VaultBackup.fromProfilesJson(json) }
 
@@ -580,9 +611,10 @@ class VaultBackupTest {
     @Test
     fun `a legacy flat credentials block imports beside the host it belongs to`() {
         val host = HostProfile(id = "legacy-1", name = "Old box", host = "old.example.com", username = "u")
-        val legacy = JSONObject(VaultBackup.toJson(listOf(host), AppSettings(), emptyMap()))
-            .put("credentials", JSONObject().put("password", "hunter2").put("passphrase", "open sesame"))
-            .toString()
+        val legacy =
+            JSONObject(VaultBackup.toJson(listOf(host), AppSettings(), emptyMap()))
+                .put("credentials", JSONObject().put("password", "hunter2").put("passphrase", "open sesame"))
+                .toString()
 
         val restored = VaultBackup.fromProfilesJson(legacy)
 
@@ -601,9 +633,10 @@ class VaultBackupTest {
         assertThat(VaultBackup.fromProfilesJson(blank).single().credentials).isNull()
 
         // And a block of blanks — what a hand-edited or older file might carry — reads the same way.
-        val handEdited = JSONObject(blank)
-            .put("credentials", JSONObject().put(host.id, JSONObject().put("password", "  ").put("passphrase", "")))
-            .toString()
+        val handEdited =
+            JSONObject(blank)
+                .put("credentials", JSONObject().put(host.id, JSONObject().put("password", "  ").put("passphrase", "")))
+                .toString()
 
         assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
     }
@@ -614,9 +647,10 @@ class VaultBackupTest {
         val host = HostProfile(id = "acct-4", name = "Stuffed box", host = "box.example.com", username = "u")
         val oversized = "x".repeat(10_000)
 
-        val restored = VaultBackup.fromProfilesJson(
-            VaultBackup.toProfilesJson(listOf(host), mapOf(host.id to ProfileCredentials(password = oversized))),
-        )
+        val restored =
+            VaultBackup.fromProfilesJson(
+                VaultBackup.toProfilesJson(listOf(host), mapOf(host.id to ProfileCredentials(password = oversized))),
+            )
 
         assertThat(restored.single().credentials?.password).hasLength(4096)
     }
@@ -632,15 +666,17 @@ class VaultBackupTest {
     @Test
     fun `a key with no label is dropped rather than stored invisibly`() {
         val host = HostProfile(id = "acct-5", name = "Half a key", host = "box.example.com", username = "u")
-        val block = JSONObject()
-            .put("key", "a2V5")
-            .put("keyType", "ED25519")
+        val block =
+            JSONObject()
+                .put("key", "a2V5")
+                .put("keyType", "ED25519")
 
-        val handEdited = JSONObject(VaultBackup.toProfilesJson(listOf(host)))
-            // Written by hand because the writer pairs the two: this is the shape a hand-edited file
-            // has, and the shape the reader has to refuse.
-            .put("credentials", JSONObject().put(host.id, block))
-            .toString()
+        val handEdited =
+            JSONObject(VaultBackup.toProfilesJson(listOf(host)))
+                // Written by hand because the writer pairs the two: this is the shape a hand-edited file
+                // has, and the shape the reader has to refuse.
+                .put("credentials", JSONObject().put(host.id, block))
+                .toString()
 
         assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
     }
@@ -655,9 +691,10 @@ class VaultBackupTest {
         val host = HostProfile(id = "acct-6", name = "Half an RDP", host = "box.example.com", username = "u")
         val block = JSONObject().put("rdpUsername", "CORP\\ci").put("rdpDomain", "CORP")
 
-        val handEdited = JSONObject(VaultBackup.toProfilesJson(listOf(host)))
-            .put("credentials", JSONObject().put(host.id, block))
-            .toString()
+        val handEdited =
+            JSONObject(VaultBackup.toProfilesJson(listOf(host)))
+                .put("credentials", JSONObject().put(host.id, block))
+                .toString()
 
         assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
     }
@@ -668,9 +705,10 @@ class VaultBackupTest {
         val host = HostProfile(id = "acct-7", name = "Mangled key", host = "box.example.com", username = "u")
         val block = JSONObject().put("key", "not base64 !!").put("keyLabel", "id_rsa")
 
-        val handEdited = JSONObject(VaultBackup.toProfilesJson(listOf(host)))
-            .put("credentials", JSONObject().put(host.id, block))
-            .toString()
+        val handEdited =
+            JSONObject(VaultBackup.toProfilesJson(listOf(host)))
+                .put("credentials", JSONObject().put(host.id, block))
+                .toString()
 
         assertThat(VaultBackup.fromProfilesJson(handEdited).single().credentials).isNull()
     }
@@ -690,10 +728,11 @@ class VaultBackupTest {
         val local = HostProfile(id = LocalLinuxHost.HOST_ID, name = "Local Ubuntu", host = "localhost", username = "u")
         val real = HostProfile(id = "acct-8", name = "Box", host = "box.example.com", username = "u")
 
-        val json = VaultBackup.toProfilesJson(
-            listOf(local, real),
-            mapOf(local.id to ProfileCredentials(password = "local"), real.id to ProfileCredentials(password = "real")),
-        )
+        val json =
+            VaultBackup.toProfilesJson(
+                listOf(local, real),
+                mapOf(local.id to ProfileCredentials(password = "local"), real.id to ProfileCredentials(password = "real")),
+            )
 
         assertThat(json).doesNotContain(LocalLinuxHost.HOST_ID)
         assertThat(VaultBackup.fromProfilesJson(json).map { it.host.id }).containsExactly(real.id)
@@ -710,7 +749,8 @@ class VaultBackupTest {
      */
     @Test
     fun `known host entries that are not fingerprints the app could have written are dropped`() {
-        val hostile = """
+        val hostile =
+            """
             {"version":2,"hosts":[],"knownHosts":{
               "good.example.com:22":"$EDGE_FINGERPRINT",
               "evil.example.com:22":"not a fingerprint at all",
@@ -722,7 +762,7 @@ class VaultBackupTest {
               "zeroport.example.com:0":"$OLD_FINGERPRINT",
               "":"$OLD_FINGERPRINT"
             }}
-        """.trimIndent()
+            """.trimIndent()
 
         val knownHosts = VaultBackup.fromJson(hostile).third
 
@@ -736,15 +776,18 @@ class VaultBackupTest {
      */
     @Test
     fun `an ipv6 known host key survives the shape check`() {
-        val json = VaultBackup.toJson(
-            hosts = emptyList(),
-            settings = AppSettings(),
-            knownHosts = mapOf("::1:22" to EDGE_FINGERPRINT, "2001:db8::5:2222" to OLD_FINGERPRINT),
-        )
+        val json =
+            VaultBackup.toJson(
+                hosts = emptyList(),
+                settings = AppSettings(),
+                knownHosts = mapOf("::1:22" to EDGE_FINGERPRINT, "2001:db8::5:2222" to OLD_FINGERPRINT),
+            )
 
         assertThat(VaultBackup.fromJson(json).third).containsExactly(
-            "::1:22", EDGE_FINGERPRINT,
-            "2001:db8::5:2222", OLD_FINGERPRINT,
+            "::1:22",
+            EDGE_FINGERPRINT,
+            "2001:db8::5:2222",
+            OLD_FINGERPRINT,
         )
     }
 
@@ -755,7 +798,8 @@ class VaultBackupTest {
      */
     @Test
     fun `a pinned fingerprint that is not the shape the form accepts is dropped`() {
-        val json = """
+        val json =
+            """
             {"version":2,"hosts":[
               {"id":"a","name":"Pinned","host":"a.example.com","username":"u",
                "fingerprint":"$HOST1_FINGERPRINT"},
@@ -764,7 +808,7 @@ class VaultBackupTest {
               {"id":"c","name":"Padded","host":"c.example.com","username":"u",
                "fingerprint":"  $HOST1_FINGERPRINT  "}
             ]}
-        """.trimIndent()
+            """.trimIndent()
 
         val hosts = VaultBackup.fromJson(json).first.associateBy { it.id }
 
@@ -795,38 +839,39 @@ class VaultBackupTest {
         // Each of the twenty-one set away from its default, so the whole-object comparison at the end
         // fails for a dropped field instead of matching it by coincidence. This is the test that says a
         // restored host connects the way the host that was backed up connected.
-        val tuned = HostProfile(
-            id = "tuned-host",
-            name = "Tuned edge",
-            host = "edge.example.com",
-            username = "ops",
-            compression = true,
-            keepAliveEnabled = false,
-            serverAliveCountMax = 6,
-            authTimeoutSeconds = 90,
-            autoReconnect = false,
-            maxReconnectAttempts = 9,
-            reconnectBackoffSeconds = 12,
-            usePty = false,
-            terminalType = "screen-256color",
-            terminalColumns = 132,
-            terminalRows = 50,
-            keyboardInteractiveAuth = false,
-            legacyAlgorithms = true,
-            hostKeyPolicy = HostKeyPolicy.STRICT,
-            ciphers = "aes256-gcm@openssh.com,aes128-ctr",
-            kexAlgorithms = "curve25519-sha256,diffie-hellman-group14-sha256",
-            macs = "hmac-sha2-256-etm@openssh.com",
-            hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
-            startupCommand = "tmux attach || tmux new",
-            environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
-            savedForwards = "L:8080:intranet.example:80\nR:2222:22\nD:1080",
-            remoteDesktop = "V:10.0.1.5:5900 view-only",
-            // The spelling as typed, dashes rather than colons: the round trip has to carry text,
-            // not a normalised form, or a host would silently change shape in its own backup.
-            wakeOnLanMac = "4C-2E-81-1A-02-F7",
-            agentForwarding = true,
-        )
+        val tuned =
+            HostProfile(
+                id = "tuned-host",
+                name = "Tuned edge",
+                host = "edge.example.com",
+                username = "ops",
+                compression = true,
+                keepAliveEnabled = false,
+                serverAliveCountMax = 6,
+                authTimeoutSeconds = 90,
+                autoReconnect = false,
+                maxReconnectAttempts = 9,
+                reconnectBackoffSeconds = 12,
+                usePty = false,
+                terminalType = "screen-256color",
+                terminalColumns = 132,
+                terminalRows = 50,
+                keyboardInteractiveAuth = false,
+                legacyAlgorithms = true,
+                hostKeyPolicy = HostKeyPolicy.STRICT,
+                ciphers = "aes256-gcm@openssh.com,aes128-ctr",
+                kexAlgorithms = "curve25519-sha256,diffie-hellman-group14-sha256",
+                macs = "hmac-sha2-256-etm@openssh.com",
+                hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
+                startupCommand = "tmux attach || tmux new",
+                environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
+                savedForwards = "L:8080:intranet.example:80\nR:2222:22\nD:1080",
+                remoteDesktop = "V:10.0.1.5:5900 view-only",
+                // The spelling as typed, dashes rather than colons: the round trip has to carry text,
+                // not a normalised form, or a host would silently change shape in its own backup.
+                wakeOnLanMac = "4C-2E-81-1A-02-F7",
+                agentForwarding = true,
+            )
 
         val restored = VaultBackup.fromJson(VaultBackup.toJson(listOf(tuned), AppSettings(), emptyMap())).first
 
@@ -838,11 +883,12 @@ class VaultBackupTest {
         // Written before any of these columns existed. Every one of them has to arrive as the behaviour
         // the app had when the backup was taken - not as false, not as zero, and not as an empty
         // algorithm list, which is an instruction to propose nothing rather than an absence of opinion.
-        val v2 = """
+        val v2 =
+            """
             {"version":2,
              "settings":{},
              "hosts":[{"id":"plain-1","name":"Plain","host":"plain.example.com","username":"admin"}]}
-        """.trimIndent()
+            """.trimIndent()
 
         val host = VaultBackup.fromJson(v2).first.single()
 
@@ -878,7 +924,8 @@ class VaultBackupTest {
     fun `hostile advanced values are coerced instead of installing themselves`() {
         // The importer is the app's only untrusted-input boundary for these columns: the form validates
         // what a user types, and a hand-edited or truncated backup goes around the form entirely.
-        val hostile = """
+        val hostile =
+            """
             {"version":3,
              "hosts":[{"name":"Bad","host":"h","username":"u",
                        "serverAliveCountMax":0,"authTimeoutSeconds":99999,
@@ -892,7 +939,7 @@ class VaultBackupTest {
                        "savedForwards":"L:8080\nX:1\nD:1080",
                        "remoteDesktop":"V:not-a-target\nV:5900 view-only",
                        "wakeOnLanMac":"zz:zz:zz:zz:zz:zz"}]}
-        """.trimIndent()
+            """.trimIndent()
 
         val host = VaultBackup.fromJson(hostile).first.single()
 
@@ -929,9 +976,10 @@ class VaultBackupTest {
     @Test
     fun `a backup cannot carry more forwards than a host may hold`() {
         val many = List(MAX_SAVED_FORWARDS + 8) { "D:${1080 + it}" }.joinToString("\\n")
-        val json = """
+        val json =
+            """
             {"version":3,"hosts":[{"name":"Many","host":"h","username":"u","savedForwards":"$many"}]}
-        """.trimIndent()
+            """.trimIndent()
 
         val host = VaultBackup.fromJson(json).first.single()
 
@@ -944,9 +992,10 @@ class VaultBackupTest {
         // not offer it, but a backup file is neither - so the importer keeps the text and the connect
         // path is what refuses to install it, falling back to the library's own ciphers. Asserted here
         // because this is the path that goes around the form.
-        val json = """
+        val json =
+            """
             {"version":3,"hosts":[{"name":"Plain","host":"h","username":"u","ciphers":"none"}]}
-        """.trimIndent()
+            """.trimIndent()
 
         val host = VaultBackup.fromJson(json).first.single()
 
@@ -956,42 +1005,43 @@ class VaultBackupTest {
 
     @Test
     fun `the advanced sentinels and range bounds import unchanged`() {
-        val hosts = listOf(
-            HostProfile(
-                id = "low",
-                name = "Low",
-                host = "low.example.com",
-                username = "u",
-                serverAliveCountMax = SERVER_ALIVE_COUNT_RANGE.first,
-                authTimeoutSeconds = AUTH_TIMEOUT_RANGE.first,
-                maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS_RANGE.first,
-                reconnectBackoffSeconds = RECONNECT_BACKOFF_RANGE.first,
-                terminalColumns = TERMINAL_COLUMNS_RANGE.first,
-                terminalRows = TERMINAL_ROWS_RANGE.first,
-            ),
-            HostProfile(
-                id = "high",
-                name = "High",
-                host = "high.example.com",
-                username = "u",
-                serverAliveCountMax = SERVER_ALIVE_COUNT_RANGE.last,
-                authTimeoutSeconds = AUTH_TIMEOUT_RANGE.last,
-                maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS_RANGE.last,
-                reconnectBackoffSeconds = RECONNECT_BACKOFF_RANGE.last,
-                terminalColumns = TERMINAL_COLUMNS_RANGE.last,
-                terminalRows = TERMINAL_ROWS_RANGE.last,
-            ),
-            // The sentinels, which sit outside their ranges on purpose and have to be admitted anyway.
-            HostProfile(
-                id = "automatic",
-                name = "Automatic",
-                host = "auto.example.com",
-                username = "u",
-                reconnectBackoffSeconds = INHERIT_RECONNECT_BACKOFF,
-                terminalColumns = 0,
-                terminalRows = 0,
-            ),
-        )
+        val hosts =
+            listOf(
+                HostProfile(
+                    id = "low",
+                    name = "Low",
+                    host = "low.example.com",
+                    username = "u",
+                    serverAliveCountMax = SERVER_ALIVE_COUNT_RANGE.first,
+                    authTimeoutSeconds = AUTH_TIMEOUT_RANGE.first,
+                    maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS_RANGE.first,
+                    reconnectBackoffSeconds = RECONNECT_BACKOFF_RANGE.first,
+                    terminalColumns = TERMINAL_COLUMNS_RANGE.first,
+                    terminalRows = TERMINAL_ROWS_RANGE.first,
+                ),
+                HostProfile(
+                    id = "high",
+                    name = "High",
+                    host = "high.example.com",
+                    username = "u",
+                    serverAliveCountMax = SERVER_ALIVE_COUNT_RANGE.last,
+                    authTimeoutSeconds = AUTH_TIMEOUT_RANGE.last,
+                    maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS_RANGE.last,
+                    reconnectBackoffSeconds = RECONNECT_BACKOFF_RANGE.last,
+                    terminalColumns = TERMINAL_COLUMNS_RANGE.last,
+                    terminalRows = TERMINAL_ROWS_RANGE.last,
+                ),
+                // The sentinels, which sit outside their ranges on purpose and have to be admitted anyway.
+                HostProfile(
+                    id = "automatic",
+                    name = "Automatic",
+                    host = "auto.example.com",
+                    username = "u",
+                    reconnectBackoffSeconds = INHERIT_RECONNECT_BACKOFF,
+                    terminalColumns = 0,
+                    terminalRows = 0,
+                ),
+            )
 
         val restored = VaultBackup.fromJson(VaultBackup.toJson(hosts, AppSettings(), emptyMap())).first
 
@@ -1000,17 +1050,19 @@ class VaultBackupTest {
 
     @Test
     fun `a host that follows the app-wide legacy switch keeps following it`() {
-        val hosts = listOf(
-            HostProfile(id = "follows", name = "Follows", host = "a.example.com", username = "u"),
-            HostProfile(id = "on", name = "On", host = "b.example.com", username = "u", legacyAlgorithms = true),
-            HostProfile(id = "off", name = "Off", host = "c.example.com", username = "u", legacyAlgorithms = false),
-        )
+        val hosts =
+            listOf(
+                HostProfile(id = "follows", name = "Follows", host = "a.example.com", username = "u"),
+                HostProfile(id = "on", name = "On", host = "b.example.com", username = "u", legacyAlgorithms = true),
+                HostProfile(id = "off", name = "Off", host = "c.example.com", username = "u", legacyAlgorithms = false),
+            )
 
         val json = VaultBackup.toJson(hosts, AppSettings(), emptyMap())
 
         // Absent rather than written as false, which is what keeps the third state a state.
         assertThat(VaultBackup.fromJson(json).first.map { it.legacyAlgorithms })
-            .containsExactly(null, true, false).inOrder()
+            .containsExactly(null, true, false)
+            .inOrder()
     }
 
     @Test
@@ -1018,18 +1070,25 @@ class VaultBackupTest {
         // The column can already be malformed before the export: it is written by an importer, and older
         // builds of this app never validated it. Exporting re-encodes what decoding accepted, so a
         // backup file never propagates a line the engine would refuse.
-        val host = HostProfile(
-            id = "edited",
-            name = "Edited",
-            host = "h.example.com",
-            username = "u",
-            savedForwards = "D:1080\nnot-a-rule",
-        )
+        val host =
+            HostProfile(
+                id = "edited",
+                name = "Edited",
+                host = "h.example.com",
+                username = "u",
+                savedForwards = "D:1080\nnot-a-rule",
+            )
 
         val json = VaultBackup.toJson(listOf(host), AppSettings(), emptyMap())
 
         assertThat(json).doesNotContain("not-a-rule")
-        assertThat(VaultBackup.fromJson(json).first.single().savedForwards).isEqualTo("D:1080")
+        assertThat(
+            VaultBackup
+                .fromJson(json)
+                .first
+                .single()
+                .savedForwards,
+        ).isEqualTo("D:1080")
     }
 
     @Test
@@ -1037,19 +1096,22 @@ class VaultBackupTest {
         // The reason both fields are written unconditionally. A host whose startup command was removed
         // and then backed up must not come back running the command again, which is what reading an
         // absent key as "unchanged" would do.
-        val configured = HostProfile(
-            id = "startup",
-            name = "Startup",
-            host = "h.example.com",
-            username = "u",
-            startupCommand = "tmux attach",
-            environment = "LANG=C",
-        )
+        val configured =
+            HostProfile(
+                id = "startup",
+                name = "Startup",
+                host = "h.example.com",
+                username = "u",
+                startupCommand = "tmux attach",
+                environment = "LANG=C",
+            )
         val cleared = configured.copy(startupCommand = "", environment = "")
 
-        val restored = VaultBackup.fromJson(
-            VaultBackup.toJson(listOf(configured, cleared), AppSettings(), emptyMap()),
-        ).first
+        val restored =
+            VaultBackup
+                .fromJson(
+                    VaultBackup.toJson(listOf(configured, cleared), AppSettings(), emptyMap()),
+                ).first
 
         assertThat(restored.map { it.startupCommand }).containsExactly("tmux attach", "").inOrder()
         assertThat(restored.map { it.environment }).containsExactly("LANG=C", "").inOrder()

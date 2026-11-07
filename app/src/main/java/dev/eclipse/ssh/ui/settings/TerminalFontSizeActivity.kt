@@ -35,11 +35,13 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class TerminalFontSizeActivity : SettingsDestinationActivity() {
-
     override val screenTitle = "Terminal font size"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         val range = SettingsRepository.TERMINAL_FONT_SIZE_RANGE
         var size by remember(settings.terminalFontSize) {
             mutableFloatStateOf(SettingsRepository.normalizeFontSize(settings.terminalFontSize).toFloat())

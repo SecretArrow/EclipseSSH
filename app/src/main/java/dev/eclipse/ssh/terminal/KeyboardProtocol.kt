@@ -100,18 +100,19 @@ internal fun escapeCoded(
     modes: KeyboardModes,
     kittyEscapes: Boolean,
     modifierIsLost: Boolean,
-): ByteArray? = when {
-    kittyEscapes && modes.kittyFlags and KittyKeyboard.DISAMBIGUATE != 0 -> kittySequence(code, modifiers)
-    // Both modifyOtherKeys forms carry the modifier, so with none held they would encode it as "no
-    // modifiers" - a sequence that says exactly what the legacy bytes say and that a program parses
-    // for nothing. Escape is the exception, and it is the branch above: flag 1 exists to give it a
-    // code of its own.
-    modifiers.none -> null
-    modes.modifyOtherKeys >= ModifyOtherKeys.ALL -> modifyOtherKeysSequence(code, modifiers)
-    modes.modifyOtherKeys == ModifyOtherKeys.AMBIGUOUS && modifierIsLost ->
-        modifyOtherKeysSequence(code, modifiers)
-    else -> null
-}
+): ByteArray? =
+    when {
+        kittyEscapes && modes.kittyFlags and KittyKeyboard.DISAMBIGUATE != 0 -> kittySequence(code, modifiers)
+        // Both modifyOtherKeys forms carry the modifier, so with none held they would encode it as "no
+        // modifiers" - a sequence that says exactly what the legacy bytes say and that a program parses
+        // for nothing. Escape is the exception, and it is the branch above: flag 1 exists to give it a
+        // code of its own.
+        modifiers.none -> null
+        modes.modifyOtherKeys >= ModifyOtherKeys.ALL -> modifyOtherKeysSequence(code, modifiers)
+        modes.modifyOtherKeys == ModifyOtherKeys.AMBIGUOUS && modifierIsLost ->
+            modifyOtherKeysSequence(code, modifiers)
+        else -> null
+    }
 
 /**
  * The code point a key sends, or null when the key has no character of its own.
@@ -120,13 +121,14 @@ internal fun escapeCoded(
  * what both want: an arrow already carries its modifiers in `CSI 1;5A`, and the kitty functional
  * numbers (`57352` and up) are not code points this app could report without inventing them.
  */
-internal fun keyCodeOf(key: TerminalKey): Int? = when (key) {
-    TerminalKey.ENTER -> CR
-    TerminalKey.TAB -> HT
-    TerminalKey.BACKSPACE -> DEL
-    TerminalKey.ESCAPE -> ESC
-    else -> null
-}
+internal fun keyCodeOf(key: TerminalKey): Int? =
+    when (key) {
+        TerminalKey.ENTER -> CR
+        TerminalKey.TAB -> HT
+        TerminalKey.BACKSPACE -> DEL
+        TerminalKey.ESCAPE -> ESC
+        else -> null
+    }
 
 /**
  * `CSI code ; modifiers u`, or `CSI code u` with none.
@@ -134,20 +136,23 @@ internal fun keyCodeOf(key: TerminalKey): Int? = when (key) {
  * The 1 that precedes a modifier field is dropped rather than sent as `;1`: the protocol says an
  * omitted field means "no modifiers", and the consumer this app is measured against parses both.
  */
-private fun kittySequence(code: Int, modifiers: TerminalModifiers): ByteArray =
-    if (modifiers.none) csi("${code}u") else csi("$code;${modifierParameter(modifiers)}u")
+private fun kittySequence(
+    code: Int,
+    modifiers: TerminalModifiers,
+): ByteArray = if (modifiers.none) csi("${code}u") else csi("$code;${modifierParameter(modifiers)}u")
 
 /** xterm's `CSI 27 ; modifiers ; code ~`, which is the same bit field kitty uses. */
-private fun modifyOtherKeysSequence(code: Int, modifiers: TerminalModifiers): ByteArray =
-    csi("27;${modifierParameter(modifiers)};$code~")
+private fun modifyOtherKeysSequence(
+    code: Int,
+    modifiers: TerminalModifiers,
+): ByteArray = csi("27;${modifierParameter(modifiers)};$code~")
 
 /**
  * The xterm modifier parameter: a bit field offset by one, because 0 is not a legal CSI parameter
  * and would be read as "omitted". Both protocols spell shift 1, alt 2 and ctrl 4, and both subtract
  * the one back when reading it, so one function serves for the two.
  */
-internal fun modifierParameter(modifiers: TerminalModifiers): Int =
-    1 + (if (modifiers.shift) 1 else 0) + (if (modifiers.alt) 2 else 0) + (if (modifiers.ctrl) 4 else 0)
+internal fun modifierParameter(modifiers: TerminalModifiers): Int = 1 + (if (modifiers.shift) 1 else 0) + (if (modifiers.alt) 2 else 0) + (if (modifiers.ctrl) 4 else 0)
 
 /** ESC, the prefix of every sequence in this file. */
 private const val ESC = 0x1B
@@ -162,5 +167,4 @@ private const val HT = 0x09
 private const val DEL = 0x7F
 
 /** `ESC [` followed by [tail], which is always plain ASCII. */
-internal fun csi(tail: String): ByteArray =
-    byteArrayOf(ESC.toByte(), 0x5B) + tail.toByteArray(Charsets.US_ASCII)
+internal fun csi(tail: String): ByteArray = byteArrayOf(ESC.toByte(), 0x5B) + tail.toByteArray(Charsets.US_ASCII)

@@ -1,28 +1,28 @@
 package dev.eclipse.ssh.data.settings
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import dev.eclipse.ssh.data.model.AppSettings
 import dev.eclipse.ssh.data.model.TerminalTheme
 import dev.eclipse.ssh.security.PinHasher
 import dev.eclipse.ssh.terminal.TERMINAL_COLUMN_RANGE
 import dev.eclipse.ssh.terminal.TERMINAL_ROW_RANGE
-import java.io.IOException
-import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.util.Base64
 
 /**
  * The settings store.
@@ -48,19 +48,19 @@ private val Context.settingsDataStore by preferencesDataStore(
  * the pair together.
  */
 internal object Keys {
-        val biometricUnlock = booleanPreferencesKey("biometric_unlock")
-        val darkTheme = booleanPreferencesKey("dark_theme")
-        val clipboardSeconds = intPreferencesKey("clipboard_seconds")
-        val keepAliveSeconds = intPreferencesKey("keep_alive_seconds")
-        val reconnectBaseSeconds = intPreferencesKey("reconnect_base_seconds")
-        val terminalFontSize = intPreferencesKey("terminal_font_size")
-        val terminalKeyRowVisible = booleanPreferencesKey("terminal_key_row_visible")
-        val terminalScrollbackCountVisible = booleanPreferencesKey("terminal_scrollback_count_visible")
-        val terminalMinColumns = intPreferencesKey("terminal_min_columns")
-        val terminalRows = intPreferencesKey("terminal_rows")
-        val pinEnabled = booleanPreferencesKey("pin_enabled")
-        val pinHash = stringPreferencesKey("pin_hash")
-        val pinSalt = stringPreferencesKey("pin_salt")
+    val biometricUnlock = booleanPreferencesKey("biometric_unlock")
+    val darkTheme = booleanPreferencesKey("dark_theme")
+    val clipboardSeconds = intPreferencesKey("clipboard_seconds")
+    val keepAliveSeconds = intPreferencesKey("keep_alive_seconds")
+    val reconnectBaseSeconds = intPreferencesKey("reconnect_base_seconds")
+    val terminalFontSize = intPreferencesKey("terminal_font_size")
+    val terminalKeyRowVisible = booleanPreferencesKey("terminal_key_row_visible")
+    val terminalScrollbackCountVisible = booleanPreferencesKey("terminal_scrollback_count_visible")
+    val terminalMinColumns = intPreferencesKey("terminal_min_columns")
+    val terminalRows = intPreferencesKey("terminal_rows")
+    val pinEnabled = booleanPreferencesKey("pin_enabled")
+    val pinHash = stringPreferencesKey("pin_hash")
+    val pinSalt = stringPreferencesKey("pin_salt")
     val vaultAutoLockMinutes = intPreferencesKey("vault_auto_lock_minutes")
     val legacyAlgorithms = booleanPreferencesKey("legacy_algorithms")
     val terminalTheme = stringPreferencesKey("terminal_theme")
@@ -70,7 +70,9 @@ internal object Keys {
     val terminalCursorStyle = stringPreferencesKey("terminal_cursor_style")
     val useTermuxRenderer = booleanPreferencesKey("use_termux_renderer")
     val terminalKeepSystemBars = booleanPreferencesKey("terminal_keep_system_bars")
-    val transferBytesPerSecond = androidx.datastore.preferences.core.longPreferencesKey("transfer_bytes_per_second")
+    val transferBytesPerSecond =
+        androidx.datastore.preferences.core
+            .longPreferencesKey("transfer_bytes_per_second")
     val editorPrefsJson = stringPreferencesKey("editor_prefs_json")
     val terminalKeyBarJson = stringPreferencesKey("terminal_key_bar_json")
     val localRootUri = stringPreferencesKey("local_root_uri")
@@ -81,66 +83,71 @@ internal object Keys {
  * piece of real logic in it — the [Keys.pinEnabled] guard — can be tested against a preference set
  * no public setter is able to write.
  */
-internal fun settingsFrom(prefs: Preferences) = AppSettings(
-    biometricUnlock = prefs[Keys.biometricUnlock] ?: true,
-    darkTheme = prefs[Keys.darkTheme] ?: true,
-    clearClipboardAfterSeconds = prefs[Keys.clipboardSeconds] ?: 30,
-    keepAliveSeconds = prefs[Keys.keepAliveSeconds] ?: 30,
-    reconnectBaseSeconds = prefs[Keys.reconnectBaseSeconds] ?: SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS,
-    // Clamped on the way out as well as on the way in: this value also arrives from a restored
-    // backup, where the number is whatever the file says, and a 200 sp grid is one cell wide.
-    terminalFontSize = SettingsRepository.normalizeFontSize(prefs[Keys.terminalFontSize] ?: SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE),
-    terminalKeyRowVisible = prefs[Keys.terminalKeyRowVisible] ?: true,
-    // Absent from every install that predates it, and the default is the badge those installs
-    // already drew rather than a blank one-by-accident.
-    terminalScrollbackCountVisible = prefs[Keys.terminalScrollbackCountVisible] ?: false,
-    terminalMinColumns = prefs[Keys.terminalMinColumns] ?: SettingsRepository.DEFAULT_TERMINAL_MIN_COLUMNS,
-    // Clamped on the way out for the same reason as the columns below it: this number also arrives
-    // from a restored backup, and a height the pty would refuse is one the status line would report
-    // as being in force while the server was told something else.
-    terminalRows = SettingsRepository.normalizeRows(prefs[Keys.terminalRows] ?: SettingsRepository.DEFAULT_TERMINAL_ROWS),
-    // Requires the hash to actually be present, not just the flag. `pinEnabled` alone gates the
-    // entire app through MainActivity's lock screen, and `verifyPin` returns false when there is no
-    // hash to compare against — so the flag surviving without its hash is a permanent lockout with
-    // no way out from inside the app: every PIN is rejected, and the biometric button is only
-    // offered when that setting is on and only works on a device with something enrolled. Only
-    // `setPin` ever writes the two together, so this state is unreachable today; it is guarded
-    // because the cost of being wrong is a bricked install and the check costs one map lookup.
-    pinEnabled = prefs[Keys.pinEnabled] == true && prefs[Keys.pinHash] != null,
-    // Normalized on the way out for the same reason as the font size: this number also arrives from
-    // a restored backup, where it is whatever the file says, and a delay the dialog never offered
-    // would show as a value nobody chose.
-    vaultAutoLockMinutes = SettingsRepository.normalizeVaultAutoLockMinutes(
-        prefs[Keys.vaultAutoLockMinutes] ?: SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES,
-    ),
-    legacyAlgorithms = prefs[Keys.legacyAlgorithms] ?: false,
-    terminalTheme = prefs[Keys.terminalTheme] ?: TerminalTheme.DARK.name,
-    blockScreenshots = prefs[Keys.blockScreenshots] ?: false,
-    // Absent from every install that predates the setting, and the default here is the behaviour
-    // those installs already had - automatic reconnect - rather than false-by-accident.
-    reconnectAskFirst = prefs[Keys.reconnectAskFirst] ?: false,
-    terminalScrollback = (prefs[Keys.terminalScrollback] ?: 2_000)
-        .coerceIn(SettingsRepository.MIN_SCROLLBACK, SettingsRepository.MAX_SCROLLBACK),
-    terminalCursorStyle = prefs[Keys.terminalCursorStyle] ?: "block",
-    // Absent on every install that predates the setting; the default is the immersive behaviour
-    // those installs already had.
-    terminalKeepSystemBars = prefs[Keys.terminalKeepSystemBars] ?: false,
-    // Off by default — see [AppSettings.useTermuxRenderer] kdoc. Read here so toggling it in
-    // Settings takes effect on the next recomposition rather than the next app start.
-    useTermuxRenderer = prefs[Keys.useTermuxRenderer] ?: false,
-    transferBytesPerSecond = (prefs[Keys.transferBytesPerSecond] ?: 0L)
-        .coerceIn(0L, SettingsRepository.MAX_BANDWIDTH_BYTES_PER_SECOND),
-    // "{}" rather than null: the blob is only ever rewritten whole by the editor screen, and a
-    // missing key means "never configured", which is the same JSON as "every toggle default".
-    editorPrefsJson = prefs[Keys.editorPrefsJson] ?: "{}",
-    // Same shape as the editor blob above: the shortcut bar's codec is the only reader, a missing
-    // key means "never configured", and that is the same JSON as the default bar.
-    terminalKeyBarJson = prefs[Keys.terminalKeyBarJson] ?: "{}",
-    localRootUri = prefs[Keys.localRootUri],
-)
+internal fun settingsFrom(prefs: Preferences) =
+    AppSettings(
+        biometricUnlock = prefs[Keys.biometricUnlock] ?: true,
+        darkTheme = prefs[Keys.darkTheme] ?: true,
+        clearClipboardAfterSeconds = prefs[Keys.clipboardSeconds] ?: 30,
+        keepAliveSeconds = prefs[Keys.keepAliveSeconds] ?: 30,
+        reconnectBaseSeconds = prefs[Keys.reconnectBaseSeconds] ?: SettingsRepository.DEFAULT_RECONNECT_BASE_SECONDS,
+        // Clamped on the way out as well as on the way in: this value also arrives from a restored
+        // backup, where the number is whatever the file says, and a 200 sp grid is one cell wide.
+        terminalFontSize = SettingsRepository.normalizeFontSize(prefs[Keys.terminalFontSize] ?: SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE),
+        terminalKeyRowVisible = prefs[Keys.terminalKeyRowVisible] ?: true,
+        // Absent from every install that predates it, and the default is the badge those installs
+        // already drew rather than a blank one-by-accident.
+        terminalScrollbackCountVisible = prefs[Keys.terminalScrollbackCountVisible] ?: false,
+        terminalMinColumns = prefs[Keys.terminalMinColumns] ?: SettingsRepository.DEFAULT_TERMINAL_MIN_COLUMNS,
+        // Clamped on the way out for the same reason as the columns below it: this number also arrives
+        // from a restored backup, and a height the pty would refuse is one the status line would report
+        // as being in force while the server was told something else.
+        terminalRows = SettingsRepository.normalizeRows(prefs[Keys.terminalRows] ?: SettingsRepository.DEFAULT_TERMINAL_ROWS),
+        // Requires the hash to actually be present, not just the flag. `pinEnabled` alone gates the
+        // entire app through MainActivity's lock screen, and `verifyPin` returns false when there is no
+        // hash to compare against — so the flag surviving without its hash is a permanent lockout with
+        // no way out from inside the app: every PIN is rejected, and the biometric button is only
+        // offered when that setting is on and only works on a device with something enrolled. Only
+        // `setPin` ever writes the two together, so this state is unreachable today; it is guarded
+        // because the cost of being wrong is a bricked install and the check costs one map lookup.
+        pinEnabled = prefs[Keys.pinEnabled] == true && prefs[Keys.pinHash] != null,
+        // Normalized on the way out for the same reason as the font size: this number also arrives from
+        // a restored backup, where it is whatever the file says, and a delay the dialog never offered
+        // would show as a value nobody chose.
+        vaultAutoLockMinutes =
+            SettingsRepository.normalizeVaultAutoLockMinutes(
+                prefs[Keys.vaultAutoLockMinutes] ?: SettingsRepository.DEFAULT_VAULT_AUTO_LOCK_MINUTES,
+            ),
+        legacyAlgorithms = prefs[Keys.legacyAlgorithms] ?: false,
+        terminalTheme = prefs[Keys.terminalTheme] ?: TerminalTheme.DARK.name,
+        blockScreenshots = prefs[Keys.blockScreenshots] ?: false,
+        // Absent from every install that predates the setting, and the default here is the behaviour
+        // those installs already had - automatic reconnect - rather than false-by-accident.
+        reconnectAskFirst = prefs[Keys.reconnectAskFirst] ?: false,
+        terminalScrollback =
+            (prefs[Keys.terminalScrollback] ?: 2_000)
+                .coerceIn(SettingsRepository.MIN_SCROLLBACK, SettingsRepository.MAX_SCROLLBACK),
+        terminalCursorStyle = prefs[Keys.terminalCursorStyle] ?: "block",
+        // Absent on every install that predates the setting; the default is the immersive behaviour
+        // those installs already had.
+        terminalKeepSystemBars = prefs[Keys.terminalKeepSystemBars] ?: false,
+        // Off by default — see [AppSettings.useTermuxRenderer] kdoc. Read here so toggling it in
+        // Settings takes effect on the next recomposition rather than the next app start.
+        useTermuxRenderer = prefs[Keys.useTermuxRenderer] ?: false,
+        transferBytesPerSecond =
+            (prefs[Keys.transferBytesPerSecond] ?: 0L)
+                .coerceIn(0L, SettingsRepository.MAX_BANDWIDTH_BYTES_PER_SECOND),
+        // "{}" rather than null: the blob is only ever rewritten whole by the editor screen, and a
+        // missing key means "never configured", which is the same JSON as "every toggle default".
+        editorPrefsJson = prefs[Keys.editorPrefsJson] ?: "{}",
+        // Same shape as the editor blob above: the shortcut bar's codec is the only reader, a missing
+        // key means "never configured", and that is the same JSON as the default bar.
+        terminalKeyBarJson = prefs[Keys.terminalKeyBarJson] ?: "{}",
+        localRootUri = prefs[Keys.localRootUri],
+    )
 
-class SettingsRepository(private val context: Context) {
-
+class SettingsRepository(
+    private val context: Context,
+) {
     /**
      * Every setting, re-read whenever one changes.
      *
@@ -157,9 +164,11 @@ class SettingsRepository(private val context: Context) {
      * Anything that is not an [IOException] is a programming error in the mapping below and is left
      * to propagate.
      */
-    val settings: Flow<AppSettings> = context.settingsDataStore.data.catch { error ->
-        if (error is IOException) emit(emptyPreferences()) else throw error
-    }.map(::settingsFrom)
+    val settings: Flow<AppSettings> =
+        context.settingsDataStore.data
+            .catch { error ->
+                if (error is IOException) emit(emptyPreferences()) else throw error
+            }.map(::settingsFrom)
 
     /**
      * Every write goes through here so none of them runs on the caller's dispatcher.
@@ -169,16 +178,22 @@ class SettingsRepository(private val context: Context) {
      * serialised through a single actor, so one transform parked on a stalled dispatcher blocks every
      * later write to this store for the life of the process.
      */
-    private suspend fun editPrefs(block: suspend (MutablePreferences) -> Unit): Preferences =
-        withContext(Dispatchers.IO) { context.settingsDataStore.edit(block) }
+    private suspend fun editPrefs(block: suspend (MutablePreferences) -> Unit): Preferences = withContext(Dispatchers.IO) { context.settingsDataStore.edit(block) }
 
     suspend fun setBiometricUnlock(enabled: Boolean) = editPrefs { it[Keys.biometricUnlock] = enabled }
+
     suspend fun setBlockScreenshots(enabled: Boolean) = editPrefs { it[Keys.blockScreenshots] = enabled }
+
     suspend fun setReconnectAskFirst(enabled: Boolean) = editPrefs { it[Keys.reconnectAskFirst] = enabled }
+
     suspend fun setTerminalKeepSystemBars(enabled: Boolean) = editPrefs { it[Keys.terminalKeepSystemBars] = enabled }
+
     suspend fun setUseTermuxRenderer(enabled: Boolean) = editPrefs { it[Keys.useTermuxRenderer] = enabled }
+
     suspend fun setDarkTheme(enabled: Boolean) = editPrefs { it[Keys.darkTheme] = enabled }
+
     suspend fun setClipboardSeconds(seconds: Int) = editPrefs { it[Keys.clipboardSeconds] = seconds }
+
     suspend fun setKeepAliveSeconds(seconds: Int) = editPrefs { it[Keys.keepAliveSeconds] = seconds }
 
     /**
@@ -186,9 +201,10 @@ class SettingsRepository(private val context: Context) {
      * below 1 s the service would hammer an unreachable host, above 60 s the first retry
      * arrives long after the user gave up.
      */
-    suspend fun setReconnectBaseSeconds(seconds: Int) = editPrefs {
-        it[Keys.reconnectBaseSeconds] = seconds.coerceIn(MIN_RECONNECT_BASE_SECONDS, MAX_RECONNECT_BASE_SECONDS)
-    }
+    suspend fun setReconnectBaseSeconds(seconds: Int) =
+        editPrefs {
+            it[Keys.reconnectBaseSeconds] = seconds.coerceIn(MIN_RECONNECT_BASE_SECONDS, MAX_RECONNECT_BASE_SECONDS)
+        }
 
     /**
      * Number of scrollback lines the terminal buffer holds.
@@ -198,18 +214,21 @@ class SettingsRepository(private val context: Context) {
      * problem on a low-end device (50 000 lines is about 6 MB at 120
      * columns × 4 bytes per cell).
      */
-    suspend fun setTerminalScrollback(lines: Int) = editPrefs {
-        it[Keys.terminalScrollback] = lines.coerceIn(MIN_SCROLLBACK, MAX_SCROLLBACK)
-    }
+    suspend fun setTerminalScrollback(lines: Int) =
+        editPrefs {
+            it[Keys.terminalScrollback] = lines.coerceIn(MIN_SCROLLBACK, MAX_SCROLLBACK)
+        }
 
     /** Cursor style. One of "block", "underline", "bar". */
-    suspend fun setTerminalCursorStyle(style: String) = editPrefs {
-        it[Keys.terminalCursorStyle] = when (style) {
-            "underline" -> "underline"
-            "bar" -> "bar"
-            else -> "block"
+    suspend fun setTerminalCursorStyle(style: String) =
+        editPrefs {
+            it[Keys.terminalCursorStyle] =
+                when (style) {
+                    "underline" -> "underline"
+                    "bar" -> "bar"
+                    else -> "block"
+                }
         }
-    }
 
     /**
      * Bytes per second cap on SFTP transfers. 0 = unlimited.
@@ -218,9 +237,10 @@ class SettingsRepository(private val context: Context) {
      * share the cap (one halves its effective rate for the other to use).
      * That is the simpler model and is what `scp -l` does.
      */
-    suspend fun setTransferBytesPerSecond(bytesPerSecond: Long) = editPrefs {
-        it[Keys.transferBytesPerSecond] = bytesPerSecond.coerceIn(0L, MAX_BANDWIDTH_BYTES_PER_SECOND)
-    }
+    suspend fun setTransferBytesPerSecond(bytesPerSecond: Long) =
+        editPrefs {
+            it[Keys.transferBytesPerSecond] = bytesPerSecond.coerceIn(0L, MAX_BANDWIDTH_BYTES_PER_SECOND)
+        }
 
     /**
      * Remember (or forget) which SAF folder the Local file browser is pointed at.
@@ -228,27 +248,30 @@ class SettingsRepository(private val context: Context) {
      * Null clears the key rather than storing an empty string, so a reader sees "no folder ever
      * picked" and "folder cleared" as the same absent value — there is no meaningful third state.
      */
-    suspend fun setLocalRootUri(uri: String?) = editPrefs {
-        if (uri == null) it.remove(Keys.localRootUri) else it[Keys.localRootUri] = uri
-    }
+    suspend fun setLocalRootUri(uri: String?) =
+        editPrefs {
+            if (uri == null) it.remove(Keys.localRootUri) else it[Keys.localRootUri] = uri
+        }
 
     /**
      * Persist the editor's preferences blob, whole. The editor screen is the only writer: it
      * re-encodes every field on every change (see [EditorPrefsCodec.encode]), so this never
      * merges partial state — a write is either the new complete blob or the old one.
      */
-    suspend fun setEditorPrefsJson(json: String) = editPrefs {
-        it[Keys.editorPrefsJson] = json
-    }
+    suspend fun setEditorPrefsJson(json: String) =
+        editPrefs {
+            it[Keys.editorPrefsJson] = json
+        }
 
     /**
      * Persist the shortcut bar's configuration blob, whole. Same contract as the editor blob: the
      * settings screen is the only writer, it re-encodes every field on every change (see
      * [KeyBarPrefsCodec.encode]), so a write is either the new complete blob or the old one.
      */
-    suspend fun setTerminalKeyBarJson(json: String) = editPrefs {
-        it[Keys.terminalKeyBarJson] = json
-    }
+    suspend fun setTerminalKeyBarJson(json: String) =
+        editPrefs {
+            it[Keys.terminalKeyBarJson] = json
+        }
 
     /**
      * The terminal's text size in sp, clamped to what the app is willing to draw.
@@ -258,13 +281,15 @@ class SettingsRepository(private val context: Context) {
      * fingers can get would otherwise store a font size that leaves one column on screen with no way
      * back except the settings slider.
      */
-    suspend fun setTerminalFontSize(size: Int) = editPrefs {
-        it[Keys.terminalFontSize] = normalizeFontSize(size)
-    }
+    suspend fun setTerminalFontSize(size: Int) =
+        editPrefs {
+            it[Keys.terminalFontSize] = normalizeFontSize(size)
+        }
 
-    suspend fun setTerminalKeyRowVisible(visible: Boolean) = editPrefs {
-        it[Keys.terminalKeyRowVisible] = visible
-    }
+    suspend fun setTerminalKeyRowVisible(visible: Boolean) =
+        editPrefs {
+            it[Keys.terminalKeyRowVisible] = visible
+        }
 
     /**
      * Whether the scrolled-back indicator spells out how many lines behind it is.
@@ -273,9 +298,10 @@ class SettingsRepository(private val context: Context) {
      * the user flipped, every value is a valid one, and the setting cannot be reached from a
      * restored backup in a state the switch itself could not produce.
      */
-    suspend fun setTerminalScrollbackCountVisible(visible: Boolean) = editPrefs {
-        it[Keys.terminalScrollbackCountVisible] = visible
-    }
+    suspend fun setTerminalScrollbackCountVisible(visible: Boolean) =
+        editPrefs {
+            it[Keys.terminalScrollbackCountVisible] = visible
+        }
 
     /**
      * The narrowest grid the pty may be given, or 0 for "fit the screen".
@@ -286,9 +312,10 @@ class SettingsRepository(private val context: Context) {
      * would not be the value in force; above its maximum it would be silently lowered, and the user
      * would be panning across a grid the server never had.
      */
-    suspend fun setTerminalMinColumns(columns: Int) = editPrefs {
-        it[Keys.terminalMinColumns] = normalizeMinColumns(columns)
-    }
+    suspend fun setTerminalMinColumns(columns: Int) =
+        editPrefs {
+            it[Keys.terminalMinColumns] = normalizeMinColumns(columns)
+        }
 
     /**
      * How many rows the pty is told it has, or 0 for "as many as fit the screen".
@@ -309,9 +336,11 @@ class SettingsRepository(private val context: Context) {
      * Normalized rather than trusted for the same reason as every other stored number: only
      * [setTerminalRows] and a restored backup write it, and a backup is a file the user can hand-edit.
      */
-    suspend fun setTerminalRows(rows: Int) = editPrefs {
-        it[Keys.terminalRows] = normalizeRows(rows)
-    }
+    suspend fun setTerminalRows(rows: Int) =
+        editPrefs {
+            it[Keys.terminalRows] = normalizeRows(rows)
+        }
+
     suspend fun setLegacyAlgorithms(enabled: Boolean) = editPrefs { it[Keys.legacyAlgorithms] = enabled }
 
     /**
@@ -321,9 +350,11 @@ class SettingsRepository(private val context: Context) {
      * [setVaultAutoLockMinutes] and a restored backup write it, and a backup is a file the user can
      * hand-edit.
      */
-    suspend fun setVaultAutoLockMinutes(minutes: Int) = editPrefs {
-        it[Keys.vaultAutoLockMinutes] = normalizeVaultAutoLockMinutes(minutes)
-    }
+    suspend fun setVaultAutoLockMinutes(minutes: Int) =
+        editPrefs {
+            it[Keys.vaultAutoLockMinutes] = normalizeVaultAutoLockMinutes(minutes)
+        }
+
     suspend fun setTerminalTheme(name: String) = editPrefs { it[Keys.terminalTheme] = name }
 
     suspend fun setPin(pin: String) {
@@ -347,11 +378,12 @@ class SettingsRepository(private val context: Context) {
         // for as long as the file stayed unreadable. Refusing the attempt fails closed: the PIN gate
         // stays shut, which is the safe direction for a lock, and the next successful write repairs
         // the file the same way the settings flow's own catch does.
-        val prefs = try {
-            context.settingsDataStore.data.first()
-        } catch (error: IOException) {
-            return false
-        }
+        val prefs =
+            try {
+                context.settingsDataStore.data.first()
+            } catch (error: IOException) {
+                return false
+            }
         val hash = prefs[Keys.pinHash] ?: return false
         val salt = prefs[Keys.pinSalt]?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() } ?: return false
         // Same cost as setPin, and this one is worse: it runs on the lock screen that gates app
@@ -359,11 +391,12 @@ class SettingsRepository(private val context: Context) {
         return withContext(Dispatchers.Default) { PinHasher.verify(pin, salt, hash) }
     }
 
-    suspend fun clearPin() = editPrefs {
-        it.remove(Keys.pinHash)
-        it.remove(Keys.pinSalt)
-        it[Keys.pinEnabled] = false
-    }
+    suspend fun clearPin() =
+        editPrefs {
+            it.remove(Keys.pinHash)
+            it.remove(Keys.pinSalt)
+            it[Keys.pinEnabled] = false
+        }
 
     companion object {
         const val DEFAULT_TERMINAL_MIN_COLUMNS = 80
@@ -385,8 +418,7 @@ class SettingsRepository(private val context: Context) {
         val TERMINAL_MIN_COLUMN_CHOICES = listOf(0, 80, 100, 120, 132, 160)
 
         /** 0 stays 0; anything else is pulled inside the range the pty and the buffer share. */
-        fun normalizeMinColumns(columns: Int): Int =
-            if (columns <= 0) 0 else columns.coerceIn(TERMINAL_COLUMN_RANGE)
+        fun normalizeMinColumns(columns: Int): Int = if (columns <= 0) 0 else columns.coerceIn(TERMINAL_COLUMN_RANGE)
 
         const val DEFAULT_TERMINAL_ROWS = 0
 
@@ -411,8 +443,7 @@ class SettingsRepository(private val context: Context) {
         val TERMINAL_ROW_CHOICES = listOf(0, 24, 30, 40, 50, 60, 100, 200, 500, 1000)
 
         /** 0 stays 0; anything else is pulled inside the range the pty and the buffer share. */
-        fun normalizeRows(rows: Int): Int =
-            if (rows <= 0) 0 else rows.coerceIn(TERMINAL_ROW_RANGE)
+        fun normalizeRows(rows: Int): Int = if (rows <= 0) 0 else rows.coerceIn(TERMINAL_ROW_RANGE)
 
         const val DEFAULT_RECONNECT_BASE_SECONDS = 5
         const val MIN_RECONNECT_BASE_SECONDS = 1
@@ -455,7 +486,6 @@ class SettingsRepository(private val context: Context) {
         val VAULT_AUTO_LOCK_CHOICES = listOf(1, 5, 15, 60, 0)
 
         /** 0 stays 0; anything else is pulled inside the range of delays worth offering. */
-        fun normalizeVaultAutoLockMinutes(minutes: Int): Int =
-            if (minutes <= 0) 0 else minutes.coerceIn(1, 60)
+        fun normalizeVaultAutoLockMinutes(minutes: Int): Int = if (minutes <= 0) 0 else minutes.coerceIn(1, 60)
     }
 }

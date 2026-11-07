@@ -7,13 +7,13 @@ import android.content.Context
 import android.os.Looper
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
-import java.util.concurrent.TimeUnit
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
 /**
  * A copied secret leaves the clipboard even if the process that copied it does not survive.
@@ -30,21 +30,23 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SecureClipboardTest {
-
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val clipboard: ClipboardManager get() = context.getSystemService(ClipboardManager::class.java)!!
 
     private fun guard() = context.getSharedPreferences("clipboard_guard", Context.MODE_PRIVATE)
+
     private fun recordedDeadline(): Long = guard().getLong("clear_at", 0L)
+
     private fun setDeadline(atMillis: Long) = guard().edit().putLong("clear_at", atMillis).commit()
 
     /** What is on the clipboard, treating "empty clip" and "no clip" alike - both mean wiped. */
-    private fun clipboardText(): String? = clipboard.primaryClip
-        ?.let { clip ->
-            (0 until clip.itemCount).mapNotNull { runCatching { clip.getItemAt(it).text?.toString() }.getOrNull() }
-                .joinToString(separator = "")
-        }
-        ?.ifEmpty { null }
+    private fun clipboardText(): String? =
+        clipboard.primaryClip
+            ?.let { clip ->
+                (0 until clip.itemCount)
+                    .mapNotNull { runCatching { clip.getItemAt(it).text?.toString() }.getOrNull() }
+                    .joinToString(separator = "")
+            }?.ifEmpty { null }
 
     private fun copyFromAnotherApp(text: String) {
         clipboard.setPrimaryClip(ClipData.newPlainText("Shopping list", text))
@@ -69,7 +71,8 @@ class SecureClipboardTest {
         shadowOf(Looper.getMainLooper()).idleFor(31, TimeUnit.SECONDS)
 
         assertThat(clipboardText()).isNull()
-        assertWithMessage("a fired wipe must not leave a deadline behind").that(recordedDeadline())
+        assertWithMessage("a fired wipe must not leave a deadline behind")
+            .that(recordedDeadline())
             .isEqualTo(0L)
     }
 
@@ -109,7 +112,8 @@ class SecureClipboardTest {
 
         assertWithMessage("wiped something the user copied").that(clipboardText()).isEqualTo("milk, bread")
         assertWithMessage("a stale deadline must not survive to wipe a later clip")
-            .that(recordedDeadline()).isEqualTo(0L)
+            .that(recordedDeadline())
+            .isEqualTo(0L)
     }
 
     @Test

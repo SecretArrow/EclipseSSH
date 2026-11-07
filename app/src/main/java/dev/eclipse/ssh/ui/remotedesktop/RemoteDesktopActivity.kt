@@ -14,11 +14,11 @@ import dev.eclipse.ssh.data.model.RemoteDesktopTarget
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ui.EclipseTheme
+import kotlinx.coroutines.flow.first
+import org.apache.sshd.client.session.ClientSession
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
-import kotlinx.coroutines.flow.first
-import org.apache.sshd.client.session.ClientSession
 
 /**
  * The remote-desktop viewer in its own window, on top of the app - the same shape and the same
@@ -41,7 +41,6 @@ import org.apache.sshd.client.session.ClientSession
  */
 @AndroidEntryPoint
 class RemoteDesktopActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var secureClipboard: SecureClipboard
@@ -73,8 +72,9 @@ class RemoteDesktopActivity : ComponentActivity() {
             // the same store, which DataStore answers from the snapshot the theme read already
             // loaded - cheaper than threading one settings object through two windows.
             val clearAfterSeconds by produceState(initialValue = defaultClearAfterSeconds) {
-                value = runCatching { settingsRepository.settings.first().clearClipboardAfterSeconds }
-                    .getOrDefault(defaultClearAfterSeconds)
+                value =
+                    runCatching { settingsRepository.settings.first().clearClipboardAfterSeconds }
+                        .getOrDefault(defaultClearAfterSeconds)
             }
             EclipseTheme(darkTheme = darkTheme) {
                 RemoteDesktopScreen(

@@ -20,15 +20,6 @@ import dev.eclipse.ssh.data.model.isEnded
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.security.StandInAndroidKeyStore
 import dev.eclipse.ssh.ssh.SshSessionStore
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.security.MessageDigest
-import java.time.Duration
-import java.util.Base64
-import java.util.Collections
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.Environment
@@ -52,6 +43,15 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.security.MessageDigest
+import java.time.Duration
+import java.util.Base64
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Two shells on one host: the duplicate-terminal feature, end to end against a real server.
@@ -75,7 +75,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class DuplicateTerminalRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -150,16 +149,24 @@ class DuplicateTerminalRobolectricTest {
 
         val viewModel = viewModel()
         pumpUntil(describe = { "neither shell echoed: " + diagnose(host.id) }) {
-            viewModel.uiState.value.terminalOutput[first].orEmpty().contains("echo: first-shell") &&
-                viewModel.uiState.value.terminalOutput[second].orEmpty().contains("echo: second-shell")
+            viewModel.uiState.value.terminalOutput[first]
+                .orEmpty()
+                .contains("echo: first-shell") &&
+                viewModel.uiState.value.terminalOutput[second]
+                    .orEmpty()
+                    .contains("echo: second-shell")
         }
         // And only its own: cross-talk here would mean both tabs are reading one buffer.
         assertWithMessage("the first shell's transcript carries the second shell's line")
-            .that(viewModel.uiState.value.terminalOutput[first].orEmpty())
-            .doesNotContain("echo: second-shell")
+            .that(
+                viewModel.uiState.value.terminalOutput[first]
+                    .orEmpty(),
+            ).doesNotContain("echo: second-shell")
         assertWithMessage("the second shell's transcript carries the first shell's line")
-            .that(viewModel.uiState.value.terminalOutput[second].orEmpty())
-            .doesNotContain("echo: first-shell")
+            .that(
+                viewModel.uiState.value.terminalOutput[second]
+                    .orEmpty(),
+            ).doesNotContain("echo: first-shell")
     }
 
     /**
@@ -194,7 +201,9 @@ class DuplicateTerminalRobolectricTest {
         assertThat(store.isLive(survivor.id)).isTrue()
         compose.runOnUiThread { viewModel.sendText(survivor.id, "still-here\n") }
         pumpUntil(describe = { "the survivor stopped echoing after its sibling closed: " + diagnose(host.id) }) {
-            viewModel.uiState.value.terminalOutput[survivor.id].orEmpty().contains("echo: still-here")
+            viewModel.uiState.value.terminalOutput[survivor.id]
+                .orEmpty()
+                .contains("echo: still-here")
         }
 
         // The last close is the one that may clear the host - and must.
@@ -263,38 +272,48 @@ class DuplicateTerminalRobolectricTest {
             viewModel.sendText(second, "fresh-second\n")
         }
         pumpUntil(describe = { "neither shell echoed after the reconnect: " + diagnose(host.id) }) {
-            viewModel.uiState.value.terminalOutput[first].orEmpty().contains("echo: still-first") &&
-                viewModel.uiState.value.terminalOutput[second].orEmpty().contains("echo: fresh-second")
+            viewModel.uiState.value.terminalOutput[first]
+                .orEmpty()
+                .contains("echo: still-first") &&
+                viewModel.uiState.value.terminalOutput[second]
+                    .orEmpty()
+                    .contains("echo: fresh-second")
         }
         assertWithMessage("the first shell's transcript carries the second shell's line")
-            .that(viewModel.uiState.value.terminalOutput[first].orEmpty())
-            .doesNotContain("echo: fresh-second")
+            .that(
+                viewModel.uiState.value.terminalOutput[first]
+                    .orEmpty(),
+            ).doesNotContain("echo: fresh-second")
     }
 
     // ---------------------------------------------------------------- driving the app
 
     /** Connects the shared host with a saved password and waits for the first shell. */
     private fun connectOneShell(): HostProfile {
-        val profile = HostProfile(
-            id = "dup-" + nextHostId++,
-            name = HOST_NAME,
-            host = LOOPBACK,
-            username = USER,
-            port = serverPort,
-            authMethod = AuthMethod.PASSWORD,
-            // Off: this class is about shells, and an SFTP login would put a second channel in the
-            // way of what is being counted.
-            autoLoginSftp = false,
-            fingerprint = serverFingerprint,
-        )
+        val profile =
+            HostProfile(
+                id = "dup-" + nextHostId++,
+                name = HOST_NAME,
+                host = LOOPBACK,
+                username = USER,
+                port = serverPort,
+                authMethod = AuthMethod.PASSWORD,
+                // Off: this class is about shells, and an SFTP login would put a second channel in the
+                // way of what is being counted.
+                autoLoginSftp = false,
+                fingerprint = serverFingerprint,
+            )
         val viewModel = viewModel()
         compose.runOnUiThread {
             viewModel.saveHost(profile, HostCredentialUpdate(password = SecretEdit.Replace(PASSWORD)))
         }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         // saveHost writes the host row first and the credentials after it, in the same guarded
         // launch — the wait above only proves the row landed. Connecting with password = null
         // reads the credential store, and reading it before the write offers the server no auth
@@ -322,24 +341,40 @@ class DuplicateTerminalRobolectricTest {
     private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     /** Reads one of the view model's injected singletons. See `ConnectionMatrixRobolectricTest`. */
-    private fun <T> injected(viewModel: MainViewModel, name: String, type: Class<T>): T =
+    private fun <T> injected(
+        viewModel: MainViewModel,
+        name: String,
+        type: Class<T>,
+    ): T =
         type.cast(
-            MainViewModel::class.java.getDeclaredField(name).apply { isAccessible = true }.get(viewModel),
+            MainViewModel::class.java
+                .getDeclaredField(name)
+                .apply { isAccessible = true }
+                .get(viewModel),
         )!!
 
     /** The host's first tab - the single-session identity every duplicate starts from. */
     private fun tabFor(hostId: String): SessionTab? =
-        viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     /** One tab by its session key, unlike [tabFor] which is by host and so only sees the first. */
     private fun tabById(sessionKey: String): SessionTab? =
-        viewModel().uiState.value.tabs.firstOrNull { it.id == sessionKey }
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.id == sessionKey }
 
     private fun tabsFor(hostId: String): List<SessionTab> =
-        viewModel().uiState.value.tabs.filter { it.hostId == hostId }
+        viewModel()
+            .uiState.value.tabs
+            .filter { it.hostId == hostId }
 
     /** Waits until the host has [count] tabs, and returns them in strip order. */
-    private fun pumpUntilTabs(hostId: String, count: Int): List<SessionTab> {
+    private fun pumpUntilTabs(
+        hostId: String,
+        count: Int,
+    ): List<SessionTab> {
         pumpUntil(describe = { "the host never had $count tabs: " + diagnose(hostId) }) {
             tabsFor(hostId).size >= count
         }
@@ -359,7 +394,11 @@ class DuplicateTerminalRobolectricTest {
     }
 
     /** Waits for a server-side counter to reach [expected], then holds still to prove it stops there. */
-    private fun awaitCount(counter: AtomicInteger, expected: Int, what: String) {
+    private fun awaitCount(
+        counter: AtomicInteger,
+        expected: Int,
+        what: String,
+    ) {
         pumpUntil(describe = { "only ${counter.get()} of $expected $what: " + diagnose("") }) {
             counter.get() >= expected
         }
@@ -383,7 +422,11 @@ class DuplicateTerminalRobolectricTest {
      * satisfied" and loses the real exception. See `ConnectionMatrixRobolectricTest.pumpUntil` for
      * the full reasoning; the shape is copied so the two suites fail in equally readable ways.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -411,6 +454,7 @@ class DuplicateTerminalRobolectricTest {
         const val USER = "testuser"
         const val PASSWORD = "testpass123"
         const val HOST_NAME = "duphost"
+
         /** The line that makes [EchoShell] exit - see the shell's own comment for why it exists. */
         const val DIE = "die"
         const val SETTLE_ROUNDS = 20
@@ -429,29 +473,39 @@ class DuplicateTerminalRobolectricTest {
         fun startServer() {
             StandInAndroidKeyStore.install()
             val root = Files.createTempDirectory("eclipse-duplicate")
-            server = SshServer.setUpDefaultServer().apply {
-                port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("dup-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    authAttempts.incrementAndGet()
-                    user == USER && password == PASSWORD
+            server =
+                SshServer.setUpDefaultServer().apply {
+                    port = 0
+                    keyPairProvider =
+                        SimpleGeneratorHostKeyProvider(
+                            Files.createTempDirectory("dup-hostkey").resolve("hostkey.ser"),
+                        )
+                    passwordAuthenticator =
+                        PasswordAuthenticator { user, password, _ ->
+                            authAttempts.incrementAndGet()
+                            user == USER && password == PASSWORD
+                        }
+                    // Password only, so `authAttempts` counts credentials offered. See
+                    // `ConnectionMatrixRobolectricTest.startEndpoints` for the keyboard-interactive
+                    // double-count this list shape avoids.
+                    userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
+                    subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
+                    fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
+                    shellFactory = ShellFactory { EchoShell() }
+                    start()
                 }
-                // Password only, so `authAttempts` counts credentials offered. See
-                // `ConnectionMatrixRobolectricTest.startEndpoints` for the keyboard-interactive
-                // double-count this list shape avoids.
-                userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
-                subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
-                fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
-                shellFactory = ShellFactory { EchoShell() }
-                start()
-            }
             serverPort = (server.boundAddresses.first() as InetSocketAddress).port
-            serverFingerprint = "SHA256:" + Base64.getEncoder().withoutPadding().encodeToString(
-                MessageDigest.getInstance("SHA-256")
-                    .digest(server.keyPairProvider.loadKeys(null).first().public.encoded),
-            )
+            serverFingerprint = "SHA256:" +
+                Base64.getEncoder().withoutPadding().encodeToString(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(
+                            server.keyPairProvider
+                                .loadKeys(null)
+                                .first()
+                                .public.encoded,
+                        ),
+                )
         }
 
         @JvmStatic
@@ -475,39 +529,55 @@ class DuplicateTerminalRobolectricTest {
         private var exit: ExitCallback? = null
         private var worker: Thread? = null
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            this.exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             shellsStarted.incrementAndGet()
             val source = input ?: return
             val sink = output ?: return
-            worker = Thread {
-                runCatching {
-                    sink.write("eclipse-dup-shell\r\n$ ".toByteArray())
-                    sink.flush()
-                    val line = StringBuilder()
-                    while (true) {
-                        val byte = source.read()
-                        if (byte < 0) break
-                        if (byte == '\n'.code || byte == '\r'.code) {
-                            // The one scripted act this shell performs: exiting on demand, so a test
-                            // can end exactly one of a host's shells without touching its sibling's
-                            // transport (a killed transport is an outage, and the ladder would answer
-                            // it before the test could ask for a reconnect by hand).
-                            if (line.toString() == DIE) break
-                            sink.write("echo: $line\r\n$ ".toByteArray())
-                            sink.flush()
-                            line.setLength(0)
-                        } else {
-                            line.append(byte.toChar())
+            worker =
+                Thread {
+                    runCatching {
+                        sink.write("eclipse-dup-shell\r\n$ ".toByteArray())
+                        sink.flush()
+                        val line = StringBuilder()
+                        while (true) {
+                            val byte = source.read()
+                            if (byte < 0) break
+                            if (byte == '\n'.code || byte == '\r'.code) {
+                                // The one scripted act this shell performs: exiting on demand, so a test
+                                // can end exactly one of a host's shells without touching its sibling's
+                                // transport (a killed transport is an outage, and the ladder would answer
+                                // it before the test could ask for a reconnect by hand).
+                                if (line.toString() == DIE) break
+                                sink.write("echo: $line\r\n$ ".toByteArray())
+                                sink.flush()
+                                line.setLength(0)
+                            } else {
+                                line.append(byte.toChar())
+                            }
                         }
                     }
+                    exit?.onExit(0)
+                }.apply {
+                    isDaemon = true
+                    start()
                 }
-                exit?.onExit(0)
-            }.apply { isDaemon = true; start() }
         }
 
         override fun destroy(channel: ChannelSession) {

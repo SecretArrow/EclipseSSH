@@ -13,7 +13,6 @@ import org.junit.Test
  * terminal that looks connected and silently swallows every keystroke.
  */
 class NetworkTransitionTest {
-
     @Test
     fun `an address that survived the outage resumes the session`() {
         // The common case, and the reason the grace period is worth having: Wi-Fi dropped for a few

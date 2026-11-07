@@ -4,8 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import com.google.common.truth.Truth.assertThat
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -19,6 +17,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowNetwork
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Which platform callback means which thing, which is the whole basis of the grace period.
@@ -32,7 +32,6 @@ import org.robolectric.shadows.ShadowNetwork
  */
 @RunWith(RobolectricTestRunner::class)
 class NetworkSignalTest {
-
     private val scopes = mutableListOf<CoroutineScope>()
 
     @After
@@ -41,8 +40,10 @@ class NetworkSignalTest {
     }
 
     private val manager: ConnectivityManager
-        get() = RuntimeEnvironment.getApplication()
-            .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        get() =
+            RuntimeEnvironment
+                .getApplication()
+                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     /** The callback [NetworkMonitor] registered in its constructor. */
     private fun callback(): ConnectivityManager.NetworkCallback = shadowOf(manager).networkCallbacks.last()

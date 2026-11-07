@@ -28,16 +28,18 @@ private const val E = "\u001B"
  * long as the screen does.
  */
 class AlternateScreenSwitchTest {
-    private fun buffer(columns: Int = 20, rows: Int = 8) =
-        AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 100)
+    private fun buffer(
+        columns: Int = 20,
+        rows: Int = 8,
+    ) = AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 100)
 
     /** The background of every cell of every row on the current screen, as one string per row. */
-    private fun backgrounds(buffer: AnsiTerminalBuffer): List<String> = buffer.snapshot().lines.map { line ->
-        line.joinToString("") { if (it.style.background.isDefault) "." else "#" }
-    }
+    private fun backgrounds(buffer: AnsiTerminalBuffer): List<String> =
+        buffer.snapshot().lines.map { line ->
+            line.joinToString("") { if (it.style.background.isDefault) "." else "#" }
+        }
 
-    private fun text(buffer: AnsiTerminalBuffer): List<String> =
-        buffer.snapshot().lines.map { line -> line.joinToString("") { it.value.toString() }.trimEnd() }
+    private fun text(buffer: AnsiTerminalBuffer): List<String> = buffer.snapshot().lines.map { line -> line.joinToString("") { it.value.toString() }.trimEnd() }
 
     // --- what a switch fills with -----------------------------------------------------------------
 

@@ -14,13 +14,13 @@ import dev.eclipse.ssh.archive.ArchiveEntry
 import dev.eclipse.ssh.ui.archive.ArchiveEntryPreviewActivity
 import dev.eclipse.ssh.ui.preview.ArchivePreviewRequest
 import dev.eclipse.ssh.ui.preview.PreviewRequests
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The archive entry preview's window, as against its content.
@@ -38,11 +38,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ArchiveEntryPreviewActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private fun entry(path: String, contents: String) = ArchiveEntry(
+    private fun entry(
+        path: String,
+        contents: String,
+    ) = ArchiveEntry(
         path = path,
         isDirectory = false,
         size = contents.length.toLong(),
@@ -54,7 +56,11 @@ class ArchiveEntryPreviewActivityRobolectricTest {
     )
 
     /** The intent the app itself builds, so the handoff's two halves are the shipped ones. */
-    private fun intentFor(path: String, contents: String, readable: Boolean = true): Intent {
+    private fun intentFor(
+        path: String,
+        contents: String,
+        readable: Boolean = true,
+    ): Intent {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return ArchiveEntryPreviewActivity.intent(
             context = context,
@@ -70,7 +76,11 @@ class ArchiveEntryPreviewActivityRobolectricTest {
     }
 
     /** As the file preview's: `idleFor`, because the entry is read on a coroutine that comes due. */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -112,12 +122,15 @@ class ArchiveEntryPreviewActivityRobolectricTest {
      */
     @Test
     fun anEntryWithNoReaderSaysSoRatherThanShowingNothing() {
-        ActivityScenario.launch<ArchiveEntryPreviewActivity>(intentFor("logs/app.log", "boom", readable = false))
+        ActivityScenario
+            .launch<ArchiveEntryPreviewActivity>(intentFor("logs/app.log", "boom", readable = false))
             .use { scenario ->
                 assertThat(scenario.state).isEqualTo(Lifecycle.State.RESUMED)
                 pumpUntil(describe = { "the refusal never reached the window" }) {
-                    compose.onAllNodesWithText("No preview for this file type inside the archive.")
-                        .fetchSemanticsNodes().isNotEmpty()
+                    compose
+                        .onAllNodesWithText("No preview for this file type inside the archive.")
+                        .fetchSemanticsNodes()
+                        .isNotEmpty()
                 }
                 // And the bytes are nowhere near it: the closure it does not have was never invented.
                 assertThat(compose.onAllNodesWithText("boom").fetchSemanticsNodes()).isEmpty()
@@ -148,9 +161,10 @@ class ArchiveEntryPreviewActivityRobolectricTest {
                 compose.onAllNodesWithText("first.log").fetchSemanticsNodes().isNotEmpty()
             }
 
-            val second = PreviewRequests.putArchiveEntry(
-                ArchivePreviewRequest(entry("logs/second.log", "two")) { "two".toByteArray() },
-            )
+            val second =
+                PreviewRequests.putArchiveEntry(
+                    ArchivePreviewRequest(entry("logs/second.log", "two")) { "two".toByteArray() },
+                )
             secondToken = second
             scenario.onActivity { activity -> activity.onPreviewToken(second) }
 

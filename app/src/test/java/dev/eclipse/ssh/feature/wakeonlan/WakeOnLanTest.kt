@@ -1,12 +1,12 @@
 package dev.eclipse.ssh.feature.wakeonlan
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import org.junit.Test
 
 /**
  * The Wake-on-LAN sender, on the plain JVM.
@@ -17,7 +17,6 @@ import org.junit.Test
  * of holding it as constructor state.
  */
 class WakeOnLanTest {
-
     private val mac = byteArrayOf(0x4C.toByte(), 0x2E.toByte(), 0x81.toByte(), 0x1A.toByte(), 0x02.toByte(), 0xF7.toByte())
 
     @Test

@@ -15,7 +15,6 @@ import org.junit.Test
  * in [TerminalKeys] itself: an escape byte in a test file is as invisible as one in production source.
  */
 class TerminalKeysTest {
-
     // region printable characters
 
     @Test
@@ -346,14 +345,15 @@ class TerminalKeysTest {
         val CTRL_ALT = TerminalModifiers(ctrl = true, alt = true)
         val CTRL_SHIFT = TerminalModifiers(ctrl = true, shift = true)
 
-        val MODIFIER_SETS = listOf(
-            TerminalModifiers.NONE,
-            CTRL,
-            ALT,
-            SHIFT,
-            CTRL_ALT,
-            CTRL_SHIFT,
-            TerminalModifiers(ctrl = true, alt = true, shift = true),
-        )
+        val MODIFIER_SETS =
+            listOf(
+                TerminalModifiers.NONE,
+                CTRL,
+                ALT,
+                SHIFT,
+                CTRL_ALT,
+                CTRL_SHIFT,
+                TerminalModifiers(ctrl = true, alt = true, shift = true),
+            )
     }
 }

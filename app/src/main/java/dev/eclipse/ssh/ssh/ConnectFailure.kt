@@ -11,23 +11,25 @@ import org.apache.sshd.common.SshException
  * what a retry is for. These four describe a decision: no algorithm in common, a host key the user has
  * not accepted, a credential the server rejected, a user name it will not serve.
  */
-private val FINAL_DISCONNECT_CODES = setOf(
-    SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED,
-    SshConstants.SSH2_DISCONNECT_HOST_KEY_NOT_VERIFIABLE,
-    SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,
-    SshConstants.SSH2_DISCONNECT_ILLEGAL_USER_NAME,
-)
+private val FINAL_DISCONNECT_CODES =
+    setOf(
+        SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED,
+        SshConstants.SSH2_DISCONNECT_HOST_KEY_NOT_VERIFIABLE,
+        SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE,
+        SshConstants.SSH2_DISCONNECT_ILLEGAL_USER_NAME,
+    )
 
 /**
  * The messages SSHD raises locally, before any disconnect packet is exchanged, for the same three
  * decisions. Host key verification and algorithm negotiation both happen before that point, so the
  * code alone would miss them on some paths.
  */
-private val FINAL_FAILURE_MARKERS = listOf(
-    "Unable to negotiate",
-    "Server key did not validate",
-    "No more authentication methods available",
-)
+private val FINAL_FAILURE_MARKERS =
+    listOf(
+        "Unable to negotiate",
+        "Server key did not validate",
+        "No more authentication methods available",
+    )
 
 /**
  * What MINA leaves behind when the TCP connection was accepted and then dropped before the SSH
@@ -43,10 +45,11 @@ private val FINAL_FAILURE_MARKERS = listOf(
  * Recognised because MINA's own text for it is unusable on screen: it names an internal exception class
  * and prints both socket addresses, one of which is the device's own address on the local network.
  */
-private val HANDSHAKE_CLOSED_MARKERS = listOf(
-    "MissingAttachedSessionException",
-    "No session attached",
-)
+private val HANDSHAKE_CLOSED_MARKERS =
+    listOf(
+        "MissingAttachedSessionException",
+        "No session attached",
+    )
 
 /**
  * The messages a server leaves when what it refused was the *credential*, not the connection.
@@ -56,13 +59,14 @@ private val HANDSHAKE_CLOSED_MARKERS = listOf(
  * has exhausted its methods, a keyboard-interactive refusal often surfaces only as the server's own
  * "Permission denied", and a PAM stack reports "authentication failed" from deep inside MINA.
  */
-private val CREDENTIAL_REJECTION_MARKERS = listOf(
-    "no more authentication methods available",
-    "authentication failed",
-    "auth fail",
-    "permission denied",
-    "too many authentication failures",
-)
+private val CREDENTIAL_REJECTION_MARKERS =
+    listOf(
+        "no more authentication methods available",
+        "authentication failed",
+        "auth fail",
+        "permission denied",
+        "too many authentication failures",
+    )
 
 /**
  * Whether the server was reached and turned the *login* away — the password, the key, or the right
@@ -160,8 +164,9 @@ fun describeConnectFailure(error: Throwable?): String {
         return "The server refused the login. The password or key may be wrong, or the account may " +
             "not be allowed to sign in this way. ($message)"
     }
-    val negotiation = (error as? SshException)?.disconnectCode == SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED ||
-        "Unable to negotiate" in message
+    val negotiation =
+        (error as? SshException)?.disconnectCode == SshConstants.SSH2_DISCONNECT_KEY_EXCHANGE_FAILED ||
+            "Unable to negotiate" in message
     if (!negotiation) return message
     return "No algorithm in common with the server. If it is an old server, turn on " +
         "Legacy algorithms in Settings. ($message)"
@@ -175,23 +180,25 @@ fun describeConnectFailure(error: Throwable?): String {
  * server has no subsystem factory, and a plain "subsystem" mention when it declines the request by
  * name. All of them mean the same thing to the user, and none of them means the shell is broken.
  */
-private val SFTP_UNAVAILABLE_MARKERS = listOf(
-    "subsystem",
-    "unknown channel",
-    "SSH_OPEN_UNKNOWN_CHANNEL_TYPE",
-    "SSH_OPEN_ADMINISTRATIVELY_PROHIBITED",
-)
+private val SFTP_UNAVAILABLE_MARKERS =
+    listOf(
+        "subsystem",
+        "unknown channel",
+        "SSH_OPEN_UNKNOWN_CHANNEL_TYPE",
+        "SSH_OPEN_ADMINISTRATIVELY_PROHIBITED",
+    )
 
 /** Markers for a transport that went away before the second channel could be opened. */
-private val SFTP_CLOSED_MARKERS = listOf(
-    "session is closed",
-    "session closed",
-    "channel is closed",
-    "closed session",
-    "socket is closed",
-    "connection reset",
-    "connection lost",
-)
+private val SFTP_CLOSED_MARKERS =
+    listOf(
+        "session is closed",
+        "session closed",
+        "channel is closed",
+        "closed session",
+        "socket is closed",
+        "connection reset",
+        "connection lost",
+    )
 
 /**
  * Why SFTP is unavailable, phrased for a person rather than for a log.
@@ -209,10 +216,11 @@ private val SFTP_CLOSED_MARKERS = listOf(
  */
 fun describeSftpFailure(error: Throwable?): String {
     if (error == null) return "SFTP is unavailable"
-    val chain = generateSequence(error) { previous -> previous.cause?.takeIf { it !== previous } }
-        .take(MAX_CAUSE_DEPTH)
-        .mapNotNull { it.message }
-        .joinToString(separator = " ")
+    val chain =
+        generateSequence(error) { previous -> previous.cause?.takeIf { it !== previous } }
+            .take(MAX_CAUSE_DEPTH)
+            .mapNotNull { it.message }
+            .joinToString(separator = " ")
     return when {
         // A dropped transport is checked first, and the order is load-bearing. MINA wraps whatever
         // went wrong in "Failed to open subsystem sftp", so a session that died mid-handshake carries

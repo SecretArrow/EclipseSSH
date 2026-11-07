@@ -1,13 +1,13 @@
 package dev.eclipse.ssh.linux
 
 import dev.eclipse.ssh.ssh.TerminalChannel
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The table of live local userspace sessions — which open terminal channels belong to the Linux
@@ -41,14 +41,16 @@ class LinuxSessionRegistry(
      */
     private val supervision: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
-
     private val sessions = ConcurrentHashMap<String, TerminalChannel>()
 
     private val _sessionCount = MutableStateFlow(0)
     val sessionCount: StateFlow<Int> = _sessionCount
 
     /** Records an open local session under its session key. Registering twice keeps the last. */
-    fun register(sessionKey: String, channel: TerminalChannel) {
+    fun register(
+        sessionKey: String,
+        channel: TerminalChannel,
+    ) {
         sessions[sessionKey] = channel
         recount()
         supervision.launch {

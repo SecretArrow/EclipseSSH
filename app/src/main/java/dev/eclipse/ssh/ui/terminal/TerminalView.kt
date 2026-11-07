@@ -5,14 +5,14 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.scrollable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,9 +38,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -52,17 +51,17 @@ import dev.eclipse.ssh.terminal.MouseModes
 import dev.eclipse.ssh.terminal.TERMINAL_COLUMN_RANGE
 import dev.eclipse.ssh.terminal.TERMINAL_ROW_RANGE
 import dev.eclipse.ssh.terminal.TerminalCell
+import dev.eclipse.ssh.terminal.TerminalColor
+import dev.eclipse.ssh.terminal.TerminalCursorShape
 import dev.eclipse.ssh.terminal.TerminalFrame
 import dev.eclipse.ssh.terminal.TerminalLayout
 import dev.eclipse.ssh.terminal.TerminalSelection
-import dev.eclipse.ssh.terminal.layoutKey
-import dev.eclipse.ssh.terminal.terminalLayout
-import dev.eclipse.ssh.terminal.wrapsForDisplay
-import dev.eclipse.ssh.terminal.TerminalColor
-import dev.eclipse.ssh.terminal.TerminalCursorShape
 import dev.eclipse.ssh.terminal.TerminalStyle
 import dev.eclipse.ssh.terminal.TerminalViewport
 import dev.eclipse.ssh.terminal.TerminalVisualRow
+import dev.eclipse.ssh.terminal.layoutKey
+import dev.eclipse.ssh.terminal.terminalLayout
+import dev.eclipse.ssh.terminal.wrapsForDisplay
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.floor
@@ -76,8 +75,13 @@ import kotlin.math.floor
  * one. [width] is deliberately a float: an advance is rarely a whole number of pixels, and rounding
  * each glyph before multiplying compounds into several lost columns across a line.
  */
-data class TerminalCellMetrics(val width: Float, val height: Float, val baseline: Float) {
+data class TerminalCellMetrics(
+    val width: Float,
+    val height: Float,
+    val baseline: Float,
+) {
     fun columnsIn(pixels: Float): Int = if (width <= 0f) 0 else floor(pixels / width).toInt()
+
     fun rowsIn(pixels: Float): Int = if (height <= 0f) 0 else floor(pixels / height).toInt()
 
     /**
@@ -94,7 +98,10 @@ data class TerminalCellMetrics(val width: Float, val height: Float, val baseline
      * Bounded below at zero because a window narrower than one cell still has to report one column -
      * the pty cannot be told it has none - and that makes the remainder negative.
      */
-    fun gridIn(widthPx: Float, heightPx: Float): TerminalGrid {
+    fun gridIn(
+        widthPx: Float,
+        heightPx: Float,
+    ): TerminalGrid {
         val columns = columnsIn(widthPx).coerceAtLeast(1)
         val rows = rowsIn(heightPx).coerceAtLeast(1)
         return TerminalGrid(
@@ -107,7 +114,12 @@ data class TerminalCellMetrics(val width: Float, val height: Float, val baseline
 }
 
 /** How many cells fit in a window, and the offset that centres them in it. */
-data class TerminalGrid(val columns: Int, val rows: Int, val originX: Float, val originY: Float)
+data class TerminalGrid(
+    val columns: Int,
+    val rows: Int,
+    val originX: Float,
+    val originY: Float,
+)
 
 /**
  * The same grid, widened to at least [minColumns] columns.
@@ -169,8 +181,10 @@ fun TerminalGrid.atLeastRows(minRows: Int): TerminalGrid {
  * a ceiling: the app-wide setting says how narrow a terminal the user is willing to read anywhere, and
  * the host's says this particular server needs at least that much to format itself.
  */
-internal fun minTerminalColumns(settingColumns: Int, hostColumns: Int): Int =
-    maxOf(settingColumns.coerceAtLeast(0), hostColumns.coerceAtLeast(0))
+internal fun minTerminalColumns(
+    settingColumns: Int,
+    hostColumns: Int,
+): Int = maxOf(settingColumns.coerceAtLeast(0), hostColumns.coerceAtLeast(0))
 
 /**
  * The same grid, shortened to a host's chosen height when that is shorter than the app-wide one.
@@ -187,12 +201,14 @@ internal fun minTerminalColumns(settingColumns: Int, hostColumns: Int): Int =
  *
  * Zero means "no opinion", the same sentinel the stored setting uses.
  */
-fun TerminalGrid.atMostRows(hostRows: Int): TerminalGrid =
-    if (hostRows in 1 until rows) copy(rows = hostRows) else this
+fun TerminalGrid.atMostRows(hostRows: Int): TerminalGrid = if (hostRows in 1 until rows) copy(rows = hostRows) else this
 
 /** Remembers the cell metrics for [style], measuring a run of glyphs rather than a single one. */
 @Composable
-fun rememberTerminalCellMetrics(style: TextStyle, measurer: TextMeasurer = rememberTextMeasurer()): TerminalCellMetrics =
+fun rememberTerminalCellMetrics(
+    style: TextStyle,
+    measurer: TextMeasurer = rememberTextMeasurer(),
+): TerminalCellMetrics =
     remember(style, measurer) {
         val measured = measurer.measure(AnnotatedString(MEASURE_RUN), style)
         TerminalCellMetrics(
@@ -224,8 +240,10 @@ private const val MEASURE_RUN = "MMMMMMMMMMMMMMMMMMMM"
  * that has not been measured yet; the floor keeps that from becoming a negative padding, which Compose
  * rejects at runtime.
  */
-fun terminalTextInset(screenWidthDp: Int, screenHeightDp: Int): Dp =
-    (minOf(screenWidthDp, screenHeightDp) * TEXT_INSET_FRACTION).dp.coerceAtLeast(0.dp)
+fun terminalTextInset(
+    screenWidthDp: Int,
+    screenHeightDp: Int,
+): Dp = (minOf(screenWidthDp, screenHeightDp) * TEXT_INSET_FRACTION).dp.coerceAtLeast(0.dp)
 
 private const val TEXT_INSET_FRACTION = 0.01f
 
@@ -371,9 +389,10 @@ fun TerminalView(
         // screen; `grid` is what the pty is told it has, which is at least as wide and usually as tall.
         // They are the same object whenever both settings are "fit screen".
         val visible = remember(metrics, widthPx, heightPx) { metrics.gridIn(widthPx, heightPx) }
-        val grid = remember(visible, minColumns, minRows, hostRows) {
-            visible.atLeastColumns(minColumns).atLeastRows(minRows).atMostRows(hostRows)
-        }
+        val grid =
+            remember(visible, minColumns, minRows, hostRows) {
+                visible.atLeastColumns(minColumns).atLeastRows(minRows).atMostRows(hostRows)
+            }
         // What the pty is told it has, which is the grid except while a program is painting the screen.
         //
         // `vim`, `htop`, `less` and `nano` address every cell positionally and draw their own borders
@@ -388,13 +407,14 @@ fun TerminalView(
         // explicitly configured for thirty.
         val ptyRows = if (frame.alternateScreen) minOf(visible.rows, grid.rows) else grid.rows
         val origin = remember(visible) { Offset(visible.originX, visible.originY) }
-        val viewport = TerminalViewport(
-            columns = grid.columns,
-            ptyRows = ptyRows,
-            bufferRows = grid.rows,
-            visibleRows = visible.rows,
-            visibleColumns = visible.columns,
-        )
+        val viewport =
+            TerminalViewport(
+                columns = grid.columns,
+                ptyRows = ptyRows,
+                bufferRows = grid.rows,
+                visibleRows = visible.rows,
+                visibleColumns = visible.columns,
+            )
         // Reported on every size change, including the one the software keyboard causes: the pty has
         // to know the window it is drawing into or a full-screen program wraps its own status line.
         // Keyed on the whole value, so entering and leaving an alternate screen reports the changed
@@ -413,9 +433,10 @@ fun TerminalView(
         // The height here is the *visible* one. A tall grid is a taller pty, not a taller screen, and the
         // frame the buffer hands over is already the window around the cursor - laying it out for a
         // thousand rows would wrap and bottom-anchor against space that is not on the phone.
-        val layout = remember(layoutKey(frame, visible.columns, visible.rows)) {
-            terminalLayout(frame, visible.columns, visible.rows)
-        }
+        val layout =
+            remember(layoutKey(frame, visible.columns, visible.rows)) {
+                terminalLayout(frame, visible.columns, visible.rows)
+            }
         // Read from the long-lived gesture handlers, which are keyed on the metrics and would otherwise
         // map a touch through the layout of whichever frame was on screen when they were installed.
         val currentLayout by rememberUpdatedState(layout)
@@ -445,20 +466,21 @@ fun TerminalView(
         // rather than snapshot state because no composition and no draw reads it.
         val lastFollowNanos = remember { longArrayOf(0L) }
         LaunchedEffect(layout.cursorColumn, layout.cursorRowInk, layout.cursorRow, maxPan, visible.columns, metrics.width) {
-            val target = panForCursor(
-                current = pan.floatValue,
-                // The cursor's column *within its row*. On a wrapped line the two differ, and following
-                // the line's column would pan a window whose text is already on screen.
-                cursorColumn = layout.cursorColumn,
-                // And this is what the cursor is read as once a program has parked it past the row's
-                // text - see [panForCursor]. Keyed above, because deleting text moves the row's end
-                // without moving the cursor.
-                cursorRowInk = layout.cursorRowInk,
-                cursorOnScreen = layout.cursorRow >= 0,
-                cellWidth = metrics.width,
-                visibleWidthPx = visibleWidthPx,
-                maxPan = maxPan,
-            )
+            val target =
+                panForCursor(
+                    current = pan.floatValue,
+                    // The cursor's column *within its row*. On a wrapped line the two differ, and following
+                    // the line's column would pan a window whose text is already on screen.
+                    cursorColumn = layout.cursorColumn,
+                    // And this is what the cursor is read as once a program has parked it past the row's
+                    // text - see [panForCursor]. Keyed above, because deleting text moves the row's end
+                    // without moving the cursor.
+                    cursorRowInk = layout.cursorRowInk,
+                    cursorOnScreen = layout.cursorRow >= 0,
+                    cellWidth = metrics.width,
+                    visibleWidthPx = visibleWidthPx,
+                    maxPan = maxPan,
+                )
             val now = System.nanoTime()
             val sinceLastFollow = now - lastFollowNanos[0]
             lastFollowNanos[0] = now
@@ -552,60 +574,66 @@ fun TerminalView(
         val owedSteps = remember { IntArray(1) }
         val drawnOffset = remember { IntArray(1) }
 
-        val scrollState = rememberScrollableState { delta ->
-            // The drag's delta is positive toward the live end; the accumulator's is positive into the
-            // history, which is the sign `onScroll` documents - and the sign this handler used before
-            // the accumulator existed, when the remainder arithmetic cancelled out to the same thing.
-            val backPx = currentBackPx
-            val forwardPx = currentForwardPx
-            // Where the drag goes is asked before the step is charged rather than when the gesture
-            // starts: a program can turn its mouse reporting on mid-drag, and the answer is read from
-            // the frame being drawn so the two can never disagree about who owns the screen.
-            val target = dragTarget(currentFrame.mouseMode, currentFrame.mouseSgr, currentFrame.alternateScreen)
-            // A drag the program owns is not a scroll, and it is not charged against the accumulator
-            // either: those pixels are spent as the reports the finger produced, and a step taken out of
-            // the same travel would be a second answer to one gesture.
-            var steps = if (target == DragTarget.Motion) 0 else scrollAccumulator.dragBy(-delta, backPx, forwardPx)
-            if (steps == 0 && target == DragTarget.Scrollback) {
-                // Guarded by the offset this view believes it is at, not by the one the frame carries:
-                // frames arrive through a StateFlow, so the frame can still be one publication behind
-                // and an ungated commit would take the same end twice.
-                steps = freeStep(
-                    scrollAccumulator.pendingPx,
-                    backPx,
-                    forwardPx,
-                    currentFrame.scrollOffset + owedSteps[0],
-                    currentFrame.scrollCeiling,
-                )
-            }
-            // Only the scrollback draws a shift: a wheel report, an arrow key and a drag the program
-            // owns are all answered by the program moving something of its own, and translating this
-            // screen would slide the picture out from under the answer it is about to receive.
-            scrollShift.floatValue =
-                if (target == DragTarget.Scrollback) scrollShiftPx(scrollAccumulator.pendingPx, backPx, forwardPx)
-                else 0f
-            if (steps != 0) {
-                owedSteps[0] += steps
-                val up = steps > 0
-                when (target) {
-                    DragTarget.Scrollback -> scrollCallback(steps)
-                    // Reported where the finger is, from the last event the gesture handler saw - a
-                    // wheel belongs to the pane or panel under the pointer, not to the one the cursor
-                    // happens to be on.
-                    DragTarget.Wheel -> {
-                        val (column, row) = Offset(pointerAt[0], pointerAt[1])
-                            .toScreenCell(metrics, origin, pan.floatValue, visible.columns, visible.rows)
-                        mouseWheel(up, column, row, abs(steps))
-                    }
-                    DragTarget.Arrows -> arrowKeys(up, abs(steps))
-                    // Nothing here, and nothing above either: a motion report is one per cell the finger
-                    // crosses rather than one per line of travel, and the gesture loop is what sees every
-                    // cell, so the loop is what reports them.
-                    DragTarget.Motion -> Unit
+        val scrollState =
+            rememberScrollableState { delta ->
+                // The drag's delta is positive toward the live end; the accumulator's is positive into the
+                // history, which is the sign `onScroll` documents - and the sign this handler used before
+                // the accumulator existed, when the remainder arithmetic cancelled out to the same thing.
+                val backPx = currentBackPx
+                val forwardPx = currentForwardPx
+                // Where the drag goes is asked before the step is charged rather than when the gesture
+                // starts: a program can turn its mouse reporting on mid-drag, and the answer is read from
+                // the frame being drawn so the two can never disagree about who owns the screen.
+                val target = dragTarget(currentFrame.mouseMode, currentFrame.mouseSgr, currentFrame.alternateScreen)
+                // A drag the program owns is not a scroll, and it is not charged against the accumulator
+                // either: those pixels are spent as the reports the finger produced, and a step taken out of
+                // the same travel would be a second answer to one gesture.
+                var steps = if (target == DragTarget.Motion) 0 else scrollAccumulator.dragBy(-delta, backPx, forwardPx)
+                if (steps == 0 && target == DragTarget.Scrollback) {
+                    // Guarded by the offset this view believes it is at, not by the one the frame carries:
+                    // frames arrive through a StateFlow, so the frame can still be one publication behind
+                    // and an ungated commit would take the same end twice.
+                    steps =
+                        freeStep(
+                            scrollAccumulator.pendingPx,
+                            backPx,
+                            forwardPx,
+                            currentFrame.scrollOffset + owedSteps[0],
+                            currentFrame.scrollCeiling,
+                        )
                 }
+                // Only the scrollback draws a shift: a wheel report, an arrow key and a drag the program
+                // owns are all answered by the program moving something of its own, and translating this
+                // screen would slide the picture out from under the answer it is about to receive.
+                scrollShift.floatValue =
+                    if (target == DragTarget.Scrollback) {
+                        scrollShiftPx(scrollAccumulator.pendingPx, backPx, forwardPx)
+                    } else {
+                        0f
+                    }
+                if (steps != 0) {
+                    owedSteps[0] += steps
+                    val up = steps > 0
+                    when (target) {
+                        DragTarget.Scrollback -> scrollCallback(steps)
+                        // Reported where the finger is, from the last event the gesture handler saw - a
+                        // wheel belongs to the pane or panel under the pointer, not to the one the cursor
+                        // happens to be on.
+                        DragTarget.Wheel -> {
+                            val (column, row) =
+                                Offset(pointerAt[0], pointerAt[1])
+                                    .toScreenCell(metrics, origin, pan.floatValue, visible.columns, visible.rows)
+                            mouseWheel(up, column, row, abs(steps))
+                        }
+                        DragTarget.Arrows -> arrowKeys(up, abs(steps))
+                        // Nothing here, and nothing above either: a motion report is one per cell the finger
+                        // crosses rather than one per line of travel, and the gesture loop is what sees every
+                        // cell, so the loop is what reports them.
+                        DragTarget.Motion -> Unit
+                    }
+                }
+                delta
             }
-            delta
-        }
 
         // A zoom re-prices every pixel the accumulator is holding - the travel was measured against rows
         // of a different height - so it goes, along with the shift it was drawing.
@@ -657,38 +685,42 @@ fun TerminalView(
         // to foundation. What matters here is the unit, not the curve - the decay runs in the same
         // pixels the drag does, so a flick carries on at the rate the finger left it whatever the line
         // heights are - and `exponentialDecay` is the one public spec that answers in those units.
-        val fling = remember {
-            TerminalFlingBehavior(exponentialDecay<Float>()) { velocity ->
-                val flings = dragTarget(
-                    currentFrame.mouseMode,
-                    currentFrame.mouseSgr,
-                    currentFrame.alternateScreen,
-                ) == DragTarget.Scrollback
-                when {
-                    !flings -> 0f
-                    // The velocity arrives in the drag's convention, not the accumulator's: negative is
-                    // towards the history, where the room left is what the ceiling still has above the
-                    // offset - priced at the step the fling is about to cross, which is the one that
-                    // direction is charged for, and at a cell where that step is free.
-                    velocity < 0f -> flingRoomPx(
-                        currentFrame.scrollCeiling - currentFrame.scrollOffset,
-                        currentBackPx,
-                        metrics.height,
-                    )
-                    else -> flingRoomPx(currentFrame.scrollOffset, currentForwardPx, metrics.height)
+        val fling =
+            remember {
+                TerminalFlingBehavior(exponentialDecay<Float>()) { velocity ->
+                    val flings =
+                        dragTarget(
+                            currentFrame.mouseMode,
+                            currentFrame.mouseSgr,
+                            currentFrame.alternateScreen,
+                        ) == DragTarget.Scrollback
+                    when {
+                        !flings -> 0f
+                        // The velocity arrives in the drag's convention, not the accumulator's: negative is
+                        // towards the history, where the room left is what the ceiling still has above the
+                        // offset - priced at the step the fling is about to cross, which is the one that
+                        // direction is charged for, and at a cell where that step is free.
+                        velocity < 0f ->
+                            flingRoomPx(
+                                currentFrame.scrollCeiling - currentFrame.scrollOffset,
+                                currentBackPx,
+                                metrics.height,
+                            )
+                        else -> flingRoomPx(currentFrame.scrollOffset, currentForwardPx, metrics.height)
+                    }
                 }
             }
-        }
 
         // Pixels, not columns, and clamped rather than accumulated: a pan has no rounding to carry
         // because the offset it produces is the offset that is drawn. Reporting only what was actually
         // consumed is what lets a drag past either end hand the gesture back instead of swallowing it.
-        val panState = rememberScrollableState { delta ->
-            val before = pan.floatValue
-            val after = (before - delta).coerceIn(0f, maxPan)
-            pan.floatValue = after
-            before - after
-        }
+        val panState =
+            rememberScrollableState { delta ->
+                val before = pan.floatValue
+                val after = (before - delta).coerceIn(0f, maxPan)
+                pan.floatValue = after
+                before - after
+            }
 
         Box(
             Modifier
@@ -718,14 +750,18 @@ fun TerminalView(
                         // returned: this runs on every move of every gesture, and a Pair per event is an
                         // allocation a drag does not need. The geometry comes through the state wrappers
                         // above, because this loop outlives a recomposition.
-                        fun cellAt(position: Offset, out: IntArray) {
-                            val (column, row) = position.toScreenCell(
-                                reportMetrics,
-                                reportOrigin,
-                                pan.floatValue,
-                                reportColumns,
-                                reportRows,
-                            )
+                        fun cellAt(
+                            position: Offset,
+                            out: IntArray,
+                        ) {
+                            val (column, row) =
+                                position.toScreenCell(
+                                    reportMetrics,
+                                    reportOrigin,
+                                    pan.floatValue,
+                                    reportColumns,
+                                    reportRows,
+                                )
                             out[0] = column
                             out[1] = row
                         }
@@ -733,7 +769,10 @@ fun TerminalView(
                         // Whether the program is owed a gesture. Asked per report rather than once at the
                         // down, because a program can turn its mouse reporting on or off in the middle of
                         // a gesture and the frame being drawn is the only thing that knows.
-                        fun owed(gesture: MouseGesture, held: Boolean) = MouseModes.reports(
+                        fun owed(
+                            gesture: MouseGesture,
+                            held: Boolean,
+                        ) = MouseModes.reports(
                             currentFrame.mouseMode,
                             currentFrame.mouseSgr,
                             gesture,
@@ -749,7 +788,11 @@ fun TerminalView(
                         val downCell = IntArray(2).also { cellAt(down.position, it) }
                         // The cell the finger is on, and the last cell a report named - the down cell
                         // until a movement report replaces it.
-                        val at = IntArray(2).also { it[0] = downCell[0]; it[1] = downCell[1] }
+                        val at =
+                            IntArray(2).also {
+                                it[0] = downCell[0]
+                                it[1] = downCell[1]
+                            }
                         var namedX = downCell[0]
                         var namedY = downCell[1]
                         var moved = false
@@ -792,7 +835,8 @@ fun TerminalView(
                                 // see, and sub-cell jitter inside a cell is not a report either. A motion
                                 // is a button held and moving, so the lift - which is the release below -
                                 // is not one.
-                                if (fingers == 1 && (at[0] != namedX || at[1] != namedY) &&
+                                if (fingers == 1 &&
+                                    (at[0] != namedX || at[1] != namedY) &&
                                     owed(MouseGesture.MOTION, held = true)
                                 ) {
                                     if (!pressSent) {
@@ -829,8 +873,7 @@ fun TerminalView(
                             }
                         }
                     }
-                }
-                .pointerInput(metrics, origin) {
+                }.pointerInput(metrics, origin) {
                     detectTapGestures(
                         onTap = { position ->
                             val (line, column) =
@@ -847,8 +890,7 @@ fun TerminalView(
                             longPress(line, column)
                         },
                     )
-                }
-                .pointerInput(metrics, origin) {
+                }.pointerInput(metrics, origin) {
                     var anchor: TerminalSelection? = null
                     var moved = false
                     detectDragGesturesAfterLongPress(
@@ -870,8 +912,7 @@ fun TerminalView(
                         onDragEnd = { if (moved) anchor?.let(selectionFinished) },
                         onDragCancel = { if (moved) selectionCallback(null) },
                     )
-                }
-                .drawBehind {
+                }.drawBehind {
                     // Erased first, and erased here rather than by anything above: this is the node that
                     // paints the frame, so it is the node that has to clear it.
                     //
@@ -967,8 +1008,9 @@ private fun Offset.toCell(
     // Through the layout, because the row under the finger is a *visual* row: on a wrapped line the
     // third row of the screen can be the second half of the second line of output, and a selection
     // addressed by screen row would copy text from somewhere else entirely.
-    val visual = layout.rows.getOrNull(row)
-        ?: return frame.firstLine to column.coerceAtLeast(0)
+    val visual =
+        layout.rows.getOrNull(row)
+            ?: return frame.firstLine to column.coerceAtLeast(0)
     return (frame.firstLine + visual.line) to (visual.from + column).coerceAtLeast(0)
 }
 
@@ -1016,25 +1058,32 @@ private class ClusterWidthCache {
     private val widths = HashMap<String, Float>()
 
     /** Whether this cell's cluster draws from a face that advances it by exactly one cell. */
-    fun spendsOneCell(cell: TerminalCell, textStyle: TextStyle, measurer: TextMeasurer, cellWidth: Float): Boolean {
+    fun spendsOneCell(
+        cell: TerminalCell,
+        textStyle: TextStyle,
+        measurer: TextMeasurer,
+        cellWidth: Float,
+    ): Boolean {
         if (clusterIsCertainlyOneCell(cell.value, cell.combining)) return true
         val cluster = cell.value + cell.combining
         // A blank cell has no ink to misplace, and a space is the one glyph every face carries.
         if (cluster.isBlank()) return true
-        val key = buildString(cluster.length + 2) {
-            append(if (cell.style.bold) 'b' else '-')
-            append(if (cell.style.italic) 'i' else '-')
-            append(cluster)
-        }
-        val width = widths.getOrPut(key) {
-            // Bounded, because a screen of text nobody types twice would otherwise grow this for as
-            // long as the session lives. Emptying it costs one measurement per cluster to refill.
-            if (widths.size >= MAX_CACHED_CLUSTERS) widths.clear()
-            // Measured as a repeat for the same reason the cell itself is: one measurement rounds to a
-            // whole pixel, which at a phone's font size is a fifth of the difference being looked for.
-            val measured = measurer.measure(AnnotatedString(cluster.repeat(CLUSTER_MEASURE_REPEAT)), textStyle)
-            measured.size.width.toFloat() / CLUSTER_MEASURE_REPEAT
-        }
+        val key =
+            buildString(cluster.length + 2) {
+                append(if (cell.style.bold) 'b' else '-')
+                append(if (cell.style.italic) 'i' else '-')
+                append(cluster)
+            }
+        val width =
+            widths.getOrPut(key) {
+                // Bounded, because a screen of text nobody types twice would otherwise grow this for as
+                // long as the session lives. Emptying it costs one measurement per cluster to refill.
+                if (widths.size >= MAX_CACHED_CLUSTERS) widths.clear()
+                // Measured as a repeat for the same reason the cell itself is: one measurement rounds to a
+                // whole pixel, which at a phone's font size is a fifth of the difference being looked for.
+                val measured = measurer.measure(AnnotatedString(cluster.repeat(CLUSTER_MEASURE_REPEAT)), textStyle)
+                measured.size.width.toFloat() / CLUSTER_MEASURE_REPEAT
+            }
         return clusterFitsOneCell(width, cellWidth)
     }
 }
@@ -1090,7 +1139,12 @@ private fun DrawScope.drawFrame(
 
     // The rows a drag uncovers above and below the window are drawn by the window's own body, so the
     // wrap, the run-breaking and the combining marks are handled in one place instead of three.
-    fun paintRow(line: List<TerminalCell>, visual: TerminalVisualRow, top: Float, absoluteLine: Int) {
+    fun paintRow(
+        line: List<TerminalCell>,
+        visual: TerminalVisualRow,
+        top: Float,
+        absoluteLine: Int,
+    ) {
         // The row's own columns, and only those: the layout has already dropped the trailing blanks and
         // decided where a line too wide for the window breaks. Bounded by the line again because the
         // layout and the frame are read at slightly different moments while output is arriving.
@@ -1122,18 +1176,19 @@ private fun DrawScope.drawFrame(
             // The face this cell is drawn from, decided before the run is delimited rather than by the
             // platform when the glyph turns out to be missing. See [terminalFaceFor].
             val face = terminalFaceFor(cell.value, cell.combining)
-            val glyphStyle = style.merge(
-                TextStyle(
-                    color = resolved.foreground,
-                    // No weight and no slant on a symbol cell: one symbol cut is bundled, so asking for
-                    // bold would have Compose synthesise it by smearing the outline, and a synthesised
-                    // glyph is the one thing that can move off the cell this renderer keeps it on.
-                    fontWeight = if (face == TerminalFace.TEXT && cell.style.bold) FontWeight.Bold else null,
-                    fontStyle = if (face == TerminalFace.TEXT && cell.style.italic) FontStyle.Italic else null,
-                    fontFamily = face.family,
-                    textDecoration = decorationFor(cell),
-                ),
-            )
+            val glyphStyle =
+                style.merge(
+                    TextStyle(
+                        color = resolved.foreground,
+                        // No weight and no slant on a symbol cell: one symbol cut is bundled, so asking for
+                        // bold would have Compose synthesise it by smearing the outline, and a synthesised
+                        // glyph is the one thing that can move off the cell this renderer keeps it on.
+                        fontWeight = if (face == TerminalFace.TEXT && cell.style.bold) FontWeight.Bold else null,
+                        fontStyle = if (face == TerminalFace.TEXT && cell.style.italic) FontStyle.Italic else null,
+                        fontFamily = face.family,
+                        textDecoration = decorationFor(cell),
+                    ),
+                )
             // A run is a stretch of cells drawn as one string, so it is a stretch of cells of one style
             // *and* one face: the two faces are different typefaces at different advances, and a string
             // drawn in one of them cannot carry a glyph that belongs to the other. The face is part of
@@ -1152,16 +1207,17 @@ private fun DrawScope.drawFrame(
             // own cell. A cluster that measures one cell - which is every character of the face that
             // draws it, now that a symbol cell names a face that has the glyph - leaves the run whole,
             // so a line of ordinary output is still the single draw call it was.
-            val end = glyphRunEnd(
-                from = column,
-                lastColumn = lastColumn,
-                joins = {
-                    line[it].style == cell.style &&
-                        line[it].hyperlink == cell.hyperlink &&
-                        terminalFaceFor(line[it].value, line[it].combining) == face
-                },
-                fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
-            )
+            val end =
+                glyphRunEnd(
+                    from = column,
+                    lastColumn = lastColumn,
+                    joins = {
+                        line[it].style == cell.style &&
+                            line[it].hyperlink == cell.hyperlink &&
+                            terminalFaceFor(line[it].value, line[it].combining) == face
+                    },
+                    fitsOneCell = { clusters.spendsOneCell(line[it], glyphStyle, measurer, cellWidth) },
+                )
             // A wide character's right half is a blank cell and belongs in that character's run. The
             // run's own background is painted before its text, so a run that began on the right half
             // would paint its background across the second column of the glyph - half a character, in
@@ -1174,12 +1230,13 @@ private fun DrawScope.drawFrame(
             // would silently drop every accent and every zero-width joiner from what is drawn - and,
             // since a run is measured as a whole, it would also shift the ink of every glyph after the
             // one that lost its mark.
-            val text = buildString(runEnd - column) {
-                for (index in column until runEnd) {
-                    append(line[index].value)
-                    append(line[index].combining)
+            val text =
+                buildString(runEnd - column) {
+                    for (index in column until runEnd) {
+                        append(line[index].value)
+                        append(line[index].combining)
+                    }
                 }
-            }
             // Relative to the row, not to the line: a wrapped continuation is drawn from the left margin.
             val left = (column - visual.from) * cellWidth
             val runWidth = (runEnd - column) * cellWidth
@@ -1261,26 +1318,29 @@ private fun DrawScope.drawFrame(
         val left = layout.cursorColumn * cellWidth
         val top = layout.cursorRow * cellHeight + shift
         when (frame.cursorShape) {
-            TerminalCursorShape.BLOCK -> drawRect(
-                cursorColour,
-                topLeft = Offset(left, top),
-                size = Size(cellWidth, cellHeight),
-                style = Stroke(width = CURSOR_STROKE),
-            )
+            TerminalCursorShape.BLOCK ->
+                drawRect(
+                    cursorColour,
+                    topLeft = Offset(left, top),
+                    size = Size(cellWidth, cellHeight),
+                    style = Stroke(width = CURSOR_STROKE),
+                )
             // At the bottom edge of the cell, inside it rather than under it, so it cannot bleed into
             // the row below.
-            TerminalCursorShape.UNDERLINE -> drawRect(
-                cursorColour,
-                topLeft = Offset(left, top + cellHeight - CURSOR_STROKE),
-                size = Size(cellWidth, CURSOR_STROKE),
-            )
+            TerminalCursorShape.UNDERLINE ->
+                drawRect(
+                    cursorColour,
+                    topLeft = Offset(left, top + cellHeight - CURSOR_STROKE),
+                    size = Size(cellWidth, CURSOR_STROKE),
+                )
             // The left edge, which is where an insertion point belongs: the caret sits *before* the
             // character it would replace rather than over it.
-            TerminalCursorShape.BAR -> drawRect(
-                cursorColour,
-                topLeft = Offset(left, top),
-                size = Size(CURSOR_STROKE, cellHeight),
-            )
+            TerminalCursorShape.BAR ->
+                drawRect(
+                    cursorColour,
+                    topLeft = Offset(left, top),
+                    size = Size(CURSOR_STROKE, cellHeight),
+                )
         }
     }
 }
@@ -1314,7 +1374,11 @@ internal fun composingPreview(
 }
 
 /** A cell of the layout and the provisional text drawn in it. */
-internal data class ComposingPreview(val row: Int, val column: Int, val text: String)
+internal data class ComposingPreview(
+    val row: Int,
+    val column: Int,
+    val text: String,
+)
 
 /**
  * Half the blink period. 500 ms on, 500 ms off - close enough to xterm's 530 that it reads as a
@@ -1367,4 +1431,7 @@ private const val OPAQUE = 0xFF000000.toInt()
 
 private const val DIM_ALPHA = 0.55f
 
-private data class ResolvedColours(val foreground: Color, val background: Color?)
+private data class ResolvedColours(
+    val foreground: Color,
+    val background: Color?,
+)

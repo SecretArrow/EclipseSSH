@@ -22,7 +22,6 @@ import dev.eclipse.ssh.security.StandInAndroidKeyStore
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopActivity
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopRequest
 import dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopRequests
-import java.time.Duration
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -32,6 +31,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The host card's "VNC Viewer" item and where it leads, and its RDP sibling "RDP Viewer".
@@ -53,7 +53,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class RemoteDesktopEntryRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -82,7 +81,9 @@ class RemoteDesktopEntryRobolectricTest {
         runCatching {
             val viewModel = viewModel()
             compose.runOnUiThread {
-                viewModel.uiState.value.hosts.filter { it.id.startsWith(ID_PREFIX) }.forEach(viewModel::deleteHost)
+                viewModel.uiState.value.hosts
+                    .filter { it.id.startsWith(ID_PREFIX) }
+                    .forEach(viewModel::deleteHost)
             }
         }
     }
@@ -104,7 +105,8 @@ class RemoteDesktopEntryRobolectricTest {
         openRemoteDesktopMenu(host)
 
         assertWithMessage("the item did not open the endpoint dialog")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
         // Nothing was launched either: a host with no target must not open a viewer that has
         // nothing to dial.
@@ -128,7 +130,8 @@ class RemoteDesktopEntryRobolectricTest {
         pumpUntil(describe = { "the viewer never started" }) { startedRemoteDesktopViewer() }
         // No endpoint dialog in the way: the saved target is the answer to the dialog's question.
         assertWithMessage("a saved target still asked before opening")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(before)
 
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertThat(intent?.getStringExtra(RemoteDesktopActivity.EXTRA_REQUEST_TOKEN)).isNotEmpty()
@@ -146,9 +149,11 @@ class RemoteDesktopEntryRobolectricTest {
         openRemoteDesktopMenu(host)
 
         assertWithMessage("the parked target was opened without asking")
-            .that(startedRemoteDesktopViewer()).isFalse()
+            .that(startedRemoteDesktopViewer())
+            .isFalse()
         assertWithMessage("the item did not open the endpoint dialog")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
     }
 
@@ -173,11 +178,13 @@ class RemoteDesktopEntryRobolectricTest {
 
         listOf("VNC Viewer", "RDP Viewer").forEach { label ->
             assertWithMessage("the menu does not offer $label")
-                .that(compose.onAllNodesWithText(label).fetchSemanticsNodes()).isNotEmpty()
+                .that(compose.onAllNodesWithText(label).fetchSemanticsNodes())
+                .isNotEmpty()
         }
         listOf("Remote desktop", "RDP desktop").forEach { umbrella ->
             assertWithMessage("$umbrella is back in the menu, beside the protocol-named item")
-                .that(compose.onAllNodesWithText(umbrella).fetchSemanticsNodes()).isEmpty()
+                .that(compose.onAllNodesWithText(umbrella).fetchSemanticsNodes())
+                .isEmpty()
         }
     }
 
@@ -207,7 +214,9 @@ class RemoteDesktopEntryRobolectricTest {
         }
 
         pumpUntil(describe = { "the target never reached the host" }) {
-            viewModel().uiState.value.hosts.any { it.id == host.id && it.remoteDesktop == "V:5901 view-only" }
+            viewModel()
+                .uiState.value.hosts
+                .any { it.id == host.id && it.remoteDesktop == "V:5901 view-only" }
         }
         assertThat(viewModel().remoteDesktopSessionProvider(host.id)()).isNull()
     }
@@ -227,7 +236,8 @@ class RemoteDesktopEntryRobolectricTest {
         openRdpMenu(host)
 
         assertWithMessage("the item did not open the RDP endpoint dialog")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
         assertThat(startedRemoteDesktopViewer()).isFalse()
     }
@@ -245,7 +255,8 @@ class RemoteDesktopEntryRobolectricTest {
 
         pumpUntil(describe = { "the viewer never started" }) { startedRemoteDesktopViewer() }
         assertWithMessage("a saved target still asked before opening")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(before)
 
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertThat(intent?.getStringExtra(RemoteDesktopActivity.EXTRA_REQUEST_TOKEN)).isNotEmpty()
@@ -260,9 +271,11 @@ class RemoteDesktopEntryRobolectricTest {
         openRdpMenu(host)
 
         assertWithMessage("the parked target was opened without asking")
-            .that(startedRemoteDesktopViewer()).isFalse()
+            .that(startedRemoteDesktopViewer())
+            .isFalse()
         assertWithMessage("the item did not open the RDP endpoint dialog")
-            .that(ShadowDialog.getShownDialogs().size).isGreaterThan(before)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isGreaterThan(before)
         assertThat(ShadowDialog.getLatestDialog()?.isShowing).isTrue()
     }
 
@@ -295,12 +308,15 @@ class RemoteDesktopEntryRobolectricTest {
         openRdpMenu(host)
         pumpUntil(describe = { "the viewer never started" }) { startedRemoteDesktopViewer() }
 
-        val token = shadowOf(compose.activity.application).peekNextStartedActivity()
-            ?.getStringExtra(RemoteDesktopActivity.EXTRA_REQUEST_TOKEN)
+        val token =
+            shadowOf(compose.activity.application)
+                .peekNextStartedActivity()
+                ?.getStringExtra(RemoteDesktopActivity.EXTRA_REQUEST_TOKEN)
         assertWithMessage("the viewer was started without a handoff token").that(token).isNotEmpty()
         val request = RemoteDesktopRequests.take(checkNotNull(token))
         assertWithMessage("the RDP item handed the viewer a VNC request")
-            .that(request).isInstanceOf(RemoteDesktopRequest.Rdp::class.java)
+            .that(request)
+            .isInstanceOf(RemoteDesktopRequest.Rdp::class.java)
         request as RemoteDesktopRequest.Rdp
         assertThat(request.target).isEqualTo(RemoteDesktopTarget(port = 3389))
         assertThat(request.credentials?.username).isEqualTo("administrator")
@@ -321,12 +337,15 @@ class RemoteDesktopEntryRobolectricTest {
         openRdpMenu(host)
         pumpUntil(describe = { "the viewer never started" }) { startedRemoteDesktopViewer() }
 
-        val token = shadowOf(compose.activity.application).peekNextStartedActivity()
-            ?.getStringExtra(RemoteDesktopActivity.EXTRA_REQUEST_TOKEN)
+        val token =
+            shadowOf(compose.activity.application)
+                .peekNextStartedActivity()
+                ?.getStringExtra(RemoteDesktopActivity.EXTRA_REQUEST_TOKEN)
         assertWithMessage("the viewer was started without a handoff token").that(token).isNotEmpty()
         val request = RemoteDesktopRequests.take(checkNotNull(token))
         assertWithMessage("the RDP item handed the viewer a VNC request")
-            .that(request).isInstanceOf(RemoteDesktopRequest.Rdp::class.java)
+            .that(request)
+            .isInstanceOf(RemoteDesktopRequest.Rdp::class.java)
         request as RemoteDesktopRequest.Rdp
         assertThat(request.credentials).isNull()
         assertThat(request.credentialsComplete).isFalse()
@@ -357,9 +376,15 @@ class RemoteDesktopEntryRobolectricTest {
         }
 
         pumpUntil(describe = { "the RDP target never reached the host" }) {
-            viewModel().uiState.value.hosts.any { it.id == host.id && it.remoteDesktop == "V:10.0.1.5:5901\nR:3389 view-only" }
+            viewModel()
+                .uiState.value.hosts
+                .any { it.id == host.id && it.remoteDesktop == "V:10.0.1.5:5901\nR:3389 view-only" }
         }
-        val column = viewModel().uiState.value.hosts.first { it.id == host.id }.remoteDesktop
+        val column =
+            viewModel()
+                .uiState.value.hosts
+                .first { it.id == host.id }
+                .remoteDesktop
         val decoded = decodeRemoteDesktop(column)
         assertThat(decoded.vnc).isEqualTo(RemoteDesktopTarget(host = "10.0.1.5", port = 5901))
         assertThat(decoded.rdp).isEqualTo(RemoteDesktopTarget(port = 3389, viewOnly = true))
@@ -397,7 +422,9 @@ class RemoteDesktopEntryRobolectricTest {
 
         compose.runOnUiThread { viewModel().deleteHost(host) }
         pumpUntil(describe = { "the host never went away" }) {
-            viewModel().uiState.value.hosts.none { it.id == host.id }
+            viewModel()
+                .uiState.value.hosts
+                .none { it.id == host.id }
         }
 
         assertThat(awaitRdpCredentials(host.id) { it == null }).isNull()
@@ -411,20 +438,25 @@ class RemoteDesktopEntryRobolectricTest {
      * Saves a host through the view model and waits for its card, so the kebab below it is on
      * screen before anything clicks it.
      */
-    private fun addHost(name: String, remoteDesktop: String = ""): HostProfile {
+    private fun addHost(
+        name: String,
+        remoteDesktop: String = "",
+    ): HostProfile {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = ID_PREFIX + nextId++,
-            name = name,
-            host = "desktop.example.test",
-            username = "tester",
-            port = 22,
-            remoteDesktop = remoteDesktop,
-        )
+        val profile =
+            HostProfile(
+                id = ID_PREFIX + nextId++,
+                name = name,
+                host = "desktop.example.test",
+                username = "tester",
+                port = 22,
+                remoteDesktop = remoteDesktop,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host never reached the list" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
         pumpUntil(describe = { "the card never appeared for $name" }) {
             compose.onAllNodesWithContentDescription("More actions for $name").fetchSemanticsNodes().isNotEmpty()
@@ -464,7 +496,10 @@ class RemoteDesktopEntryRobolectricTest {
      * coordinates; a menu that does open is still asserted to hold the item, so a missing item
      * stays a failure.
      */
-    private fun openKebabMenu(hostName: String, offering: String) {
+    private fun openKebabMenu(
+        hostName: String,
+        offering: String,
+    ) {
         val kebab = "More actions for $hostName"
         repeat(KEBAB_OPEN_ATTEMPTS) {
             compose.onNodeWithContentDescription(kebab).performClick()
@@ -519,8 +554,10 @@ class RemoteDesktopEntryRobolectricTest {
 
     /** Whether the viewer activity was started, by peeking at what the application recorded. */
     private fun startedRemoteDesktopViewer(): Boolean =
-        runCatching { shadowOf(compose.activity.application).peekNextStartedActivity() }.getOrNull()
-            ?.component?.className == "dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopActivity"
+        runCatching { shadowOf(compose.activity.application).peekNextStartedActivity() }
+            .getOrNull()
+            ?.component
+            ?.className == "dev.eclipse.ssh.ui.remotedesktop.RemoteDesktopActivity"
 
     private fun pump(frames: Int = 12) {
         repeat(frames) {
@@ -534,12 +571,19 @@ class RemoteDesktopEntryRobolectricTest {
      * Drives frames until [condition] holds, then fails with [describe] - the house `pumpUntil`,
      * copied from `HostAndThemeUiRobolectricTest` so this class owns its own clock.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         check(waitFor(timeoutMs, condition)) { "timed out after ${timeoutMs}ms: ${describe()}" }
     }
 
     /** [pumpUntil]'s loop without the failure, for callers that retry rather than give up. */
-    private fun waitFor(timeoutMs: Long, condition: () -> Boolean): Boolean {
+    private fun waitFor(
+        timeoutMs: Long,
+        condition: () -> Boolean,
+    ): Boolean {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()

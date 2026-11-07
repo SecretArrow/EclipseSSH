@@ -15,7 +15,6 @@ package dev.eclipse.ssh.feature.search
  * itself does not need an Activity to be testable.
  */
 object TerminalSearch {
-
     /**
      * One match in the scrollback: a 1-based line number and the
      * column at which the query starts on that line. The terminal's
@@ -93,7 +92,11 @@ object TerminalSearch {
      * Returns 0 for an empty query, which the UI surfaces as "no
      * matches" rather than "0 matches".
      */
-    fun count(scrollback: List<String>, query: String, ignoreCase: Boolean = true): Int {
+    fun count(
+        scrollback: List<String>,
+        query: String,
+        ignoreCase: Boolean = true,
+    ): Int {
         if (query.isEmpty()) return 0
         return scrollback.count { it.contains(query, ignoreCase) }
     }

@@ -32,7 +32,11 @@ enum class TokenKind {
  * [end] is always greater than [start]; the lexer never emits zero-length tokens, because a
  * zero-length span is invisible and only ever surprised the code applying it.
  */
-data class Token(val kind: TokenKind, val start: Int, val end: Int)
+data class Token(
+    val kind: TokenKind,
+    val start: Int,
+    val end: Int,
+)
 
 /**
  * One language's lexing rules, as plain data: a class rather than a sealed hierarchy because the
@@ -73,7 +77,6 @@ class SyntaxLanguage(
     val keyValueMode: Boolean = false,
     val keySeparators: Set<Char> = emptySet(),
 ) {
-
     /**
      * Prefix lists sorted longest-first once, so the lexer's "does any prefix match here" probe is
      * a single ordered scan and a match can never be shadowed by its own prefix (`--` vs `--[[`).
@@ -117,48 +120,49 @@ class SyntaxLanguage(
  * some extension it is not.
  */
 object SyntaxRegistry {
+    private val exactNames: Map<String, SyntaxLanguage> =
+        mapOf(
+            "dockerfile" to SyntaxLanguages.DOCKERFILE,
+            "makefile" to SyntaxLanguages.MAKEFILE,
+            "gnumakefile" to SyntaxLanguages.MAKEFILE,
+            ".gitignore" to SyntaxLanguages.PROPERTIES,
+            ".dockerignore" to SyntaxLanguages.PROPERTIES,
+            ".env" to SyntaxLanguages.PROPERTIES,
+            ".editorconfig" to SyntaxLanguages.INI,
+            ".bashrc" to SyntaxLanguages.SHELL,
+            ".bash_profile" to SyntaxLanguages.SHELL,
+            ".profile" to SyntaxLanguages.SHELL,
+            ".zshrc" to SyntaxLanguages.SHELL,
+        )
 
-    private val exactNames: Map<String, SyntaxLanguage> = mapOf(
-        "dockerfile" to SyntaxLanguages.DOCKERFILE,
-        "makefile" to SyntaxLanguages.MAKEFILE,
-        "gnumakefile" to SyntaxLanguages.MAKEFILE,
-        ".gitignore" to SyntaxLanguages.PROPERTIES,
-        ".dockerignore" to SyntaxLanguages.PROPERTIES,
-        ".env" to SyntaxLanguages.PROPERTIES,
-        ".editorconfig" to SyntaxLanguages.INI,
-        ".bashrc" to SyntaxLanguages.SHELL,
-        ".bash_profile" to SyntaxLanguages.SHELL,
-        ".profile" to SyntaxLanguages.SHELL,
-        ".zshrc" to SyntaxLanguages.SHELL,
-    )
-
-    private val byExtension: Map<String, SyntaxLanguage> = buildMap {
-        for (ext in listOf("kt", "kts")) put(ext, SyntaxLanguages.KOTLIN)
-        put("java", SyntaxLanguages.JAVA)
-        for (ext in listOf("py", "pyw")) put(ext, SyntaxLanguages.PYTHON)
-        for (ext in listOf("js", "mjs", "cjs", "jsx")) put(ext, SyntaxLanguages.JAVASCRIPT)
-        for (ext in listOf("ts", "tsx", "d.ts")) put(ext, SyntaxLanguages.TYPESCRIPT)
-        put("json", SyntaxLanguages.JSON)
-        for (ext in listOf("xml", "html", "htm", "xhtml", "svg", "xsl")) put(ext, SyntaxLanguages.XML)
-        for (ext in listOf("yaml", "yml")) put(ext, SyntaxLanguages.YAML)
-        put("toml", SyntaxLanguages.TOML)
-        for (ext in listOf("sh", "bash", "zsh", "ksh")) put(ext, SyntaxLanguages.SHELL)
-        for (ext in listOf("c", "h")) put(ext, SyntaxLanguages.C)
-        for (ext in listOf("cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx")) put(ext, SyntaxLanguages.CPP)
-        put("go", SyntaxLanguages.GO)
-        put("rs", SyntaxLanguages.RUST)
-        put("sql", SyntaxLanguages.SQL)
-        put("php", SyntaxLanguages.PHP)
-        put("rb", SyntaxLanguages.RUBY)
-        for (ext in listOf("md", "markdown")) put(ext, SyntaxLanguages.MARKDOWN)
-        put("properties", SyntaxLanguages.PROPERTIES)
-        for (ext in listOf("ini", "conf", "cfg")) put(ext, SyntaxLanguages.INI)
-        put("dockerfile", SyntaxLanguages.DOCKERFILE)
-        put("mk", SyntaxLanguages.MAKEFILE)
-        put("cs", SyntaxLanguages.CSHARP)
-        put("lua", SyntaxLanguages.LUA)
-        for (ext in listOf("pl", "pm")) put(ext, SyntaxLanguages.PERL)
-    }
+    private val byExtension: Map<String, SyntaxLanguage> =
+        buildMap {
+            for (ext in listOf("kt", "kts")) put(ext, SyntaxLanguages.KOTLIN)
+            put("java", SyntaxLanguages.JAVA)
+            for (ext in listOf("py", "pyw")) put(ext, SyntaxLanguages.PYTHON)
+            for (ext in listOf("js", "mjs", "cjs", "jsx")) put(ext, SyntaxLanguages.JAVASCRIPT)
+            for (ext in listOf("ts", "tsx", "d.ts")) put(ext, SyntaxLanguages.TYPESCRIPT)
+            put("json", SyntaxLanguages.JSON)
+            for (ext in listOf("xml", "html", "htm", "xhtml", "svg", "xsl")) put(ext, SyntaxLanguages.XML)
+            for (ext in listOf("yaml", "yml")) put(ext, SyntaxLanguages.YAML)
+            put("toml", SyntaxLanguages.TOML)
+            for (ext in listOf("sh", "bash", "zsh", "ksh")) put(ext, SyntaxLanguages.SHELL)
+            for (ext in listOf("c", "h")) put(ext, SyntaxLanguages.C)
+            for (ext in listOf("cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx")) put(ext, SyntaxLanguages.CPP)
+            put("go", SyntaxLanguages.GO)
+            put("rs", SyntaxLanguages.RUST)
+            put("sql", SyntaxLanguages.SQL)
+            put("php", SyntaxLanguages.PHP)
+            put("rb", SyntaxLanguages.RUBY)
+            for (ext in listOf("md", "markdown")) put(ext, SyntaxLanguages.MARKDOWN)
+            put("properties", SyntaxLanguages.PROPERTIES)
+            for (ext in listOf("ini", "conf", "cfg")) put(ext, SyntaxLanguages.INI)
+            put("dockerfile", SyntaxLanguages.DOCKERFILE)
+            put("mk", SyntaxLanguages.MAKEFILE)
+            put("cs", SyntaxLanguages.CSHARP)
+            put("lua", SyntaxLanguages.LUA)
+            for (ext in listOf("pl", "pm")) put(ext, SyntaxLanguages.PERL)
+        }
 
     /** The language for [name], or null when the name carries no evidence. */
     fun forFileName(name: String): SyntaxLanguage? {
@@ -201,8 +205,9 @@ object SyntaxRegistry {
  * The class is stateless per call and depends only on Kotlin's stdlib, so it runs identically in
  * the app and in plain JVM unit tests.
  */
-class SyntaxHighlighter(private val language: SyntaxLanguage) {
-
+class SyntaxHighlighter(
+    private val language: SyntaxLanguage,
+) {
     /** The colored spans of [source], in order, covering every non-whitespace character. */
     fun highlight(source: String): List<Token> {
         val builder = TokenList()
@@ -220,7 +225,12 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * Stops before a newline (leaving it unconsumed) when [stopAtNewline], which is how the
      * key-value driver keeps its line-oriented key rule in charge of line starts.
      */
-    private fun lexCore(source: String, from: Int, builder: TokenList, stopAtNewline: Boolean): Int {
+    private fun lexCore(
+        source: String,
+        from: Int,
+        builder: TokenList,
+        stopAtNewline: Boolean,
+    ): Int {
         val n = source.length
         var i = from
         while (i < n) {
@@ -337,7 +347,12 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * documented editor behavior, chosen so a half-typed string does not color the rest of the
      * file.
      */
-    private fun lexString(source: String, start: Int, quote: Char, builder: TokenList): Int {
+    private fun lexString(
+        source: String,
+        start: Int,
+        quote: Char,
+        builder: TokenList,
+    ): Int {
         val n = source.length
         val escape = language.escapeChar
         var j = start + 1
@@ -367,7 +382,12 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * in code need. The strict shape is what keeps `'a str` from being read as an unterminated
      * char. On success the return value is one past the closing quote, the caller's next offset.
      */
-    private fun tryCharLiteral(source: String, start: Int, quote: Char, builder: TokenList): Int {
+    private fun tryCharLiteral(
+        source: String,
+        start: Int,
+        quote: Char,
+        builder: TokenList,
+    ): Int {
         val lineEnd = source.indexOf('\n', start).let { if (it == -1) source.length else it }
         var j = start + 1
         if (j >= lineEnd) return start
@@ -399,7 +419,10 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * decimal digits with `_`, optional fractional part, optional exponent with sign; a leading
      * `.` starts a number only when a digit follows.
      */
-    private fun numberEnd(source: String, i: Int): Int {
+    private fun numberEnd(
+        source: String,
+        i: Int,
+    ): Int {
         val n = source.length
         val c = source[i]
         if (c == '0' && i + 1 < n && (source[i + 1] == 'x' || source[i + 1] == 'X')) {
@@ -432,7 +455,11 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
     }
 
     /** Keyword, then builtin, then the capitalized heuristic, then plain - in that precedence. */
-    private fun classifyWord(source: String, start: Int, end: Int): TokenKind {
+    private fun classifyWord(
+        source: String,
+        start: Int,
+        end: Int,
+    ): TokenKind {
         val word = source.substring(start, end)
         if (language.isKeyword(word)) return TokenKind.KEYWORD
         if (language.isBuiltin(word)) return TokenKind.BUILTIN
@@ -440,14 +467,16 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
         return TokenKind.PLAIN
     }
 
-    private fun isIdentifierStart(c: Char): Boolean =
-        c.isLetter() || c == '_' || c in language.identifierExtraStart
+    private fun isIdentifierStart(c: Char): Boolean = c.isLetter() || c == '_' || c in language.identifierExtraStart
 
-    private fun isIdentifierPart(c: Char): Boolean =
-        c.isLetterOrDigit() || c == '_' || c in language.identifierExtraStart
+    private fun isIdentifierPart(c: Char): Boolean = c.isLetterOrDigit() || c == '_' || c in language.identifierExtraStart
 
     /** The longest entry of [prefixes] that [source] has at [i], or null. */
-    private fun matchPrefix(source: String, i: Int, prefixes: List<String>): String? {
+    private fun matchPrefix(
+        source: String,
+        i: Int,
+        prefixes: List<String>,
+    ): String? {
         var best: String? = null
         for (prefix in prefixes) {
             if (prefix.length > (best?.length ?: 0) && source.startsWith(prefix, i)) best = prefix
@@ -466,14 +495,21 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * recipe, a bare scalar - is lexed generically from its start, so `- foo` still gets its
      * dash and strings colored.
      */
-    private fun highlightKeyValue(source: String, builder: TokenList) {
+    private fun highlightKeyValue(
+        source: String,
+        builder: TokenList,
+    ) {
         var i = 0
         while (i < source.length) {
             i = keyValueLine(source, i, builder)
         }
     }
 
-    private fun keyValueLine(source: String, start: Int, builder: TokenList): Int {
+    private fun keyValueLine(
+        source: String,
+        start: Int,
+        builder: TokenList,
+    ): Int {
         val n = source.length
         var i = start
         while (i < n && (source[i] == ' ' || source[i] == '\t')) i++
@@ -529,8 +565,13 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
         // from being mistaken for keys: a word followed by more words is not a key, and a word
         // followed only by spaces then a separator is.
         var j = i
-        while (j < lineEnd && source[j] != ' ' && source[j] != '\t' && source[j] != '\r' &&
-            source[j] !in language.keySeparators && source[j] != '"' && source[j] != '\''
+        while (j < lineEnd &&
+            source[j] != ' ' &&
+            source[j] != '\t' &&
+            source[j] != '\r' &&
+            source[j] !in language.keySeparators &&
+            source[j] != '"' &&
+            source[j] != '\''
         ) {
             j++
         }
@@ -545,13 +586,20 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
     }
 
     /** Runs the generic lexer to [lineEnd] and steps past the newline that ended the line. */
-    private fun coreToLineEnd(source: String, from: Int, lineEnd: Int, builder: TokenList): Int {
+    private fun coreToLineEnd(
+        source: String,
+        from: Int,
+        lineEnd: Int,
+        builder: TokenList,
+    ): Int {
         lexCore(source, from, builder, stopAtNewline = true)
         return consumeNewline(source, lineEnd)
     }
 
-    private fun consumeNewline(source: String, at: Int): Int =
-        if (at >= source.length) at else at + 1
+    private fun consumeNewline(
+        source: String,
+        at: Int,
+    ): Int = if (at >= source.length) at else at + 1
 
     // ---------------------------------------------------------------------------------------
     // XML/HTML mode
@@ -563,7 +611,10 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * the tags. An unterminated construct runs to end-of-file rather than the line - markup has
      * no line-oriented grammar to fall back on, and a tag left open mid-edit is still a tag.
      */
-    private fun highlightXml(source: String, builder: TokenList) {
+    private fun highlightXml(
+        source: String,
+        builder: TokenList,
+    ) {
         val n = source.length
         var i = 0
         while (i < n) {
@@ -587,7 +638,11 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
     }
 
     /** One tag from `<` to its `>`, `/>`, or `?>` - or to end-of-file when never closed. */
-    private fun lexXmlTag(source: String, start: Int, builder: TokenList): Int {
+    private fun lexXmlTag(
+        source: String,
+        start: Int,
+        builder: TokenList,
+    ): Int {
         val n = source.length
         var i = start
         when {
@@ -656,14 +711,21 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * Text between tags: PLAIN runs with entities (`&amp;`) lifted out as BUILTIN, because an
      * entity is the one thing in element text that is not just prose.
      */
-    private fun lexXmlText(source: String, start: Int, builder: TokenList): Int {
+    private fun lexXmlText(
+        source: String,
+        start: Int,
+        builder: TokenList,
+    ): Int {
         val n = source.length
         var i = start
         var runStart = start
         while (i < n && source[i] != '<') {
             if (source[i] == '&') {
                 var k = i + 1
-                while (k < n && k <= i + 10 && source[k] != ';' && source[k] != '<' &&
+                while (k < n &&
+                    k <= i + 10 &&
+                    source[k] != ';' &&
+                    source[k] != '<' &&
                     (source[k].isLetterOrDigit() || source[k] == '#')
                 ) {
                     k++
@@ -682,8 +744,7 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
         return i
     }
 
-    private fun isXmlNameChar(c: Char): Boolean =
-        c.isLetterOrDigit() || c == '_' || c == '-' || c == ':' || c == '.'
+    private fun isXmlNameChar(c: Char): Boolean = c.isLetterOrDigit() || c == '_' || c == '-' || c == ':' || c == '.'
 
     // ---------------------------------------------------------------------------------------
     // Markdown mode
@@ -696,7 +757,10 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
      * OPERATOR; inline code spans are STRING. The line orientation mirrors how Markdown itself
      * is defined - almost every construct is anchored to a line start.
      */
-    private fun highlightMarkdown(source: String, builder: TokenList) {
+    private fun highlightMarkdown(
+        source: String,
+        builder: TokenList,
+    ) {
         val n = source.length
         var i = 0
         while (i < n) {
@@ -746,7 +810,12 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
         }
     }
 
-    private fun inlineMarkdown(source: String, from: Int, to: Int, builder: TokenList) {
+    private fun inlineMarkdown(
+        source: String,
+        from: Int,
+        to: Int,
+        builder: TokenList,
+    ) {
         var i = from
         while (i < to) {
             val c = source[i]
@@ -762,8 +831,14 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
                     builder.add(TokenKind.OPERATOR, i, i + 2)
                     i += 2
                 }
-                c == '*' || c == '_' || c == '#' || c == '[' || c == ']' ||
-                    c == '(' || c == ')' || c == '!' -> {
+                c == '*' ||
+                    c == '_' ||
+                    c == '#' ||
+                    c == '[' ||
+                    c == ']' ||
+                    c == '(' ||
+                    c == ')' ||
+                    c == '!' -> {
                     builder.add(TokenKind.OPERATOR, i, i + 1)
                     i++
                 }
@@ -778,23 +853,42 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
     }
 
     private fun isMarkdownSpecial(c: Char): Boolean =
-        c == '*' || c == '_' || c == '`' || c == '#' || c == '[' || c == ']' ||
-            c == '(' || c == ')' || c == '!'
+        c == '*' ||
+            c == '_' ||
+            c == '`' ||
+            c == '#' ||
+            c == '[' ||
+            c == ']' ||
+            c == '(' ||
+            c == ')' ||
+            c == '!'
 
-    private fun fenceMarkerAt(source: String, at: Int, lineEnd: Int): String? {
+    private fun fenceMarkerAt(
+        source: String,
+        at: Int,
+        lineEnd: Int,
+    ): String? {
         if (at + 3 > lineEnd) return null
         val three = source.substring(at, at + 3)
         return if (three == "```" || three == "~~~") three else null
     }
 
-    private fun isHeadingAt(source: String, at: Int, lineEnd: Int): Boolean {
+    private fun isHeadingAt(
+        source: String,
+        at: Int,
+        lineEnd: Int,
+    ): Boolean {
         var j = at
         while (j < lineEnd && source[j] == '#') j++
         val level = j - at
         return level in 1..6 && (j == lineEnd || source[j] == ' ')
     }
 
-    private fun isUnderlineAt(source: String, at: Int, lineEnd: Int): Boolean {
+    private fun isUnderlineAt(
+        source: String,
+        at: Int,
+        lineEnd: Int,
+    ): Boolean {
         if (at >= lineEnd || lineEnd - at < 2) return false
         val c = source[at]
         if (c != '=' && c != '-') return false
@@ -804,10 +898,17 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
         return true
     }
 
-    private fun isListMarkerAt(source: String, at: Int, lineEnd: Int): Boolean =
-        listMarkerLength(source, at, lineEnd) > 0
+    private fun isListMarkerAt(
+        source: String,
+        at: Int,
+        lineEnd: Int,
+    ): Boolean = listMarkerLength(source, at, lineEnd) > 0
 
-    private fun listMarkerLength(source: String, at: Int, lineEnd: Int): Int {
+    private fun listMarkerLength(
+        source: String,
+        at: Int,
+        lineEnd: Int,
+    ): Int {
         if (at >= lineEnd) return 0
         val c = source[at]
         if ((c == '-' || c == '+' || c == '*') && at + 1 < lineEnd && source[at + 1] == ' ') return 2
@@ -820,14 +921,18 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
         }
     }
 
-    private fun leadingSpaces(source: String, from: Int, to: Int, max: Int): Int {
+    private fun leadingSpaces(
+        source: String,
+        from: Int,
+        to: Int,
+        max: Int,
+    ): Int {
         var i = from
         while (i < to && i - from < max && (source[i] == ' ' || source[i] == '\t')) i++
         return i
     }
 
-    private fun isHex(c: Char): Boolean =
-        c in 'a'..'f' || c in 'A'..'F'
+    private fun isHex(c: Char): Boolean = c in 'a'..'f' || c in 'A'..'F'
 }
 
 /**
@@ -836,10 +941,13 @@ class SyntaxHighlighter(private val language: SyntaxLanguage) {
  * keeps the working list proportional to color changes from the first token on.
  */
 private class TokenList {
-
     val tokens = ArrayList<Token>(64)
 
-    fun add(kind: TokenKind, start: Int, end: Int) {
+    fun add(
+        kind: TokenKind,
+        start: Int,
+        end: Int,
+    ) {
         if (end <= start) return
         val last = tokens.lastOrNull()
         if (last != null && last.kind == kind && last.end == start) {

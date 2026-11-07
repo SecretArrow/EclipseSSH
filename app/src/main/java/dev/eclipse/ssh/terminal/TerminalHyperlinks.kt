@@ -9,7 +9,11 @@ package dev.eclipse.ssh.terminal
  * that asks is a finger on a screen that may have scrolled or resized since the frame was built, and a
  * tap that lands nowhere is a tap that does nothing.
  */
-fun hyperlinkAt(frame: TerminalFrame, line: Int, column: Int): String? {
+fun hyperlinkAt(
+    frame: TerminalFrame,
+    line: Int,
+    column: Int,
+): String? {
     if (column < 0) return null
     val row = frame.lines.getOrNull(line - frame.firstLine) ?: return null
     return row.getOrNull(column)?.hyperlink

@@ -69,7 +69,11 @@ val LocalSettingsReport = staticCompositionLocalOf<(String) -> Unit> { {} }
  * The wording is the view model's, `"$prefix: $detail"` with the same prefix strings, so a failure
  * that moved out of `MainViewModel` still reads to the user exactly as it did before the move.
  */
-internal fun reportWriteFailure(report: (String) -> Unit, what: String, error: Throwable) {
+internal fun reportWriteFailure(
+    report: (String) -> Unit,
+    what: String,
+    error: Throwable,
+) {
     reportFailure(report, "Could not save $what", error)
 }
 
@@ -82,7 +86,11 @@ internal fun reportWriteFailure(report: (String) -> Unit, what: String, error: T
  * many words - "Saved X, but its credentials could not be stored". A message that opened with
  * "Could not save" would tell the user the opposite of what happened.
  */
-internal fun reportFailure(report: (String) -> Unit, prefix: String, error: Throwable) {
+internal fun reportFailure(
+    report: (String) -> Unit,
+    prefix: String,
+    error: Throwable,
+) {
     // Cancellation is the window going away mid-write, not a failed write, and it must keep
     // propagating - swallowing it here would leave this coroutine running in a scope already torn
     // down, and would hide a cancellation the caller may be waiting on.
@@ -280,12 +288,13 @@ private fun SettingsBody(
 ) {
     val scroll = if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier
     Column(
-        modifier = Modifier
-            .padding(padding)
-            .fillMaxSize()
-            .widthIn(max = 1280.dp)
-            .then(scroll)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier =
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .widthIn(max = 1280.dp)
+                .then(scroll)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         content = content,
     )
 }

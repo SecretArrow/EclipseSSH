@@ -2,8 +2,8 @@ package dev.eclipse.ssh.ui.editor
 
 import androidx.compose.ui.text.input.TextFieldValue
 import com.google.common.truth.Truth.assertThat
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FsModificationConflictException
 import dev.eclipse.ssh.ui.editor.encoding.FileEncoding
 import kotlinx.coroutines.test.TestScope
@@ -26,16 +26,16 @@ import org.junit.Test
  * one suite onto Robolectric for exactly that reason.
  */
 class EditorTabStateTest {
-
-    private val entry = FsEntry(
-        name = "notes.txt",
-        path = "/tmp/notes.txt",
-        isDirectory = false,
-        size = 5L,
-        modifiedEpochMillis = 1_000L,
-        permissions = null,
-        mimeType = "text/plain",
-    )
+    private val entry =
+        FsEntry(
+            name = "notes.txt",
+            path = "/tmp/notes.txt",
+            isDirectory = false,
+            size = 5L,
+            modifiedEpochMillis = 1_000L,
+            permissions = null,
+            mimeType = "text/plain",
+        )
 
     /**
      * One file, scripted: `stat` answers from the configured size and a clock the test moves,
@@ -57,10 +57,12 @@ class EditorTabStateTest {
         var reads = 0
 
         override suspend fun homePath(): String? = null
+
         override suspend fun parentPath(path: String): String? = null
+
         override suspend fun list(path: String): List<FsEntry> = emptyList()
-        override suspend fun stat(path: String): FsEntry? =
-            entry.copy(size = statSize, modifiedEpochMillis = modified)
+
+        override suspend fun stat(path: String): FsEntry? = entry.copy(size = statSize, modifiedEpochMillis = modified)
 
         override suspend fun read(path: String): ByteArray {
             reads++
@@ -68,7 +70,11 @@ class EditorTabStateTest {
             return bytes
         }
 
-        override suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long?) {
+        override suspend fun write(
+            path: String,
+            data: ByteArray,
+            onlyIfUnmodifiedSince: Long?,
+        ) {
             writeFailure?.let { throw it }
             guards += onlyIfUnmodifiedSince
             bytes = data
@@ -76,20 +82,43 @@ class EditorTabStateTest {
             writes += data
         }
 
-        override suspend fun createFile(parentPath: String, name: String): FsEntry =
-            error("unused by the tab state")
-        override suspend fun createDirectory(parentPath: String, name: String) =
-            error("unused by the tab state")
-        override suspend fun rename(path: String, newName: String) = error("unused by the tab state")
-        override suspend fun copy(sourcePath: String, targetDirectoryPath: String) =
-            error("unused by the tab state")
-        override suspend fun move(sourcePath: String, targetDirectoryPath: String) =
-            error("unused by the tab state")
+        override suspend fun createFile(
+            parentPath: String,
+            name: String,
+        ): FsEntry = error("unused by the tab state")
+
+        override suspend fun createDirectory(
+            parentPath: String,
+            name: String,
+        ) = error("unused by the tab state")
+
+        override suspend fun rename(
+            path: String,
+            newName: String,
+        ) = error("unused by the tab state")
+
+        override suspend fun copy(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the tab state")
+
+        override suspend fun move(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the tab state")
+
         override suspend fun delete(path: String) = error("unused by the tab state")
-        override suspend fun setPermissions(path: String, mode: Int) =
-            error("unused by the tab state")
-        override suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry> =
-            emptyList()
+
+        override suspend fun setPermissions(
+            path: String,
+            mode: Int,
+        ) = error("unused by the tab state")
+
+        override suspend fun search(
+            root: String,
+            query: String,
+            maxEntries: Int,
+        ): List<FsEntry> = emptyList()
     }
 
     private fun tab(
@@ -99,216 +128,229 @@ class EditorTabStateTest {
     ) = EditorTabState(id = 1L, request = EditorRequest(entry, provider, isNewFile), initialEncoding = encoding)
 
     @Test
-    fun `startLoad adopts a readable file's text as both the working copy and the baseline`() = runTest {
-        val provider = ScriptedFileProvider(entry)
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
+    fun `startLoad adopts a readable file's text as both the working copy and the baseline`() =
+        runTest {
+            val provider = ScriptedFileProvider(entry)
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
-        assertThat(tab.textValue.text).isEqualTo("hello")
-        assertThat(tab.savedText).isEqualTo("hello")
-        assertThat(tab.dirty).isFalse()
-        // The save guard is armed with the mtime the stat reported at load — the first save must
-        // be comparing against the server as it was when the text was read.
-        assertThat(tab.loadedModified).isEqualTo(1_000L)
-    }
-
-    @Test
-    fun `startLoad refuses what the stat says is over the size cap, without reading it`() = runTest {
-        val provider = ScriptedFileProvider(entry, statSize = 512 * 1024L + 1)
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-
-        val state = tab.loadState
-        assertThat(state).isInstanceOf(EditorLoad.TooLarge::class.java)
-        assertThat((state as EditorLoad.TooLarge).bytes).isEqualTo(512 * 1024L + 1)
-        // Refused before the read: a file too big to open is too big to fetch first.
-        assertThat(provider.reads).isEqualTo(0)
-    }
+            assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
+            assertThat(tab.textValue.text).isEqualTo("hello")
+            assertThat(tab.savedText).isEqualTo("hello")
+            assertThat(tab.dirty).isFalse()
+            // The save guard is armed with the mtime the stat reported at load — the first save must
+            // be comparing against the server as it was when the text was read.
+            assertThat(tab.loadedModified).isEqualTo(1_000L)
+        }
 
     @Test
-    fun `startLoad refuses bytes that are not UTF-8 rather than opening mojibake`() = runTest {
-        // 0xC3 0x28 is '(' behind a dangling lead byte: a strict decoder rejects it, and the
-        // tab must reject it too — a permissive decode would save the mojibake back over the file.
-        val provider = ScriptedFileProvider(entry, bytes = byteArrayOf(0xC3.toByte(), 0x28.toByte()), statSize = 2L)
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
+    fun `startLoad refuses what the stat says is over the size cap, without reading it`() =
+        runTest {
+            val provider = ScriptedFileProvider(entry, statSize = 512 * 1024L + 1)
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        val state = tab.loadState
-        assertThat(state).isInstanceOf(EditorLoad.Failed::class.java)
-        assertThat((state as EditorLoad.Failed).message).contains("UTF-8")
-    }
-
-    @Test
-    fun `a brand-new file opens ready and empty without touching the disk`() = runTest {
-        // The "new file" path must not read: there is nothing to read, and a provider that
-        // errors on it is the honest one.
-        val provider = ScriptedFileProvider(entry, readFailure = IllegalStateException("nothing to read"))
-        val tab = tab(provider, isNewFile = true)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-
-        assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
-        assertThat(tab.textValue.text).isEmpty()
-        assertThat(tab.savedText).isEmpty()
-        assertThat(tab.dirty).isFalse()
-        assertThat(provider.reads).isEqualTo(0)
-    }
+            val state = tab.loadState
+            assertThat(state).isInstanceOf(EditorLoad.TooLarge::class.java)
+            assertThat((state as EditorLoad.TooLarge).bytes).isEqualTo(512 * 1024L + 1)
+            // Refused before the read: a file too big to open is too big to fetch first.
+            assertThat(provider.reads).isEqualTo(0)
+        }
 
     @Test
-    fun `a file with no owner-write bit opens read-only and its save is a no-op`() = runTest {
-        // 0o444: everyone may read, nobody may write. The mode arrives as the octal string the
-        // providers report, and the stat that startLoad performs carries it through.
-        val provider = ScriptedFileProvider(entry.copy(permissions = "444"))
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
+    fun `startLoad refuses bytes that are not UTF-8 rather than opening mojibake`() =
+        runTest {
+            // 0xC3 0x28 is '(' behind a dangling lead byte: a strict decoder rejects it, and the
+            // tab must reject it too — a permissive decode would save the mojibake back over the file.
+            val provider = ScriptedFileProvider(entry, bytes = byteArrayOf(0xC3.toByte(), 0x28.toByte()), statSize = 2L)
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
-        assertThat(tab.readOnly).isTrue()
-
-        // The working copy is not the guard — the field's own readOnly is — so an edit that lands
-        // anyway (find-and-replace goes through applyEdit) still turns the tab dirty. Honest: it
-        // really is unsaved, and what must not happen is the *write*.
-        tab.applyEdit(TextFieldValue("edited"))
-        assertThat(tab.dirty).isTrue()
-
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
-
-        // No write, no saving flicker, no error — as though save had never been asked, which is
-        // the only answer a file that cannot be written can honestly give.
-        assertThat(provider.writes).isEmpty()
-        assertThat(tab.savedText).isEqualTo("hello")
-        assertThat(tab.saving).isFalse()
-        assertThat(tab.saveError).isNull()
-        assertThat(tab.dirty).isTrue()
-    }
+            val state = tab.loadState
+            assertThat(state).isInstanceOf(EditorLoad.Failed::class.java)
+            assertThat((state as EditorLoad.Failed).message).contains("UTF-8")
+        }
 
     @Test
-    fun `a file whose owner may write opens editable`() = runTest {
-        // 0o644: owner rw-, so the write bit is present and the editor is a normal one.
-        val provider = ScriptedFileProvider(entry.copy(permissions = "644"))
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
+    fun `a brand-new file opens ready and empty without touching the disk`() =
+        runTest {
+            // The "new file" path must not read: there is nothing to read, and a provider that
+            // errors on it is the honest one.
+            val provider = ScriptedFileProvider(entry, readFailure = IllegalStateException("nothing to read"))
+            val tab = tab(provider, isNewFile = true)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(tab.readOnly).isFalse()
-    }
-
-    @Test
-    fun `a file whose permissions are unknown opens editable`() = runTest {
-        // Null is the local backend's honest "no notion of modes": unknown is not unwritable, so
-        // the file opens editable and a save the backend refuses shows the ordinary save error.
-        val provider = ScriptedFileProvider(entry.copy(permissions = null))
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-
-        assertThat(tab.readOnly).isFalse()
-    }
+            assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
+            assertThat(tab.textValue.text).isEmpty()
+            assertThat(tab.savedText).isEmpty()
+            assertThat(tab.dirty).isFalse()
+            assertThat(provider.reads).isEqualTo(0)
+        }
 
     @Test
-    fun `a successful save writes the bytes, clears the dirty flag, and re-arms the guard`() = runTest {
-        val provider = ScriptedFileProvider(entry)
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        tab.applyEdit(TextFieldValue("edited"))
+    fun `a file with no owner-write bit opens read-only and its save is a no-op`() =
+        runTest {
+            // 0o444: everyone may read, nobody may write. The mode arrives as the octal string the
+            // providers report, and the stat that startLoad performs carries it through.
+            val provider = ScriptedFileProvider(entry.copy(permissions = "444"))
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
+            assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
+            assertThat(tab.readOnly).isTrue()
 
-        // The provider saw the edit's bytes, guarded by the mtime the load reported.
-        assertThat(provider.writes.single().decodeToString()).isEqualTo("edited")
-        assertThat(provider.guards.single()).isEqualTo(1_000L)
-        assertThat(tab.savedText).isEqualTo("edited")
-        assertThat(tab.dirty).isFalse()
-        assertThat(tab.saving).isFalse()
-        // Re-armed from the post-write stat, so the *next* save does not conflict with this one.
-        assertThat(tab.loadedModified).isEqualTo(provider.modified)
-    }
+            // The working copy is not the guard — the field's own readOnly is — so an edit that lands
+            // anyway (find-and-replace goes through applyEdit) still turns the tab dirty. Honest: it
+            // really is unsaved, and what must not happen is the *write*.
+            tab.applyEdit(TextFieldValue("edited"))
+            assertThat(tab.dirty).isTrue()
 
-    @Test
-    fun `a conflicting save opens the question instead of deciding, and keeps the baseline`() = runTest {
-        // The provider says the file changed underneath the editor: that is the user's call to
-        // make, not the tab's, and nothing is overwritten and nothing is lost while they decide.
-        val provider = ScriptedFileProvider(
-            entry,
-            writeFailure = FsModificationConflictException(entry.path),
-        )
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        tab.applyEdit(TextFieldValue("edited"))
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
 
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
-
-        assertThat(tab.conflictOpen).isTrue()
-        assertThat(tab.saving).isFalse()
-        assertThat(provider.writes).isEmpty()
-        assertThat(tab.savedText).isEqualTo("hello")
-        assertThat(tab.dirty).isTrue()
-    }
+            // No write, no saving flicker, no error — as though save had never been asked, which is
+            // the only answer a file that cannot be written can honestly give.
+            assertThat(provider.writes).isEmpty()
+            assertThat(tab.savedText).isEqualTo("hello")
+            assertThat(tab.saving).isFalse()
+            assertThat(tab.saveError).isNull()
+            assertThat(tab.dirty).isTrue()
+        }
 
     @Test
-    fun `a failed save reports the error and keeps the edit`() = runTest {
-        val provider = ScriptedFileProvider(entry, writeFailure = RuntimeException("disk full"))
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        tab.applyEdit(TextFieldValue("edited"))
+    fun `a file whose owner may write opens editable`() =
+        runTest {
+            // 0o644: owner rw-, so the write bit is present and the editor is a normal one.
+            val provider = ScriptedFileProvider(entry.copy(permissions = "644"))
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
-
-        assertThat(tab.saveError).isEqualTo("disk full")
-        assertThat(tab.saving).isFalse()
-        // A failed upload must not look like a successful one: the text and the dirty flag both
-        // survive so the user can retry or copy their work out.
-        assertThat(tab.textValue.text).isEqualTo("edited")
-        assertThat(tab.savedText).isEqualTo("hello")
-        assertThat(tab.dirty).isTrue()
-    }
+            assertThat(tab.readOnly).isFalse()
+        }
 
     @Test
-    fun `reloadFromDisk adopts the server's text and clock`() = runTest {
-        val provider = ScriptedFileProvider(entry)
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        tab.applyEdit(TextFieldValue("thrown away"))
+    fun `a file whose permissions are unknown opens editable`() =
+        runTest {
+            // Null is the local backend's honest "no notion of modes": unknown is not unwritable, so
+            // the file opens editable and a save the backend refuses shows the ordinary save error.
+            val provider = ScriptedFileProvider(entry.copy(permissions = null))
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        provider.bytes = "fresh from server".toByteArray()
-        provider.modified = 9_999L
-        tab.reloadFromDisk(this)
-        testScheduler.advanceUntilIdle()
-
-        assertThat(tab.textValue.text).isEqualTo("fresh from server")
-        assertThat(tab.savedText).isEqualTo("fresh from server")
-        assertThat(tab.dirty).isFalse()
-        assertThat(tab.loadedModified).isEqualTo(9_999L)
-    }
+            assertThat(tab.readOnly).isFalse()
+        }
 
     @Test
-    fun `an edit is undone and redone through snapshots`() = runTest {
-        val provider = ScriptedFileProvider(entry)
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        tab.applyEdit(TextFieldValue("hello there"))
+    fun `a successful save writes the bytes, clears the dirty flag, and re-arms the guard`() =
+        runTest {
+            val provider = ScriptedFileProvider(entry)
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            tab.applyEdit(TextFieldValue("edited"))
 
-        // The undo button's exact path: history decides, applySnapshot moves the text without
-        // becoming an edit in the history itself.
-        tab.applySnapshot(checkNotNull(tab.history.undo(tab.textValue)))
-        assertThat(tab.textValue.text).isEqualTo("hello")
-        tab.applySnapshot(checkNotNull(tab.history.redo(tab.textValue)))
-        assertThat(tab.textValue.text).isEqualTo("hello there")
-    }
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
+
+            // The provider saw the edit's bytes, guarded by the mtime the load reported.
+            assertThat(provider.writes.single().decodeToString()).isEqualTo("edited")
+            assertThat(provider.guards.single()).isEqualTo(1_000L)
+            assertThat(tab.savedText).isEqualTo("edited")
+            assertThat(tab.dirty).isFalse()
+            assertThat(tab.saving).isFalse()
+            // Re-armed from the post-write stat, so the *next* save does not conflict with this one.
+            assertThat(tab.loadedModified).isEqualTo(provider.modified)
+        }
+
+    @Test
+    fun `a conflicting save opens the question instead of deciding, and keeps the baseline`() =
+        runTest {
+            // The provider says the file changed underneath the editor: that is the user's call to
+            // make, not the tab's, and nothing is overwritten and nothing is lost while they decide.
+            val provider =
+                ScriptedFileProvider(
+                    entry,
+                    writeFailure = FsModificationConflictException(entry.path),
+                )
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            tab.applyEdit(TextFieldValue("edited"))
+
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
+
+            assertThat(tab.conflictOpen).isTrue()
+            assertThat(tab.saving).isFalse()
+            assertThat(provider.writes).isEmpty()
+            assertThat(tab.savedText).isEqualTo("hello")
+            assertThat(tab.dirty).isTrue()
+        }
+
+    @Test
+    fun `a failed save reports the error and keeps the edit`() =
+        runTest {
+            val provider = ScriptedFileProvider(entry, writeFailure = RuntimeException("disk full"))
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            tab.applyEdit(TextFieldValue("edited"))
+
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
+
+            assertThat(tab.saveError).isEqualTo("disk full")
+            assertThat(tab.saving).isFalse()
+            // A failed upload must not look like a successful one: the text and the dirty flag both
+            // survive so the user can retry or copy their work out.
+            assertThat(tab.textValue.text).isEqualTo("edited")
+            assertThat(tab.savedText).isEqualTo("hello")
+            assertThat(tab.dirty).isTrue()
+        }
+
+    @Test
+    fun `reloadFromDisk adopts the server's text and clock`() =
+        runTest {
+            val provider = ScriptedFileProvider(entry)
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            tab.applyEdit(TextFieldValue("thrown away"))
+
+            provider.bytes = "fresh from server".toByteArray()
+            provider.modified = 9_999L
+            tab.reloadFromDisk(this)
+            testScheduler.advanceUntilIdle()
+
+            assertThat(tab.textValue.text).isEqualTo("fresh from server")
+            assertThat(tab.savedText).isEqualTo("fresh from server")
+            assertThat(tab.dirty).isFalse()
+            assertThat(tab.loadedModified).isEqualTo(9_999L)
+        }
+
+    @Test
+    fun `an edit is undone and redone through snapshots`() =
+        runTest {
+            val provider = ScriptedFileProvider(entry)
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            tab.applyEdit(TextFieldValue("hello there"))
+
+            // The undo button's exact path: history decides, applySnapshot moves the text without
+            // becoming an edit in the history itself.
+            tab.applySnapshot(checkNotNull(tab.history.undo(tab.textValue)))
+            assertThat(tab.textValue.text).isEqualTo("hello")
+            tab.applySnapshot(checkNotNull(tab.history.redo(tab.textValue)))
+            assertThat(tab.textValue.text).isEqualTo("hello there")
+        }
 
     @Test
     fun `the tab key is identity - same provider and path, one tab`() {
@@ -324,150 +366,157 @@ class EditorTabStateTest {
     }
 
     @Test
-    fun `a latin 1 file loads and saves as iso 8859 1 without ever becoming utf 8`() = runTest {
-        // "café £" as a Latin-1 era tool wrote it: 0xE9 and 0xA3, both invalid as UTF-8. The
-        // whole point of the encoding choice is that these bytes cross the editor and come back
-        // out the same ones — a UTF-8 save here would rewrite a file the user only opened.
-        val latin1 = "café £".toByteArray(Charsets.ISO_8859_1)
-        val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
-        val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
+    fun `a latin 1 file loads and saves as iso 8859 1 without ever becoming utf 8`() =
+        runTest {
+            // "café £" as a Latin-1 era tool wrote it: 0xE9 and 0xA3, both invalid as UTF-8. The
+            // whole point of the encoding choice is that these bytes cross the editor and come back
+            // out the same ones — a UTF-8 save here would rewrite a file the user only opened.
+            val latin1 = "café £".toByteArray(Charsets.ISO_8859_1)
+            val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
+            val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
-        assertThat(tab.textValue.text).isEqualTo("café £")
-        assertThat(tab.dirty).isFalse()
+            assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
+            assertThat(tab.textValue.text).isEqualTo("café £")
+            assertThat(tab.dirty).isFalse()
 
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(provider.writes.single()).isEqualTo(latin1)
-        assertThat(tab.dirty).isFalse()
-    }
-
-    @Test
-    fun `a strict decode failure under the chosen encoding fails the load instead of crashing`() = runTest {
-        // UTF-8 "café" read as ASCII: 0xC3 is past the seven-bit line. The refusal must land in
-        // the same Failed state the UTF-8 path has always used, naming the charset that said no.
-        val utf8 = "café".toByteArray(Charsets.UTF_8)
-        val provider = ScriptedFileProvider(entry, bytes = utf8, statSize = utf8.size.toLong())
-        val tab = tab(provider, encoding = FileEncoding.ASCII)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-
-        val state = tab.loadState
-        assertThat(state).isInstanceOf(EditorLoad.Failed::class.java)
-        assertThat((state as EditorLoad.Failed).message).contains("ASCII")
-    }
+            assertThat(provider.writes.single()).isEqualTo(latin1)
+            assertThat(tab.dirty).isFalse()
+        }
 
     @Test
-    fun `redecoding swaps the text through the history and dirties only a real change`() = runTest {
-        // 0x92 is a C1 control in ISO-8859-1 but the typographic apostrophe in Windows-1252: the
-        // same byte, two readings, and picking between them is exactly what the selector is for.
-        val bytes = byteArrayOf(0x69, 0x74, 0x92.toByte(), 0x73)
-        val provider = ScriptedFileProvider(entry, bytes = bytes, statSize = bytes.size.toLong())
-        val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        assertThat(tab.textValue.text).isEqualTo("it\u0092s")
-        assertThat(tab.dirty).isFalse()
+    fun `a strict decode failure under the chosen encoding fails the load instead of crashing`() =
+        runTest {
+            // UTF-8 "café" read as ASCII: 0xC3 is past the seven-bit line. The refusal must land in
+            // the same Failed state the UTF-8 path has always used, naming the charset that said no.
+            val utf8 = "café".toByteArray(Charsets.UTF_8)
+            val provider = ScriptedFileProvider(entry, bytes = utf8, statSize = utf8.size.toLong())
+            val tab = tab(provider, encoding = FileEncoding.ASCII)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        tab.redecode(FileEncoding.WINDOWS_1252)
-
-        assertThat(tab.encoding).isEqualTo(FileEncoding.WINDOWS_1252)
-        assertThat(tab.textValue.text).isEqualTo("it’s")
-        // The bytes on disk did not move — only what the editor makes of them did — and the tab
-        // says so the only honest way it can: dirty, so a save is a decision, not a no-op.
-        assertThat(tab.dirty).isTrue()
-        // The swap went through the history, so one undo takes the old reading back without
-        // taking the user's edits (there are none here) with it.
-        tab.applySnapshot(checkNotNull(tab.history.undo(tab.textValue)))
-        assertThat(tab.textValue.text).isEqualTo("it\u0092s")
-    }
+            val state = tab.loadState
+            assertThat(state).isInstanceOf(EditorLoad.Failed::class.java)
+            assertThat((state as EditorLoad.Failed).message).contains("ASCII")
+        }
 
     @Test
-    fun `redecoding to an encoding that reads the same bytes the same way stays clean`() = runTest {
-        // Pure ASCII decodes identically as UTF-8 and ISO-8859-1: the switch is a choice about
-        // the next save, not about the text, and a save that would write the very same bytes is
-        // not a change worth a dirty dot or an undo step.
-        val ascii = "plain".toByteArray()
-        val provider = ScriptedFileProvider(entry, bytes = ascii, statSize = ascii.size.toLong())
-        val tab = tab(provider, encoding = FileEncoding.UTF_8)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
+    fun `redecoding swaps the text through the history and dirties only a real change`() =
+        runTest {
+            // 0x92 is a C1 control in ISO-8859-1 but the typographic apostrophe in Windows-1252: the
+            // same byte, two readings, and picking between them is exactly what the selector is for.
+            val bytes = byteArrayOf(0x69, 0x74, 0x92.toByte(), 0x73)
+            val provider = ScriptedFileProvider(entry, bytes = bytes, statSize = bytes.size.toLong())
+            val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            assertThat(tab.textValue.text).isEqualTo("it\u0092s")
+            assertThat(tab.dirty).isFalse()
 
-        tab.redecode(FileEncoding.ISO_8859_1)
+            tab.redecode(FileEncoding.WINDOWS_1252)
 
-        assertThat(tab.encoding).isEqualTo(FileEncoding.ISO_8859_1)
-        assertThat(tab.textValue.text).isEqualTo("plain")
-        assertThat(tab.dirty).isFalse()
-        assertThat(tab.history.canUndo).isFalse()
-    }
-
-    @Test
-    fun `a refused redecode keeps the text, the encoding, and says why`() = runTest {
-        // Latin-1 bytes cannot be re-read as UTF-8; the switch must refuse outright rather than
-        // half-apply a new encoding over text the old one produced.
-        val latin1 = "café".toByteArray(Charsets.ISO_8859_1)
-        val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
-        val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-
-        tab.redecode(FileEncoding.UTF_8)
-
-        assertThat(tab.encoding).isEqualTo(FileEncoding.ISO_8859_1)
-        assertThat(tab.textValue.text).isEqualTo("café")
-        assertThat(tab.dirty).isFalse()
-        assertThat(tab.saveError).contains("UTF-8")
-    }
+            assertThat(tab.encoding).isEqualTo(FileEncoding.WINDOWS_1252)
+            assertThat(tab.textValue.text).isEqualTo("it’s")
+            // The bytes on disk did not move — only what the editor makes of them did — and the tab
+            // says so the only honest way it can: dirty, so a save is a decision, not a no-op.
+            assertThat(tab.dirty).isTrue()
+            // The swap went through the history, so one undo takes the old reading back without
+            // taking the user's edits (there are none here) with it.
+            tab.applySnapshot(checkNotNull(tab.history.undo(tab.textValue)))
+            assertThat(tab.textValue.text).isEqualTo("it\u0092s")
+        }
 
     @Test
-    fun `a failed load gets a second chance through the encoding row`() = runTest {
-        // The headline case of the selector: a Latin-1 file meets the UTF-8 default, the load
-        // fails, and the options sheet on the failure screen is where the user answers it. The
-        // re-decode is a fresh open — clean, guarded by the load's own clock.
-        val latin1 = "café £".toByteArray(Charsets.ISO_8859_1)
-        val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
-        val tab = tab(provider)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        assertThat(tab.loadState).isInstanceOf(EditorLoad.Failed::class.java)
+    fun `redecoding to an encoding that reads the same bytes the same way stays clean`() =
+        runTest {
+            // Pure ASCII decodes identically as UTF-8 and ISO-8859-1: the switch is a choice about
+            // the next save, not about the text, and a save that would write the very same bytes is
+            // not a change worth a dirty dot or an undo step.
+            val ascii = "plain".toByteArray()
+            val provider = ScriptedFileProvider(entry, bytes = ascii, statSize = ascii.size.toLong())
+            val tab = tab(provider, encoding = FileEncoding.UTF_8)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        tab.redecode(FileEncoding.ISO_8859_1)
+            tab.redecode(FileEncoding.ISO_8859_1)
 
-        assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
-        assertThat(tab.textValue.text).isEqualTo("café £")
-        assertThat(tab.savedText).isEqualTo("café £")
-        assertThat(tab.dirty).isFalse()
-        assertThat(tab.loadedModified).isEqualTo(1_000L)
-
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
-        assertThat(provider.writes.single()).isEqualTo(latin1)
-        assertThat(provider.guards.single()).isEqualTo(1_000L)
-    }
+            assertThat(tab.encoding).isEqualTo(FileEncoding.ISO_8859_1)
+            assertThat(tab.textValue.text).isEqualTo("plain")
+            assertThat(tab.dirty).isFalse()
+            assertThat(tab.history.canUndo).isFalse()
+        }
 
     @Test
-    fun `a save into an encoding that cannot hold the text refuses rather than corrupting`() = runTest {
-        // Loaded as ISO-8859-1, then an emoji is pasted in. ISO-8859-1 cannot hold it, and the
-        // refusal must be a message on the tab — not a crash of the save, and not a `?` written
-        // over a character the user can no longer see the remains of.
-        val latin1 = "café".toByteArray(Charsets.ISO_8859_1)
-        val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
-        val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
-        tab.startLoad(this)
-        testScheduler.advanceUntilIdle()
-        tab.applyEdit(TextFieldValue("café 🚀"))
+    fun `a refused redecode keeps the text, the encoding, and says why`() =
+        runTest {
+            // Latin-1 bytes cannot be re-read as UTF-8; the switch must refuse outright rather than
+            // half-apply a new encoding over text the old one produced.
+            val latin1 = "café".toByteArray(Charsets.ISO_8859_1)
+            val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
+            val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
 
-        tab.save(this)
-        testScheduler.advanceUntilIdle()
+            tab.redecode(FileEncoding.UTF_8)
 
-        assertThat(tab.saveError).contains("ISO-8859-1")
-        assertThat(provider.writes).isEmpty()
-        assertThat(tab.textValue.text).isEqualTo("café 🚀")
-        assertThat(tab.dirty).isTrue()
-    }
+            assertThat(tab.encoding).isEqualTo(FileEncoding.ISO_8859_1)
+            assertThat(tab.textValue.text).isEqualTo("café")
+            assertThat(tab.dirty).isFalse()
+            assertThat(tab.saveError).contains("UTF-8")
+        }
+
+    @Test
+    fun `a failed load gets a second chance through the encoding row`() =
+        runTest {
+            // The headline case of the selector: a Latin-1 file meets the UTF-8 default, the load
+            // fails, and the options sheet on the failure screen is where the user answers it. The
+            // re-decode is a fresh open — clean, guarded by the load's own clock.
+            val latin1 = "café £".toByteArray(Charsets.ISO_8859_1)
+            val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
+            val tab = tab(provider)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            assertThat(tab.loadState).isInstanceOf(EditorLoad.Failed::class.java)
+
+            tab.redecode(FileEncoding.ISO_8859_1)
+
+            assertThat(tab.loadState).isEqualTo(EditorLoad.Ready)
+            assertThat(tab.textValue.text).isEqualTo("café £")
+            assertThat(tab.savedText).isEqualTo("café £")
+            assertThat(tab.dirty).isFalse()
+            assertThat(tab.loadedModified).isEqualTo(1_000L)
+
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
+            assertThat(provider.writes.single()).isEqualTo(latin1)
+            assertThat(provider.guards.single()).isEqualTo(1_000L)
+        }
+
+    @Test
+    fun `a save into an encoding that cannot hold the text refuses rather than corrupting`() =
+        runTest {
+            // Loaded as ISO-8859-1, then an emoji is pasted in. ISO-8859-1 cannot hold it, and the
+            // refusal must be a message on the tab — not a crash of the save, and not a `?` written
+            // over a character the user can no longer see the remains of.
+            val latin1 = "café".toByteArray(Charsets.ISO_8859_1)
+            val provider = ScriptedFileProvider(entry, bytes = latin1, statSize = latin1.size.toLong())
+            val tab = tab(provider, encoding = FileEncoding.ISO_8859_1)
+            tab.startLoad(this)
+            testScheduler.advanceUntilIdle()
+            tab.applyEdit(TextFieldValue("café 🚀"))
+
+            tab.save(this)
+            testScheduler.advanceUntilIdle()
+
+            assertThat(tab.saveError).contains("ISO-8859-1")
+            assertThat(provider.writes).isEmpty()
+            assertThat(tab.textValue.text).isEqualTo("café 🚀")
+            assertThat(tab.dirty).isTrue()
+        }
 
     // ---- The 4-way conflict dialog's decision wiring ----
     // Every test below starts from the same place: the file changed on the server, a save raised
@@ -487,122 +536,132 @@ class EditorTabStateTest {
     }
 
     @Test
-    fun `choosing Overwrite re-saves with the guard disarmed`() = runTest {
-        // The provider objects to the first save — that is what raised the dialog — and accepts
-        // the second, because "Overwrite" is the user disarming the guard, not retrying the same
-        // guarded write.
-        val provider = ScriptedFileProvider(
-            entry,
-            writeFailure = FsModificationConflictException(entry.path),
-        )
-        val tab = conflictedTab(provider)
-        provider.writeFailure = null
+    fun `choosing Overwrite re-saves with the guard disarmed`() =
+        runTest {
+            // The provider objects to the first save — that is what raised the dialog — and accepts
+            // the second, because "Overwrite" is the user disarming the guard, not retrying the same
+            // guarded write.
+            val provider =
+                ScriptedFileProvider(
+                    entry,
+                    writeFailure = FsModificationConflictException(entry.path),
+                )
+            val tab = conflictedTab(provider)
+            provider.writeFailure = null
 
-        tab.chooseConflictAction(this, ConflictChoice.Overwrite)
-        testScheduler.advanceUntilIdle()
+            tab.chooseConflictAction(this, ConflictChoice.Overwrite)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(tab.conflictOpen).isFalse()
-        // One write in the whole story — the overwrite — sent unguarded (null), so the provider
-        // cannot raise the conflict against it.
-        assertThat(provider.guards.single()).isNull()
-        assertThat(provider.writes.single().decodeToString()).isEqualTo("edited")
-        assertThat(tab.savedText).isEqualTo("edited")
-        assertThat(tab.dirty).isFalse()
-    }
-
-    @Test
-    fun `choosing Reload adopts the server's text without writing`() = runTest {
-        val provider = ScriptedFileProvider(
-            entry,
-            writeFailure = FsModificationConflictException(entry.path),
-        )
-        val tab = conflictedTab(provider)
-        // What the server now holds: known text and a moved clock.
-        provider.bytes = "server wins".toByteArray()
-        provider.modified = 9_999L
-
-        tab.chooseConflictAction(this, ConflictChoice.Reload)
-        testScheduler.advanceUntilIdle()
-
-        assertThat(tab.conflictOpen).isFalse()
-        assertThat(tab.textValue.text).isEqualTo("server wins")
-        assertThat(tab.savedText).isEqualTo("server wins")
-        assertThat(tab.dirty).isFalse()
-        assertThat(tab.loadedModified).isEqualTo(9_999L)
-        // Reload is a read, never a write: the user discarded their edit, they did not publish it.
-        assertThat(provider.writes).isEmpty()
-    }
+            assertThat(tab.conflictOpen).isFalse()
+            // One write in the whole story — the overwrite — sent unguarded (null), so the provider
+            // cannot raise the conflict against it.
+            assertThat(provider.guards.single()).isNull()
+            assertThat(provider.writes.single().decodeToString()).isEqualTo("edited")
+            assertThat(tab.savedText).isEqualTo("edited")
+            assertThat(tab.dirty).isFalse()
+        }
 
     @Test
-    fun `choosing Cancel keeps the local edit and asks nothing of the disk`() = runTest {
-        val provider = ScriptedFileProvider(
-            entry,
-            writeFailure = FsModificationConflictException(entry.path),
-        )
-        val tab = conflictedTab(provider)
+    fun `choosing Reload adopts the server's text without writing`() =
+        runTest {
+            val provider =
+                ScriptedFileProvider(
+                    entry,
+                    writeFailure = FsModificationConflictException(entry.path),
+                )
+            val tab = conflictedTab(provider)
+            // What the server now holds: known text and a moved clock.
+            provider.bytes = "server wins".toByteArray()
+            provider.modified = 9_999L
 
-        tab.chooseConflictAction(this, ConflictChoice.Cancel)
+            tab.chooseConflictAction(this, ConflictChoice.Reload)
+            testScheduler.advanceUntilIdle()
 
-        assertThat(tab.conflictOpen).isFalse()
-        // The safe option is safe by what it leaves alone: the edit, the dirty flag, and the file.
-        assertThat(tab.textValue.text).isEqualTo("edited")
-        assertThat(tab.savedText).isEqualTo("hello")
-        assertThat(tab.dirty).isTrue()
-        assertThat(provider.writes).isEmpty()
-        assertThat(provider.reads).isEqualTo(1)
-    }
-
-    @Test
-    fun `choosing Compare shows the server's text and returns to the question on back`() = runTest {
-        val provider = ScriptedFileProvider(
-            entry,
-            writeFailure = FsModificationConflictException(entry.path),
-        )
-        val tab = conflictedTab(provider)
-        provider.bytes = "server version".toByteArray()
-
-        tab.chooseConflictAction(this, ConflictChoice.Compare)
-        testScheduler.advanceUntilIdle()
-
-        // The question leaves the screen for its evidence — one dialog at a time.
-        assertThat(tab.conflictOpen).isFalse()
-        val state = tab.compareState
-        assertThat(state).isInstanceOf(ConflictCompare.Ready::class.java)
-        assertThat((state as ConflictCompare.Ready).serverText).isEqualTo("server version")
-        // The compare is a read, never a write, and it must not decide anything either: the local
-        // text is exactly what the user typed, still dirty, still unguarded-by-choice.
-        assertThat(provider.writes).isEmpty()
-        assertThat(tab.textValue.text).isEqualTo("edited")
-        assertThat(tab.dirty).isTrue()
-
-        // Back re-asks the question the compare was fetched to answer.
-        tab.closeConflictCompare()
-        assertThat(tab.compareState).isNull()
-        assertThat(tab.conflictOpen).isTrue()
-    }
+            assertThat(tab.conflictOpen).isFalse()
+            assertThat(tab.textValue.text).isEqualTo("server wins")
+            assertThat(tab.savedText).isEqualTo("server wins")
+            assertThat(tab.dirty).isFalse()
+            assertThat(tab.loadedModified).isEqualTo(9_999L)
+            // Reload is a read, never a write: the user discarded their edit, they did not publish it.
+            assertThat(provider.writes).isEmpty()
+        }
 
     @Test
-    fun `a failed compare fetch is one line of text, not a crash`() = runTest {
-        // The connection that reported the conflict can be gone by the time the user asks to see
-        // why — the fetch failing must land as a message, with the edit intact and the question
-        // still answerable behind it.
-        val provider = ScriptedFileProvider(
-            entry,
-            writeFailure = FsModificationConflictException(entry.path),
-        )
-        val tab = conflictedTab(provider)
-        provider.readFailure = IllegalStateException("connection lost")
+    fun `choosing Cancel keeps the local edit and asks nothing of the disk`() =
+        runTest {
+            val provider =
+                ScriptedFileProvider(
+                    entry,
+                    writeFailure = FsModificationConflictException(entry.path),
+                )
+            val tab = conflictedTab(provider)
 
-        tab.chooseConflictAction(this, ConflictChoice.Compare)
-        testScheduler.advanceUntilIdle()
+            tab.chooseConflictAction(this, ConflictChoice.Cancel)
 
-        val state = tab.compareState
-        assertThat(state).isInstanceOf(ConflictCompare.Failed::class.java)
-        assertThat((state as ConflictCompare.Failed).message).isEqualTo("connection lost")
-        assertThat(tab.textValue.text).isEqualTo("edited")
-        assertThat(provider.writes).isEmpty()
+            assertThat(tab.conflictOpen).isFalse()
+            // The safe option is safe by what it leaves alone: the edit, the dirty flag, and the file.
+            assertThat(tab.textValue.text).isEqualTo("edited")
+            assertThat(tab.savedText).isEqualTo("hello")
+            assertThat(tab.dirty).isTrue()
+            assertThat(provider.writes).isEmpty()
+            assertThat(provider.reads).isEqualTo(1)
+        }
 
-        tab.closeConflictCompare()
-        assertThat(tab.conflictOpen).isTrue()
-    }
+    @Test
+    fun `choosing Compare shows the server's text and returns to the question on back`() =
+        runTest {
+            val provider =
+                ScriptedFileProvider(
+                    entry,
+                    writeFailure = FsModificationConflictException(entry.path),
+                )
+            val tab = conflictedTab(provider)
+            provider.bytes = "server version".toByteArray()
+
+            tab.chooseConflictAction(this, ConflictChoice.Compare)
+            testScheduler.advanceUntilIdle()
+
+            // The question leaves the screen for its evidence — one dialog at a time.
+            assertThat(tab.conflictOpen).isFalse()
+            val state = tab.compareState
+            assertThat(state).isInstanceOf(ConflictCompare.Ready::class.java)
+            assertThat((state as ConflictCompare.Ready).serverText).isEqualTo("server version")
+            // The compare is a read, never a write, and it must not decide anything either: the local
+            // text is exactly what the user typed, still dirty, still unguarded-by-choice.
+            assertThat(provider.writes).isEmpty()
+            assertThat(tab.textValue.text).isEqualTo("edited")
+            assertThat(tab.dirty).isTrue()
+
+            // Back re-asks the question the compare was fetched to answer.
+            tab.closeConflictCompare()
+            assertThat(tab.compareState).isNull()
+            assertThat(tab.conflictOpen).isTrue()
+        }
+
+    @Test
+    fun `a failed compare fetch is one line of text, not a crash`() =
+        runTest {
+            // The connection that reported the conflict can be gone by the time the user asks to see
+            // why — the fetch failing must land as a message, with the edit intact and the question
+            // still answerable behind it.
+            val provider =
+                ScriptedFileProvider(
+                    entry,
+                    writeFailure = FsModificationConflictException(entry.path),
+                )
+            val tab = conflictedTab(provider)
+            provider.readFailure = IllegalStateException("connection lost")
+
+            tab.chooseConflictAction(this, ConflictChoice.Compare)
+            testScheduler.advanceUntilIdle()
+
+            val state = tab.compareState
+            assertThat(state).isInstanceOf(ConflictCompare.Failed::class.java)
+            assertThat((state as ConflictCompare.Failed).message).isEqualTo("connection lost")
+            assertThat(tab.textValue.text).isEqualTo("edited")
+            assertThat(provider.writes).isEmpty()
+
+            tab.closeConflictCompare()
+            assertThat(tab.conflictOpen).isTrue()
+        }
 }

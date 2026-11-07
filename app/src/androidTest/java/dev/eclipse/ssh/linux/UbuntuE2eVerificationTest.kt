@@ -4,13 +4,13 @@ import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.eclipse.ssh.di.LinuxUserspaceGraphProvider
-import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * The deep-verification half of the Ubuntu E2E pipeline (android-ubuntu-e2e.yml): the install
@@ -41,7 +41,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class UbuntuE2eVerificationTest {
-
     private val arguments get() = InstrumentationRegistry.getArguments()
     private val graphOrNull by lazy {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -58,13 +57,14 @@ class UbuntuE2eVerificationTest {
      * what is wrong is the pairing of APK and device, and only the device can say which ABIs it
      * offered. `versionsFor` is handed the whole list, so the whole list is what belongs here.
      */
-    private val graph get() = checkNotNull(graphOrNull) {
-        val deviceAbis = Build.SUPPORTED_ABIS.joinToString(", ")
-        "GRAPH stage: no userspace graph for this device - it reports the ABIs [$deviceAbis] and " +
-            "LinuxDistroCatalog maps none of them to a rootfs. The pipeline must install an APK " +
-            "whose ABI the catalog carries (the per-ABI split for this device), not a build that " +
-            "resolved to some other ABI"
-    }
+    private val graph get() =
+        checkNotNull(graphOrNull) {
+            val deviceAbis = Build.SUPPORTED_ABIS.joinToString(", ")
+            "GRAPH stage: no userspace graph for this device - it reports the ABIs [$deviceAbis] and " +
+                "LinuxDistroCatalog maps none of them to a rootfs. The pipeline must install an APK " +
+                "whose ABI the catalog carries (the per-ABI split for this device), not a build that " +
+                "resolved to some other ABI"
+        }
 
     @Before
     fun onlyInsideTheE2ePipeline() {
@@ -86,25 +86,40 @@ class UbuntuE2eVerificationTest {
      * output" and "started printing then died" are different diagnoses (proot errors, shell
      * errors and DNS messages all live in that partial output).
      */
-    private fun session(command: String, timeoutMs: Long = COMMAND_TIMEOUT_MS): ProotCommandResult {
+    private fun session(
+        command: String,
+        timeoutMs: Long = COMMAND_TIMEOUT_MS,
+    ): ProotCommandResult {
         val runtime = graph.runtime
         val partial = StringBuilder()
-        val result = runBlocking {
-            runtime.runCommand(runtime.sessionArgv(command), env = runtime.baseEnv(),
-                timeoutMs = timeoutMs) { chunk ->
-                synchronized(partial) { partial.append(chunk.toString(Charsets.UTF_8)) }
+        val result =
+            runBlocking {
+                runtime.runCommand(
+                    runtime.sessionArgv(command),
+                    env = runtime.baseEnv(),
+                    timeoutMs = timeoutMs,
+                ) { chunk ->
+                    synchronized(partial) { partial.append(chunk.toString(Charsets.UTF_8)) }
+                }
             }
-        }
         checkNotNull(result) {
             val printed = synchronized(partial) { partial.toString() }
             "UBUNTU SHELL stage: '$command' did not answer within ${timeoutMs / 1000}s" +
-                (if (printed.isBlank()) " and printed nothing at all"
-                else " but printed this before going silent: ${printed.take(2000)}")
+                (
+                    if (printed.isBlank()) {
+                        " and printed nothing at all"
+                    } else {
+                        " but printed this before going silent: ${printed.take(2000)}"
+                    }
+                )
         }
         return result
     }
 
-    private fun sessionSucceeds(command: String, timeoutMs: Long = COMMAND_TIMEOUT_MS): String {
+    private fun sessionSucceeds(
+        command: String,
+        timeoutMs: Long = COMMAND_TIMEOUT_MS,
+    ): String {
         val result = session(command, timeoutMs)
         check(result.exitCode == 0) {
             "UBUNTU SHELL stage: '$command' exited ${result.exitCode}: ${result.outputText().take(2000)}"
@@ -136,28 +151,38 @@ class UbuntuE2eVerificationTest {
         val runtime = graph.runtime
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir)
-        val argv = listOf(
-            File(nativeLibraryDir, "libproot.so").absolutePath,
-            "--rootfs=${runtime.rootfsDir.absolutePath}",
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-w", runtime.homePath,
-            "/bin/bash", "--login", "-c", "echo DIRECT_EXEC_OK",
-        )
-        val process = ProcessBuilder(argv).apply {
-            environment().clear()
-            environment()["PROOT_LOADER"] = File(nativeLibraryDir, "libproot-loader.so").absolutePath
-            environment()["PROOT_TMP_DIR"] = runtime.tmpDir.absolutePath
-            environment()["HOME"] = runtime.homePath
-            environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            environment()["TERM"] = "xterm-256color"
-            environment()["LANG"] = "C.UTF-8"
-            // directory() returns ProcessBuilder (builder pattern), so Kotlin exposes no
-            // `directory` property - assignment does not compile, the call does.
-            directory(runtime.spawnCwd)
-            redirectErrorStream(true)
-        }.start()
+        val argv =
+            listOf(
+                File(nativeLibraryDir, "libproot.so").absolutePath,
+                "--rootfs=${runtime.rootfsDir.absolutePath}",
+                "-b",
+                "/dev",
+                "-b",
+                "/proc",
+                "-b",
+                "/sys",
+                "-w",
+                runtime.homePath,
+                "/bin/bash",
+                "--login",
+                "-c",
+                "echo DIRECT_EXEC_OK",
+            )
+        val process =
+            ProcessBuilder(argv)
+                .apply {
+                    environment().clear()
+                    environment()["PROOT_LOADER"] = File(nativeLibraryDir, "libproot-loader.so").absolutePath
+                    environment()["PROOT_TMP_DIR"] = runtime.tmpDir.absolutePath
+                    environment()["HOME"] = runtime.homePath
+                    environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                    environment()["TERM"] = "xterm-256color"
+                    environment()["LANG"] = "C.UTF-8"
+                    // directory() returns ProcessBuilder (builder pattern), so Kotlin exposes no
+                    // `directory` property - assignment does not compile, the call does.
+                    directory(runtime.spawnCwd)
+                    redirectErrorStream(true)
+                }.start()
         val finished = process.waitFor(DIRECT_EXEC_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         if (!finished) {
             // Kill first: reading the output stream of a live process blocks until it exits,
@@ -344,14 +369,15 @@ class UbuntuE2eVerificationTest {
         // `test -ef` and `stat -c '%h %i'` are deliberately both asked: -ef goes through the shell's
         // own stat (glibc's newfstatat) and coreutils' stat goes through statx, so the two syscall
         // paths the patch corrects are both exercised.
-        val probe = sessionSucceeds(
-            "rm -rf /tmp/link-probe && mkdir -p /tmp/link-probe && printf x > /tmp/link-probe/a && " +
-                "ln /tmp/link-probe/a /tmp/link-probe/b && " +
-                // Not chained with &&: a 'no' answer must still reach the stat below, so the failure
-                // message can carry what the filesystem actually said instead of an empty output.
-                "{ test /tmp/link-probe/a -ef /tmp/link-probe/b && echo same-file=yes || echo same-file=no; } && " +
-                "stat -c 'links=%h inode=%i' /tmp/link-probe/a /tmp/link-probe/b",
-        )
+        val probe =
+            sessionSucceeds(
+                "rm -rf /tmp/link-probe && mkdir -p /tmp/link-probe && printf x > /tmp/link-probe/a && " +
+                    "ln /tmp/link-probe/a /tmp/link-probe/b && " +
+                    // Not chained with &&: a 'no' answer must still reach the stat below, so the failure
+                    // message can carry what the filesystem actually said instead of an empty output.
+                    "{ test /tmp/link-probe/a -ef /tmp/link-probe/b && echo same-file=yes || echo same-file=no; } && " +
+                    "stat -c 'links=%h inode=%i' /tmp/link-probe/a /tmp/link-probe/b",
+            )
         check(probe.contains("same-file=yes")) {
             "LINK stage: the shell does not see the two names as one file, so shadow(1) would read " +
                 "its own lock as held: ${probe.take(500)}"
@@ -368,9 +394,11 @@ class UbuntuE2eVerificationTest {
         // so R8 removed it from the interface. The call threw NoSuchMethodError on run 35106576845,
         // at the line below, AFTER the probe above had already succeeded; the same class of strip
         // the readBytes() note further up this file records.
-        val rows = probe.lines()
-            .map { it.trim() }
-            .filter { it.startsWith("links=") }
+        val rows =
+            probe
+                .lines()
+                .map { it.trim() }
+                .filter { it.startsWith("links=") }
         check(rows.size == 2) {
             "LINK stage: expected 'stat' to report two 'links=<n> inode=<n>' rows, got: ${probe.take(500)}"
         }

@@ -15,14 +15,6 @@ import dev.eclipse.ssh.data.model.TransferDirection
 import dev.eclipse.ssh.data.model.TransferItem
 import dev.eclipse.ssh.data.model.TransferStatus
 import dev.eclipse.ssh.data.settings.SettingsRepository
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.OutputStream
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.Collections
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -45,6 +37,14 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Collections
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * What the transfer queue records about a transfer that has just ended.
@@ -66,7 +66,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class TransferProgressPersistenceTest {
-
     private val context get() = RuntimeEnvironment.getApplication()
 
     private lateinit var database: EclipseDatabase
@@ -86,9 +85,11 @@ class TransferProgressPersistenceTest {
         WorkManagerTestInitHelper.initializeTestWorkManager(context)
         // In-memory, but the real generated DAO: `upsert` has to keep its REPLACE semantics for
         // these tests to mean anything.
-        database = Room.inMemoryDatabaseBuilder(context, EclipseDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
+        database =
+            Room
+                .inMemoryDatabaseBuilder(context, EclipseDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
         repository = RoomTransferRepository(database.transferDao())
         val scheduler = TransferScheduler(context)
         val notifier = TransferNotifier(context)
@@ -107,53 +108,56 @@ class TransferProgressPersistenceTest {
     }
 
     @Test(timeout = 120_000)
-    fun `a completed download stores the bytes it actually moved`() = runBlocking {
-        val item = downloadItem(id = "completed-download", remotePath = PAYLOAD)
-        repository.save(item)
-        val destination = ByteArrayOutputStream()
+    fun `a completed download stores the bytes it actually moved`() =
+        runBlocking {
+            val item = downloadItem(id = "completed-download", remotePath = PAYLOAD)
+            repository.save(item)
+            val destination = ByteArrayOutputStream()
 
-        coordinator.downloadAwait(item, sftp, PAYLOAD, destination)
+            coordinator.downloadAwait(item, sftp, PAYLOAD, destination)
 
-        val row = row("completed-download")
-        assertThat(row.status).isEqualTo(TransferStatus.COMPLETE)
-        assertThat(row.progress).isEqualTo(1f)
-        // The assertion the old code failed: it wrote `progress = 1f` onto the caller's snapshot, so
-        // the row claimed a finished transfer of zero bytes and the list showed "0 B of unknown".
-        assertWithMessage("a finished transfer must record the bytes it moved, not its starting count")
-            .that(row.transferredBytes)
-            .isEqualTo(PAYLOAD_SIZE)
-        // Learned from `sftp.stat` during the attempt; the caller never knew it.
-        assertThat(row.totalBytes).isEqualTo(PAYLOAD_SIZE)
-        assertThat(destination.size().toLong()).isEqualTo(PAYLOAD_SIZE)
-    }
+            val row = row("completed-download")
+            assertThat(row.status).isEqualTo(TransferStatus.COMPLETE)
+            assertThat(row.progress).isEqualTo(1f)
+            // The assertion the old code failed: it wrote `progress = 1f` onto the caller's snapshot, so
+            // the row claimed a finished transfer of zero bytes and the list showed "0 B of unknown".
+            assertWithMessage("a finished transfer must record the bytes it moved, not its starting count")
+                .that(row.transferredBytes)
+                .isEqualTo(PAYLOAD_SIZE)
+            // Learned from `sftp.stat` during the attempt; the caller never knew it.
+            assertThat(row.totalBytes).isEqualTo(PAYLOAD_SIZE)
+            assertThat(destination.size().toLong()).isEqualTo(PAYLOAD_SIZE)
+        }
 
     @Test(timeout = 120_000)
-    fun `a completed upload stores the bytes it actually moved`() = runBlocking {
-        val body = ByteArray(48 * 1024) { (it % 251).toByte() }
-        val item = TransferItem(
-            id = "completed-upload",
-            name = "uploaded.bin",
-            direction = TransferDirection.UPLOAD,
-            hostName = HOST_NAME,
-            progress = 0f,
-            status = TransferStatus.QUEUED,
-            sizeLabel = "48 KB",
-            hostId = HOST_ID,
-            remotePath = "uploaded.bin",
-            // Set, because a local upload really does know its size up front. The byte count is
-            // still what regressed: the old terminal write carried this snapshot's zero.
-            totalBytes = body.size.toLong(),
-        )
-        repository.save(item)
+    fun `a completed upload stores the bytes it actually moved`() =
+        runBlocking {
+            val body = ByteArray(48 * 1024) { (it % 251).toByte() }
+            val item =
+                TransferItem(
+                    id = "completed-upload",
+                    name = "uploaded.bin",
+                    direction = TransferDirection.UPLOAD,
+                    hostName = HOST_NAME,
+                    progress = 0f,
+                    status = TransferStatus.QUEUED,
+                    sizeLabel = "48 KB",
+                    hostId = HOST_ID,
+                    remotePath = "uploaded.bin",
+                    // Set, because a local upload really does know its size up front. The byte count is
+                    // still what regressed: the old terminal write carried this snapshot's zero.
+                    totalBytes = body.size.toLong(),
+                )
+            repository.save(item)
 
-        coordinator.uploadAwait(item, sftp, ByteArrayInputStream(body), "uploaded.bin", body.size.toLong())
+            coordinator.uploadAwait(item, sftp, ByteArrayInputStream(body), "uploaded.bin", body.size.toLong())
 
-        val row = row("completed-upload")
-        assertThat(row.status).isEqualTo(TransferStatus.COMPLETE)
-        assertThat(row.transferredBytes).isEqualTo(body.size.toLong())
-        assertThat(row.totalBytes).isEqualTo(body.size.toLong())
-        assertThat(sftp.stat("uploaded.bin").size).isEqualTo(body.size.toLong())
-    }
+            val row = row("completed-upload")
+            assertThat(row.status).isEqualTo(TransferStatus.COMPLETE)
+            assertThat(row.transferredBytes).isEqualTo(body.size.toLong())
+            assertThat(row.totalBytes).isEqualTo(body.size.toLong())
+            assertThat(sftp.stat("uploaded.bin").size).isEqualTo(body.size.toLong())
+        }
 
     /**
      * The pause path, driven the way the app drives it: the session going away or "disconnect all"
@@ -165,31 +169,32 @@ class TransferProgressPersistenceTest {
      * what makes the assertion below a real comparison rather than a coincidence.
      */
     @Test(timeout = 120_000)
-    fun `pausing a download keeps the progress it had already made`() = runBlocking {
-        val item = downloadItem(id = "paused-download", remotePath = BIG, name = "big.bin")
-        repository.save(item)
+    fun `pausing a download keeps the progress it had already made`() =
+        runBlocking {
+            val item = downloadItem(id = "paused-download", remotePath = BIG, name = "big.bin")
+            repository.save(item)
 
-        val sink = ThrottledSink()
-        coordinator.download(item, sftp, BIG, sink, ownsSftp = false)
-        val running = awaitRow("paused-download") { it.status == TransferStatus.RUNNING && it.transferredBytes > 0 }
+            val sink = ThrottledSink()
+            coordinator.download(item, sftp, BIG, sink, ownsSftp = false)
+            val running = awaitRow("paused-download") { it.status == TransferStatus.RUNNING && it.transferredBytes > 0 }
 
-        coordinator.cancelAll()
+            coordinator.cancelAll()
 
-        val paused = awaitRow("paused-download") { it.status == TransferStatus.PAUSED }
-        assertWithMessage("pausing must not rewind the byte count a resume is estimated from")
-            .that(paused.transferredBytes)
-            .isAtLeast(running.transferredBytes)
-        assertThat(paused.totalBytes).isEqualTo(BIG_SIZE)
-        assertThat(paused.progress).isGreaterThan(0f)
-        // Still mid-transfer: if the throttle failed and the file finished, the assertion above
-        // would pass for the wrong reason.
-        assertThat(paused.progress).isLessThan(1f)
-        // Cancellation is not failure, so nothing is counted against the retry ceiling.
-        assertThat(paused.retryCount).isEqualTo(0)
-        // Every byte the row claims really did reach the destination: the progress callback
-        // fires after the write, so the sink can only ever be ahead of the recorded count.
-        assertThat(sink.written.get()).isAtLeast(paused.transferredBytes)
-    }
+            val paused = awaitRow("paused-download") { it.status == TransferStatus.PAUSED }
+            assertWithMessage("pausing must not rewind the byte count a resume is estimated from")
+                .that(paused.transferredBytes)
+                .isAtLeast(running.transferredBytes)
+            assertThat(paused.totalBytes).isEqualTo(BIG_SIZE)
+            assertThat(paused.progress).isGreaterThan(0f)
+            // Still mid-transfer: if the throttle failed and the file finished, the assertion above
+            // would pass for the wrong reason.
+            assertThat(paused.progress).isLessThan(1f)
+            // Cancellation is not failure, so nothing is counted against the retry ceiling.
+            assertThat(paused.retryCount).isEqualTo(0)
+            // Every byte the row claims really did reach the destination: the progress callback
+            // fires after the write, so the sink can only ever be ahead of the recorded count.
+            assertThat(sink.written.get()).isAtLeast(paused.transferredBytes)
+        }
 
     /**
      * The same terminal write in the restore path, which is the one that runs after process death
@@ -200,31 +205,36 @@ class TransferProgressPersistenceTest {
      * documented fallback to [TransferItem.transferredBytes], which is zero here.
      */
     @Test(timeout = 120_000)
-    fun `a restored download records what it recovered instead of where it started`() = runBlocking {
-        val destination = ByteArrayOutputStream()
-        val uri = Uri.parse("content://dev.eclipse.ssh.test/restored.bin")
-        shadowOf(context.contentResolver).registerOutputStream(uri, destination)
-        repository.save(
-            downloadItem(id = "restored-download", remotePath = PAYLOAD, name = "restored.bin").copy(
-                status = TransferStatus.PAUSED,
-                localUri = uri.toString(),
-            ),
-        )
+    fun `a restored download records what it recovered instead of where it started`() =
+        runBlocking {
+            val destination = ByteArrayOutputStream()
+            val uri = Uri.parse("content://dev.eclipse.ssh.test/restored.bin")
+            shadowOf(context.contentResolver).registerOutputStream(uri, destination)
+            repository.save(
+                downloadItem(id = "restored-download", remotePath = PAYLOAD, name = "restored.bin").copy(
+                    status = TransferStatus.PAUSED,
+                    localUri = uri.toString(),
+                ),
+            )
 
-        val resumed = restorer.resumeForHost(HOST_ID, session)
+            val resumed = restorer.resumeForHost(HOST_ID, session)
 
-        assertThat(resumed).isEqualTo(1)
-        val row = row("restored-download")
-        assertThat(row.status).isEqualTo(TransferStatus.COMPLETE)
-        assertThat(row.progress).isEqualTo(1f)
-        assertWithMessage("a finished restore must record the bytes it recovered")
-            .that(row.transferredBytes)
-            .isEqualTo(PAYLOAD_SIZE)
-        assertThat(row.totalBytes).isEqualTo(PAYLOAD_SIZE)
-        assertThat(destination.size().toLong()).isEqualTo(PAYLOAD_SIZE)
-    }
+            assertThat(resumed).isEqualTo(1)
+            val row = row("restored-download")
+            assertThat(row.status).isEqualTo(TransferStatus.COMPLETE)
+            assertThat(row.progress).isEqualTo(1f)
+            assertWithMessage("a finished restore must record the bytes it recovered")
+                .that(row.transferredBytes)
+                .isEqualTo(PAYLOAD_SIZE)
+            assertThat(row.totalBytes).isEqualTo(PAYLOAD_SIZE)
+            assertThat(destination.size().toLong()).isEqualTo(PAYLOAD_SIZE)
+        }
 
-    private fun downloadItem(id: String, remotePath: String, name: String = "payload.bin") = TransferItem(
+    private fun downloadItem(
+        id: String,
+        remotePath: String,
+        name: String = "payload.bin",
+    ) = TransferItem(
         id = id,
         name = name,
         direction = TransferDirection.DOWNLOAD,
@@ -248,7 +258,10 @@ class TransferProgressPersistenceTest {
      * suspends anyway. The deadline uses [System.nanoTime] because Robolectric leaves that alone —
      * a shadowed clock that only advances when the looper is pumped would never expire.
      */
-    private suspend fun awaitRow(id: String, predicate: (TransferItem) -> Boolean): TransferItem {
+    private suspend fun awaitRow(
+        id: String,
+        predicate: (TransferItem) -> Boolean,
+    ): TransferItem {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60)
         var seen: TransferItem? = null
         while (System.nanoTime() < deadline) {
@@ -274,7 +287,11 @@ class TransferProgressPersistenceTest {
 
         override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
 
-        override fun write(b: ByteArray, off: Int, len: Int) {
+        override fun write(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ) {
             written.addAndGet(len.toLong())
             runCatching { Thread.sleep(WRITE_PAUSE_MS) }
         }
@@ -307,26 +324,29 @@ class TransferProgressPersistenceTest {
             Files.write(root.resolve(PAYLOAD), ByteArray(PAYLOAD_SIZE.toInt()) { (it % 251).toByte() })
             Files.write(root.resolve(BIG), ByteArray(BIG_SIZE.toInt()) { (it % 241).toByte() })
 
-            server = SshServer.setUpDefaultServer().apply {
-                port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("transfer-host").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ -> user == USER && password == PASSWORD }
-                subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
-                fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
-                start()
-            }
+            server =
+                SshServer.setUpDefaultServer().apply {
+                    port = 0
+                    keyPairProvider =
+                        SimpleGeneratorHostKeyProvider(
+                            Files.createTempDirectory("transfer-host").resolve("hostkey.ser"),
+                        )
+                    passwordAuthenticator = PasswordAuthenticator { user, password, _ -> user == USER && password == PASSWORD }
+                    subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
+                    fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
+                    start()
+                }
 
             // A plain MINA client, not `SshConnectionManager.connect`: these tests are about what the
             // queue records, and going through the app's connect path would drag in the host-key
             // challenge dance for no added coverage. The SFTP client itself is created through the
             // same `SftpClientFactory.instance()` call the app uses.
             client = SshClient.setUpDefaultClient().apply { start() }
-            session = client.connect(USER, "127.0.0.1", server.port).verify(30, TimeUnit.SECONDS).session.apply {
-                addPasswordIdentity(PASSWORD)
-                auth().verify(30, TimeUnit.SECONDS)
-            }
+            session =
+                client.connect(USER, "127.0.0.1", server.port).verify(30, TimeUnit.SECONDS).session.apply {
+                    addPasswordIdentity(PASSWORD)
+                    auth().verify(30, TimeUnit.SECONDS)
+                }
         }
 
         @JvmStatic

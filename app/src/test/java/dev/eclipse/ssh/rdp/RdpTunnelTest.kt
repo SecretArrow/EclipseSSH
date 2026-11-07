@@ -1,10 +1,8 @@
 package dev.eclipse.ssh.rdp
 
+import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.data.model.RemoteDesktopTarget
 import dev.eclipse.ssh.ssh.PortForwardingManager
-import java.nio.file.Files
-import java.net.InetSocketAddress
-import java.util.concurrent.TimeUnit
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.server.SshServer
@@ -20,7 +18,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import com.google.common.truth.Truth.assertThat
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 
 /**
  * The RDP engine's state machine, without its engine.
@@ -45,18 +45,18 @@ import com.google.common.truth.Truth.assertThat
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class RdpTunnelTest {
-
     private lateinit var sshClient: SshClient
     private lateinit var session: ClientSession
 
     @Before
     fun connectSession() {
-        sshClient = SshClient.setUpDefaultClient().apply {
-            // A stand-in verifier is all the test needs: the server's key was generated in
-            // this JVM a moment before, and the tunnel's subject is not host-key trust.
-            serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
-            start()
-        }
+        sshClient =
+            SshClient.setUpDefaultClient().apply {
+                // A stand-in verifier is all the test needs: the server's key was generated in
+                // this JVM a moment before, and the tunnel's subject is not host-key trust.
+                serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
+                start()
+            }
         session = sshClient.connect(USER, LOOPBACK, serverPort).verify(15, TimeUnit.SECONDS).session
         session.addPasswordIdentity(PASSWORD)
         session.auth().verify(15, TimeUnit.SECONDS)
@@ -79,13 +79,14 @@ class RdpTunnelTest {
         // And it stays single-shot: a start on an abandoned tunnel is refused before the
         // session, the forward or the engine is touched, rather than run over the teardown
         // the abandon already did.
-        val refused = runCatching {
-            t.start(
-                RuntimeEnvironment.getApplication(),
-                session,
-                RemoteDesktopTarget(port = 3389),
-            )
-        }
+        val refused =
+            runCatching {
+                t.start(
+                    RuntimeEnvironment.getApplication(),
+                    session,
+                    RemoteDesktopTarget(port = 3389),
+                )
+            }
         assertThat(refused.isFailure).isTrue()
         // A stop after an abandon is a no-op, not a second teardown or a state overwrite: the
         // session ended against the user's will, and Closed would rewrite that story.
@@ -158,19 +159,22 @@ class RdpTunnelTest {
         @JvmStatic
         @BeforeClass
         fun startServer() {
-            server = SshServer.setUpDefaultServer().apply {
-                // Port 0: the debug and release unit-test JVMs overlap, and a fixed port would
-                // give the loser of the bind a server that never started.
-                port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("rdp-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    user == USER && password == PASSWORD
+            server =
+                SshServer.setUpDefaultServer().apply {
+                    // Port 0: the debug and release unit-test JVMs overlap, and a fixed port would
+                    // give the loser of the bind a server that never started.
+                    port = 0
+                    keyPairProvider =
+                        SimpleGeneratorHostKeyProvider(
+                            Files.createTempDirectory("rdp-hostkey").resolve("hostkey.ser"),
+                        )
+                    passwordAuthenticator =
+                        PasswordAuthenticator { user, password, _ ->
+                            user == USER && password == PASSWORD
+                        }
+                    userAuthFactories = listOf(UserAuthPasswordFactory.INSTANCE)
+                    start()
                 }
-                userAuthFactories = listOf(UserAuthPasswordFactory.INSTANCE)
-                start()
-            }
             serverPort = (server.boundAddresses.first() as InetSocketAddress).port
         }
 

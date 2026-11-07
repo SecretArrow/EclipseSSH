@@ -21,7 +21,6 @@ import org.junit.Test
  * user has replaced must not narrate onto the tab they are waiting on.
  */
 class ConnectPhaseReportingTest {
-
     @Test
     fun `a retry after the login succeeded does not blame the connection`() {
         // The reported bug, in one assertion: authentication worked, the pty did not, and the app used to

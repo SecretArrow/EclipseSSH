@@ -12,7 +12,6 @@ import org.junit.Test
  * indicator uses - and each is asserted by name so that a regenerated table cannot quietly drop one.
  */
 class GlyphFacesTest {
-
     @Test
     fun `the symbols no bundled text face carries go to the symbol face`() {
         // U+23F5 BLACK RIGHT-POINTING DOUBLE TRIANGLE, the reported tofu: [CC] writes `⏵⏵ bypass

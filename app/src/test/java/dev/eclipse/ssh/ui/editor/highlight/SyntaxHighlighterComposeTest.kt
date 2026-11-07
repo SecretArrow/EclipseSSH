@@ -25,7 +25,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SyntaxHighlighterComposeTest {
-
     @Test
     fun `a Kotlin keyword span lands on the exact keyword offsets`() {
         // The field applies a span by offset onto text it already holds, so the offsets - not

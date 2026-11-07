@@ -1,8 +1,8 @@
 package dev.eclipse.ssh.ui.preview
 
 import dev.eclipse.ssh.archive.ArchiveEntry
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -49,7 +49,6 @@ data class ArchivePreviewRequest(
  * a channel to do it.
  */
 object PreviewRequests {
-
     private val files = ConcurrentHashMap<String, FilePreviewRequest>()
     private val archiveEntries = ConcurrentHashMap<String, ArchivePreviewRequest>()
 

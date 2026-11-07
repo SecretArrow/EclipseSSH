@@ -2,12 +2,12 @@ package dev.eclipse.ssh.ssh
 
 import android.util.Log
 import dev.eclipse.ssh.data.model.SessionConnectionState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The lifecycle of every SSH session, recorded as structured events that carry no secrets.
@@ -48,165 +48,170 @@ import kotlinx.coroutines.flow.StateFlow
  * [scrub], which drops anything that looks like it came from a credential rather than from a socket.
  */
 @Singleton
-class SessionDiagnostics @Inject constructor() {
+class SessionDiagnostics
+    @Inject
+    constructor() {
+        private val entries = ArrayDeque<SessionDiagnosticEvent>()
+        private val sequence = AtomicLong()
 
-    private val entries = ArrayDeque<SessionDiagnosticEvent>()
-    private val sequence = AtomicLong()
+        /** Opaque per-process labels for host ids, so nothing here names a real host or account. */
+        private val labels = ConcurrentHashMap<String, String>()
+        private val labelSequence = AtomicLong()
 
-    /** Opaque per-process labels for host ids, so nothing here names a real host or account. */
-    private val labels = ConcurrentHashMap<String, String>()
-    private val labelSequence = AtomicLong()
+        /**
+         * How many transports each host has been given, so a trace can be read one connection at a time.
+         *
+         * A host label alone cannot answer the question a reconnect trace exists to answer: with `s1` on
+         * forty lines spanning six sockets, "did the pty open on the session that then died, or on the one
+         * before it?" is unanswerable, and that is precisely the confusion a connect-disconnect loop
+         * produces. Counted here rather than passed in because every caller would otherwise have to thread
+         * an id through the dial, the collector and the ladder - three components that deliberately do not
+         * know about each other - and one that forgot would silently mislabel a whole connection.
+         *
+         * Advanced by [SessionEvent.HANDSHAKE], which is exactly once per socket: it is the first thing
+         * `SshConnectionManager.connect` reports, on every attempt, including each rung of the ladder.
+         * Events recorded before the first handshake - a connect being requested, a reconnect being armed
+         * for a session that has just died - carry the number of the transport they belong to, which for a
+         * request is 0 and for the aftermath of a drop is the one that dropped.
+         */
+        private val connections = ConcurrentHashMap<String, AtomicLong>()
 
-    /**
-     * How many transports each host has been given, so a trace can be read one connection at a time.
-     *
-     * A host label alone cannot answer the question a reconnect trace exists to answer: with `s1` on
-     * forty lines spanning six sockets, "did the pty open on the session that then died, or on the one
-     * before it?" is unanswerable, and that is precisely the confusion a connect-disconnect loop
-     * produces. Counted here rather than passed in because every caller would otherwise have to thread
-     * an id through the dial, the collector and the ladder - three components that deliberately do not
-     * know about each other - and one that forgot would silently mislabel a whole connection.
-     *
-     * Advanced by [SessionEvent.HANDSHAKE], which is exactly once per socket: it is the first thing
-     * `SshConnectionManager.connect` reports, on every attempt, including each rung of the ladder.
-     * Events recorded before the first handshake - a connect being requested, a reconnect being armed
-     * for a session that has just died - carry the number of the transport they belong to, which for a
-     * request is 0 and for the aftermath of a drop is the one that dropped.
-     */
-    private val connections = ConcurrentHashMap<String, AtomicLong>()
+        /**
+         * How many times each host has been redialled by the ladder, for the life of the process.
+         *
+         * Deliberately not the same number as [SessionDiagnosticEvent.attempt]. That one is the rung of
+         * the ladder currently being climbed, and it is *reset* - by a user asking to connect, and by a
+         * session that stayed up long enough to count as stable - which is correct for deciding when to
+         * give up and useless for judging a host: a link that reconnects every four minutes all afternoon
+         * shows `attempt=1` every single time. This one only ever grows, so `reconnects=37` on a line says
+         * what an hour of trace would otherwise have to be counted by hand to learn.
+         */
+        private val reconnects = ConcurrentHashMap<String, AtomicLong>()
 
-    /**
-     * How many times each host has been redialled by the ladder, for the life of the process.
-     *
-     * Deliberately not the same number as [SessionDiagnosticEvent.attempt]. That one is the rung of
-     * the ladder currently being climbed, and it is *reset* - by a user asking to connect, and by a
-     * session that stayed up long enough to count as stable - which is correct for deciding when to
-     * give up and useless for judging a host: a link that reconnects every four minutes all afternoon
-     * shows `attempt=1` every single time. This one only ever grows, so `reconnects=37` on a line says
-     * what an hour of trace would otherwise have to be counted by hand to learn.
-     */
-    private val reconnects = ConcurrentHashMap<String, AtomicLong>()
+        private val _events = MutableStateFlow<List<SessionDiagnosticEvent>>(emptyList())
 
-    private val _events = MutableStateFlow<List<SessionDiagnosticEvent>>(emptyList())
+        /** The ring, newest last, for the diagnostics screen. */
+        val events: StateFlow<List<SessionDiagnosticEvent>> = _events
 
-    /** The ring, newest last, for the diagnostics screen. */
-    val events: StateFlow<List<SessionDiagnosticEvent>> = _events
-
-    /**
-     * Records one lifecycle event.
-     *
-     * Cheap enough to call from anywhere, including a MINA I/O thread: a formatted string, a lock on a
-     * small deque, and one `StateFlow` write. Deliberately not suspending - a diagnostic that could be
-     * dropped by cancellation would be missing exactly when a session was torn down, which is when it
-     * matters most.
-     */
-    fun record(
-        hostId: String,
-        event: SessionEvent,
-        state: SessionConnectionState? = null,
-        detail: String? = null,
-        network: String? = null,
-        keepAliveSeconds: Int? = null,
-        pty: String? = null,
-        channel: String? = null,
-        idleForMs: Long? = null,
-        attempt: Int? = null,
-        upForMs: Long? = null,
-    ) {
-        // Read after the increments so the handshake that opens a transport is the first line carrying
-        // that transport's number, and the reconnect attempt that leads to it is the last line carrying
-        // the previous one.
-        val connection = counter(connections, hostId, advance = event == SessionEvent.HANDSHAKE)
-        val reconnected = counter(reconnects, hostId, advance = event == SessionEvent.RECONNECT_ATTEMPT)
-        val entry = SessionDiagnosticEvent(
-            sequence = sequence.incrementAndGet(),
-            atMs = System.currentTimeMillis(),
-            session = label(hostId),
-            connection = connection,
-            event = event,
-            state = state,
-            detail = detail?.let(::scrub)?.take(MAX_DETAIL),
-            network = network,
-            keepAliveSeconds = keepAliveSeconds,
-            pty = pty,
-            channel = channel,
-            idleForMs = idleForMs,
-            attempt = attempt,
-            reconnects = reconnected,
-            upForMs = upForMs,
-        )
-        synchronized(entries) {
-            entries.addLast(entry)
-            while (entries.size > MAX_ENTRIES) entries.removeFirst()
-            _events.value = entries.toList()
+        /**
+         * Records one lifecycle event.
+         *
+         * Cheap enough to call from anywhere, including a MINA I/O thread: a formatted string, a lock on a
+         * small deque, and one `StateFlow` write. Deliberately not suspending - a diagnostic that could be
+         * dropped by cancellation would be missing exactly when a session was torn down, which is when it
+         * matters most.
+         */
+        fun record(
+            hostId: String,
+            event: SessionEvent,
+            state: SessionConnectionState? = null,
+            detail: String? = null,
+            network: String? = null,
+            keepAliveSeconds: Int? = null,
+            pty: String? = null,
+            channel: String? = null,
+            idleForMs: Long? = null,
+            attempt: Int? = null,
+            upForMs: Long? = null,
+        ) {
+            // Read after the increments so the handshake that opens a transport is the first line carrying
+            // that transport's number, and the reconnect attempt that leads to it is the last line carrying
+            // the previous one.
+            val connection = counter(connections, hostId, advance = event == SessionEvent.HANDSHAKE)
+            val reconnected = counter(reconnects, hostId, advance = event == SessionEvent.RECONNECT_ATTEMPT)
+            val entry =
+                SessionDiagnosticEvent(
+                    sequence = sequence.incrementAndGet(),
+                    atMs = System.currentTimeMillis(),
+                    session = label(hostId),
+                    connection = connection,
+                    event = event,
+                    state = state,
+                    detail = detail?.let(::scrub)?.take(MAX_DETAIL),
+                    network = network,
+                    keepAliveSeconds = keepAliveSeconds,
+                    pty = pty,
+                    channel = channel,
+                    idleForMs = idleForMs,
+                    attempt = attempt,
+                    reconnects = reconnected,
+                    upForMs = upForMs,
+                )
+            synchronized(entries) {
+                entries.addLast(entry)
+                while (entries.size > MAX_ENTRIES) entries.removeFirst()
+                _events.value = entries.toList()
+            }
+            Log.i(TAG, entry.line())
         }
-        Log.i(TAG, entry.line())
-    }
 
-    /**
-     * Every host id's opaque label, as a snapshot.
-     *
-     * The one way a caller holding a host id can find that host's lines in [events], which is what the
-     * per-session "Why?" sheet needs: the trace deliberately records [label] rather than the id, so
-     * without this the entries for one session could not be picked out of the ring at all. Only the
-     * mapping crosses the boundary - the ids stay on this side and the labels remain the opaque
-     * ordinals they were designed to be, so nothing that is exported or pasted gains an identifier.
-     *
-     * A snapshot rather than the live map, because the caller is a UI reading it during composition and
-     * [labels] is written from MINA's I/O threads. Grows by one entry per host per process, so copying
-     * it is cheaper than the events list it is read alongside.
-     */
-    val sessionLabels: Map<String, String> get() = labels.toMap()
+        /**
+         * Every host id's opaque label, as a snapshot.
+         *
+         * The one way a caller holding a host id can find that host's lines in [events], which is what the
+         * per-session "Why?" sheet needs: the trace deliberately records [label] rather than the id, so
+         * without this the entries for one session could not be picked out of the ring at all. Only the
+         * mapping crosses the boundary - the ids stay on this side and the labels remain the opaque
+         * ordinals they were designed to be, so nothing that is exported or pasted gains an identifier.
+         *
+         * A snapshot rather than the live map, because the caller is a UI reading it during composition and
+         * [labels] is written from MINA's I/O threads. Grows by one entry per host per process, so copying
+         * it is cheaper than the events list it is read alongside.
+         */
+        val sessionLabels: Map<String, String> get() = labels.toMap()
 
-    /** The whole ring as text, for Save logs and for a bug report. */
-    fun export(): String = synchronized(entries) { entries.joinToString("\n") { it.line() } }
+        /** The whole ring as text, for Save logs and for a bug report. */
+        fun export(): String = synchronized(entries) { entries.joinToString("\n") { it.line() } }
 
-    /**
-     * Empties the ring, keeping every host's label and connection number.
-     *
-     * Truncating the trace is not the same as forgetting which session is which. A user clears the log
-     * to capture one clean reproduction, and the connection they are about to capture is very often the
-     * one already up - so restarting the numbering would print a smaller number for the same live
-     * transport, which is the one thing these numbers exist to rule out.
-     */
-    fun clear() {
-        synchronized(entries) {
-            entries.clear()
-            _events.value = emptyList()
+        /**
+         * Empties the ring, keeping every host's label and connection number.
+         *
+         * Truncating the trace is not the same as forgetting which session is which. A user clears the log
+         * to capture one clean reproduction, and the connection they are about to capture is very often the
+         * one already up - so restarting the numbering would print a smaller number for the same live
+         * transport, which is the one thing these numbers exist to rule out.
+         */
+        fun clear() {
+            synchronized(entries) {
+                entries.clear()
+                _events.value = emptyList()
+            }
+        }
+
+        /**
+         * The opaque label for [hostId], stable for the life of the process.
+         *
+         * A host id is a UUID, so it is not a secret in itself - but it is a stable identifier that ties a
+         * pasted log to a row in the user's database, and there is no diagnostic value in it. A short
+         * ordinal is as useful for reading a trace and says nothing.
+         */
+        private fun label(hostId: String): String = labels.computeIfAbsent(hostId) { "s${labelSequence.incrementAndGet()}" }
+
+        /**
+         * [hostId]'s value in [counters], having advanced it first when [advance].
+         *
+         * One helper for both counters because both are the same shape - a per-host tally read on every
+         * line and advanced by one kind of event - and because the read has to be the same read that
+         * follows the increment. Two `record` calls for one host can land on two threads (a MINA I/O
+         * thread reporting an ending while the ladder arms a retry), and a get-then-increment would give
+         * them the same number.
+         */
+        private fun counter(
+            counters: ConcurrentHashMap<String, AtomicLong>,
+            hostId: String,
+            advance: Boolean,
+        ): Long {
+            val counter = counters.computeIfAbsent(hostId) { AtomicLong() }
+            return if (advance) counter.incrementAndGet() else counter.get()
+        }
+
+        /** Module-visible so the trace's two bounds are asserted against the values it actually uses. */
+        internal companion object {
+            const val TAG = "EclipseSSH"
+            const val MAX_ENTRIES = 500
+            const val MAX_DETAIL = 200
         }
     }
-
-    /**
-     * The opaque label for [hostId], stable for the life of the process.
-     *
-     * A host id is a UUID, so it is not a secret in itself - but it is a stable identifier that ties a
-     * pasted log to a row in the user's database, and there is no diagnostic value in it. A short
-     * ordinal is as useful for reading a trace and says nothing.
-     */
-    private fun label(hostId: String): String =
-        labels.computeIfAbsent(hostId) { "s${labelSequence.incrementAndGet()}" }
-
-    /**
-     * [hostId]'s value in [counters], having advanced it first when [advance].
-     *
-     * One helper for both counters because both are the same shape - a per-host tally read on every
-     * line and advanced by one kind of event - and because the read has to be the same read that
-     * follows the increment. Two `record` calls for one host can land on two threads (a MINA I/O
-     * thread reporting an ending while the ladder arms a retry), and a get-then-increment would give
-     * them the same number.
-     */
-    private fun counter(counters: ConcurrentHashMap<String, AtomicLong>, hostId: String, advance: Boolean): Long {
-        val counter = counters.computeIfAbsent(hostId) { AtomicLong() }
-        return if (advance) counter.incrementAndGet() else counter.get()
-    }
-
-    /** Module-visible so the trace's two bounds are asserted against the values it actually uses. */
-    internal companion object {
-        const val TAG = "EclipseSSH"
-        const val MAX_ENTRIES = 500
-        const val MAX_DETAIL = 200
-    }
-}
 
 /**
  * Removes anything from [text] that could be credential material rather than diagnosis.
@@ -238,10 +243,11 @@ private const val KEY_MARK = "«key»"
 private const val REDACTED_MARK = "«redacted»"
 
 private val PEM = Regex("-{3,}\\s*BEGIN[\\s\\S]*?END[^-]*-{3,}", RegexOption.IGNORE_CASE)
-private val SECRET_ASSIGNMENT = Regex(
-    "((?:pass(?:word|phrase)?|secret|token|credential|key)\\s*[:=>]+\\s*)(?!«(?:key|redacted)»)\\S+",
-    RegexOption.IGNORE_CASE,
-)
+private val SECRET_ASSIGNMENT =
+    Regex(
+        "((?:pass(?:word|phrase)?|secret|token|credential|key)\\s*[:=>]+\\s*)(?!«(?:key|redacted)»)\\S+",
+        RegexOption.IGNORE_CASE,
+    )
 private val LONG_TOKEN = Regex("[A-Za-z0-9+/=_-]{40,}")
 
 /** One recorded moment in a session's life. */
@@ -273,29 +279,30 @@ data class SessionDiagnosticEvent(
      * A shape a human can scan and `grep` can filter, with absent fields left out entirely rather than
      * printed as `null` - a trace of a hundred sessions is read by eye far more often than parsed.
      */
-    fun line(): String = buildString {
-        append(atMs)
-        append(' ')
-        // One token, so a whole connection is one `grep`: the host label with the transport it names.
-        append(session)
-        append('.')
-        append(connection)
-        append(' ')
-        append(event.name)
-        state?.let { append(" state=").append(it.name) }
-        attempt?.let { append(" attempt=").append(it) }
-        // Only once there is one, so an ordinary first connection is not padded with a zero.
-        if (reconnects > 0) append(" reconnects=").append(reconnects)
-        network?.let { append(" net=").append(it) }
-        keepAliveSeconds?.let { append(" keepalive=").append(it).append('s') }
-        pty?.let { append(" pty=").append(it) }
-        channel?.let { append(" chan=").append(it) }
-        // Seconds, like every other duration on the line. Sub-second is rounded down to 0, which is
-        // the answer that matters: output was arriving as this happened.
-        idleForMs?.let { append(" idle=").append(it / 1_000).append('s') }
-        upForMs?.let { append(" up=").append(it / 1_000).append('s') }
-        detail?.let { append(" detail=\"").append(it.replace('"', '\'')).append('"') }
-    }
+    fun line(): String =
+        buildString {
+            append(atMs)
+            append(' ')
+            // One token, so a whole connection is one `grep`: the host label with the transport it names.
+            append(session)
+            append('.')
+            append(connection)
+            append(' ')
+            append(event.name)
+            state?.let { append(" state=").append(it.name) }
+            attempt?.let { append(" attempt=").append(it) }
+            // Only once there is one, so an ordinary first connection is not padded with a zero.
+            if (reconnects > 0) append(" reconnects=").append(reconnects)
+            network?.let { append(" net=").append(it) }
+            keepAliveSeconds?.let { append(" keepalive=").append(it).append('s') }
+            pty?.let { append(" pty=").append(it) }
+            channel?.let { append(" chan=").append(it) }
+            // Seconds, like every other duration on the line. Sub-second is rounded down to 0, which is
+            // the answer that matters: output was arriving as this happened.
+            idleForMs?.let { append(" idle=").append(it / 1_000).append('s') }
+            upForMs?.let { append(" up=").append(it / 1_000).append('s') }
+            detail?.let { append(" detail=\"").append(it.replace('"', '\'')).append('"') }
+        }
 }
 
 /** What happened, as a closed set so a trace can be filtered rather than read. */

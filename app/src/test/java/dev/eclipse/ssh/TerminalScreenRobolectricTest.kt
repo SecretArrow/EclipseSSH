@@ -27,7 +27,6 @@ import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.ActionSubject
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -37,6 +36,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The terminal destination with a session tab open — the state the app enters the instant Connect is
@@ -74,7 +74,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TerminalScreenRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -92,8 +91,7 @@ class TerminalScreenRobolectricTest {
      * activity, under the default provider key — so this is the instance the UI is collecting, not a
      * second one whose `WhileSubscribed` state would never leave its initial value.
      */
-    private fun viewModel(): MainViewModel =
-        ViewModelProvider(compose.activity)[MainViewModel::class.java]
+    private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     /**
      * Drives frames and main-looper work until [condition] holds, then fails with [describe] if it
@@ -126,17 +124,19 @@ class TerminalScreenRobolectricTest {
         return peekStarted()
     }
 
-    private fun waitForText(text: String) = pumpUntil(
-        describe = { "\"$text\" never appeared" },
-        condition = { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() },
-    )
+    private fun waitForText(text: String) =
+        pumpUntil(
+            describe = { "\"$text\" never appeared" },
+            condition = { compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() },
+        )
 
-    private fun waitForDescription(description: String) = pumpUntil(
-        describe = { "nothing described as \"$description\" appeared" },
-        condition = {
-            compose.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
-        },
-    )
+    private fun waitForDescription(description: String) =
+        pumpUntil(
+            describe = { "nothing described as \"$description\" appeared" },
+            condition = {
+                compose.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
+            },
+        )
 
     /**
      * Opens a session tab the way the Connect button does, and returns the host it opened it for.
@@ -146,11 +146,17 @@ class TerminalScreenRobolectricTest {
      */
     private fun openSessionTab(): String {
         val viewModel = viewModel()
-        pumpUntil(describe = { "no hosts were seeded" }) { viewModel.uiState.value.hosts.isNotEmpty() }
-        val host = viewModel.uiState.value.hosts.first()
+        pumpUntil(describe = { "no hosts were seeded" }) {
+            viewModel.uiState.value.hosts
+                .isNotEmpty()
+        }
+        val host =
+            viewModel.uiState.value.hosts
+                .first()
         compose.runOnUiThread { viewModel.connect(host) }
         pumpUntil(describe = { "connect(${host.id}) opened no tab" }) {
-            viewModel.uiState.value.tabs.isNotEmpty()
+            viewModel.uiState.value.tabs
+                .isNotEmpty()
         }
         return host.name
     }
@@ -417,7 +423,12 @@ class TerminalScreenRobolectricTest {
         openTerminalWithSession()
 
         val viewModel = viewModel()
-        compose.runOnUiThread { viewModel.closeTab(viewModel.uiState.value.tabs.first()) }
+        compose.runOnUiThread {
+            viewModel.closeTab(
+                viewModel.uiState.value.tabs
+                    .first(),
+            )
+        }
         waitForText("No active sessions")
 
         compose.onNodeWithText("No active sessions").assertIsDisplayed()
@@ -445,7 +456,9 @@ class TerminalScreenRobolectricTest {
         pumpUntil(describe = { "fewer than two hosts were seeded" }) {
             viewModel.uiState.value.hosts.size >= 2
         }
-        val hosts = viewModel.uiState.value.hosts.take(2)
+        val hosts =
+            viewModel.uiState.value.hosts
+                .take(2)
         compose.runOnUiThread { hosts.forEach { viewModel.connect(it) } }
         pumpUntil(describe = { "expected two tabs, got ${viewModel.uiState.value.tabs.size}" }) {
             viewModel.uiState.value.tabs.size == 2
@@ -458,8 +471,11 @@ class TerminalScreenRobolectricTest {
 
         // inOrder, and asserted here rather than at the end: by now both doomed handshakes have moved
         // their tabs through CONNECTING and RECONNECTING, which is exactly what used to reorder them.
-        assertThat(viewModel.uiState.value.tabs.map(SessionTab::hostId))
-            .containsExactlyElementsIn(hosts.map { it.id }).inOrder()
+        assertThat(
+            viewModel.uiState.value.tabs
+                .map(SessionTab::hostId),
+        ).containsExactlyElementsIn(hosts.map { it.id })
+            .inOrder()
 
         // performScrollTo, not a bare assertIsDisplayed: the tab strip scrolls horizontally and two
         // host names plus the two icon buttons do not fit across a 411dp phone.
@@ -473,7 +489,8 @@ class TerminalScreenRobolectricTest {
         waitForText("Type a command…")
         // Not a bare hasSetTextAction(): the IME bridge is a text field too, and it is the one that
         // must not receive this. Excluding it by its own label picks the command bar unambiguously.
-        compose.onNode(hasSetTextAction() and hasContentDescription("Terminal input").not())
+        compose
+            .onNode(hasSetTextAction() and hasContentDescription("Terminal input").not())
             .performTextInput("whoami")
         waitForText("whoami")
         // No performScrollTo: the full-screen terminal has no scrolling ancestor any more, which is
@@ -481,9 +498,14 @@ class TerminalScreenRobolectricTest {
         // grid takes the remaining height, so it is on screen by construction.
         compose.onNodeWithText("Send").performClick()
         pumpUntil(describe = { "input did not reach ${hosts[1].id}: ${viewModel.uiState.value.commandHistory}" }) {
-            viewModel.uiState.value.commandHistory[hosts[1].id].orEmpty().contains("whoami")
+            viewModel.uiState.value.commandHistory[hosts[1].id]
+                .orEmpty()
+                .contains("whoami")
         }
-        assertThat(viewModel.uiState.value.commandHistory[hosts[0].id].orEmpty()).doesNotContain("whoami")
+        assertThat(
+            viewModel.uiState.value.commandHistory[hosts[0].id]
+                .orEmpty(),
+        ).doesNotContain("whoami")
 
         // The close button is reachable by its own screen-reader label and closes only its own tab -
         // after asking, because a live shell is behind it. Confirming the dialog is the part of the
@@ -497,7 +519,11 @@ class TerminalScreenRobolectricTest {
         pumpUntil(describe = { "closing one tab left ${viewModel.uiState.value.tabs.size}" }) {
             viewModel.uiState.value.tabs.size == 1
         }
-        assertThat(viewModel.uiState.value.tabs.single().hostId).isEqualTo(hosts[1].id)
+        assertThat(
+            viewModel.uiState.value.tabs
+                .single()
+                .hostId,
+        ).isEqualTo(hosts[1].id)
     }
 
     /**
@@ -564,7 +590,9 @@ class TerminalScreenRobolectricTest {
         pumpUntil(describe = { "fewer than two hosts were seeded" }) {
             viewModel.uiState.value.hosts.size >= 2
         }
-        val hosts = viewModel.uiState.value.hosts.take(2)
+        val hosts =
+            viewModel.uiState.value.hosts
+                .take(2)
         compose.runOnUiThread { hosts.forEach { viewModel.connect(it) } }
         waitForDescription("Terminal input")
 
@@ -578,13 +606,19 @@ class TerminalScreenRobolectricTest {
         waitForDescription("Terminal input")
         tapMenuItem("Show command bar")
         waitForText("Type a command…")
-        compose.onNode(hasSetTextAction() and hasContentDescription("Terminal input").not())
+        compose
+            .onNode(hasSetTextAction() and hasContentDescription("Terminal input").not())
             .performTextInput("id")
         compose.onNodeWithText("Send").performClick()
         pumpUntil(describe = { "input did not reach ${hosts[0].id}: ${viewModel.uiState.value.commandHistory}" }) {
-            viewModel.uiState.value.commandHistory[hosts[0].id].orEmpty().contains("id")
+            viewModel.uiState.value.commandHistory[hosts[0].id]
+                .orEmpty()
+                .contains("id")
         }
-        assertThat(viewModel.uiState.value.commandHistory[hosts[1].id].orEmpty()).doesNotContain("id")
+        assertThat(
+            viewModel.uiState.value.commandHistory[hosts[1].id]
+                .orEmpty(),
+        ).doesNotContain("id")
     }
 
     /**
@@ -605,13 +639,14 @@ class TerminalScreenRobolectricTest {
     fun aRefusedConnectionSettlesTheTabOnAnErrorStateWithoutCrashing() {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val unreachable = HostProfile(
-            id = "refused-host",
-            name = "Refused",
-            host = "127.0.0.1",
-            port = 1,
-            username = "nobody",
-        )
+        val unreachable =
+            HostProfile(
+                id = "refused-host",
+                name = "Refused",
+                host = "127.0.0.1",
+                port = 1,
+                username = "nobody",
+            )
         compose.runOnUiThread {
             viewModel.saveHost(unreachable)
             viewModel.connect(unreachable)
@@ -621,11 +656,15 @@ class TerminalScreenRobolectricTest {
             timeoutMs = 60_000,
             describe = { "tab never settled: ${viewModel.uiState.value.tabs.firstOrNull()?.state}" },
         ) {
-            viewModel.uiState.value.tabs.firstOrNull { it.hostId == unreachable.id }?.state ==
+            viewModel.uiState.value.tabs
+                .firstOrNull { it.hostId == unreachable.id }
+                ?.state ==
                 SessionConnectionState.ERROR
         }
 
-        val settled = viewModel.uiState.value.tabs.single { it.hostId == unreachable.id }
+        val settled =
+            viewModel.uiState.value.tabs
+                .single { it.hostId == unreachable.id }
         assertThat(settled.state).isEqualTo(SessionConnectionState.ERROR)
         assertThat(settled.lastError).isNotNull()
 
@@ -738,7 +777,9 @@ class TerminalScreenRobolectricTest {
 
         compose.onNodeWithText("Close session").performClick()
         pumpUntil(describe = { "confirming left ${viewModel().uiState.value.tabs.size} sessions open" }) {
-            viewModel().uiState.value.tabs.isEmpty()
+            viewModel()
+                .uiState.value.tabs
+                .isEmpty()
         }
     }
 
@@ -772,13 +813,14 @@ class TerminalScreenRobolectricTest {
     fun theWhyButtonOpensTheSessionWhyWindowOnThatSession() {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val unreachable = HostProfile(
-            id = "why-host",
-            name = "Refused",
-            host = "127.0.0.1",
-            port = 1,
-            username = "nobody",
-        )
+        val unreachable =
+            HostProfile(
+                id = "why-host",
+                name = "Refused",
+                host = "127.0.0.1",
+                port = 1,
+                username = "nobody",
+            )
         compose.runOnUiThread {
             viewModel.saveHost(unreachable)
             viewModel.connect(unreachable)
@@ -787,18 +829,21 @@ class TerminalScreenRobolectricTest {
             timeoutMs = 60_000,
             describe = { "tab never settled: ${viewModel.uiState.value.tabs.firstOrNull()?.state}" },
         ) {
-            viewModel.uiState.value.tabs.firstOrNull { it.hostId == unreachable.id }?.state ==
+            viewModel.uiState.value.tabs
+                .firstOrNull { it.hostId == unreachable.id }
+                ?.state ==
                 SessionConnectionState.ERROR
         }
         drainStartedActivities()
 
         compose.onNodeWithContentDescription("Why this session is ERROR").performClick()
 
-        val started = pumpUntil(
-            describe = { "the session's why-window never opened (last start: ${peekStarted()})" },
-        ) {
-            peekStarted()?.component?.className == "dev.eclipse.ssh.ui.sessions.SessionWhyActivity"
-        }
+        val started =
+            pumpUntil(
+                describe = { "the session's why-window never opened (last start: ${peekStarted()})" },
+            ) {
+                peekStarted()?.component?.className == "dev.eclipse.ssh.ui.sessions.SessionWhyActivity"
+            }
         // The condition above has already held, so this is the intent it read - not a second peek
         // that could see a different one.
         requireNotNull(started) { "the why-window's start was not recorded" }
@@ -812,6 +857,5 @@ class TerminalScreenRobolectricTest {
     }
 
     /** The most recent start, without consuming it — see [drainStartedActivities]. */
-    private fun peekStarted(): Intent? =
-        runCatching { shadowOf(compose.activity.application).peekNextStartedActivity() }.getOrNull()
+    private fun peekStarted(): Intent? = runCatching { shadowOf(compose.activity.application).peekNextStartedActivity() }.getOrNull()
 }

@@ -18,7 +18,6 @@ import org.junit.Test
  * a path broken across two rows reads as two different values and nothing on screen says otherwise.
  */
 class TerminalLayoutTest {
-
     @Test
     fun `a line that fits is one row and nothing is wrapped`() {
         // A banner and a prompt with the cursor sitting after it, which is the screen a user sees the
@@ -27,10 +26,11 @@ class TerminalLayoutTest {
         val frame = frameOf(listOf("ready", "$ "), cursorRow = 1, cursorColumn = 2)
         val layout = terminalLayout(frame, width = 20, maxRows = 24)
 
-        assertThat(layout.rows).containsExactly(
-            TerminalVisualRow(line = 0, from = 0, to = 5),
-            TerminalVisualRow(line = 1, from = 0, to = 3),
-        ).inOrder()
+        assertThat(layout.rows)
+            .containsExactly(
+                TerminalVisualRow(line = 0, from = 0, to = 5),
+                TerminalVisualRow(line = 1, from = 0, to = 3),
+            ).inOrder()
         assertThat(layout.cursorRow).isEqualTo(1)
         assertThat(layout.cursorColumn).isEqualTo(2)
         // Nothing to pan to: this is what stops the view offering a drag into empty space.
@@ -41,10 +41,11 @@ class TerminalLayoutTest {
     fun `a long line breaks at a space and keeps the space on the row it ends`() {
         val layout = layoutOf(listOf("hello world"), width = 6)
 
-        assertThat(layout.rows).containsExactly(
-            TerminalVisualRow(0, 0, 6),
-            TerminalVisualRow(0, 6, 11),
-        ).inOrder()
+        assertThat(layout.rows)
+            .containsExactly(
+                TerminalVisualRow(0, 0, 6),
+                TerminalVisualRow(0, 6, 11),
+            ).inOrder()
         assertThat(textOf(layout, "hello world")).containsExactly("hello ", "world").inOrder()
     }
 
@@ -68,13 +69,14 @@ class TerminalLayoutTest {
      */
     @Test
     fun `a path a url and a hash are never broken`() {
-        val samples = listOf(
-            "/usr/local/share/doc/eclipse-ssh/README.md",
-            "https://github.com/connectbot/connectbot/releases/latest",
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "192.168.100.14:22022",
-            "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-        )
+        val samples =
+            listOf(
+                "/usr/local/share/doc/eclipse-ssh/README.md",
+                "https://github.com/connectbot/connectbot/releases/latest",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "192.168.100.14:22022",
+                "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            )
         samples.forEach { token ->
             val layout = layoutOf(listOf("out $token done"), width = 20)
             val rows = textOf(layout, "out $token done")
@@ -111,10 +113,11 @@ class TerminalLayoutTest {
 
         // The two remaining spaces of that run start the second row rather than being swallowed, so
         // every column is still where the server put it relative to the ones around it.
-        assertThat(textOf(layout, line)).containsExactly(
-            "NAMES        STATUS       ",
-            "  PORTS          IMAGE",
-        ).inOrder()
+        assertThat(textOf(layout, line))
+            .containsExactly(
+                "NAMES        STATUS       ",
+                "  PORTS          IMAGE",
+            ).inOrder()
     }
 
     @Test
@@ -189,13 +192,14 @@ class TerminalLayoutTest {
         // cursor is parked on the corner of the box, fifty columns to the right of the line being typed,
         // with nothing drawn between them. The row still has to lay out the cell the cursor is on - the
         // image is unchanged - but the number the pan reads is the nine columns of text.
-        val frame = frameOf(
-            listOf("alpha one", "mu line12"),
-            cursorRow = 1,
-            cursorColumn = 60,
-            alternateScreen = true,
-            positionalScreen = true,
-        )
+        val frame =
+            frameOf(
+                listOf("alpha one", "mu line12"),
+                cursorRow = 1,
+                cursorColumn = 60,
+                alternateScreen = true,
+                positionalScreen = true,
+            )
         val layout = terminalLayout(frame, width = 44, maxRows = 22)
 
         assertThat(layout.cursorColumn).isEqualTo(60)
@@ -219,11 +223,12 @@ class TerminalLayoutTest {
     fun `a blank line still occupies a row`() {
         val layout = layoutOf(listOf("first", "", "third"), width = 20)
 
-        assertThat(layout.rows).containsExactly(
-            TerminalVisualRow(0, 0, 5),
-            TerminalVisualRow(1, 0, 0),
-            TerminalVisualRow(2, 0, 5),
-        ).inOrder()
+        assertThat(layout.rows)
+            .containsExactly(
+                TerminalVisualRow(0, 0, 5),
+                TerminalVisualRow(1, 0, 0),
+                TerminalVisualRow(2, 0, 5),
+            ).inOrder()
     }
 
     @Test
@@ -329,11 +334,12 @@ class TerminalLayoutTest {
         val layout = terminalLayout(cellFrameOf(listOf(cells), cells.size), width = 4, maxRows = 24)
 
         // Not `abc中` / ` def`: the row ends one column early so that 中 keeps both of its columns.
-        assertThat(layout.rows).containsExactly(
-            TerminalVisualRow(line = 0, from = 0, to = 3),
-            TerminalVisualRow(line = 0, from = 3, to = 5),
-            TerminalVisualRow(line = 0, from = 5, to = 8),
-        ).inOrder()
+        assertThat(layout.rows)
+            .containsExactly(
+                TerminalVisualRow(line = 0, from = 0, to = 3),
+                TerminalVisualRow(line = 0, from = 3, to = 5),
+                TerminalVisualRow(line = 0, from = 5, to = 8),
+            ).inOrder()
     }
 
     @Test
@@ -348,7 +354,8 @@ class TerminalLayoutTest {
             val layout = terminalLayout(frame, width = width, maxRows = 24)
             for (row in layout.rows) {
                 assertWithMessage("width $width, row $row")
-                    .that(cells[row.to - 1].wide).isFalse()
+                    .that(cells[row.to - 1].wide)
+                    .isFalse()
             }
             // And the rows are still contiguous, so no column was dropped to achieve it.
             assertWithMessage("width $width").that(layout.rows.first().from).isEqualTo(0)
@@ -455,21 +462,27 @@ private fun layoutOf(
     width: Int,
     alternateScreen: Boolean = false,
     positionalScreen: Boolean = false,
-): TerminalLayout = terminalLayout(
-    frameOf(lines, alternateScreen = alternateScreen, positionalScreen = positionalScreen),
-    width = width,
-    maxRows = 24,
-)
+): TerminalLayout =
+    terminalLayout(
+        frameOf(lines, alternateScreen = alternateScreen, positionalScreen = positionalScreen),
+        width = width,
+        maxRows = 24,
+    )
 
 /** The text of each visual row, which is what a reader would see. */
-private fun textOf(layout: TerminalLayout, line: String): List<String> =
-    layout.rows.map { line.substring(it.from, it.to.coerceAtMost(line.length)) }
+private fun textOf(
+    layout: TerminalLayout,
+    line: String,
+): List<String> = layout.rows.map { line.substring(it.from, it.to.coerceAtMost(line.length)) }
 
 /**
  * The same line as cells, with each character named in [wide] written as the pair the buffer keeps: its
  * own cell marked, and the blank cell that is its right half.
  */
-private fun wideCellsOf(text: String, wide: String): List<TerminalCell> =
+private fun wideCellsOf(
+    text: String,
+    wide: String,
+): List<TerminalCell> =
     text.flatMap { char ->
         if (char in wide) {
             listOf(TerminalCell(char, wide = true), TerminalCell(' '))
@@ -486,15 +499,16 @@ private fun frameOf(
     cursorVisible: Boolean = true,
     alternateScreen: Boolean = false,
     positionalScreen: Boolean = false,
-): TerminalFrame = cellFrameOf(
-    cells = lines.map { text -> (text + " ".repeat((columns - text.length).coerceAtLeast(0))).map { TerminalCell(it) } },
-    columns = columns,
-    cursorRow = cursorRow,
-    cursorColumn = cursorColumn,
-    cursorVisible = cursorVisible,
-    alternateScreen = alternateScreen,
-    positionalScreen = positionalScreen,
-)
+): TerminalFrame =
+    cellFrameOf(
+        cells = lines.map { text -> (text + " ".repeat((columns - text.length).coerceAtLeast(0))).map { TerminalCell(it) } },
+        columns = columns,
+        cursorRow = cursorRow,
+        cursorColumn = cursorColumn,
+        cursorVisible = cursorVisible,
+        alternateScreen = alternateScreen,
+        positionalScreen = positionalScreen,
+    )
 
 /**
  * The same, for the one test that needs styled cells rather than plain text.
@@ -510,17 +524,18 @@ private fun cellFrameOf(
     cursorVisible: Boolean = true,
     alternateScreen: Boolean = false,
     positionalScreen: Boolean = false,
-): TerminalFrame = TerminalFrame(
-    lines = cells,
-    firstLine = 0,
-    totalLines = cells.size,
-    cursorRow = cursorRow,
-    cursorColumn = cursorColumn,
-    columns = columns,
-    rows = cells.size,
-    contentColumns = cells.maxOfOrNull { terminalPaintedWidth(it) } ?: 0,
-    cursorVisible = cursorVisible,
-    revision = 1,
-    alternateScreen = alternateScreen,
-    positionalScreen = positionalScreen,
-)
+): TerminalFrame =
+    TerminalFrame(
+        lines = cells,
+        firstLine = 0,
+        totalLines = cells.size,
+        cursorRow = cursorRow,
+        cursorColumn = cursorColumn,
+        columns = columns,
+        rows = cells.size,
+        contentColumns = cells.maxOfOrNull { terminalPaintedWidth(it) } ?: 0,
+        cursorVisible = cursorVisible,
+        revision = 1,
+        alternateScreen = alternateScreen,
+        positionalScreen = positionalScreen,
+    )

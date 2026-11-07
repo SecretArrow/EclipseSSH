@@ -25,7 +25,6 @@ private const val E = "\u001B"
  * A test that invented those numbers would still pass if that stopped being true.
  */
 class TerminalFramePublishOrderTest {
-
     private val buffer = AnsiTerminalBuffer(columns = 40, rows = 8)
 
     @Test
@@ -95,8 +94,7 @@ class TerminalFramePublishOrderTest {
         assertThat(newerTerminalFrame(published = onScreen, built = scrolledBack)).isSameInstanceAs(scrolledBack)
     }
 
-    private fun TerminalFrame.asDrawn(): String =
-        lines.joinToString(separator = "\n") { row -> row.joinToString(separator = "") { it.value.toString() } }
+    private fun TerminalFrame.asDrawn(): String = lines.joinToString(separator = "\n") { row -> row.joinToString(separator = "") { it.value.toString() } }
 }
 
 /**
@@ -113,7 +111,6 @@ class TerminalFramePublishOrderTest {
  * be a second bug in place of the first.
  */
 class TerminalSynchronizedOutputPublishTest {
-
     private val buffer = AnsiTerminalBuffer(columns = 40, rows = 8)
 
     @Test
@@ -180,7 +177,6 @@ class TerminalSynchronizedOutputPublishTest {
  * alike proves nothing about the rule it is named after.
  */
 class TerminalScrollPinTest {
-
     private val buffer = AnsiTerminalBuffer(columns = 40, rows = 8)
 
     @Test

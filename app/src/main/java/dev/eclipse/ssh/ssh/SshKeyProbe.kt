@@ -15,7 +15,9 @@ import java.security.interfaces.RSAKey
  */
 sealed interface SshKeyProbe {
     /** The key parsed. [type] is a short label such as `RSA 3072` or `Ed25519`. */
-    data class Ready(val type: String) : SshKeyProbe
+    data class Ready(
+        val type: String,
+    ) : SshKeyProbe
 
     /**
      * It looks like a private key but would not parse, and no passphrase was supplied.
@@ -27,7 +29,9 @@ sealed interface SshKeyProbe {
     data object PassphraseRequired : SshKeyProbe
 
     /** The key would not parse. [reason] is safe to show: it never quotes the file's contents. */
-    data class Unreadable(val reason: String) : SshKeyProbe
+    data class Unreadable(
+        val reason: String,
+    ) : SshKeyProbe
 }
 
 /**
@@ -36,7 +40,11 @@ sealed interface SshKeyProbe {
  *
  * [displayName] only names the resource in MINA's parser errors; it is never persisted here.
  */
-fun probeSshKey(bytes: ByteArray, displayName: String, passphrase: String?): SshKeyProbe {
+fun probeSshKey(
+    bytes: ByteArray,
+    displayName: String,
+    passphrase: String?,
+): SshKeyProbe {
     if (bytes.isEmpty()) return SshKeyProbe.Unreadable("That file is empty")
     // Checked before parsing, because picking `id_ed25519.pub` instead of `id_ed25519` is the
     // mistake people actually make, and MINA's failure for a public key is the same failure as for
@@ -69,23 +77,25 @@ fun probeSshKey(bytes: ByteArray, displayName: String, passphrase: String?): Ssh
  */
 fun sshKeyTypeLabel(keyPair: KeyPair): String {
     val public = keyPair.public
-    val name = when (public.algorithm.uppercase()) {
-        "RSA" -> "RSA"
-        "EC", "ECDSA" -> "ECDSA"
-        // MINA reports Ed25519 keys as `EdDSA` through net.i2p.crypto, and as `Ed25519` on a JDK
-        // with native support. Both mean the same curve to a user.
-        "EDDSA", "ED25519" -> "Ed25519"
-        "DSA" -> "DSA"
-        // An algorithm this build does not know about is still worth naming: a key the app can load
-        // is a key the app can use, and inventing "Unknown" would look like a failure.
-        else -> public.algorithm
-    }
-    val bits = when (public) {
-        is RSAKey -> public.modulus.bitLength()
-        is ECKey -> public.params.order.bitLength()
-        is DSAKey -> public.params.p.bitLength()
-        else -> null
-    }
+    val name =
+        when (public.algorithm.uppercase()) {
+            "RSA" -> "RSA"
+            "EC", "ECDSA" -> "ECDSA"
+            // MINA reports Ed25519 keys as `EdDSA` through net.i2p.crypto, and as `Ed25519` on a JDK
+            // with native support. Both mean the same curve to a user.
+            "EDDSA", "ED25519" -> "Ed25519"
+            "DSA" -> "DSA"
+            // An algorithm this build does not know about is still worth naming: a key the app can load
+            // is a key the app can use, and inventing "Unknown" would look like a failure.
+            else -> public.algorithm
+        }
+    val bits =
+        when (public) {
+            is RSAKey -> public.modulus.bitLength()
+            is ECKey -> public.params.order.bitLength()
+            is DSAKey -> public.params.p.bitLength()
+            else -> null
+        }
     return if (bits == null) name else "$name $bits"
 }
 

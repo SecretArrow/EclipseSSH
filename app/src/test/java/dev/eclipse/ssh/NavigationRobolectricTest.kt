@@ -48,7 +48,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class NavigationRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -68,14 +67,16 @@ class NavigationRobolectricTest {
     private fun section(title: String) = hasText(title, ignoreCase = true)
 
     /** Waits for text that arrives asynchronously (Room seeding, Flow collection). */
-    private fun waitForText(text: String) = compose.waitUntil(timeoutMillis = 10_000) {
-        compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
-    }
+    private fun waitForText(text: String) =
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
 
     /** As [waitForText], for a message whose full text includes something from the seed data. */
-    private fun waitForTextContaining(fragment: String) = compose.waitUntil(timeoutMillis = 10_000) {
-        compose.onAllNodes(hasText(fragment, substring = true)).fetchSemanticsNodes().isNotEmpty()
-    }
+    private fun waitForTextContaining(fragment: String) =
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodes(hasText(fragment, substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
 
     /**
      * Waits for text that must also be *tappable* — a session chip, not the identically-worded
@@ -86,9 +87,10 @@ class NavigationRobolectricTest {
      * waiting on the bare text passes on the title and then races the chip — which is exactly how
      * this failed once on a loaded runner. Waiting on the clickable form waits for the chip itself.
      */
-    private fun waitForClickable(text: String) = compose.waitUntil(timeoutMillis = 10_000) {
-        compose.onAllNodes(hasText(text) and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
-    }
+    private fun waitForClickable(text: String) =
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodes(hasText(text) and hasClickAction()).fetchSemanticsNodes().isNotEmpty()
+        }
 
     /**
      * Asserts the text is on screen, and says *why* if it is not.
@@ -108,11 +110,12 @@ class NavigationRobolectricTest {
             // of the assertion that failed — which is the opposite of what this helper is for. When the
             // node is genuinely missing the tree is the useful thing to print, because the usual cause
             // is that the screen under test never composed.
-            val node = runCatching { interaction.fetchSemanticsNode() }.getOrNull()
-                ?: throw AssertionError(
-                    "\"$text\" is nowhere in the tree:\n${compose.onRoot().printToString(maxDepth = 12)}",
-                    expected,
-                )
+            val node =
+                runCatching { interaction.fetchSemanticsNode() }.getOrNull()
+                    ?: throw AssertionError(
+                        "\"$text\" is nowhere in the tree:\n${compose.onRoot().printToString(maxDepth = 12)}",
+                        expected,
+                    )
             val root = compose.onRoot().fetchSemanticsNode()
             throw AssertionError(
                 "\"$text\" is not displayed: bounds=${node.boundsInRoot} " +
@@ -328,8 +331,10 @@ class NavigationRobolectricTest {
         // And a control that opens the picker. Window-level for the reason
         // `HostAndThemeUiRobolectricTest` documents: once a Compose dialog is up, waitForIdle never
         // returns under Robolectric, so the chips themselves are out of reach here.
-        val changeButton = compose.onAllNodes(hasText("Change") and hasClickAction())
-            .fetchSemanticsNodes()
+        val changeButton =
+            compose
+                .onAllNodes(hasText("Change") and hasClickAction())
+                .fetchSemanticsNodes()
         assertThat(changeButton).isNotEmpty()
     }
 
@@ -377,13 +382,15 @@ class NavigationRobolectricTest {
         }
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("the Add host button did not open ${HostFormActivity::class.simpleName}")
-            .that(intent?.component?.className).isEqualTo(HostFormActivity::class.java.name)
+            .that(intent?.component?.className)
+            .isEqualTo(HostFormActivity::class.java.name)
         // Add carries no host to edit. A form opened for an id that was never passed and an Add form
         // are the same screen once the window is up, so the extra is the only place that difference
         // is visible from here.
         assertThat(intent?.getStringExtra(HostFormActivity.EXTRA_HOST_ID)).isNull()
         assertWithMessage("Add host still opened as a dialog over the workspace")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
 
         // And the workspace underneath is intact.
         assertDisplayed("Search hosts, tags, or usernames")

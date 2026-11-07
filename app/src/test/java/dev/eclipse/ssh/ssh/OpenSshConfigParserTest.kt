@@ -7,7 +7,8 @@ import org.junit.Test
 class OpenSshConfigParserTest {
     @Test
     fun `parses multiple host blocks`() {
-        val config = """
+        val config =
+            """
             Host web
                 HostName web.example.com
                 User deploy
@@ -16,7 +17,7 @@ class OpenSshConfigParserTest {
             Host db
                 HostName 10.0.0.5
                 User admin
-        """.trimIndent()
+            """.trimIndent()
 
         val hosts = OpenSshConfigParser.parse(config)
 
@@ -31,13 +32,14 @@ class OpenSshConfigParserTest {
 
     @Test
     fun `skips wildcard patterns and comments`() {
-        val config = """
+        val config =
+            """
             # production wildcard
             Host *.example.com
                 User root
             Host web
                 HostName web.example.com
-        """.trimIndent()
+            """.trimIndent()
 
         val hosts = OpenSshConfigParser.parse(config)
 
@@ -47,12 +49,13 @@ class OpenSshConfigParserTest {
 
     @Test
     fun `maps proxyjump and hostname port shorthand`() {
-        val config = """
+        val config =
+            """
             Host jump
                 HostName bastion:2200
                 User ops
                 ProxyJump gateway@proxy.corp:22
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -71,13 +74,14 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `maps connecttimeout and serveraliveinterval onto connection options`() {
-        val config = """
+        val config =
+            """
             Host slow
                 HostName slow.example.com
                 User deploy
                 ConnectTimeout 120
                 ServerAliveInterval 45
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -88,12 +92,13 @@ class OpenSshConfigParserTest {
     /** Directive names are case-insensitive in ssh_config, so the parser must not care either. */
     @Test
     fun `connection option keywords are case insensitive`() {
-        val config = """
+        val config =
+            """
             Host mixed
                 hostname mixed.example.com
                 connecttimeout 30
                 SERVERALIVEINTERVAL 60
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -111,7 +116,8 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `out of range connection options fall back to the defaults`() {
-        val config = """
+        val config =
+            """
             Host zero
                 HostName zero.example.com
                 ConnectTimeout 0
@@ -129,7 +135,7 @@ class OpenSshConfigParserTest {
 
             Host bare
                 HostName bare.example.com
-        """.trimIndent()
+            """.trimIndent()
 
         val hosts = OpenSshConfigParser.parse(config)
 
@@ -142,7 +148,8 @@ class OpenSshConfigParserTest {
     /** Both ends of each range are legitimate and must survive the import untouched. */
     @Test
     fun `connection options at the range bounds are preserved`() {
-        val config = """
+        val config =
+            """
             Host low
                 HostName low.example.com
                 ConnectTimeout 5
@@ -152,7 +159,7 @@ class OpenSshConfigParserTest {
                 HostName high.example.com
                 ConnectTimeout 300
                 ServerAliveInterval 600
-        """.trimIndent()
+            """.trimIndent()
 
         val hosts = OpenSshConfigParser.parse(config)
 
@@ -194,11 +201,12 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `imports a wildcard host with a concrete hostname`() {
-        val config = """
+        val config =
+            """
             Host *.example.com
                 HostName bastion.example.com
                 User deploy
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -215,11 +223,12 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `expands %h in hostname to the matched alias`() {
-        val config = """
+        val config =
+            """
             Host web
                 HostName %h.internal.example.com
                 User deploy
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -236,10 +245,11 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `collapses a multi-alias %h block onto its first alias`() {
-        val config = """
+        val config =
+            """
             Host web db
                 HostName %h.internal
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -257,10 +267,11 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `drops negated patterns instead of importing them as aliases`() {
-        val config = """
+        val config =
+            """
             Host prod !prod-legacy
                 HostName 10.0.0.9
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 
@@ -277,10 +288,11 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `skips a wildcard family whose hostname is the matched name`() {
-        val config = """
+        val config =
+            """
             Host * !web
                 HostName %h.example.com
-        """.trimIndent()
+            """.trimIndent()
 
         assertThat(OpenSshConfigParser.parse(config)).isEmpty()
     }
@@ -295,14 +307,15 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `leaves the username blank when the config names no user`() {
-        val config = """
+        val config =
+            """
             Host withuser
                 HostName a.example.com
                 User deploy
 
             Host nouser
                 HostName b.example.com
-        """.trimIndent()
+            """.trimIndent()
 
         val hosts = OpenSshConfigParser.parse(config)
 
@@ -319,12 +332,13 @@ class OpenSshConfigParserTest {
      */
     @Test
     fun `ignores IdentityFile and imports the rest of the block`() {
-        val config = """
+        val config =
+            """
             Host key
                 HostName key.example.com
                 User deploy
                 IdentityFile ~/.ssh/id_ed25519
-        """.trimIndent()
+            """.trimIndent()
 
         val host = OpenSshConfigParser.parse(config).single()
 

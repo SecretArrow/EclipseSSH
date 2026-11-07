@@ -1,12 +1,5 @@
 package dev.eclipse.ssh.ssh
 
-import java.io.Closeable
-import java.io.InputStream
-import java.io.OutputStream
-import java.nio.charset.Charset
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import dev.eclipse.ssh.data.model.DEFAULT_TERMINAL_TYPE
 import dev.eclipse.ssh.terminal.TERMINAL_COLUMN_RANGE
 import dev.eclipse.ssh.terminal.TERMINAL_ROW_RANGE
@@ -20,6 +13,13 @@ import org.apache.sshd.client.channel.ClientChannel
 import org.apache.sshd.client.channel.PtyCapableChannelSession
 import org.apache.sshd.common.session.Session
 import org.apache.sshd.common.session.SessionListener
+import java.io.Closeable
+import java.io.InputStream
+import java.io.OutputStream
+import java.nio.charset.Charset
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * One interactive shell channel: a pty on the remote host, its output as bytes and its input as
@@ -42,7 +42,6 @@ import org.apache.sshd.common.session.SessionListener
  *    mistaken for an outage and answered with a reconnect.
  */
 interface TerminalChannel : Closeable {
-
     /** Output chunks in arrival order; ends with [END_OF_OUTPUT]. Collectors must not mutate what they receive. */
     val output: SharedFlow<ByteArray>
 
@@ -99,7 +98,10 @@ interface TerminalChannel : Closeable {
     fun write(value: String)
 
     /** Resizes the pty. Implementations record the size even when they cannot apply it, so a reconnect carries it forward. */
-    fun resize(columns: Int, rows: Int)
+    fun resize(
+        columns: Int,
+        rows: Int,
+    )
 
     /**
      * Declares that what happens to this channel next was the app's decision. Called *before* the
@@ -281,27 +283,37 @@ class SshTerminalChannel(
      * [SessionEnd] that names the transport, which is what tells the reconnect decision this was an
      * outage rather than a shell that finished.
      */
-    private val transportDeath = object : SessionListener {
-        override fun sessionException(session: Session, t: Throwable) {
-            val failure = SessionEnd.TransportFailed(t)
-            transportReason = failure
-            markClosed(failure)
-        }
-
-        /**
-         * Recorded rather than reported, because `sessionClosed` always follows within microseconds
-         * and completing here would race the shell's own exit status onto the floor. The reason is
-         * what this listener exists for: an `SSH_MSG_DISCONNECT` is the one ending where the *server*
-         * says why, and that sentence is worth more to the user than anything the app can infer.
-         */
-        override fun sessionDisconnect(session: Session, reason: Int, msg: String?, language: String?, initiator: Boolean) {
-            if (transportReason == null) {
-                transportReason = SessionEnd.Disconnected(reason = reason, message = msg, byPeer = !initiator)
+    private val transportDeath =
+        object : SessionListener {
+            override fun sessionException(
+                session: Session,
+                t: Throwable,
+            ) {
+                val failure = SessionEnd.TransportFailed(t)
+                transportReason = failure
+                markClosed(failure)
             }
-        }
 
-        override fun sessionClosed(session: Session) = markClosed(transportReason ?: SessionEnd.TransportClosed)
-    }
+            /**
+             * Recorded rather than reported, because `sessionClosed` always follows within microseconds
+             * and completing here would race the shell's own exit status onto the floor. The reason is
+             * what this listener exists for: an `SSH_MSG_DISCONNECT` is the one ending where the *server*
+             * says why, and that sentence is worth more to the user than anything the app can infer.
+             */
+            override fun sessionDisconnect(
+                session: Session,
+                reason: Int,
+                msg: String?,
+                language: String?,
+                initiator: Boolean,
+            ) {
+                if (transportReason == null) {
+                    transportReason = SessionEnd.Disconnected(reason = reason, message = msg, byPeer = !initiator)
+                }
+            }
+
+            override fun sessionClosed(session: Session) = markClosed(transportReason ?: SessionEnd.TransportClosed)
+        }
 
     /**
      * Reports [reason], unless the shell got its own word in first.
@@ -407,6 +419,7 @@ class SshTerminalChannel(
     }
 
     @Volatile private var columns = DEFAULT_COLUMNS
+
     @Volatile private var rows = DEFAULT_ROWS
 
     /**
@@ -452,8 +465,7 @@ class SshTerminalChannel(
      * moment it ended - which points at the transport or at this app - and one that had been silent
      * for minutes, which points at the far end or at whatever sits between. See [lastActivityAtMs].
      */
-    override fun idleForMs(nowMs: Long): Long? =
-        lastActivityAtMs.takeIf { it > 0L }?.let { (nowMs - it).coerceAtLeast(0L) }
+    override fun idleForMs(nowMs: Long): Long? = lastActivityAtMs.takeIf { it > 0L }?.let { (nowMs - it).coerceAtLeast(0L) }
 
     /**
      * Opens the shell, optionally at a known size.
@@ -564,7 +576,10 @@ class SshTerminalChannel(
         writeBytes(value.toByteArray(charset))
     }
 
-    override fun resize(columns: Int, rows: Int) {
+    override fun resize(
+        columns: Int,
+        rows: Int,
+    ) {
         // The display's own limits, not a second set of the channel's — see [TERMINAL_COLUMN_RANGE].
         val safeColumns = columns.coerceIn(TERMINAL_COLUMN_RANGE)
         val safeRows = rows.coerceIn(TERMINAL_ROW_RANGE)
@@ -659,7 +674,11 @@ class SshTerminalChannel(
             publish(byteArrayOf(value.toByte()))
         }
 
-        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+        override fun write(
+            bytes: ByteArray,
+            offset: Int,
+            length: Int,
+        ) {
             // Copied, not referenced: MINA refills this array on the next read.
             if (length > 0) publish(bytes.copyOfRange(offset, offset + length))
         }
@@ -688,12 +707,13 @@ class SshTerminalChannel(
         // not anyone is currently collecting the output it arrived in.
         lastActivityAt.set(System.currentTimeMillis())
         if (outputEvents.tryEmit(chunk)) return
-        val delivered = runBlocking {
-            withTimeoutOrNull(PUBLISH_WAIT_MS) {
-                outputEvents.emit(chunk)
-                true
-            }
-        } ?: false
+        val delivered =
+            runBlocking {
+                withTimeoutOrNull(PUBLISH_WAIT_MS) {
+                    outputEvents.emit(chunk)
+                    true
+                }
+            } ?: false
         // Counted, because the one thing worse than dropping output is dropping it in silence. The
         // display cannot be made whole again from here — the bytes are gone and the emulator's state
         // depends on having seen them — so the honest thing is to be able to say so, which is what
@@ -716,6 +736,7 @@ class SshTerminalChannel(
         private val queue = LinkedBlockingQueue<ByteArray>()
         private var current: ByteArray? = null
         private var offset = 0
+
         @Volatile private var closed = false
 
         fun push(bytes: ByteArray) {
@@ -728,17 +749,22 @@ class SshTerminalChannel(
             return if (read(single, 0, 1) <= 0) -1 else single[0].toInt() and 0xFF
         }
 
-        override fun read(bytes: ByteArray, off: Int, len: Int): Int {
+        override fun read(
+            bytes: ByteArray,
+            off: Int,
+            len: Int,
+        ): Int {
             if (len == 0) return 0
             var chunk = current
             if (chunk == null) {
                 if (closed) return -1
-                chunk = try {
-                    queue.take()
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return -1
-                }
+                chunk =
+                    try {
+                        queue.take()
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return -1
+                    }
                 // Zero-length chunk is the shutdown token pushed by close().
                 if (chunk.isEmpty()) {
                     closed = true

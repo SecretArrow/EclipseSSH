@@ -35,11 +35,13 @@ private const val HT = "\u0009"
  * exactly the same way.
  */
 class TerminalCursorRepaintTest {
-
     private val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
     /** Feeds [sequence] to a prompt holding `abc` and asserts both the column and the revision. */
-    private fun assertMoves(sequence: String, toColumn: Int) {
+    private fun assertMoves(
+        sequence: String,
+        toColumn: Int,
+    ) {
         buffer.feed("abc")
         val before = buffer.frame()
         assertThat(before.cursorColumn).isEqualTo(3)
@@ -100,22 +102,22 @@ class TerminalCursorRepaintTest {
 
     @Test
     fun `cursor back reports the move`() {
-        assertMoves("${E}[D", toColumn = 2)
+        assertMoves("$E[D", toColumn = 2)
     }
 
     @Test
     fun `cursor forward reports the move`() {
-        assertMoves("${E}[C", toColumn = 4)
+        assertMoves("$E[C", toColumn = 4)
     }
 
     @Test
     fun `cursor back with a count reports the move`() {
-        assertMoves("${E}[3D", toColumn = 0)
+        assertMoves("$E[3D", toColumn = 0)
     }
 
     @Test
     fun `cursor to column reports the move`() {
-        assertMoves("${E}[1G", toColumn = 0)
+        assertMoves("$E[1G", toColumn = 0)
     }
 
     @Test
@@ -125,7 +127,7 @@ class TerminalCursorRepaintTest {
         buffer.feed("abcdef")
         val before = buffer.frame()
 
-        buffer.feed("${E}[K")
+        buffer.feed("$E[K")
 
         assertThat(buffer.frame().revision).isGreaterThan(before.revision)
     }

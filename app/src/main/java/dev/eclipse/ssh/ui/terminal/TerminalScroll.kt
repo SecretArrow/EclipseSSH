@@ -25,7 +25,6 @@ import kotlin.math.floor
  * run on the main thread.
  */
 class ScrollAccumulator {
-
     private var pending = 0f
 
     /** Finger travel not yet spent on a step, in pixels. Same sign as [dragBy]'s input. */
@@ -53,7 +52,11 @@ class ScrollAccumulator {
      * **keeps the travel**: the step is free, so the finger's pixels belong to the step after it rather
      * than being discarded. The remainder survives the direction flip for the same reason.
      */
-    fun dragBy(deltaPx: Float, backStepPx: Float, forwardStepPx: Float): Int {
+    fun dragBy(
+        deltaPx: Float,
+        backStepPx: Float,
+        forwardStepPx: Float,
+    ): Int {
         if (!deltaPx.isFinite()) return 0
         pending += deltaPx
         if (!pending.isFinite()) {
@@ -84,7 +87,13 @@ class ScrollAccumulator {
  * frames arrive one publication behind the gesture; [ceiling] is the end of the history. Either end is a
  * hard stop.
  */
-fun freeStep(pendingPx: Float, backStepPx: Float, forwardStepPx: Float, offset: Int, ceiling: Int): Int {
+fun freeStep(
+    pendingPx: Float,
+    backStepPx: Float,
+    forwardStepPx: Float,
+    offset: Int,
+    ceiling: Int,
+): Int {
     if (!pendingPx.isFinite() || pendingPx == 0f) return 0
     val limit = ceiling.coerceAtLeast(0)
     val at = offset.coerceIn(0, limit)
@@ -107,7 +116,11 @@ fun freeStep(pendingPx: Float, backStepPx: Float, forwardStepPx: Float, offset: 
  * be, so a stall prices the fling short rather than long: the decay ends a little early instead of
  * running on over a screen that has stopped moving.
  */
-fun flingRoomPx(stepsLeft: Int, stepPx: Float, cellPx: Float): Float {
+fun flingRoomPx(
+    stepsLeft: Int,
+    stepPx: Float,
+    cellPx: Float,
+): Float {
     if (stepsLeft <= 0) return 0f
     val price = if (stepPx.isFinite() && stepPx > 0f) stepPx else cellPx
     if (!price.isFinite() || price <= 0f) return 0f
@@ -122,7 +135,11 @@ fun flingRoomPx(stepsLeft: Int, stepPx: Float, cellPx: Float): Float {
  * reveal: past that there is nothing to draw in the strip the shift opens, and a shift wider than the
  * margin would show the background at the top or bottom edge for the whole of a step.
  */
-fun scrollShiftPx(pendingPx: Float, backStepPx: Float, forwardStepPx: Float): Float {
+fun scrollShiftPx(
+    pendingPx: Float,
+    backStepPx: Float,
+    forwardStepPx: Float,
+): Float {
     if (!pendingPx.isFinite()) return 0f
     val back = if (backStepPx.isFinite() && backStepPx > 0f) backStepPx else 0f
     val forward = if (forwardStepPx.isFinite() && forwardStepPx > 0f) forwardStepPx else 0f
@@ -258,9 +275,14 @@ sealed interface DragTarget {
  * encoding: this terminal sends SGR coordinates or none, so a program asking for the old format gets
  * the same keys it would get from a terminal without a mouse.
  */
-fun dragTarget(mouseMode: MouseMode, mouseSgr: Boolean, alternateScreen: Boolean): DragTarget = when {
-    MouseModes.reports(mouseMode, mouseSgr, MouseGesture.MOTION, buttonHeld = true) -> DragTarget.Motion
-    mouseMode == MouseMode.NORMAL && mouseSgr -> DragTarget.Wheel
-    alternateScreen -> DragTarget.Arrows
-    else -> DragTarget.Scrollback
-}
+fun dragTarget(
+    mouseMode: MouseMode,
+    mouseSgr: Boolean,
+    alternateScreen: Boolean,
+): DragTarget =
+    when {
+        MouseModes.reports(mouseMode, mouseSgr, MouseGesture.MOTION, buttonHeld = true) -> DragTarget.Motion
+        mouseMode == MouseMode.NORMAL && mouseSgr -> DragTarget.Wheel
+        alternateScreen -> DragTarget.Arrows
+        else -> DragTarget.Scrollback
+    }

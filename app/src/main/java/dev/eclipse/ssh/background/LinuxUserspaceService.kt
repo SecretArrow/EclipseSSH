@@ -22,13 +22,13 @@ import dev.eclipse.ssh.linux.SetupStep
 import dev.eclipse.ssh.linux.percent
 import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
 import dev.eclipse.ssh.presentation.linux.holdsProcess
-import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Holds the app process — and with it every forked proot shell — at foreground importance while
@@ -57,7 +57,6 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class LinuxUserspaceService : LifecycleService() {
-
     @Inject lateinit var linuxUserspace: LinuxUserspaceController
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -94,7 +93,11 @@ class LinuxUserspaceService : LifecycleService() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         super.onStartCommand(intent, flags, startId)
         val graph = linuxUserspace.graph
         if (intent?.action == ACTION_STOP && graph != null) {
@@ -165,7 +168,10 @@ class LinuxUserspaceService : LifecycleService() {
      * Deliberately does not call `super`: the base method exists only from API 35, and its
      * implementation there is a no-op anyway.
      */
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
         // Tell the binding rule first, before anything else can go wrong in the teardown: after
         // this service dies nothing else knows the hold is gone, and the rule must ask again on
         // the next foreground transition rather than trust its last promotion forever.
@@ -204,26 +210,30 @@ class LinuxUserspaceService : LifecycleService() {
         sessionCount: Int,
         distro: LinuxDistro,
     ): Notification {
-        val openIntent = PendingIntent.getActivity(
-            this,
-            REQUEST_OPEN,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stopIntent = PendingIntent.getService(
-            this,
-            REQUEST_STOP,
-            Intent(this, LinuxUserspaceService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val builder = NotificationCompat.Builder(this, NotificationChannels.LINUX)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(LocalLinuxHost.notificationTitle(distro))
-            .setContentText(notificationBody(state, sessionCount))
-            .setContentIntent(openIntent)
-            .setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, getString(R.string.notif_linux_action_open), openIntent)
+        val openIntent =
+            PendingIntent.getActivity(
+                this,
+                REQUEST_OPEN,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        val stopIntent =
+            PendingIntent.getService(
+                this,
+                REQUEST_STOP,
+                Intent(this, LinuxUserspaceService::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        val builder =
+            NotificationCompat
+                .Builder(this, NotificationChannels.LINUX)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle(LocalLinuxHost.notificationTitle(distro))
+                .setContentText(notificationBody(state, sessionCount))
+                .setContentIntent(openIntent)
+                .setOngoing(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .addAction(0, getString(R.string.notif_linux_action_open), openIntent)
         if (state !is LinuxUserspaceState.Installing) {
             // Stop is a lifecycle verb the manager refuses mid-install, so during Installing the
             // action would be a button that does nothing; it returns once the install settles.
@@ -239,7 +249,10 @@ class LinuxUserspaceService : LifecycleService() {
      * phase — the same live evidence the settings screen's progress line shows — because a
      * backgrounded install is exactly when the user needs to see that it is alive and moving.
      */
-    private fun notificationBody(state: LinuxUserspaceState, sessionCount: Int): String =
+    private fun notificationBody(
+        state: LinuxUserspaceState,
+        sessionCount: Int,
+    ): String =
         when (state) {
             is LinuxUserspaceState.Installing ->
                 "Installing Ubuntu · ${describeInstallStep(state.step)} · ${state.percent}%"
@@ -255,32 +268,41 @@ class LinuxUserspaceService : LifecycleService() {
      * screen's own install-progress vocabulary (describeInstallStep in MainActivity), which is
      * also literal: the labels ship beside apt's own English output either way.
      */
-    private fun describeInstallStep(step: LinuxInstallStep): String = when (step) {
-        is LinuxInstallStep.Downloading -> "downloading"
-        LinuxInstallStep.Verifying -> "verifying the download"
-        is LinuxInstallStep.Extracting -> "extracting · ${step.entries} files"
-        is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)
-        LinuxInstallStep.VerifyingHealth -> "running the health check"
-    }
-
-    private fun describeSetupStep(step: SetupStep, detail: String?): String {
-        val label = when (step) {
-            SetupStep.REGISTER_USER -> "creating the ubuntu account"
-            SetupStep.PREPARE_WORKSPACE -> "preparing the workspace"
-            SetupStep.CONFIGURE_DNS -> "configuring DNS"
-            SetupStep.CONFIGURE_APT -> "configuring package sources"
-            SetupStep.UPDATE_PACKAGES -> "updating package lists"
-            SetupStep.INSTALL_BASE_PACKAGES -> "installing the base packages"
-            SetupStep.INSTALL_EXTRA_PACKAGES -> "installing the extra packages"
-            SetupStep.VERIFY -> "verifying"
+    private fun describeInstallStep(step: LinuxInstallStep): String =
+        when (step) {
+            is LinuxInstallStep.Downloading -> "downloading"
+            LinuxInstallStep.Verifying -> "verifying the download"
+            is LinuxInstallStep.Extracting -> "extracting · ${step.entries} files"
+            is LinuxInstallStep.SettingUp -> describeSetupStep(step.step, step.detail)
+            LinuxInstallStep.VerifyingHealth -> "running the health check"
         }
+
+    private fun describeSetupStep(
+        step: SetupStep,
+        detail: String?,
+    ): String {
+        val label =
+            when (step) {
+                SetupStep.REGISTER_USER -> "creating the ubuntu account"
+                SetupStep.PREPARE_WORKSPACE -> "preparing the workspace"
+                SetupStep.CONFIGURE_DNS -> "configuring DNS"
+                SetupStep.CONFIGURE_APT -> "configuring package sources"
+                SetupStep.UPDATE_PACKAGES -> "updating package lists"
+                SetupStep.INSTALL_BASE_PACKAGES -> "installing the base packages"
+                SetupStep.INSTALL_EXTRA_PACKAGES -> "installing the extra packages"
+                SetupStep.VERIFY -> "verifying"
+            }
         // The newest command output beside the label — the notification's one line of proof that
         // a slow-but-alive apt is moving. Capped, because an apt line is unbounded prose and the
         // notification body is one line.
         return if (detail.isNullOrBlank()) label else "$label · ${detail.trim().take(80)}"
     }
 
-    private fun updateNotification(state: LinuxUserspaceState, sessionCount: Int, distro: LinuxDistro) {
+    private fun updateNotification(
+        state: LinuxUserspaceState,
+        sessionCount: Int,
+        distro: LinuxDistro,
+    ) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         runCatching {
             manager.notify(NotificationChannels.ID_LINUX, buildNotification(state, sessionCount, distro))

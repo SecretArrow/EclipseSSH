@@ -57,70 +57,70 @@ data class SyntaxColors(
     /** Capitalized identifiers the type-name heuristic lifted. */
     val typeName: Color,
 ) {
-
     /**
      * The color of a token kind. Exhaustive over [TokenKind] on purpose: a kind added to the
      * engine must fail this mapping's compilation, not silently fall back to plain - a missing
      * color is a bug to find in the build, not a subtle wrong color to find on a device.
      */
-    fun colorOf(kind: TokenKind): Color = when (kind) {
-        TokenKind.PLAIN -> plain
-        TokenKind.KEYWORD -> keyword
-        TokenKind.BUILTIN -> builtin
-        TokenKind.STRING -> string
-        TokenKind.CHAR -> char
-        TokenKind.NUMBER -> number
-        TokenKind.COMMENT -> comment
-        TokenKind.LINE_COMMENT -> lineComment
-        TokenKind.OPERATOR -> operator
-        TokenKind.ANNOTATION -> annotation
-        TokenKind.TYPE_NAME -> typeName
-    }
+    fun colorOf(kind: TokenKind): Color =
+        when (kind) {
+            TokenKind.PLAIN -> plain
+            TokenKind.KEYWORD -> keyword
+            TokenKind.BUILTIN -> builtin
+            TokenKind.STRING -> string
+            TokenKind.CHAR -> char
+            TokenKind.NUMBER -> number
+            TokenKind.COMMENT -> comment
+            TokenKind.LINE_COMMENT -> lineComment
+            TokenKind.OPERATOR -> operator
+            TokenKind.ANNOTATION -> annotation
+            TokenKind.TYPE_NAME -> typeName
+        }
 
     companion object {
-
         /**
          * Maps every [TokenKind] onto a role of [scheme]. The choices, and why each reused role
          * is reused:
          */
-        fun fromScheme(scheme: ColorScheme): SyntaxColors = SyntaxColors(
-            // Material's default content color, and the color the editor's TextStyle already
-            // paints the field with - plain runs are therefore NOT spanned (see
-            // [syntaxSpansFor]), which makes this value a contract: whatever calls
-            // [syntaxTransformationFor] must keep the field's TextStyle color equal to it.
-            plain = scheme.onSurface,
-            // Grammar words carry the scheme's leading accent: they shape the code, and primary
-            // is the one color every other element in the app defers to.
-            keyword = scheme.primary,
-            // The language's own vocabulary one step calmer than its grammar - loud enough to
-            // read as "not my name", quiet enough that a line of `String` and `Int` does not
-            // shout like a line of keywords.
-            builtin = scheme.secondary,
-            // The third accent, spent on the one thing in code that is genuinely "other" text.
-            string = scheme.tertiary,
-            // A char literal is a one-glyph string; giving it the fourth-safest role rather than
-            // sharing string's would buy a distinction no reader of code has ever needed.
-            char = scheme.tertiary,
-            // A literal is the same class of fixed thing as the builtin constants (`true`,
-            // `EXIT_SUCCESS`), so it shares their calm accent rather than inventing a fifth.
-            number = scheme.secondary,
-            // Block comments recede furthest: outline is the dimmest role that stays readable
-            // on the surface in both schemes.
-            comment = scheme.outline,
-            // The engine split comment kinds because line comments are conventionally slightly
-            // stronger; onSurfaceVariant is exactly one step above outline in both schemes.
-            lineComment = scheme.onSurfaceVariant,
-            // Punctuation sits one step off prose. It shares the line-comment role because the
-            // two can never be mistaken for one another, and the set of both-scheme-readable
-            // text roles is too small to spend a unique one here.
-            operator = scheme.onSurfaceVariant,
-            // An annotation is a declarative name, closer to vocabulary than to grammar - the
-            // secondary calm keeps a heavily-annotated declaration from reading as all-keyword.
-            annotation = scheme.secondary,
-            // Builtins ARE type names (`Int`, `String`, `List`); the heuristic only catches the
-            // ones the word list missed, so the two kinds share a color by identity, not thrift.
-            typeName = scheme.secondary,
-        )
+        fun fromScheme(scheme: ColorScheme): SyntaxColors =
+            SyntaxColors(
+                // Material's default content color, and the color the editor's TextStyle already
+                // paints the field with - plain runs are therefore NOT spanned (see
+                // [syntaxSpansFor]), which makes this value a contract: whatever calls
+                // [syntaxTransformationFor] must keep the field's TextStyle color equal to it.
+                plain = scheme.onSurface,
+                // Grammar words carry the scheme's leading accent: they shape the code, and primary
+                // is the one color every other element in the app defers to.
+                keyword = scheme.primary,
+                // The language's own vocabulary one step calmer than its grammar - loud enough to
+                // read as "not my name", quiet enough that a line of `String` and `Int` does not
+                // shout like a line of keywords.
+                builtin = scheme.secondary,
+                // The third accent, spent on the one thing in code that is genuinely "other" text.
+                string = scheme.tertiary,
+                // A char literal is a one-glyph string; giving it the fourth-safest role rather than
+                // sharing string's would buy a distinction no reader of code has ever needed.
+                char = scheme.tertiary,
+                // A literal is the same class of fixed thing as the builtin constants (`true`,
+                // `EXIT_SUCCESS`), so it shares their calm accent rather than inventing a fifth.
+                number = scheme.secondary,
+                // Block comments recede furthest: outline is the dimmest role that stays readable
+                // on the surface in both schemes.
+                comment = scheme.outline,
+                // The engine split comment kinds because line comments are conventionally slightly
+                // stronger; onSurfaceVariant is exactly one step above outline in both schemes.
+                lineComment = scheme.onSurfaceVariant,
+                // Punctuation sits one step off prose. It shares the line-comment role because the
+                // two can never be mistaken for one another, and the set of both-scheme-readable
+                // text roles is too small to spend a unique one here.
+                operator = scheme.onSurfaceVariant,
+                // An annotation is a declarative name, closer to vocabulary than to grammar - the
+                // secondary calm keeps a heavily-annotated declaration from reading as all-keyword.
+                annotation = scheme.secondary,
+                // Builtins ARE type names (`Int`, `String`, `List`); the heuristic only catches the
+                // ones the word list missed, so the two kinds share a color by identity, not thrift.
+                typeName = scheme.secondary,
+            )
     }
 }
 
@@ -190,15 +190,17 @@ class SyntaxHighlightTransformation(
  * one comparison answers it. An empty list fits anything, which is what makes "not colored yet" and
  * "colored, and none of it survived the edit" the same answer here.
  */
-private fun List<AnnotatedString.Range<SpanStyle>>.fitsWithin(text: String): Boolean =
-    isEmpty() || last().end <= text.length
+private fun List<AnnotatedString.Range<SpanStyle>>.fitsWithin(text: String): Boolean = isEmpty() || last().end <= text.length
 
 /**
  * The transformation for a document's file name: its language's colors when the registry knows
  * the name, [VisualTransformation.None] when it does not - an unknown extension falls back to
  * plain text rather than guessing, which is the registry's own stance.
  */
-fun syntaxTransformationFor(fileName: String, colors: SyntaxColors): VisualTransformation {
+fun syntaxTransformationFor(
+    fileName: String,
+    colors: SyntaxColors,
+): VisualTransformation {
     val language = SyntaxRegistry.forFileName(fileName)
     return if (language == null) VisualTransformation.None else SyntaxHighlightTransformation(language, colors)
 }
@@ -277,17 +279,18 @@ private fun coloredSpans(
     colors: SyntaxColors,
 ): List<AnnotatedString.Range<SpanStyle>> {
     if (text.isEmpty()) return emptyList()
-    val source = if (text.length <= MAX_HIGHLIGHT_CHARS) {
-        text
-    } else {
-        // Cut at the last complete line inside the budget when one exists: the engine already
-        // ends an unterminated string at its line's end, so a whole-line cut can only miscolor a
-        // block comment or raw string that genuinely continues past the budget - which is the
-        // same thing the reader sees either way. A document with no newline in its first 128 Ki
-        // (one enormous line) cuts exactly at the budget instead.
-        val newline = text.lastIndexOf('\n', MAX_HIGHLIGHT_CHARS)
-        text.substring(0, if (newline >= 0) newline else MAX_HIGHLIGHT_CHARS)
-    }
+    val source =
+        if (text.length <= MAX_HIGHLIGHT_CHARS) {
+            text
+        } else {
+            // Cut at the last complete line inside the budget when one exists: the engine already
+            // ends an unterminated string at its line's end, so a whole-line cut can only miscolor a
+            // block comment or raw string that genuinely continues past the budget - which is the
+            // same thing the reader sees either way. A document with no newline in its first 128 Ki
+            // (one enormous line) cuts exactly at the budget instead.
+            val newline = text.lastIndexOf('\n', MAX_HIGHLIGHT_CHARS)
+            text.substring(0, if (newline >= 0) newline else MAX_HIGHLIGHT_CHARS)
+        }
     val tokens = SyntaxHighlighter(language).highlight(source)
     val spans = ArrayList<AnnotatedString.Range<SpanStyle>>(tokens.size)
     for (token in tokens) {

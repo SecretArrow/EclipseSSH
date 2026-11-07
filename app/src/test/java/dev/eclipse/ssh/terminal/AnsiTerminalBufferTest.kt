@@ -13,12 +13,10 @@ private const val E = "\u001B"
  * A mark is part of the character its cell draws, so it belongs in what the row reads as - the same
  * string [AnsiTerminalBuffer.plainText] gives for that row.
  */
-private fun List<TerminalCell>.text(): String =
-    joinToString("") { it.value.toString() + it.combining }.trimEnd()
+private fun List<TerminalCell>.text(): String = joinToString("") { it.value.toString() + it.combining }.trimEnd()
 
 /** The background of every cell of one row, so a test can say "all of them, and it is this one". */
-private fun AnsiTerminalBuffer.backgrounds(row: Int): List<TerminalColor> =
-    snapshot().lines[row].map { it.style.background }
+private fun AnsiTerminalBuffer.backgrounds(row: Int): List<TerminalColor> = snapshot().lines[row].map { it.style.background }
 
 /**
  * What an otherwise blank screen reads as when one cell of it carries a mark.
@@ -26,8 +24,10 @@ private fun AnsiTerminalBuffer.backgrounds(row: Int): List<TerminalColor> =
  * The cursor-movement table clears the screen, moves the cursor, and prints one character, so the whole
  * grid is that character's row: blank lines above it, spaces before it, and nothing after.
  */
-private fun markedRow(row: Int, column: Int): String =
-    "\n".repeat(row) + " ".repeat(column) + "X"
+private fun markedRow(
+    row: Int,
+    column: Int,
+): String = "\n".repeat(row) + " ".repeat(column) + "X"
 
 class AnsiTerminalBufferTest {
     @Test
@@ -37,7 +37,13 @@ class AnsiTerminalBufferTest {
         buffer.feed("$E[31mred$E[0m normal")
 
         assertThat(buffer.plainText()).contains("red normal")
-        assertThat(buffer.snapshot().lines.first()[0].style.foreground.isDefault).isFalse()
+        assertThat(
+            buffer
+                .snapshot()
+                .lines
+                .first()[0]
+                .style.foreground.isDefault,
+        ).isFalse()
     }
 
     @Test
@@ -72,8 +78,19 @@ class AnsiTerminalBufferTest {
         output.forEach { split.feed(it.toString()) }
 
         assertThat(split.plainText()).isEqualTo(whole.plainText())
-        assertThat(split.snapshot().lines.first()[0].style)
-            .isEqualTo(whole.snapshot().lines.first()[0].style)
+        assertThat(
+            split
+                .snapshot()
+                .lines
+                .first()[0]
+                .style,
+        ).isEqualTo(
+            whole
+                .snapshot()
+                .lines
+                .first()[0]
+                .style,
+        )
     }
 
     @Test
@@ -175,7 +192,11 @@ class AnsiTerminalBufferTest {
     fun `erase to end of line fills the erased cells with the current background`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("$E[41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
         buffer.feed("$E[1;2H$E[K")
 
         assertThat(painted.isDefault).isFalse()
@@ -186,7 +207,11 @@ class AnsiTerminalBufferTest {
     fun `erase to start of line fills the erased cells with the current background`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("$E[41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
         buffer.feed("$E[1;5H$E[1K")
 
         assertThat(buffer.backgrounds(0).take(5).toSet()).containsExactly(painted)
@@ -197,7 +222,11 @@ class AnsiTerminalBufferTest {
     fun `erasing the whole line fills it with the current background`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("$E[41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
         buffer.feed("$E[2K")
 
@@ -209,7 +238,11 @@ class AnsiTerminalBufferTest {
     fun `erasing the display fills every row with the current background`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
         buffer.feed("$E[41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
         buffer.feed("$E[2J")
 
@@ -220,7 +253,11 @@ class AnsiTerminalBufferTest {
     fun `erasing to the end of the display fills the rows below the cursor`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
         buffer.feed("plain\r\n$E[41mX")
-        val painted = buffer.snapshot().lines[1][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[1][0]
+                .style.background
 
         buffer.feed("$E[0J")
 
@@ -233,7 +270,11 @@ class AnsiTerminalBufferTest {
     fun `erasing to the start of the display fills the rows above the cursor`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
         buffer.feed("$E[41mX$E[3;1H")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
         buffer.feed("$E[1J")
 
@@ -246,11 +287,21 @@ class AnsiTerminalBufferTest {
     fun `erase characters fills only the cells it erases`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("$E[41mX$E[1;2H")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
         buffer.feed("$E[3X")
 
-        assertThat(buffer.backgrounds(0).drop(1).take(3).toSet()).containsExactly(painted)
+        assertThat(
+            buffer
+                .backgrounds(0)
+                .drop(1)
+                .take(3)
+                .toSet(),
+        ).containsExactly(painted)
         assertThat(buffer.backgrounds(0).drop(4).toSet()).containsExactly(TerminalColor())
     }
 
@@ -306,7 +357,11 @@ class AnsiTerminalBufferTest {
     fun `an erased cell keeps no attribute a blank cannot show`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("$E[1;4;9;41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
         buffer.feed("$E[1;2H$E[K")
 
@@ -321,10 +376,19 @@ class AnsiTerminalBufferTest {
     fun `erasing one half of a wide character gives the other half the current background`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 2)
         buffer.feed("你$E[1;1H$E[41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
         assertThat(painted.isDefault).isFalse()
-        assertThat(buffer.snapshot().lines[0][1].style.background).isEqualTo(painted)
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[0][1]
+                .style.background,
+        ).isEqualTo(painted)
     }
 
     @Test
@@ -337,7 +401,14 @@ class AnsiTerminalBufferTest {
         // The history goes; the screen it was cleared behind keeps its text. `ESC [ 3 J` is not an erase
         // of anything on screen, so it must not repaint it in the current colour either.
         assertThat(buffer.snapshot().lines).hasSize(2)
-        assertThat(buffer.snapshot().lines[0].map { it.value }.joinToString("").trimEnd()).isEqualTo("two")
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[0]
+                .map { it.value }
+                .joinToString("")
+                .trimEnd(),
+        ).isEqualTo("two")
         assertThat(buffer.backgrounds(0).toSet()).containsExactly(TerminalColor())
     }
 
@@ -411,29 +482,31 @@ class AnsiTerminalBufferTest {
         // the forms that share the dispatch, as one table rather than a test each: a sequence left out is
         // then a missing row instead of a missing test. Each case homes the cursor to row 5 column 3
         // (0-based 4,2), moves it, and prints a mark; the mark's cell is the answer.
-        val cases = listOf(
-            "$E[3A" to (1 to 2),          // up 3
-            "$E[A" to (3 to 2),           // up 1
-            "$E[0A" to (3 to 2),          // a parameter of zero means one
-            "$E[3B" to (7 to 2),          // down 3
-            "$E[B" to (5 to 2),           // down 1
-            "$E[4C" to (4 to 6),          // forward 4
-            "$E[C" to (4 to 3),           // forward 1
-            "$E[4D" to (4 to 0),          // back 4, stopping at the left margin
-            "$E[D" to (4 to 1),           // back 1
-            "$E[2E" to (6 to 0),          // next line, column 1
-            "$E[2F" to (2 to 0),          // previous line, column 1
-            "$E[7G" to (4 to 6),          // absolute column
-            "$E[7`" to (4 to 6),          // the same, spelled HPA
-            "$E[8d" to (7 to 2),          // absolute row
-            "$E[3;9H" to (2 to 8),        // CUP
-            "$E[3;9f" to (2 to 8),        // HVP, the other name for it
-        )
+        val cases =
+            listOf(
+                "$E[3A" to (1 to 2), // up 3
+                "$E[A" to (3 to 2), // up 1
+                "$E[0A" to (3 to 2), // a parameter of zero means one
+                "$E[3B" to (7 to 2), // down 3
+                "$E[B" to (5 to 2), // down 1
+                "$E[4C" to (4 to 6), // forward 4
+                "$E[C" to (4 to 3), // forward 1
+                "$E[4D" to (4 to 0), // back 4, stopping at the left margin
+                "$E[D" to (4 to 1), // back 1
+                "$E[2E" to (6 to 0), // next line, column 1
+                "$E[2F" to (2 to 0), // previous line, column 1
+                "$E[7G" to (4 to 6), // absolute column
+                "$E[7`" to (4 to 6), // the same, spelled HPA
+                "$E[8d" to (7 to 2), // absolute row
+                "$E[3;9H" to (2 to 8), // CUP
+                "$E[3;9f" to (2 to 8), // HVP, the other name for it
+            )
         for ((sequence, cell) in cases) {
             val buffer = AnsiTerminalBuffer(columns = 20, rows = 10)
             buffer.feed("$E[2J$E[5;3H$sequence" + "X")
             assertWithMessage("%s from 5,3", sequence.replace(E, "ESC"))
-                .that(buffer.plainText()).isEqualTo(markedRow(cell.first, cell.second))
+                .that(buffer.plainText())
+                .isEqualTo(markedRow(cell.first, cell.second))
         }
     }
 
@@ -629,7 +702,12 @@ class AnsiTerminalBufferTest {
         buffer.feed("${E}cplain")
 
         assertThat(buffer.plainText()).isEqualTo("plain")
-        assertThat(buffer.snapshot().lines[0][0].style.foreground.isDefault).isTrue()
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.foreground.isDefault,
+        ).isTrue()
     }
 
     // --- Styling ---
@@ -665,7 +743,12 @@ class AnsiTerminalBufferTest {
 
         buffer.feed("$E[38;2;10mA")
 
-        assertThat(buffer.snapshot().lines[0][0].style.foreground.isDefault).isTrue()
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.foreground.isDefault,
+        ).isTrue()
     }
 
     // --- Resize: happens on rotation and on soft-keyboard show/hide ---
@@ -841,35 +924,36 @@ class AnsiTerminalBufferTest {
      */
     @Test
     fun `plainText matches the straightforward rendering`() {
-        fun reference(snapshot: TerminalSnapshot): String = snapshot.lines
-            .joinToString("\n") { line ->
-                line.joinToString("") { it.value.toString() + it.combining }.trimEnd()
-            }
-            .trimEnd()
+        fun reference(snapshot: TerminalSnapshot): String =
+            snapshot.lines
+                .joinToString("\n") { line ->
+                    line.joinToString("") { it.value.toString() + it.combining }.trimEnd()
+                }.trimEnd()
 
-        val cases = mapOf(
-            "an untouched screen" to "",
-            "one word" to "hello",
-            "trailing spaces on a line" to "hello   ",
-            "several lines" to "one\ntwo\nthree",
-            // A gap of blank lines in the middle must survive; only the trailing run is dropped.
-            "a blank line between two full ones" to "top\n\nbottom",
-            // Ends on a blank line, which is what the outer trimEnd() exists for.
-            "output that ends with newlines" to "text\n\n\n",
-            "a line as wide as the screen" to "x".repeat(20),
-            // Wider than the screen, so it wraps and the wrapped part has no trailing space to trim.
-            "a line wider than the screen" to "y".repeat(45),
-            // Enough to push the first lines into scrollback.
-            "more lines than the screen has rows" to (1..12).joinToString("\n") { "line $it" },
-            "a line of nothing but spaces" to "   \nafter",
-            "tabs and non-latin text" to "kolom\tnilai\nsandi-üñïçø∂é",
-            // A cell whose character is two code points: the mark is part of the line, so a rendering
-            // that dropped it would be dropping ink the user can see.
-            "a decomposed accent" to "cafe\u0301 x",
-            "styling around the text" to "$E[1;31mbold red$E[0m plain",
-            // Cursor addressing leaves untouched cells as spaces mid-line.
-            "cursor addressing that leaves gaps" to "$E[2;5Hmid$E[4;1Hlow",
-        )
+        val cases =
+            mapOf(
+                "an untouched screen" to "",
+                "one word" to "hello",
+                "trailing spaces on a line" to "hello   ",
+                "several lines" to "one\ntwo\nthree",
+                // A gap of blank lines in the middle must survive; only the trailing run is dropped.
+                "a blank line between two full ones" to "top\n\nbottom",
+                // Ends on a blank line, which is what the outer trimEnd() exists for.
+                "output that ends with newlines" to "text\n\n\n",
+                "a line as wide as the screen" to "x".repeat(20),
+                // Wider than the screen, so it wraps and the wrapped part has no trailing space to trim.
+                "a line wider than the screen" to "y".repeat(45),
+                // Enough to push the first lines into scrollback.
+                "more lines than the screen has rows" to (1..12).joinToString("\n") { "line $it" },
+                "a line of nothing but spaces" to "   \nafter",
+                "tabs and non-latin text" to "kolom\tnilai\nsandi-üñïçø∂é",
+                // A cell whose character is two code points: the mark is part of the line, so a rendering
+                // that dropped it would be dropping ink the user can see.
+                "a decomposed accent" to "cafe\u0301 x",
+                "styling around the text" to "$E[1;31mbold red$E[0m plain",
+                // Cursor addressing leaves untouched cells as spaces mid-line.
+                "cursor addressing that leaves gaps" to "$E[2;5Hmid$E[4;1Hlow",
+            )
 
         cases.forEach { (name, input) ->
             val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
@@ -885,12 +969,18 @@ class AnsiTerminalBufferTest {
         buffer.feed("$E[40;180HX")
 
         buffer.resize(20, 5)
-        buffer.feed("${E}[Hafter")
+        buffer.feed("$E[Hafter")
 
         assertThat(buffer.plainText()).contains("after")
         // The screen - the rows the emulator addresses by column - is exactly the new width. The
         // history above it is not: see `a resize trims the screen to the new width`.
-        assertThat(buffer.snapshot().lines.takeLast(5).all { it.size == 20 }).isTrue()
+        assertThat(
+            buffer
+                .snapshot()
+                .lines
+                .takeLast(5)
+                .all { it.size == 20 },
+        ).isTrue()
     }
 
     /**
@@ -1303,9 +1393,11 @@ class AnsiTerminalBufferTest {
 
                 val snapshot = buffer.snapshot()
                 assertWithMessage("$corner ESC[-5$move row")
-                    .that(snapshot.cursorRow).isIn(0..snapshot.lines.lastIndex)
+                    .that(snapshot.cursorRow)
+                    .isIn(0..snapshot.lines.lastIndex)
                 assertWithMessage("$corner ESC[-5$move column")
-                    .that(snapshot.cursorColumn).isIn(0..snapshot.columns)
+                    .that(snapshot.cursorColumn)
+                    .isIn(0..snapshot.columns)
                 assertWithMessage("$corner ESC[-5$move printed").that(buffer.plainText()).contains("X")
             }
         }
@@ -1604,11 +1696,22 @@ class AnsiTerminalBufferTest {
 
         buffer.feed(hash + "\r" + "short")
         assertWithMessage("the emulator invented an erase the server never sent")
-            .that(buffer.snapshot().lines.first().text())
-            .isEqualTo("short" + hash.substring(5))
+            .that(
+                buffer
+                    .snapshot()
+                    .lines
+                    .first()
+                    .text(),
+            ).isEqualTo("short" + hash.substring(5))
 
         buffer.feed("\r$E[K" + "short")
-        assertThat(buffer.snapshot().lines.first().text()).isEqualTo("short")
+        assertThat(
+            buffer
+                .snapshot()
+                .lines
+                .first()
+                .text(),
+        ).isEqualTo("short")
     }
 
     // --- Zero-width characters: the cursor has to stay in the program's coordinate system ---
@@ -1630,23 +1733,28 @@ class AnsiTerminalBufferTest {
     @Test
     fun `the cursor column is the column the program counted`() {
         val buffer = AnsiTerminalBuffer(columns = 60, rows = 5)
+
         // An escape sequence in a failure message would be invisible and a surrogate half unprintable, so
         // the chunk is named the way the source spells it.
-        fun shown(chunk: String): String = chunk.replace(E, "<ESC>").map { char ->
-            if (char.code in 0xD800..0xDFFF) "\\u%04X".format(char.code) else char.toString()
-        }.joinToString("")
+        fun shown(chunk: String): String =
+            chunk
+                .replace(E, "<ESC>")
+                .map { char ->
+                    if (char.code in 0xD800..0xDFFF) "\\u%04X".format(char.code) else char.toString()
+                }.joinToString("")
 
-        val stream = listOf(
-            "deploy " to 7,            // seven columns
-            "\u2764\uFE0F" to 8,       // a heart is one column; the variation selector after it is none
-            " done" to 13,             // five more
-            "\r" to 0,                 // an absolute move, which re-syncs both sides
-            "cafe\u0301 " to 5,        // four letters, an accent that takes no column, then a space
-            "$E[32mok$E[0m" to 7,      // styling moves no column
-            "\uD83D\uDE00" to 9,       // an emoji: two code units, two columns, which is what the far side counts
-            "\uDB40\uDD01" to 9,       // a variation selector from the supplement: two code units, no column
-            " fin" to 13,              // four more
-        )
+        val stream =
+            listOf(
+                "deploy " to 7, // seven columns
+                "\u2764\uFE0F" to 8, // a heart is one column; the variation selector after it is none
+                " done" to 13, // five more
+                "\r" to 0, // an absolute move, which re-syncs both sides
+                "cafe\u0301 " to 5, // four letters, an accent that takes no column, then a space
+                "$E[32mok$E[0m" to 7, // styling moves no column
+                "\uD83D\uDE00" to 9, // an emoji: two code units, two columns, which is what the far side counts
+                "\uDB40\uDD01" to 9, // a variation selector from the supplement: two code units, no column
+                " fin" to 13, // four more
+            )
 
         stream.forEach { (chunk, expected) ->
             buffer.feed(chunk)
@@ -1672,9 +1780,9 @@ class AnsiTerminalBufferTest {
     fun `a mark in a rewritten line leaves nothing standing to its left`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("abcdefgh\r")   // an older, longer line
-        buffer.feed("x\uFE0Fy")     // the new one, with a mark in it
-        buffer.feed("$E[K")         // erase from where the program's cursor is
+        buffer.feed("abcdefgh\r") // an older, longer line
+        buffer.feed("x\uFE0Fy") // the new one, with a mark in it
+        buffer.feed("$E[K") // erase from where the program's cursor is
         buffer.feed("z")
 
         val line = buffer.snapshot().lines.first()
@@ -1685,7 +1793,13 @@ class AnsiTerminalBufferTest {
             .isEqualTo('y')
         assertThat(line[2].value).isEqualTo('z')
         // None of the old line survives, and neither does anything the erase covered.
-        assertThat(line.drop(3).map { it.value }.joinToString("").trimEnd()).isEmpty()
+        assertThat(
+            line
+                .drop(3)
+                .map { it.value }
+                .joinToString("")
+                .trimEnd(),
+        ).isEmpty()
         // The two sides agree on where the cursor ended, which is what made the erase land correctly.
         assertThat(buffer.frame().cursorColumn).isEqualTo(3)
     }
@@ -1762,12 +1876,24 @@ class AnsiTerminalBufferTest {
     fun `a mark with nothing under it is dropped, not carried`() {
         val atColumnZero = AnsiTerminalBuffer(columns = 10, rows = 3)
         atColumnZero.feed("\u0301")
-        assertThat(atColumnZero.snapshot().lines.first()[0].combining).isEmpty()
+        assertThat(
+            atColumnZero
+                .snapshot()
+                .lines
+                .first()[0]
+                .combining,
+        ).isEmpty()
         assertThat(atColumnZero.frame().cursorColumn).isEqualTo(0)
 
         val onABlank = AnsiTerminalBuffer(columns = 10, rows = 3)
         onABlank.feed(" \u0301")
-        assertThat(onABlank.snapshot().lines.first()[0].combining).isEmpty()
+        assertThat(
+            onABlank
+                .snapshot()
+                .lines
+                .first()[0]
+                .combining,
+        ).isEmpty()
         assertThat(onABlank.frame().cursorColumn).isEqualTo(1)
     }
 
@@ -1826,8 +1952,19 @@ class AnsiTerminalBufferTest {
         split.feed("\uD83D")
         split.feed("\uDE00")
 
-        assertThat(split.snapshot().lines.first().map { it.value })
-            .isEqualTo(joined.snapshot().lines.first().map { it.value })
+        assertThat(
+            split
+                .snapshot()
+                .lines
+                .first()
+                .map { it.value },
+        ).isEqualTo(
+            joined
+                .snapshot()
+                .lines
+                .first()
+                .map { it.value },
+        )
         assertThat(split.frame().cursorColumn).isEqualTo(2)
     }
 

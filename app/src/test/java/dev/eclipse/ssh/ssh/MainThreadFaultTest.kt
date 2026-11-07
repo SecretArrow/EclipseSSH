@@ -3,12 +3,12 @@ package dev.eclipse.ssh.ssh
 import android.os.NetworkOnMainThreadException
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.presentation.shouldAutoReconnect
-import java.io.IOException
-import java.net.SocketException
 import org.apache.sshd.common.SshException
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.IOException
+import java.net.SocketException
 
 /**
  * The one ending that is this app's fault, and what the app is now obliged to do about it.
@@ -32,7 +32,6 @@ import org.robolectric.RobolectricTestRunner
  */
 @RunWith(RobolectricTestRunner::class)
 class MainThreadFaultTest {
-
     @Test
     fun `a transport failure caused on the main thread is the app's fault`() {
         assertThat(SessionEnd.TransportFailed(NetworkOnMainThreadException()).isAppFault).isTrue()

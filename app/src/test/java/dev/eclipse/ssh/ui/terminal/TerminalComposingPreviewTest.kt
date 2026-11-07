@@ -19,8 +19,10 @@ import org.junit.Test
  * typed. Drawing there would put the user's half-typed word in the middle of a panel.
  */
 class TerminalComposingPreviewTest {
-
-    private fun layout(cursorRow: Int, cursorColumn: Int) = TerminalLayout(
+    private fun layout(
+        cursorRow: Int,
+        cursorColumn: Int,
+    ) = TerminalLayout(
         rows = emptyList(),
         contentColumns = 0,
         cursorRow = cursorRow,

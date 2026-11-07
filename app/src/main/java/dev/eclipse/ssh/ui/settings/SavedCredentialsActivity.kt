@@ -28,8 +28,8 @@ import dev.eclipse.ssh.data.credentials.describe
 import dev.eclipse.ssh.data.model.AppSettings
 import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.data.settings.SettingsRepository
-import javax.inject.Inject
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Saved credentials: every host that has a secret in the vault, what is saved for it, and the two
@@ -51,7 +51,6 @@ import kotlinx.coroutines.launch
  */
 @AndroidEntryPoint
 class SavedCredentialsActivity : SettingsDestinationActivity() {
-
     @Inject lateinit var credentialStore: HostCredentialStore
 
     /**
@@ -69,7 +68,10 @@ class SavedCredentialsActivity : SettingsDestinationActivity() {
     override val screenTitle = "Saved credentials"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         // Null until the store's first emission, and the card stays blank until then. Seeding this
         // with an empty map - what a list screen normally does - would put "nothing is saved yet" in
         // front of a user who has three hosts saved, for as long as the store takes to answer. A
@@ -93,26 +95,28 @@ class SavedCredentialsActivity : SettingsDestinationActivity() {
         SettingsSection(screenTitle) {
             when {
                 savedHosts == null -> Unit
-                savedHosts.isEmpty() -> Text(
-                    "Nothing is saved yet. A password, private key or passphrase is stored only when you " +
-                        "ask for one to be saved, while connecting or from a host's own form, and this " +
-                        "screen is where it is forgotten again.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                )
-                else -> savedHosts.entries
-                    .sortedBy { credentialHostName(profiles, it.key) }
-                    .forEach { (hostId, stored) ->
-                        val name = credentialHostName(profiles, hostId)
-                        SettingRow(Icons.Default.Key, name, stored.describe()) {
-                            // One host, one tap, no confirmation. The row names the host and the button
-                            // says what it does, the known-hosts list forgets a trusted fingerprint the
-                            // same way, and what is lost is a password the user can type again. The
-                            // forget-all below is the opposite case - it is broad, and no single row
-                            // makes it self-evident - which is why that one keeps its dialog.
-                            TextButton(onClick = { scope.launch { forgetHost(hostId, name, report) } }) { Text("Forget") }
+                savedHosts.isEmpty() ->
+                    Text(
+                        "Nothing is saved yet. A password, private key or passphrase is stored only when you " +
+                            "ask for one to be saved, while connecting or from a host's own form, and this " +
+                            "screen is where it is forgotten again.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
+                else ->
+                    savedHosts.entries
+                        .sortedBy { credentialHostName(profiles, it.key) }
+                        .forEach { (hostId, stored) ->
+                            val name = credentialHostName(profiles, hostId)
+                            SettingRow(Icons.Default.Key, name, stored.describe()) {
+                                // One host, one tap, no confirmation. The row names the host and the button
+                                // says what it does, the known-hosts list forgets a trusted fingerprint the
+                                // same way, and what is lost is a password the user can type again. The
+                                // forget-all below is the opposite case - it is broad, and no single row
+                                // makes it self-evident - which is why that one keeps its dialog.
+                                TextButton(onClick = { scope.launch { forgetHost(hostId, name, report) } }) { Text("Forget") }
+                            }
                         }
-                    }
             }
         }
 
@@ -165,7 +169,11 @@ class SavedCredentialsActivity : SettingsDestinationActivity() {
      * Success is not reported. The row leaving the list is the report, and a message beside a row that
      * has just vanished says the same thing twice.
      */
-    private suspend fun forgetHost(hostId: String, name: String, report: (String) -> Unit) {
+    private suspend fun forgetHost(
+        hostId: String,
+        name: String,
+        report: (String) -> Unit,
+    ) {
         val unregistered = runCatching { sessionRegistry.unregister(hostId) }
         val forgotten = runCatching { credentialStore.forget(hostId) }
         if (unregistered.isFailure || forgotten.isFailure) report("Could not forget credentials for $name")
@@ -193,5 +201,7 @@ class SavedCredentialsActivity : SettingsDestinationActivity() {
  * secret with no row is a secret the user cannot reach to forget, and being able to reach every one
  * of them is this screen's entire purpose.
  */
-private fun credentialHostName(profiles: Map<String, HostProfile>, hostId: String): String =
-    profiles[hostId]?.name ?: hostId
+private fun credentialHostName(
+    profiles: Map<String, HostProfile>,
+    hostId: String,
+): String = profiles[hostId]?.name ?: hostId

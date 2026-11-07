@@ -10,8 +10,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.EclipseApp
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,55 +45,94 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35])
 class TextEditorToolbarRobolectricTest {
-
     /** Reads back one in-memory document; the editor needs no other provider call before paint. */
-    private class SingleFileProvider(private val contents: ByteArray) : FileSystemProvider {
+    private class SingleFileProvider(
+        private val contents: ByteArray,
+    ) : FileSystemProvider {
         override val providerId: String = "test"
+
         override suspend fun homePath(): String? = null
+
         override suspend fun parentPath(path: String): String? = null
+
         override suspend fun list(path: String): List<FsEntry> = emptyList()
+
         override suspend fun stat(path: String): FsEntry? = null
+
         override suspend fun read(path: String): ByteArray = contents
-        override suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long?) = Unit
-        override suspend fun createFile(parentPath: String, name: String): FsEntry =
-            error("unused by the editor launch")
-        override suspend fun createDirectory(parentPath: String, name: String) =
-            error("unused by the editor launch")
-        override suspend fun rename(path: String, newName: String) = error("unused by the editor launch")
-        override suspend fun copy(sourcePath: String, targetDirectoryPath: String) =
-            error("unused by the editor launch")
-        override suspend fun move(sourcePath: String, targetDirectoryPath: String) =
-            error("unused by the editor launch")
+
+        override suspend fun write(
+            path: String,
+            data: ByteArray,
+            onlyIfUnmodifiedSince: Long?,
+        ) = Unit
+
+        override suspend fun createFile(
+            parentPath: String,
+            name: String,
+        ): FsEntry = error("unused by the editor launch")
+
+        override suspend fun createDirectory(
+            parentPath: String,
+            name: String,
+        ) = error("unused by the editor launch")
+
+        override suspend fun rename(
+            path: String,
+            newName: String,
+        ) = error("unused by the editor launch")
+
+        override suspend fun copy(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the editor launch")
+
+        override suspend fun move(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the editor launch")
+
         override suspend fun delete(path: String) = error("unused by the editor launch")
-        override suspend fun setPermissions(path: String, mode: Int) = error("unused by the editor launch")
-        override suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry> =
-            emptyList()
+
+        override suspend fun setPermissions(
+            path: String,
+            mode: Int,
+        ) = error("unused by the editor launch")
+
+        override suspend fun search(
+            root: String,
+            query: String,
+            maxEntries: Int,
+        ): List<FsEntry> = emptyList()
     }
 
-    private fun request() = EditorRequest(
-        entry = FsEntry(
-            name = "notes.txt",
-            path = "/tmp/notes.txt",
-            isDirectory = false,
-            size = 5L,
-            modifiedEpochMillis = 0L,
-            permissions = null,
-            mimeType = "text/plain",
-        ),
-        provider = SingleFileProvider("hello".toByteArray()),
-    )
+    private fun request() =
+        EditorRequest(
+            entry =
+                FsEntry(
+                    name = "notes.txt",
+                    path = "/tmp/notes.txt",
+                    isDirectory = false,
+                    size = 5L,
+                    modifiedEpochMillis = 0L,
+                    permissions = null,
+                    mimeType = "text/plain",
+                ),
+            provider = SingleFileProvider("hello".toByteArray()),
+        )
 
     @get:Rule
-    val compose = AndroidComposeTestRule(
-        ActivityScenarioRule<TextEditorActivity>(
-            Intent(ApplicationProvider.getApplicationContext(), TextEditorActivity::class.java)
-                .putExtra(TextEditorActivity.EXTRA_REQUEST_TOKEN, EditorRequests.put(request())),
-        ),
-    ) { rule ->
-        var activity: TextEditorActivity? = null
-        rule.scenario.onActivity { activity = it }
-        checkNotNull(activity)
-    }
+    val compose =
+        AndroidComposeTestRule(
+            ActivityScenarioRule<TextEditorActivity>(
+                Intent(ApplicationProvider.getApplicationContext(), TextEditorActivity::class.java)
+                    .putExtra(TextEditorActivity.EXTRA_REQUEST_TOKEN, EditorRequests.put(request())),
+            ),
+        ) { rule ->
+            var activity: TextEditorActivity? = null
+            rule.scenario.onActivity { activity = it }
+            checkNotNull(activity)
+        }
 
     @Test
     fun theEditingVerbsAreOnTheHeaderAndTheSaveLabelReadsSaved() {

@@ -13,26 +13,28 @@ import org.junit.Test
  * a judgement, not a fact a test can pin.
  */
 class LinuxInstallProgressTest {
-
-    private fun percent(step: LinuxInstallStep, plan: InstallPlan = InstallPlan.FULL): Int =
-        LinuxInstallProgress.percent(step, plan)
+    private fun percent(
+        step: LinuxInstallStep,
+        plan: InstallPlan = InstallPlan.FULL,
+    ): Int = LinuxInstallProgress.percent(step, plan)
 
     @Test
     fun `a full install climbs from zero to a hundred without ever going back`() {
-        val walk = buildList {
-            // The download, in the ticks the installer reports it in.
-            for (received in 0L..100L step 10L) add(LinuxInstallStep.Downloading(received, 100L))
-            add(LinuxInstallStep.Verifying)
-            // Extraction ticks, as the tarball's consumed fraction grows.
-            for (step in 0..10) add(LinuxInstallStep.Extracting(entries = step * 200, fraction = step / 10f))
-            // Every setup step, each with apt's own bar running through it.
-            for (step in SetupStep.entries) {
-                add(LinuxInstallStep.SettingUp(step))
-                add(LinuxInstallStep.SettingUp(step, fraction = 0.5f))
-                add(LinuxInstallStep.SettingUp(step, fraction = 1f))
+        val walk =
+            buildList {
+                // The download, in the ticks the installer reports it in.
+                for (received in 0L..100L step 10L) add(LinuxInstallStep.Downloading(received, 100L))
+                add(LinuxInstallStep.Verifying)
+                // Extraction ticks, as the tarball's consumed fraction grows.
+                for (step in 0..10) add(LinuxInstallStep.Extracting(entries = step * 200, fraction = step / 10f))
+                // Every setup step, each with apt's own bar running through it.
+                for (step in SetupStep.entries) {
+                    add(LinuxInstallStep.SettingUp(step))
+                    add(LinuxInstallStep.SettingUp(step, fraction = 0.5f))
+                    add(LinuxInstallStep.SettingUp(step, fraction = 1f))
+                }
+                add(LinuxInstallStep.VerifyingHealth)
             }
-            add(LinuxInstallStep.VerifyingHealth)
-        }
 
         val readings = walk.map { percent(it) }
 
@@ -87,10 +89,11 @@ class LinuxInstallProgressTest {
 
     @Test
     fun `the state's own percentage is the step's, qualified by the plan it carries`() {
-        val state = LinuxUserspaceState.Installing(
-            LinuxInstallStep.SettingUp(SetupStep.REGISTER_USER),
-            InstallPlan.SETUP_ONLY,
-        )
+        val state =
+            LinuxUserspaceState.Installing(
+                LinuxInstallStep.SettingUp(SetupStep.REGISTER_USER),
+                InstallPlan.SETUP_ONLY,
+            )
 
         assertThat(state.percent).isEqualTo(0)
         assertThat(

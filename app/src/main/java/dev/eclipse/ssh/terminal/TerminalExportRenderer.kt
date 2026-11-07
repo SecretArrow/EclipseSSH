@@ -10,24 +10,36 @@ import java.io.ByteArrayOutputStream
 
 /** Creates a bounded terminal-style screenshot without exposing the rest of the app UI. */
 object TerminalExportRenderer {
-    fun renderScreenPng(title: String, text: String): ByteArray {
-        val lines = text.replace("\r\n", "\n").replace('\r', '\n').lines().takeLast(MAX_LINES)
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(179, 193, 217)
-            textSize = TEXT_SIZE
-            typeface = Typeface.MONOSPACE
-        }
-        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(143, 211, 255)
-            textSize = TITLE_SIZE
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-        }
+    fun renderScreenPng(
+        title: String,
+        text: String,
+    ): ByteArray {
+        val lines =
+            text
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .lines()
+                .takeLast(MAX_LINES)
+        val textPaint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(179, 193, 217)
+                textSize = TEXT_SIZE
+                typeface = Typeface.MONOSPACE
+            }
+        val titlePaint =
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.rgb(143, 211, 255)
+                textSize = TITLE_SIZE
+                typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            }
         val maxLineWidth = lines.maxOfOrNull { textPaint.measureText(it) } ?: 0f
-        val width = (maxOf(titlePaint.measureText(title), maxLineWidth) + HORIZONTAL_PADDING * 2)
-            .toInt()
-            .coerceIn(MIN_WIDTH, MAX_WIDTH)
-        val height = (TOP_PADDING + TITLE_LINE_HEIGHT + lines.size * LINE_HEIGHT + BOTTOM_PADDING)
-            .coerceIn(MIN_HEIGHT, MAX_HEIGHT)
+        val width =
+            (maxOf(titlePaint.measureText(title), maxLineWidth) + HORIZONTAL_PADDING * 2)
+                .toInt()
+                .coerceIn(MIN_WIDTH, MAX_WIDTH)
+        val height =
+            (TOP_PADDING + TITLE_LINE_HEIGHT + lines.size * LINE_HEIGHT + BOTTOM_PADDING)
+                .coerceIn(MIN_HEIGHT, MAX_HEIGHT)
         val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.rgb(9, 13, 22))

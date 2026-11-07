@@ -20,7 +20,6 @@ import org.junit.Test
  * probe as a parameter.
  */
 class SessionRestoreDecisionTest {
-
     private fun host(id: String) = HostProfile(id = id, name = id, host = "127.0.0.1", username = "u")
 
     private val hosts = listOf(host("a"), host("b"), host("c"))
@@ -78,10 +77,11 @@ class SessionRestoreDecisionTest {
     fun `the pass waits the shortest delay any pending host asked for`() {
         // One wait serves every host in the pass, so a host that asked to retry after two seconds must
         // not be held behind another host's minute.
-        val hosts = listOf(
-            host("slow").copy(reconnectBackoffSeconds = 60),
-            host("quick").copy(reconnectBackoffSeconds = 2),
-        )
+        val hosts =
+            listOf(
+                host("slow").copy(reconnectBackoffSeconds = 60),
+                host("quick").copy(reconnectBackoffSeconds = 2),
+            )
 
         assertThat(restoreBaseSeconds(hosts, globalSeconds = 30)).isEqualTo(2)
     }
@@ -114,12 +114,13 @@ class SessionRestoreDecisionTest {
         // The setting says the user answers for their own sessions, so this pass - which runs while
         // the phone is in a pocket - must not be the thing that redials behind their back. The UI's
         // ladder parks the tab and raises the prompt instead.
-        val pending = hostsNeedingRestore(
-            hosts,
-            activeIds = setOf("a", "b"),
-            isLive = { false },
-            askFirst = true,
-        )
+        val pending =
+            hostsNeedingRestore(
+                hosts,
+                activeIds = setOf("a", "b"),
+                isLive = { false },
+                askFirst = true,
+            )
 
         assertThat(pending).isEmpty()
     }
@@ -128,13 +129,14 @@ class SessionRestoreDecisionTest {
     fun `ask first mode still dials for a host with a transfer in flight`() {
         // A queued or running transfer is work the user scheduled and is still waiting on; the
         // prompt about the shell is not an answer about it.
-        val pending = hostsNeedingRestore(
-            hosts,
-            activeIds = setOf("a", "b"),
-            isLive = { false },
-            askFirst = true,
-            transferPending = { it.id == "a" },
-        )
+        val pending =
+            hostsNeedingRestore(
+                hosts,
+                activeIds = setOf("a", "b"),
+                isLive = { false },
+                askFirst = true,
+                transferPending = { it.id == "a" },
+            )
 
         assertThat(pending.map { it.id }).containsExactly("a")
     }
@@ -144,13 +146,14 @@ class SessionRestoreDecisionTest {
         // The per-host switch is the stronger promise: a transfer on a host the user said must never
         // be dialled unattended still does not dial it unattended.
         val hosts = listOf(host("a").copy(autoReconnect = false), host("b"))
-        val pending = hostsNeedingRestore(
-            hosts,
-            activeIds = setOf("a", "b"),
-            isLive = { false },
-            askFirst = true,
-            transferPending = { true },
-        )
+        val pending =
+            hostsNeedingRestore(
+                hosts,
+                activeIds = setOf("a", "b"),
+                isLive = { false },
+                askFirst = true,
+                transferPending = { true },
+            )
 
         assertThat(pending.map { it.id }).containsExactly("b")
     }
@@ -159,13 +162,14 @@ class SessionRestoreDecisionTest {
     fun `ask first mode is not consulted when the setting is off`() {
         // The default. transferPending is only meaningful behind askFirst, so a pass that consulted
         // it anyway would skip a host the old behaviour would have restored.
-        val pending = hostsNeedingRestore(
-            hosts,
-            activeIds = setOf("a", "b"),
-            isLive = { false },
-            askFirst = false,
-            transferPending = { false },
-        )
+        val pending =
+            hostsNeedingRestore(
+                hosts,
+                activeIds = setOf("a", "b"),
+                isLive = { false },
+                askFirst = false,
+                transferPending = { false },
+            )
 
         assertThat(pending.map { it.id }).containsExactly("a", "b").inOrder()
     }

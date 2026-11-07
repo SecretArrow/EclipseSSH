@@ -2,14 +2,14 @@ package dev.eclipse.ssh.linux
 
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.ssh.SessionEnd
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The local terminal channel against a scripted pty: that it keeps the [dev.eclipse.ssh.ssh.TerminalChannel]
@@ -21,9 +21,7 @@ import org.junit.Test
  * is why each ending path (clean exit, signal death, app close) is asserted on its own.
  */
 class LocalTerminalChannelTest {
-
-    private fun newChannel(process: FakePtyProcess = FakePtyProcess()): LocalTerminalChannel =
-        LocalTerminalChannel(process)
+    private fun newChannel(process: FakePtyProcess = FakePtyProcess()): LocalTerminalChannel = LocalTerminalChannel(process)
 
     @Test
     fun `output is published in order and the stream ends after a clean exit`() {
@@ -262,7 +260,11 @@ internal open class FakePtyProcess : PtyProcess {
         exited.countDown()
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         val chunk = pending.take()
         if (chunk.isEmpty()) return -1
         val n = minOf(length, chunk.size)
@@ -270,12 +272,19 @@ internal open class FakePtyProcess : PtyProcess {
         return n
     }
 
-    open override fun write(buffer: ByteArray, offset: Int, length: Int): Int {
+    open override fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         writes.put(buffer.copyOfRange(offset, offset + length))
         return length
     }
 
-    override fun resize(rows: Int, columns: Int) {
+    override fun resize(
+        rows: Int,
+        columns: Int,
+    ) {
         resizes++
         lastResize = rows to columns
     }
@@ -304,7 +313,11 @@ private class BlockingWritePtyProcess : FakePtyProcess() {
     val writeEntered = CountDownLatch(1)
     val writeGate = CountDownLatch(1)
 
-    override fun write(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun write(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         writeEntered.countDown()
         writeGate.await()
         return super.write(buffer, offset, length)

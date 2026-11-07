@@ -15,7 +15,6 @@ import java.util.Collections
  * working on the version the app actually ships against.
  */
 class ProxyConnectorInternalsTest {
-
     // -------------------------------------------------------------------------
     // Reflection into Nio2ServiceFactory's private fields (see nio2Internals).
     // -------------------------------------------------------------------------

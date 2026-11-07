@@ -21,7 +21,6 @@ import kotlin.concurrent.thread
  * the target through the proxy.
  */
 class Socks5EndToEndTest {
-
     private val servers = mutableListOf<ServerSocket>()
     private val channels = mutableListOf<AsynchronousSocketChannel>()
 
@@ -95,15 +94,16 @@ class Socks5EndToEndTest {
                 // CONNECT request: VER CMD RSV ATYP addr port.
                 val header = input.readExact(4)
                 val atyp = header[3].toInt() and 0xFF
-                val host = when (atyp) {
-                    0x01 -> InetAddress.getByAddress(input.readExact(4)).hostAddress
-                    0x03 -> {
-                        val len = input.read()
-                        input.readExact(len).toString(Charsets.UTF_8)
+                val host =
+                    when (atyp) {
+                        0x01 -> InetAddress.getByAddress(input.readExact(4)).hostAddress
+                        0x03 -> {
+                            val len = input.read()
+                            input.readExact(len).toString(Charsets.UTF_8)
+                        }
+                        0x04 -> InetAddress.getByAddress(input.readExact(16)).hostAddress
+                        else -> throw IOException("Unexpected ATYP $atyp")
                     }
-                    0x04 -> InetAddress.getByAddress(input.readExact(16)).hostAddress
-                    else -> throw IOException("Unexpected ATYP $atyp")
-                }
                 val port = (input.read() shl 8) or input.read()
 
                 val target = Socket(host, port)

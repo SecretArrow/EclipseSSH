@@ -27,7 +27,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class KnownHostsStoreTest {
-
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     /** A store that has only ever read the file, standing in for the app's next launch. */

@@ -80,11 +80,12 @@ object StandInAndroidKeyStore {
         type: String,
         algorithm: String,
     ) : Provider.Service(provider, type, algorithm, StandInKeyStoreSpi::class.java.name, null, null) {
-        override fun newInstance(constructorParameter: Any?): Any = when (type) {
-            "KeyStore" -> StandInKeyStoreSpi()
-            "KeyGenerator" -> StandInKeyGeneratorSpi()
-            else -> throw KeyStoreException("Unsupported service type $type")
-        }
+        override fun newInstance(constructorParameter: Any?): Any =
+            when (type) {
+                "KeyStore" -> StandInKeyStoreSpi()
+                "KeyGenerator" -> StandInKeyGeneratorSpi()
+                else -> throw KeyStoreException("Unsupported service type $type")
+            }
 
         override fun supportsParameter(parameter: Any?): Boolean = true
     }
@@ -100,13 +101,19 @@ object StandInAndroidKeyStore {
 
         override fun engineInit(random: SecureRandom?) = Unit
 
-        override fun engineInit(params: AlgorithmParameterSpec?, random: SecureRandom?) {
+        override fun engineInit(
+            params: AlgorithmParameterSpec?,
+            random: SecureRandom?,
+        ) {
             val spec = params as? KeyGenParameterSpec ?: return
             alias = spec.keystoreAlias
             if (spec.keySize > 0) sizeBits = spec.keySize
         }
 
-        override fun engineInit(keysize: Int, random: SecureRandom?) {
+        override fun engineInit(
+            keysize: Int,
+            random: SecureRandom?,
+        ) {
             sizeBits = keysize
         }
 
@@ -124,9 +131,15 @@ object StandInAndroidKeyStore {
 
     /** The alias lookup, and nothing else: the vault only ever stores and fetches one secret key. */
     private class StandInKeyStoreSpi : KeyStoreSpi() {
-        override fun engineLoad(stream: InputStream?, password: CharArray?) = Unit
+        override fun engineLoad(
+            stream: InputStream?,
+            password: CharArray?,
+        ) = Unit
 
-        override fun engineGetKey(alias: String?, password: CharArray?): Key? = keys[alias]
+        override fun engineGetKey(
+            alias: String?,
+            password: CharArray?,
+        ): Key? = keys[alias]
 
         override fun engineContainsAlias(alias: String?): Boolean = keys.containsKey(alias)
 
@@ -150,11 +163,16 @@ object StandInAndroidKeyStore {
             keys[alias ?: throw KeyStoreException("Alias required")] = secret
         }
 
-        override fun engineSetKeyEntry(alias: String?, key: ByteArray?, chain: Array<out Certificate>?) =
-            throw KeyStoreException("Encoded key entries are not supported")
+        override fun engineSetKeyEntry(
+            alias: String?,
+            key: ByteArray?,
+            chain: Array<out Certificate>?,
+        ) = throw KeyStoreException("Encoded key entries are not supported")
 
-        override fun engineSetCertificateEntry(alias: String?, certificate: Certificate?) =
-            throw KeyStoreException("Certificate entries are not supported")
+        override fun engineSetCertificateEntry(
+            alias: String?,
+            certificate: Certificate?,
+        ) = throw KeyStoreException("Certificate entries are not supported")
 
         override fun engineGetCertificate(alias: String?): Certificate? = null
 
@@ -166,6 +184,9 @@ object StandInAndroidKeyStore {
 
         override fun engineIsCertificateEntry(alias: String?): Boolean = false
 
-        override fun engineStore(stream: OutputStream?, password: CharArray?) = Unit
+        override fun engineStore(
+            stream: OutputStream?,
+            password: CharArray?,
+        ) = Unit
     }
 }

@@ -65,8 +65,9 @@ internal object NotificationChannels {
     const val ID_LINUX_PROMOTION = 4105
 
     fun ensureCreated(context: Context) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            ?: return
+        val manager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                ?: return
         // Wrapped because this runs during Application.onCreate, where an unexpected failure would
         // take the whole process down before any UI exists to report it.
         runCatching {
@@ -135,14 +136,16 @@ internal fun postAlert(
         return
     }
     // Both alert bodies explain a platform restriction and are longer than one collapsed line.
-    val notification = NotificationCompat.Builder(context, NotificationChannels.ALERTS)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
-        .setContentTitle(title)
-        .setContentText(body)
-        .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-        .setContentIntent(contentIntent)
-        .setAutoCancel(true)
-        .setCategory(NotificationCompat.CATEGORY_STATUS)
-        .build()
+    val notification =
+        NotificationCompat
+            .Builder(context, NotificationChannels.ALERTS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .build()
     runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
 }

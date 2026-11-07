@@ -29,7 +29,6 @@ import dev.eclipse.ssh.data.model.HostProfile
  * removal code — the card is derived, never registered.
  */
 object LocalLinuxHost {
-
     /** Reserved: never persisted, never dialed. */
     const val HOST_ID = "local-linux-ubuntu"
 
@@ -56,7 +55,10 @@ object LocalLinuxHost {
      * happen for a Stopped userspace (install ends with one), so a null here is treated as
      * unhealthy rather than trusted.
      */
-    fun shouldShowCard(state: LinuxUserspaceState, health: HealthReport?): Boolean =
+    fun shouldShowCard(
+        state: LinuxUserspaceState,
+        health: HealthReport?,
+    ): Boolean =
         when (state) {
             is LinuxUserspaceState.Stopped,
             is LinuxUserspaceState.Starting,

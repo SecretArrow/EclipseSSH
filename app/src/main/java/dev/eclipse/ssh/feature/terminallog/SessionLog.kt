@@ -23,8 +23,9 @@ package dev.eclipse.ssh.feature.terminallog
  * mid-command is harder to read than one missing a few of its oldest characters. A surrogate
  * pair is never split, so the snapshot is always a valid string no matter where the cut lands.
  */
-class SessionLog(private val capacityChars: Int = DEFAULT_CAPACITY_CHARS) {
-
+class SessionLog(
+    private val capacityChars: Int = DEFAULT_CAPACITY_CHARS,
+) {
     init {
         require(capacityChars > 0) { "capacityChars must be positive" }
     }
@@ -86,7 +87,8 @@ class SessionLog(private val capacityChars: Int = DEFAULT_CAPACITY_CHARS) {
         // A cut between a high and a low surrogate would leave half a codepoint at the front of
         // every snapshot. Moving it one character forward keeps the pair in the evicted half.
         if (cut in 1 until text.length &&
-            Character.isHighSurrogate(text[cut - 1]) && Character.isLowSurrogate(text[cut])
+            Character.isHighSurrogate(text[cut - 1]) &&
+            Character.isLowSurrogate(text[cut])
         ) {
             cut++
         }

@@ -24,9 +24,16 @@ private const val MAX_UNDO_STEPS = 200
 /** The editor's load outcome. Only [Ready] shows the body; every other state explains itself. */
 internal sealed interface EditorLoad {
     data object Loading : EditorLoad
+
     data object Ready : EditorLoad
-    data class Failed(val message: String) : EditorLoad
-    data class TooLarge(val bytes: Long) : EditorLoad
+
+    data class Failed(
+        val message: String,
+    ) : EditorLoad
+
+    data class TooLarge(
+        val bytes: Long,
+    ) : EditorLoad
 }
 
 /** One button on the 4-way conflict dialog. The dialog itself only wires these to clicks. */
@@ -38,8 +45,14 @@ internal enum class ConflictChoice { Overwrite, Reload, Compare, Cancel }
  */
 internal sealed interface ConflictCompare {
     data object Loading : ConflictCompare
-    data class Ready(val serverText: String) : ConflictCompare
-    data class Failed(val message: String) : ConflictCompare
+
+    data class Ready(
+        val serverText: String,
+    ) : ConflictCompare
+
+    data class Failed(
+        val message: String,
+    ) : ConflictCompare
 }
 
 /**
@@ -64,6 +77,7 @@ internal class EditorTabState(
     var saving by mutableStateOf(false)
     var saveError by mutableStateOf<String?>(null)
     var conflictOpen by mutableStateOf(false)
+
     // Null while the compare view is off screen. Lives on the tab, like conflictOpen, because the
     // text it shows belongs to the same file the question is about — and so it survives the tab
     // switch that a dialog-remembered value would not.
@@ -161,7 +175,10 @@ internal class EditorTabState(
         }
     }
 
-    fun save(scope: CoroutineScope, overwrite: Boolean = false) {
+    fun save(
+        scope: CoroutineScope,
+        overwrite: Boolean = false,
+    ) {
         // A read-only file is refused before anything starts — no coroutine, no `saving` flicker,
         // no error the user would have to dismiss — because there is no answer to give: the mode
         // says the write cannot land, and even the overwrite path (which exists to answer a
@@ -285,7 +302,10 @@ internal class EditorTabState(
      * but as a labelled peer of the other three it is a choice the user makes rather than a way
      * out they have to discover.
      */
-    fun chooseConflictAction(scope: CoroutineScope, choice: ConflictChoice) {
+    fun chooseConflictAction(
+        scope: CoroutineScope,
+        choice: ConflictChoice,
+    ) {
         when (choice) {
             ConflictChoice.Overwrite -> {
                 conflictOpen = false
@@ -320,7 +340,8 @@ internal class EditorTabState(
                 // Strict decode under the tab's own encoding, same rule as the load: showing a
                 // binary file as mojibake next to the local text would be a comparison of nonsense
                 // against nonsense.
-                compareState = FileEncodingCodec.decodeStrict(fresh, encoding)
+                compareState = FileEncodingCodec
+                    .decodeStrict(fresh, encoding)
                     ?.let { ConflictCompare.Ready(it) }
                     ?: ConflictCompare.Failed("The file on the server is not valid ${encoding.label} text.")
             } catch (cancelled: CancellationException) {
@@ -369,7 +390,10 @@ internal class EditorHistory {
     val canUndo: Boolean get() = past.isNotEmpty()
     val canRedo: Boolean get() = future.isNotEmpty()
 
-    fun record(old: TextFieldValue, new: TextFieldValue) {
+    fun record(
+        old: TextFieldValue,
+        new: TextFieldValue,
+    ) {
         if (old.text == new.text) return
         val now = System.currentTimeMillis()
         // The first edit of a burst pushes the state it replaced; the rest of the burst changes

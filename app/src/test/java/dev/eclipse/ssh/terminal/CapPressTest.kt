@@ -13,7 +13,6 @@ import org.junit.Test
  * mid-expansion. The row's own movement is the second way a press ends, and that is all this is.
  */
 class CapPressTest {
-
     @Test
     fun `a finger on a cap presses it`() {
         assertThat(capPressed(current = false, event = CapPress.DOWN)).isTrue()

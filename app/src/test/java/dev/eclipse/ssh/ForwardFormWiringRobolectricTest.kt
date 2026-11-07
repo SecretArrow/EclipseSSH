@@ -19,7 +19,6 @@ import dev.eclipse.ssh.data.model.HostProfile
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.ui.forward.ForwardFormActivity
 import dev.eclipse.ssh.ui.forward.ForwardRequests
-import java.time.Duration
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The Settings row that opens the Add-forward form, and what it does when there is no host to open it
@@ -55,7 +55,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ForwardFormWiringRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -91,7 +90,11 @@ class ForwardFormWiringRobolectricTest {
         }
     }
 
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -127,20 +130,23 @@ class ForwardFormWiringRobolectricTest {
         compose.waitForIdle()
         val viewModel = viewModel()
 
-        val sentinel = HostProfile(
-            id = ID_PREFIX + "sentinel",
-            name = "Sentinel",
-            host = "sentinel.example.test",
-            username = "tester",
-            port = 22,
-        )
+        val sentinel =
+            HostProfile(
+                id = ID_PREFIX + "sentinel",
+                name = "Sentinel",
+                host = "sentinel.example.test",
+                username = "tester",
+                port = 22,
+            )
         compose.runOnUiThread { viewModel.saveHost(sentinel) }
         pumpUntil(describe = { "the workspace never observed the host list" }) {
-            viewModel.uiState.value.hosts.any { it.id == sentinel.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == sentinel.id }
         }
 
         compose.runOnUiThread {
-            viewModel.uiState.value.hosts.forEach(viewModel::deleteHost)
+            viewModel.uiState.value.hosts
+                .forEach(viewModel::deleteHost)
         }
         var emptySince = 0L
         pumpUntil(
@@ -169,7 +175,8 @@ class ForwardFormWiringRobolectricTest {
         val profile = HostProfile(id = ID_PREFIX + "1", name = name, host = "forward.example.test", username = "tester", port = 22)
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the seeded host never reached the workspace" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
         return profile
     }
@@ -236,13 +243,17 @@ class ForwardFormWiringRobolectricTest {
 
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("the Add button did not open ${ForwardFormActivity::class.simpleName}")
-            .that(intent?.component?.className).isEqualTo(ForwardFormActivity::class.java.name)
+            .that(intent?.component?.className)
+            .isEqualTo(ForwardFormActivity::class.java.name)
         assertWithMessage("the form was not told which host to forward through")
-            .that(intent?.getStringExtra(ForwardFormActivity.EXTRA_HOST_ID)).isEqualTo(host.id)
+            .that(intent?.getStringExtra(ForwardFormActivity.EXTRA_HOST_ID))
+            .isEqualTo(host.id)
         assertWithMessage("the form was not given the host's name to show")
-            .that(intent?.getStringExtra(ForwardFormActivity.EXTRA_HOST_NAME)).isEqualTo(host.name)
+            .that(intent?.getStringExtra(ForwardFormActivity.EXTRA_HOST_NAME))
+            .isEqualTo(host.name)
         assertWithMessage("Add port forward still opened as a dialog over Settings")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 
     /**

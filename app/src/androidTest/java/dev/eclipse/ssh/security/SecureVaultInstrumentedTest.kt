@@ -1,15 +1,15 @@
 package dev.eclipse.ssh.security
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.security.keystore.KeyInfo
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
-import java.security.KeyStore
-import javax.crypto.SecretKey
-import javax.crypto.SecretKeyFactory
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.security.KeyStore
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 
 /**
  * [SecureVault] is the only place host passwords and key passphrases are stored, and it delegates
@@ -17,7 +17,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class SecureVaultInstrumentedTest {
-
     private lateinit var vault: SecureVault
 
     @Before
@@ -59,8 +58,10 @@ class SecureVaultInstrumentedTest {
 
         val reloaded = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val key = reloaded.getKey("eclipse_vault_aes256", null) as SecretKey
-        val info = SecretKeyFactory.getInstance(key.algorithm, "AndroidKeyStore")
-            .getKeySpec(key, KeyInfo::class.java) as KeyInfo
+        val info =
+            SecretKeyFactory
+                .getInstance(key.algorithm, "AndroidKeyStore")
+                .getKeySpec(key, KeyInfo::class.java) as KeyInfo
 
         assertThat(key.algorithm).isEqualTo("AES")
         assertThat(info.keySize).isEqualTo(256)
@@ -118,15 +119,16 @@ class SecureVaultInstrumentedTest {
         val start = java.util.concurrent.CountDownLatch(1)
         val payloads = java.util.concurrent.ConcurrentHashMap<Int, String>()
         val failures = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
-        val workers = (0 until threads).map { index ->
-            Thread {
-                runCatching {
-                    // Released together so the lookup-then-generate window is actually contended.
-                    start.await()
-                    payloads[index] = vault.encrypt("secret-$index")
-                }.onFailure(failures::add)
-            }.apply { start() }
-        }
+        val workers =
+            (0 until threads).map { index ->
+                Thread {
+                    runCatching {
+                        // Released together so the lookup-then-generate window is actually contended.
+                        start.await()
+                        payloads[index] = vault.encrypt("secret-$index")
+                    }.onFailure(failures::add)
+                }.apply { start() }
+            }
         start.countDown()
         workers.forEach { it.join(30_000) }
 
@@ -142,14 +144,15 @@ class SecureVaultInstrumentedTest {
     @Test
     fun awkwardSecretsSurviveTheRoundTrip() {
         // Passphrases really do contain emoji, newlines and non-Latin text.
-        val awkward = listOf(
-            "",
-            " ",
-            "sandi-üñïçø∂é",
-            "kata sandi 🔐 rahasia",
-            "line one\nline two\ttabbed",
-            "x".repeat(8_192),
-        )
+        val awkward =
+            listOf(
+                "",
+                " ",
+                "sandi-üñïçø∂é",
+                "kata sandi 🔐 rahasia",
+                "line one\nline two\ttabbed",
+                "x".repeat(8_192),
+            )
 
         awkward.forEach { secret ->
             assertThat(vault.decrypt(vault.encrypt(secret))).isEqualTo(secret)

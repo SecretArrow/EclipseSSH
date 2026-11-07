@@ -4,55 +4,62 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 object Migrations {
-    val MIGRATION_2_3 = object : Migration(2, 3) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN proxyType TEXT NOT NULL DEFAULT 'NONE'")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN proxyJump TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksHost TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksPort INTEGER NOT NULL DEFAULT 1080")
+    val MIGRATION_2_3 =
+        object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN proxyType TEXT NOT NULL DEFAULT 'NONE'")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN proxyJump TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksHost TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksPort INTEGER NOT NULL DEFAULT 1080")
+            }
         }
-    }
 
-    val MIGRATION_3_4 = object : Migration(3, 4) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN hostId TEXT")
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN remotePath TEXT")
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN localUri TEXT")
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN transferredBytes INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN totalBytes INTEGER")
+    val MIGRATION_3_4 =
+        object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN hostId TEXT")
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN remotePath TEXT")
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN localUri TEXT")
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN transferredBytes INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN totalBytes INTEGER")
+            }
         }
-    }
 
-    val MIGRATION_4_5 = object : Migration(4, 5) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksUsername TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksPassword TEXT")
+    val MIGRATION_4_5 =
+        object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksUsername TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN socksPassword TEXT")
+            }
         }
-    }
 
-    val MIGRATION_5_6 = object : Migration(5, 6) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN retryCount INTEGER NOT NULL DEFAULT 0")
+    val MIGRATION_5_6 =
+        object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN retryCount INTEGER NOT NULL DEFAULT 0")
+            }
         }
-    }
 
-    val MIGRATION_6_7 = object : Migration(6, 7) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN scheduledAt INTEGER")
+    val MIGRATION_6_7 =
+        object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN scheduledAt INTEGER")
+            }
         }
-    }
 
-    val MIGRATION_7_8 = object : Migration(7, 8) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN repeatMinutes INTEGER")
+    val MIGRATION_7_8 =
+        object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN repeatMinutes INTEGER")
+            }
         }
-    }
 
-    val MIGRATION_8_9 = object : Migration(8, 9) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN accentColor INTEGER")
+    val MIGRATION_8_9 =
+        object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN accentColor INTEGER")
+            }
         }
-    }
 
     /**
      * Per-host connect timeout and keep-alive.
@@ -62,12 +69,13 @@ object Migrations {
      * keepAliveSeconds stays nullable on purpose: null means "follow the global setting", which is
      * what every pre-existing host was already doing.
      */
-    val MIGRATION_9_10 = object : Migration(9, 10) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN connectTimeoutSeconds INTEGER NOT NULL DEFAULT 15")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN keepAliveSeconds INTEGER")
+    val MIGRATION_9_10 =
+        object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN connectTimeoutSeconds INTEGER NOT NULL DEFAULT 15")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN keepAliveSeconds INTEGER")
+            }
         }
-    }
 
     /**
      * Per-host "Auto Login SFTP".
@@ -77,11 +85,12 @@ object Migrations {
      * the column to off would silently take the Files tab away from every upgraded host and read as a
      * regression rather than as a new setting. Opting out is a decision the user makes per host.
      */
-    val MIGRATION_10_11 = object : Migration(10, 11) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN autoLoginSftp INTEGER NOT NULL DEFAULT 1")
+    val MIGRATION_10_11 =
+        object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN autoLoginSftp INTEGER NOT NULL DEFAULT 1")
+            }
         }
-    }
 
     /**
      * The advanced per-host settings: compression, keep-alive, timeouts, reconnect policy, pty and
@@ -108,24 +117,25 @@ object Migrations {
      *  - `legacyAlgorithms` NULL, meaning "follow the global switch" - the only behaviour that existed.
      *  - `hostKeyPolicy` 'ASK', which is what the verifier did: emit a challenge and wait.
      */
-    val MIGRATION_11_12 = object : Migration(11, 12) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN compression INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN keepAliveEnabled INTEGER NOT NULL DEFAULT 1")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN serverAliveCountMax INTEGER NOT NULL DEFAULT 3")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN authTimeoutSeconds INTEGER NOT NULL DEFAULT 30")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN autoReconnect INTEGER NOT NULL DEFAULT 1")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN maxReconnectAttempts INTEGER NOT NULL DEFAULT 5")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN reconnectBackoffSeconds INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN usePty INTEGER NOT NULL DEFAULT 1")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN terminalType TEXT NOT NULL DEFAULT 'xterm-256color'")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN terminalColumns INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN terminalRows INTEGER NOT NULL DEFAULT 0")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN keyboardInteractiveAuth INTEGER NOT NULL DEFAULT 1")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN legacyAlgorithms INTEGER")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN hostKeyPolicy TEXT NOT NULL DEFAULT 'ASK'")
+    val MIGRATION_11_12 =
+        object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN compression INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN keepAliveEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN serverAliveCountMax INTEGER NOT NULL DEFAULT 3")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN authTimeoutSeconds INTEGER NOT NULL DEFAULT 30")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN autoReconnect INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN maxReconnectAttempts INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN reconnectBackoffSeconds INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN usePty INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN terminalType TEXT NOT NULL DEFAULT 'xterm-256color'")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN terminalColumns INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN terminalRows INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN keyboardInteractiveAuth INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN legacyAlgorithms INTEGER")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN hostKeyPolicy TEXT NOT NULL DEFAULT 'ASK'")
+            }
         }
-    }
 
     /**
      * The rest of the per-host settings: four algorithm lists, a startup command, an environment and
@@ -148,17 +158,18 @@ object Migrations {
      * atomically, one delete removes entirely, and one backup carries without a second serialiser.
      * See `encodeForwardRules`.
      */
-    val MIGRATION_12_13 = object : Migration(12, 13) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN ciphers TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN kexAlgorithms TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN macs TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN hostKeyAlgorithms TEXT")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN startupCommand TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN environment TEXT NOT NULL DEFAULT ''")
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN savedForwards TEXT NOT NULL DEFAULT ''")
+    val MIGRATION_12_13 =
+        object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN ciphers TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN kexAlgorithms TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN macs TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN hostKeyAlgorithms TEXT")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN startupCommand TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN environment TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN savedForwards TEXT NOT NULL DEFAULT ''")
+            }
         }
-    }
 
     /**
      * Why the last transfer attempt failed, so a FAILED row on the Transfers tab can say more than
@@ -169,11 +180,12 @@ object Migrations {
      * "no failure is recorded" - which is true for every row that predates the column, because the
      * reason used to be discarded at the catch site and never stored at all.
      */
-    val MIGRATION_13_14 = object : Migration(13, 14) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN errorMessage TEXT")
+    val MIGRATION_13_14 =
+        object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN errorMessage TEXT")
+            }
         }
-    }
 
     /**
      * The per-host remote-desktop endpoints (VNC now, RDP reserved) as one packed text column -
@@ -183,11 +195,12 @@ object Migrations {
      * NOT NULL DEFAULT '' because empty already means "nothing configured", so an upgraded row
      * needs no special case downstream.
      */
-    val MIGRATION_14_15 = object : Migration(14, 15) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN remoteDesktop TEXT NOT NULL DEFAULT ''")
+    val MIGRATION_14_15 =
+        object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN remoteDesktop TEXT NOT NULL DEFAULT ''")
+            }
         }
-    }
 
     /**
      * The per-host Wake-on-LAN MAC address, as one text column holding whatever spelling the user
@@ -199,11 +212,12 @@ object Migrations {
      * handle. An upgraded row therefore configures nothing, which is what every host that predates
      * the column means.
      */
-    val MIGRATION_15_16 = object : Migration(15, 16) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN wakeOnLanMac TEXT NOT NULL DEFAULT ''")
+    val MIGRATION_15_16 =
+        object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN wakeOnLanMac TEXT NOT NULL DEFAULT ''")
+            }
         }
-    }
 
     /**
      * The cross-host transfer columns: where a server-to-server copy came from and where it landed.
@@ -217,12 +231,13 @@ object Migrations {
      * Numbered 16->17 rather than 15->16: the wake-on-LAN column took 15->16 on main while this
      * branch was open, and a chain's steps must never share a number.
      */
-    val MIGRATION_16_17 = object : Migration(16, 17) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN sourceHostId TEXT")
-            db.execSQL("ALTER TABLE transfer_queue ADD COLUMN destPath TEXT")
+    val MIGRATION_16_17 =
+        object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN sourceHostId TEXT")
+                db.execSQL("ALTER TABLE transfer_queue ADD COLUMN destPath TEXT")
+            }
         }
-    }
 
     /**
      * The per-host SSH agent forwarding switch.
@@ -237,9 +252,10 @@ object Migrations {
      * transfer columns 16->17 on main while this branch was open, and a chain's steps must never
      * share a number.
      */
-    val MIGRATION_17_18 = object : Migration(17, 18) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("ALTER TABLE host_profiles ADD COLUMN agentForwarding INTEGER NOT NULL DEFAULT 0")
+    val MIGRATION_17_18 =
+        object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE host_profiles ADD COLUMN agentForwarding INTEGER NOT NULL DEFAULT 0")
+            }
         }
-    }
 }

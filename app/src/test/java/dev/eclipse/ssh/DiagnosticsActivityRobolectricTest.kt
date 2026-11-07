@@ -43,7 +43,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class DiagnosticsActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<DiagnosticsActivity>()
 
@@ -117,7 +116,8 @@ class DiagnosticsActivityRobolectricTest {
 
         listOf("Copy", "Save", "Clear").forEach { label ->
             assertWithMessage("the window offers \"$label\" over a trace that holds nothing")
-                .that(compose.onAllNodesWithText(label).fetchSemanticsNodes()).isEmpty()
+                .that(compose.onAllNodesWithText(label).fetchSemanticsNodes())
+                .isEmpty()
         }
     }
 

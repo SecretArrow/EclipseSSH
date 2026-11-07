@@ -40,7 +40,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ArchiveEntryPreviewActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     private var request by mutableStateOf<ArchivePreviewRequest?>(null)
@@ -95,9 +94,10 @@ class ArchiveEntryPreviewActivity : ComponentActivity() {
             context: Context,
             entry: ArchiveEntry,
             readEntry: (suspend () -> ByteArray?)?,
-        ): Intent = Intent(context, ArchiveEntryPreviewActivity::class.java).putExtra(
-            EXTRA_REQUEST_TOKEN,
-            PreviewRequests.putArchiveEntry(ArchivePreviewRequest(entry, readEntry)),
-        )
+        ): Intent =
+            Intent(context, ArchiveEntryPreviewActivity::class.java).putExtra(
+                EXTRA_REQUEST_TOKEN,
+                PreviewRequests.putArchiveEntry(ArchivePreviewRequest(entry, readEntry)),
+            )
     }
 }

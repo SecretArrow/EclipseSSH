@@ -13,7 +13,6 @@ import org.junit.Test
  * assertions that keep it pinned.
  */
 class EclipseAppTest {
-
     @Test
     fun `a production build logs nothing from the ssh stack`() {
         assertThat(EclipseApp.sshLogLevel(debuggable = false)).isEqualTo("off")
@@ -50,8 +49,10 @@ class EclipseAppTest {
         // Security.addProvider. Asserted as whole property names so a change to either half of the
         // key — sshd's prefix constant or the provider name — is visible here.
         assertThat(EclipseApp.SSHD_PROVIDER_SCOPING).containsExactly(
-            "org.apache.sshd.security.provider.BC.useNamed", "false",
-            "org.apache.sshd.security.provider.EdDSA.useNamed", "false",
+            "org.apache.sshd.security.provider.BC.useNamed",
+            "false",
+            "org.apache.sshd.security.provider.EdDSA.useNamed",
+            "false",
         )
     }
 
@@ -80,15 +81,25 @@ class EclipseAppTest {
      */
     @Test
     fun `initialising sshd publishes no provider under a shared name`() {
-        val before = java.security.Security.getProviders().map { it.name }
+        val before =
+            java.security.Security
+                .getProviders()
+                .map { it.name }
 
         // Forces the optional registrars to run, if nothing in this JVM has needed them yet, and
         // doubles as the check that scoping a provider does not disable it: sshd still has to be
         // able to build Ed25519 keys, it just uses the instance it created rather than one it looked
         // up by name.
-        assertThat(org.apache.sshd.common.util.security.SecurityUtils.isEDDSACurveSupported()).isTrue()
+        assertThat(
+            org.apache.sshd.common.util.security.SecurityUtils
+                .isEDDSACurveSupported(),
+        ).isTrue()
 
-        assertThat(java.security.Security.getProviders().map { it.name }).isEqualTo(before)
+        assertThat(
+            java.security.Security
+                .getProviders()
+                .map { it.name },
+        ).isEqualTo(before)
         assertThat(java.security.Security.getProvider("EdDSA")).isNull()
     }
 }

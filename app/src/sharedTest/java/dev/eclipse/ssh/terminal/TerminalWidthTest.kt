@@ -29,7 +29,10 @@ import org.junit.Test
  * including the two places this table deliberately does not follow it, which say so where they appear.
  */
 class TerminalWidthTest {
-    private fun assertAll(expected: Int, vararg codePoints: Int) {
+    private fun assertAll(
+        expected: Int,
+        vararg codePoints: Int,
+    ) {
         codePoints.forEach { codePoint ->
             assertWithMessage("U+%04X".format(codePoint))
                 .that(terminalCharWidth(codePoint))
@@ -161,99 +164,100 @@ class TerminalWidthTest {
         // Both sides of every boundary that a reader would doubt, in the order the code space runs. Where
         // the reference has no width for a code point at all it answers -1 and the entry says
         // `unassigned`: those are the ones `where the reference has no answer` above states the rule for.
-        val boundaries = listOf(
-            0x010FF to 1,  // narrow, and the Hangul initial consonants above it are not
-            0x01100 to 2,
-            0x0115F to 2,
-            0x01160 to 0,  // the conjoining vowels and finals begin: these take no column, unlike the initials above
-            0x011FF to 0,
-            0x01200 to 1,
-            0x02E7F to 1,  // unassigned
-            0x02E80 to 2,  // the CJK radicals start here and run on to the ideographs
-            0x0303E to 2,
-            0x0303F to 1,  // the ideographic half fill space is one column, which is not what its name suggests
-            0x03041 to 2,  // hiragana begins
-            0x03163 to 2,  // a Hangul letter, two columns, and the filler right after it is not:
-            0x03164 to 0,  // HANGUL FILLER, a zero-width code point inside a run of wide letters
-            0x03165 to 2,  // and the letters resume as wide
-            0x0321E to 2,  // the parenthesised ideographs stop one code point before the circled ones
-            0x03220 to 2,
-            0x04DBF to 2,  // the Yijing hexagrams are inside the wide run, not an exception to it
-            0x04DC0 to 2,
-            0x04E00 to 2,
-            0x0A48C to 2,
-            0x0A48D to 1,  // unassigned
-            0x0A4C6 to 2,  // the Yi radicals are wide, and Lisu after them is not
-            0x0A4D0 to 1,
-            0x0A97C to 2,  // Hangul Jamo Extended-A ends
-            0x0A97D to 1,  // unassigned
-            0x0A980 to 0,  // JAVANESE SIGN PANYANGGA, a mark the reference counts as taking no column - the same case
-            0x0A981 to 0,  // as the Hangul filler above: zero-width inside a wide run
-            0x0ABFF to 1,  // unassigned
-            0x0AC00 to 2,  // the precomposed syllables begin
-            0x0D7A3 to 2,
-            0x0D7A4 to 1,  // narrow, then Hangul Jamo Extended-B, which is conjoining and takes no column
-            0x0D7B0 to 0,
-            0x0D7FB to 0,
-            0x0D7FC to 1,  // unassigned
-            0x0F8FF to 1,  // the private use area is one column, so the compatibility ideographs after it stand out
-            0x0F900 to 2,
-            0x0FA6D to 2,
-            0x0FA6E to 1,  // the two gaps inside them are narrow, and so are the ones after
-            0x0FA70 to 2,
-            0x0FE19 to 2,  // the vertical forms end
-            0x0FE1A to 1,  // unassigned
-            0x0FE20 to 0,  // the combining half marks take no column at all, between two wide ranges
-            0x0FE2F to 0,
-            0x0FE30 to 2,
-            0x0FE52 to 2,  // the small form variants are wide
-            0x0FE53 to 1,  // unassigned
-            0x0FE54 to 2,
-            0x0FE66 to 2,
-            0x0FE67 to 1,  // one more gap, then the small equals sign
-            0x0FE68 to 2,
-            0x0FE6B to 2,
-            0x0FEFF to 0,  // a byte order mark, one code point short of the fullwidth forms
-            0x0FF00 to 1,  // unassigned
-            0x0FF01 to 2,  // the fullwidth forms begin - every one of them two columns
-            0x0FF60 to 2,
-            0x0FF61 to 1,  // the halfwidth forms are narrow: all of them but the Hangul filler at U+FFA0
-            0x0FFA0 to 0,
-            0x0FFDF to 1,  // unassigned
-            0x0FFE0 to 2,  // the fullwidth signs, with the halfwidth won sign after them narrow again
-            0x0FFE6 to 2,
-            0x0FFE7 to 1,  // unassigned
-            0x1F2FF to 1,  // unassigned
-            0x1F300 to 2,  // the emoticons begin, and the runs inside them have gaps:
-            0x1F320 to 2,
-            0x1F321 to 1,  // which is what a gap in an emoji block looks like
-            0x1F64F to 2,
-            0x1F650 to 1,  // the ornamental dingbats are narrow, and so is the whole symbols block after them
-            0x1F8FF to 1,  // unassigned
-            0x1F900 to 1,  // one column: the wide run inside the supplemental symbols starts nine code points later
-            0x1F90C to 2,
-            0x1F93A to 2,
-            0x1F93B to 1,  // a single narrow code point splits the run
-            0x1F93C to 2,
-            0x1F9FF to 2,
-            0x1FA00 to 1,  // chess symbols are narrow: a dingbat block, not an emoji one
-            0x1FA6F to 1,  // unassigned
-            0x1FA70 to 2,  // then the symbols and pictographs extended-A
-            0x1FA7C to 2,
-            0x1FA7D to 1,  // unassigned
-            0x2A6DF to 2,  // the first ideographic plane, and the unassigned run after it inside the same plane
-            0x2A6E0 to 1,  // unassigned
-            0x3134A to 2,  // the last assigned ideograph of the third plane
-            0x3134B to 1,  // unassigned
-            0x31350 to 2,
-            0x323AF to 2,
-            0x323B0 to 1,  // unassigned
-            0xE0001 to 0,  // a language tag: zero-width, and astral, which is the case the printer must be handed whole
-            0xE0002 to 1,  // unassigned
-            0xE0020 to 0,  // the tag characters take no column either, and the last of them is the end of the table
-            0xE007F to 0,
-            0xE0080 to 1,  // unassigned
-        )
+        val boundaries =
+            listOf(
+                0x010FF to 1, // narrow, and the Hangul initial consonants above it are not
+                0x01100 to 2,
+                0x0115F to 2,
+                0x01160 to 0, // the conjoining vowels and finals begin: these take no column, unlike the initials above
+                0x011FF to 0,
+                0x01200 to 1,
+                0x02E7F to 1, // unassigned
+                0x02E80 to 2, // the CJK radicals start here and run on to the ideographs
+                0x0303E to 2,
+                0x0303F to 1, // the ideographic half fill space is one column, which is not what its name suggests
+                0x03041 to 2, // hiragana begins
+                0x03163 to 2, // a Hangul letter, two columns, and the filler right after it is not:
+                0x03164 to 0, // HANGUL FILLER, a zero-width code point inside a run of wide letters
+                0x03165 to 2, // and the letters resume as wide
+                0x0321E to 2, // the parenthesised ideographs stop one code point before the circled ones
+                0x03220 to 2,
+                0x04DBF to 2, // the Yijing hexagrams are inside the wide run, not an exception to it
+                0x04DC0 to 2,
+                0x04E00 to 2,
+                0x0A48C to 2,
+                0x0A48D to 1, // unassigned
+                0x0A4C6 to 2, // the Yi radicals are wide, and Lisu after them is not
+                0x0A4D0 to 1,
+                0x0A97C to 2, // Hangul Jamo Extended-A ends
+                0x0A97D to 1, // unassigned
+                0x0A980 to 0, // JAVANESE SIGN PANYANGGA, a mark the reference counts as taking no column - the same case
+                0x0A981 to 0, // as the Hangul filler above: zero-width inside a wide run
+                0x0ABFF to 1, // unassigned
+                0x0AC00 to 2, // the precomposed syllables begin
+                0x0D7A3 to 2,
+                0x0D7A4 to 1, // narrow, then Hangul Jamo Extended-B, which is conjoining and takes no column
+                0x0D7B0 to 0,
+                0x0D7FB to 0,
+                0x0D7FC to 1, // unassigned
+                0x0F8FF to 1, // the private use area is one column, so the compatibility ideographs after it stand out
+                0x0F900 to 2,
+                0x0FA6D to 2,
+                0x0FA6E to 1, // the two gaps inside them are narrow, and so are the ones after
+                0x0FA70 to 2,
+                0x0FE19 to 2, // the vertical forms end
+                0x0FE1A to 1, // unassigned
+                0x0FE20 to 0, // the combining half marks take no column at all, between two wide ranges
+                0x0FE2F to 0,
+                0x0FE30 to 2,
+                0x0FE52 to 2, // the small form variants are wide
+                0x0FE53 to 1, // unassigned
+                0x0FE54 to 2,
+                0x0FE66 to 2,
+                0x0FE67 to 1, // one more gap, then the small equals sign
+                0x0FE68 to 2,
+                0x0FE6B to 2,
+                0x0FEFF to 0, // a byte order mark, one code point short of the fullwidth forms
+                0x0FF00 to 1, // unassigned
+                0x0FF01 to 2, // the fullwidth forms begin - every one of them two columns
+                0x0FF60 to 2,
+                0x0FF61 to 1, // the halfwidth forms are narrow: all of them but the Hangul filler at U+FFA0
+                0x0FFA0 to 0,
+                0x0FFDF to 1, // unassigned
+                0x0FFE0 to 2, // the fullwidth signs, with the halfwidth won sign after them narrow again
+                0x0FFE6 to 2,
+                0x0FFE7 to 1, // unassigned
+                0x1F2FF to 1, // unassigned
+                0x1F300 to 2, // the emoticons begin, and the runs inside them have gaps:
+                0x1F320 to 2,
+                0x1F321 to 1, // which is what a gap in an emoji block looks like
+                0x1F64F to 2,
+                0x1F650 to 1, // the ornamental dingbats are narrow, and so is the whole symbols block after them
+                0x1F8FF to 1, // unassigned
+                0x1F900 to 1, // one column: the wide run inside the supplemental symbols starts nine code points later
+                0x1F90C to 2,
+                0x1F93A to 2,
+                0x1F93B to 1, // a single narrow code point splits the run
+                0x1F93C to 2,
+                0x1F9FF to 2,
+                0x1FA00 to 1, // chess symbols are narrow: a dingbat block, not an emoji one
+                0x1FA6F to 1, // unassigned
+                0x1FA70 to 2, // then the symbols and pictographs extended-A
+                0x1FA7C to 2,
+                0x1FA7D to 1, // unassigned
+                0x2A6DF to 2, // the first ideographic plane, and the unassigned run after it inside the same plane
+                0x2A6E0 to 1, // unassigned
+                0x3134A to 2, // the last assigned ideograph of the third plane
+                0x3134B to 1, // unassigned
+                0x31350 to 2,
+                0x323AF to 2,
+                0x323B0 to 1, // unassigned
+                0xE0001 to 0, // a language tag: zero-width, and astral, which is the case the printer must be handed whole
+                0xE0002 to 1, // unassigned
+                0xE0020 to 0, // the tag characters take no column either, and the last of them is the end of the table
+                0xE007F to 0,
+                0xE0080 to 1, // unassigned
+            )
 
         boundaries.forEach { (codePoint, expected) ->
             assertWithMessage("U+%04X".format(codePoint))
@@ -270,82 +274,449 @@ class TerminalWidthTest {
         // zero-width and two-column code points here because the reference's own runs stop and start
         // wherever the assigned characters do. Written out rather than derived, because a test that read
         // the table it is testing would agree with it for free.
-        val probes = listOf(
-            0x00000 to 0, 0x0061B to 1, 0x0061C to 0, 0x0061D to 1, 0x00897 to 0, 0x00898 to 0,
-            0x010FF to 1, 0x01100 to 2, 0x0115F to 2, 0x01160 to 0, 0x011FF to 0, 0x01200 to 1,
-            0x0180D to 0, 0x0180E to 0, 0x0180F to 0, 0x0200A to 1, 0x0200B to 0, 0x0200F to 0,
-            0x02010 to 1, 0x02027 to 1, 0x0202A to 0, 0x0202E to 0, 0x0202F to 1, 0x0205F to 1,
-            0x02060 to 0, 0x02064 to 0, 0x02066 to 0, 0x0206F to 0, 0x02070 to 1, 0x02319 to 1,
-            0x0231A to 2, 0x0231B to 2, 0x0231C to 1, 0x02328 to 1, 0x02329 to 2, 0x0232A to 2,
-            0x0232B to 1, 0x023E8 to 1, 0x023E9 to 2, 0x023EC to 2, 0x023ED to 1, 0x023EF to 1,
-            0x023F0 to 2, 0x023F1 to 1, 0x023F2 to 1, 0x023F3 to 2, 0x023F4 to 1, 0x025FC to 1,
-            0x025FD to 2, 0x025FE to 2, 0x025FF to 1, 0x02613 to 1, 0x02614 to 2, 0x02615 to 2,
-            0x02616 to 1, 0x0262F to 1, 0x02630 to 2, 0x02637 to 2, 0x02638 to 1, 0x02647 to 1,
-            0x02648 to 2, 0x02653 to 2, 0x02654 to 1, 0x0267E to 1, 0x0267F to 2, 0x02680 to 1,
-            0x02689 to 1, 0x0268A to 2, 0x0268F to 2, 0x02690 to 1, 0x02692 to 1, 0x02693 to 2,
-            0x02694 to 1, 0x026A0 to 1, 0x026A1 to 2, 0x026A2 to 1, 0x026A9 to 1, 0x026AA to 2,
-            0x026AB to 2, 0x026AC to 1, 0x026BC to 1, 0x026BD to 2, 0x026BE to 2, 0x026BF to 1,
-            0x026C3 to 1, 0x026C4 to 2, 0x026C5 to 2, 0x026C6 to 1, 0x026CD to 1, 0x026CE to 2,
-            0x026CF to 1, 0x026D3 to 1, 0x026D4 to 2, 0x026D5 to 1, 0x026E9 to 1, 0x026EA to 2,
-            0x026EB to 1, 0x026F1 to 1, 0x026F2 to 2, 0x026F3 to 2, 0x026F4 to 1, 0x026F5 to 2,
-            0x026F6 to 1, 0x026F9 to 1, 0x026FA to 2, 0x026FB to 1, 0x026FC to 1, 0x026FD to 2,
-            0x026FE to 1, 0x02704 to 1, 0x02705 to 2, 0x02706 to 1, 0x02709 to 1, 0x0270A to 2,
-            0x0270B to 2, 0x0270C to 1, 0x02727 to 1, 0x02728 to 2, 0x02729 to 1, 0x0274B to 1,
-            0x0274C to 2, 0x0274D to 1, 0x0274E to 2, 0x0274F to 1, 0x02752 to 1, 0x02753 to 2,
-            0x02755 to 2, 0x02756 to 1, 0x02757 to 2, 0x02758 to 1, 0x02794 to 1, 0x02795 to 2,
-            0x02797 to 2, 0x02798 to 1, 0x027AF to 1, 0x027B0 to 2, 0x027B1 to 1, 0x027BE to 1,
-            0x027BF to 2, 0x027C0 to 1, 0x02B1A to 1, 0x02B1B to 2, 0x02B1C to 2, 0x02B1D to 1,
-            0x02B4F to 1, 0x02B50 to 2, 0x02B51 to 1, 0x02B54 to 1, 0x02B55 to 2, 0x02B56 to 1,
-            0x02E80 to 2, 0x02E99 to 2, 0x02E9B to 2, 0x02EF3 to 2, 0x02F00 to 2, 0x02FD5 to 2,
-            0x02FF0 to 2, 0x03029 to 2, 0x0302A to 0, 0x0302D to 0, 0x0302E to 2, 0x0303E to 2,
-            0x0303F to 1, 0x03041 to 2, 0x03096 to 2, 0x0309A to 0, 0x0309B to 2, 0x030FF to 2,
-            0x03105 to 2, 0x0312F to 2, 0x03131 to 2, 0x03163 to 2, 0x03164 to 0, 0x03165 to 2,
-            0x0318E to 2, 0x03190 to 2, 0x031E5 to 2, 0x031EF to 2, 0x0321E to 2, 0x03220 to 2,
-            0x0A48C to 2, 0x0A490 to 2, 0x0A4C6 to 2, 0x0A95F to 1, 0x0A960 to 2, 0x0A97C to 2,
-            0x0AC00 to 2, 0x0D7A3 to 2, 0x0D7B0 to 0, 0x0D7C6 to 0, 0x0D7CB to 0, 0x0D7FB to 0,
-            0x0F8FF to 1, 0x0F900 to 2, 0x0FA6D to 2, 0x0FA70 to 2, 0x0FAD9 to 2, 0x0FE0F to 0,
-            0x0FE10 to 2, 0x0FE19 to 2, 0x0FE2F to 0, 0x0FE30 to 2, 0x0FE52 to 2, 0x0FE54 to 2,
-            0x0FE66 to 2, 0x0FE68 to 2, 0x0FE6B to 2, 0x0FEFF to 0, 0x0FF01 to 2, 0x0FF60 to 2,
-            0x0FF61 to 1, 0x0FF9F to 1, 0x0FFA0 to 0, 0x0FFA1 to 1, 0x0FFE0 to 2, 0x0FFE6 to 2,
-            0x10D69 to 0, 0x10D6D to 0, 0x10D6E to 1, 0x10EFC to 0, 0x10EFD to 0, 0x113BA to 1,
-            0x113BB to 0, 0x113C0 to 0, 0x113CD to 1, 0x113CE to 0, 0x113CF to 1, 0x113D0 to 0,
-            0x113D1 to 1, 0x113D2 to 0, 0x113D3 to 1, 0x113E1 to 0, 0x113E2 to 0, 0x11F59 to 1,
-            0x11F5A to 0, 0x1611D to 1, 0x1611E to 0, 0x16129 to 0, 0x1612A to 1, 0x1612C to 1,
-            0x1612D to 0, 0x1612F to 0, 0x16130 to 1, 0x16FE0 to 2, 0x16FE3 to 2, 0x16FE4 to 0,
-            0x16FF0 to 2, 0x16FF1 to 2, 0x17000 to 2, 0x187F7 to 2, 0x18800 to 2, 0x18CD5 to 2,
-            0x18CFF to 2, 0x18D08 to 2, 0x1AFF0 to 2, 0x1AFF3 to 2, 0x1AFF5 to 2, 0x1AFFB to 2,
-            0x1AFFD to 2, 0x1AFFE to 2, 0x1B000 to 2, 0x1B122 to 2, 0x1B132 to 2, 0x1B150 to 2,
-            0x1B152 to 2, 0x1B155 to 2, 0x1B164 to 2, 0x1B167 to 2, 0x1B170 to 2, 0x1B2FB to 2,
-            0x1BC9F to 1, 0x1BCA0 to 0, 0x1BCA3 to 0, 0x1D172 to 1, 0x1D173 to 0, 0x1D17A to 0,
-            0x1D17B to 0, 0x1D300 to 2, 0x1D356 to 2, 0x1D360 to 2, 0x1D376 to 2, 0x1D377 to 1,
-            0x1E5ED to 1, 0x1E5EE to 0, 0x1E5EF to 0, 0x1E5F0 to 1, 0x1F003 to 1, 0x1F004 to 2,
-            0x1F005 to 1, 0x1F0CE to 1, 0x1F0CF to 2, 0x1F18D to 1, 0x1F18E to 2, 0x1F18F to 1,
-            0x1F190 to 1, 0x1F191 to 2, 0x1F19A to 2, 0x1F19B to 1, 0x1F1FF to 1, 0x1F200 to 2,
-            0x1F202 to 2, 0x1F210 to 2, 0x1F23B to 2, 0x1F240 to 2, 0x1F248 to 2, 0x1F250 to 2,
-            0x1F251 to 2, 0x1F260 to 2, 0x1F265 to 2, 0x1F300 to 2, 0x1F320 to 2, 0x1F321 to 1,
-            0x1F32C to 1, 0x1F32D to 2, 0x1F335 to 2, 0x1F336 to 1, 0x1F337 to 2, 0x1F37C to 2,
-            0x1F37D to 1, 0x1F37E to 2, 0x1F393 to 2, 0x1F394 to 1, 0x1F39F to 1, 0x1F3A0 to 2,
-            0x1F3CA to 2, 0x1F3CB to 1, 0x1F3CE to 1, 0x1F3CF to 2, 0x1F3D3 to 2, 0x1F3D4 to 1,
-            0x1F3DF to 1, 0x1F3E0 to 2, 0x1F3F0 to 2, 0x1F3F1 to 1, 0x1F3F3 to 1, 0x1F3F4 to 2,
-            0x1F3F5 to 1, 0x1F3F7 to 1, 0x1F3F8 to 2, 0x1F43E to 2, 0x1F43F to 1, 0x1F440 to 2,
-            0x1F441 to 1, 0x1F442 to 2, 0x1F4FC to 2, 0x1F4FD to 1, 0x1F4FE to 1, 0x1F4FF to 2,
-            0x1F53D to 2, 0x1F53E to 1, 0x1F54A to 1, 0x1F54B to 2, 0x1F54E to 2, 0x1F54F to 1,
-            0x1F550 to 2, 0x1F567 to 2, 0x1F568 to 1, 0x1F579 to 1, 0x1F57A to 2, 0x1F57B to 1,
-            0x1F594 to 1, 0x1F595 to 2, 0x1F596 to 2, 0x1F597 to 1, 0x1F5A3 to 1, 0x1F5A4 to 2,
-            0x1F5A5 to 1, 0x1F5FA to 1, 0x1F5FB to 2, 0x1F64F to 2, 0x1F650 to 1, 0x1F67F to 1,
-            0x1F680 to 2, 0x1F6C5 to 2, 0x1F6C6 to 1, 0x1F6CB to 1, 0x1F6CC to 2, 0x1F6CD to 1,
-            0x1F6CF to 1, 0x1F6D0 to 2, 0x1F6D2 to 2, 0x1F6D3 to 1, 0x1F6D4 to 1, 0x1F6D5 to 2,
-            0x1F6D7 to 2, 0x1F6DC to 2, 0x1F6DF to 2, 0x1F6E0 to 1, 0x1F6EA to 1, 0x1F6EB to 2,
-            0x1F6EC to 2, 0x1F6F3 to 1, 0x1F6F4 to 2, 0x1F6FC to 2, 0x1F7E0 to 2, 0x1F7EB to 2,
-            0x1F7F0 to 2, 0x1F90B to 1, 0x1F90C to 2, 0x1F93A to 2, 0x1F93B to 1, 0x1F93C to 2,
-            0x1F945 to 2, 0x1F946 to 1, 0x1F947 to 2, 0x1F9FF to 2, 0x1FA00 to 1, 0x1FA70 to 2,
-            0x1FA7C to 2, 0x1FA80 to 2, 0x1FA89 to 2, 0x1FA8F to 2, 0x1FAC6 to 2, 0x1FACE to 2,
-            0x1FADC to 2, 0x1FADF to 2, 0x1FAE9 to 2, 0x1FAF0 to 2, 0x1FAF8 to 2, 0x20000 to 2,
-            0x2A6DF to 2, 0x2A700 to 2, 0x2B739 to 2, 0x2B740 to 2, 0x2B81D to 2, 0x2B820 to 2,
-            0x2CEA1 to 2, 0x2CEB0 to 2, 0x2EBE0 to 2, 0x2EBF0 to 2, 0x2EE5D to 2, 0x2F800 to 2,
-            0x2FA1D to 2, 0x30000 to 2, 0x3134A to 2, 0x31350 to 2, 0x323AF to 2, 0xE0001 to 0,
-            0xE0020 to 0, 0xE007F to 0,
-        )
+        val probes =
+            listOf(
+                0x00000 to 0,
+                0x0061B to 1,
+                0x0061C to 0,
+                0x0061D to 1,
+                0x00897 to 0,
+                0x00898 to 0,
+                0x010FF to 1,
+                0x01100 to 2,
+                0x0115F to 2,
+                0x01160 to 0,
+                0x011FF to 0,
+                0x01200 to 1,
+                0x0180D to 0,
+                0x0180E to 0,
+                0x0180F to 0,
+                0x0200A to 1,
+                0x0200B to 0,
+                0x0200F to 0,
+                0x02010 to 1,
+                0x02027 to 1,
+                0x0202A to 0,
+                0x0202E to 0,
+                0x0202F to 1,
+                0x0205F to 1,
+                0x02060 to 0,
+                0x02064 to 0,
+                0x02066 to 0,
+                0x0206F to 0,
+                0x02070 to 1,
+                0x02319 to 1,
+                0x0231A to 2,
+                0x0231B to 2,
+                0x0231C to 1,
+                0x02328 to 1,
+                0x02329 to 2,
+                0x0232A to 2,
+                0x0232B to 1,
+                0x023E8 to 1,
+                0x023E9 to 2,
+                0x023EC to 2,
+                0x023ED to 1,
+                0x023EF to 1,
+                0x023F0 to 2,
+                0x023F1 to 1,
+                0x023F2 to 1,
+                0x023F3 to 2,
+                0x023F4 to 1,
+                0x025FC to 1,
+                0x025FD to 2,
+                0x025FE to 2,
+                0x025FF to 1,
+                0x02613 to 1,
+                0x02614 to 2,
+                0x02615 to 2,
+                0x02616 to 1,
+                0x0262F to 1,
+                0x02630 to 2,
+                0x02637 to 2,
+                0x02638 to 1,
+                0x02647 to 1,
+                0x02648 to 2,
+                0x02653 to 2,
+                0x02654 to 1,
+                0x0267E to 1,
+                0x0267F to 2,
+                0x02680 to 1,
+                0x02689 to 1,
+                0x0268A to 2,
+                0x0268F to 2,
+                0x02690 to 1,
+                0x02692 to 1,
+                0x02693 to 2,
+                0x02694 to 1,
+                0x026A0 to 1,
+                0x026A1 to 2,
+                0x026A2 to 1,
+                0x026A9 to 1,
+                0x026AA to 2,
+                0x026AB to 2,
+                0x026AC to 1,
+                0x026BC to 1,
+                0x026BD to 2,
+                0x026BE to 2,
+                0x026BF to 1,
+                0x026C3 to 1,
+                0x026C4 to 2,
+                0x026C5 to 2,
+                0x026C6 to 1,
+                0x026CD to 1,
+                0x026CE to 2,
+                0x026CF to 1,
+                0x026D3 to 1,
+                0x026D4 to 2,
+                0x026D5 to 1,
+                0x026E9 to 1,
+                0x026EA to 2,
+                0x026EB to 1,
+                0x026F1 to 1,
+                0x026F2 to 2,
+                0x026F3 to 2,
+                0x026F4 to 1,
+                0x026F5 to 2,
+                0x026F6 to 1,
+                0x026F9 to 1,
+                0x026FA to 2,
+                0x026FB to 1,
+                0x026FC to 1,
+                0x026FD to 2,
+                0x026FE to 1,
+                0x02704 to 1,
+                0x02705 to 2,
+                0x02706 to 1,
+                0x02709 to 1,
+                0x0270A to 2,
+                0x0270B to 2,
+                0x0270C to 1,
+                0x02727 to 1,
+                0x02728 to 2,
+                0x02729 to 1,
+                0x0274B to 1,
+                0x0274C to 2,
+                0x0274D to 1,
+                0x0274E to 2,
+                0x0274F to 1,
+                0x02752 to 1,
+                0x02753 to 2,
+                0x02755 to 2,
+                0x02756 to 1,
+                0x02757 to 2,
+                0x02758 to 1,
+                0x02794 to 1,
+                0x02795 to 2,
+                0x02797 to 2,
+                0x02798 to 1,
+                0x027AF to 1,
+                0x027B0 to 2,
+                0x027B1 to 1,
+                0x027BE to 1,
+                0x027BF to 2,
+                0x027C0 to 1,
+                0x02B1A to 1,
+                0x02B1B to 2,
+                0x02B1C to 2,
+                0x02B1D to 1,
+                0x02B4F to 1,
+                0x02B50 to 2,
+                0x02B51 to 1,
+                0x02B54 to 1,
+                0x02B55 to 2,
+                0x02B56 to 1,
+                0x02E80 to 2,
+                0x02E99 to 2,
+                0x02E9B to 2,
+                0x02EF3 to 2,
+                0x02F00 to 2,
+                0x02FD5 to 2,
+                0x02FF0 to 2,
+                0x03029 to 2,
+                0x0302A to 0,
+                0x0302D to 0,
+                0x0302E to 2,
+                0x0303E to 2,
+                0x0303F to 1,
+                0x03041 to 2,
+                0x03096 to 2,
+                0x0309A to 0,
+                0x0309B to 2,
+                0x030FF to 2,
+                0x03105 to 2,
+                0x0312F to 2,
+                0x03131 to 2,
+                0x03163 to 2,
+                0x03164 to 0,
+                0x03165 to 2,
+                0x0318E to 2,
+                0x03190 to 2,
+                0x031E5 to 2,
+                0x031EF to 2,
+                0x0321E to 2,
+                0x03220 to 2,
+                0x0A48C to 2,
+                0x0A490 to 2,
+                0x0A4C6 to 2,
+                0x0A95F to 1,
+                0x0A960 to 2,
+                0x0A97C to 2,
+                0x0AC00 to 2,
+                0x0D7A3 to 2,
+                0x0D7B0 to 0,
+                0x0D7C6 to 0,
+                0x0D7CB to 0,
+                0x0D7FB to 0,
+                0x0F8FF to 1,
+                0x0F900 to 2,
+                0x0FA6D to 2,
+                0x0FA70 to 2,
+                0x0FAD9 to 2,
+                0x0FE0F to 0,
+                0x0FE10 to 2,
+                0x0FE19 to 2,
+                0x0FE2F to 0,
+                0x0FE30 to 2,
+                0x0FE52 to 2,
+                0x0FE54 to 2,
+                0x0FE66 to 2,
+                0x0FE68 to 2,
+                0x0FE6B to 2,
+                0x0FEFF to 0,
+                0x0FF01 to 2,
+                0x0FF60 to 2,
+                0x0FF61 to 1,
+                0x0FF9F to 1,
+                0x0FFA0 to 0,
+                0x0FFA1 to 1,
+                0x0FFE0 to 2,
+                0x0FFE6 to 2,
+                0x10D69 to 0,
+                0x10D6D to 0,
+                0x10D6E to 1,
+                0x10EFC to 0,
+                0x10EFD to 0,
+                0x113BA to 1,
+                0x113BB to 0,
+                0x113C0 to 0,
+                0x113CD to 1,
+                0x113CE to 0,
+                0x113CF to 1,
+                0x113D0 to 0,
+                0x113D1 to 1,
+                0x113D2 to 0,
+                0x113D3 to 1,
+                0x113E1 to 0,
+                0x113E2 to 0,
+                0x11F59 to 1,
+                0x11F5A to 0,
+                0x1611D to 1,
+                0x1611E to 0,
+                0x16129 to 0,
+                0x1612A to 1,
+                0x1612C to 1,
+                0x1612D to 0,
+                0x1612F to 0,
+                0x16130 to 1,
+                0x16FE0 to 2,
+                0x16FE3 to 2,
+                0x16FE4 to 0,
+                0x16FF0 to 2,
+                0x16FF1 to 2,
+                0x17000 to 2,
+                0x187F7 to 2,
+                0x18800 to 2,
+                0x18CD5 to 2,
+                0x18CFF to 2,
+                0x18D08 to 2,
+                0x1AFF0 to 2,
+                0x1AFF3 to 2,
+                0x1AFF5 to 2,
+                0x1AFFB to 2,
+                0x1AFFD to 2,
+                0x1AFFE to 2,
+                0x1B000 to 2,
+                0x1B122 to 2,
+                0x1B132 to 2,
+                0x1B150 to 2,
+                0x1B152 to 2,
+                0x1B155 to 2,
+                0x1B164 to 2,
+                0x1B167 to 2,
+                0x1B170 to 2,
+                0x1B2FB to 2,
+                0x1BC9F to 1,
+                0x1BCA0 to 0,
+                0x1BCA3 to 0,
+                0x1D172 to 1,
+                0x1D173 to 0,
+                0x1D17A to 0,
+                0x1D17B to 0,
+                0x1D300 to 2,
+                0x1D356 to 2,
+                0x1D360 to 2,
+                0x1D376 to 2,
+                0x1D377 to 1,
+                0x1E5ED to 1,
+                0x1E5EE to 0,
+                0x1E5EF to 0,
+                0x1E5F0 to 1,
+                0x1F003 to 1,
+                0x1F004 to 2,
+                0x1F005 to 1,
+                0x1F0CE to 1,
+                0x1F0CF to 2,
+                0x1F18D to 1,
+                0x1F18E to 2,
+                0x1F18F to 1,
+                0x1F190 to 1,
+                0x1F191 to 2,
+                0x1F19A to 2,
+                0x1F19B to 1,
+                0x1F1FF to 1,
+                0x1F200 to 2,
+                0x1F202 to 2,
+                0x1F210 to 2,
+                0x1F23B to 2,
+                0x1F240 to 2,
+                0x1F248 to 2,
+                0x1F250 to 2,
+                0x1F251 to 2,
+                0x1F260 to 2,
+                0x1F265 to 2,
+                0x1F300 to 2,
+                0x1F320 to 2,
+                0x1F321 to 1,
+                0x1F32C to 1,
+                0x1F32D to 2,
+                0x1F335 to 2,
+                0x1F336 to 1,
+                0x1F337 to 2,
+                0x1F37C to 2,
+                0x1F37D to 1,
+                0x1F37E to 2,
+                0x1F393 to 2,
+                0x1F394 to 1,
+                0x1F39F to 1,
+                0x1F3A0 to 2,
+                0x1F3CA to 2,
+                0x1F3CB to 1,
+                0x1F3CE to 1,
+                0x1F3CF to 2,
+                0x1F3D3 to 2,
+                0x1F3D4 to 1,
+                0x1F3DF to 1,
+                0x1F3E0 to 2,
+                0x1F3F0 to 2,
+                0x1F3F1 to 1,
+                0x1F3F3 to 1,
+                0x1F3F4 to 2,
+                0x1F3F5 to 1,
+                0x1F3F7 to 1,
+                0x1F3F8 to 2,
+                0x1F43E to 2,
+                0x1F43F to 1,
+                0x1F440 to 2,
+                0x1F441 to 1,
+                0x1F442 to 2,
+                0x1F4FC to 2,
+                0x1F4FD to 1,
+                0x1F4FE to 1,
+                0x1F4FF to 2,
+                0x1F53D to 2,
+                0x1F53E to 1,
+                0x1F54A to 1,
+                0x1F54B to 2,
+                0x1F54E to 2,
+                0x1F54F to 1,
+                0x1F550 to 2,
+                0x1F567 to 2,
+                0x1F568 to 1,
+                0x1F579 to 1,
+                0x1F57A to 2,
+                0x1F57B to 1,
+                0x1F594 to 1,
+                0x1F595 to 2,
+                0x1F596 to 2,
+                0x1F597 to 1,
+                0x1F5A3 to 1,
+                0x1F5A4 to 2,
+                0x1F5A5 to 1,
+                0x1F5FA to 1,
+                0x1F5FB to 2,
+                0x1F64F to 2,
+                0x1F650 to 1,
+                0x1F67F to 1,
+                0x1F680 to 2,
+                0x1F6C5 to 2,
+                0x1F6C6 to 1,
+                0x1F6CB to 1,
+                0x1F6CC to 2,
+                0x1F6CD to 1,
+                0x1F6CF to 1,
+                0x1F6D0 to 2,
+                0x1F6D2 to 2,
+                0x1F6D3 to 1,
+                0x1F6D4 to 1,
+                0x1F6D5 to 2,
+                0x1F6D7 to 2,
+                0x1F6DC to 2,
+                0x1F6DF to 2,
+                0x1F6E0 to 1,
+                0x1F6EA to 1,
+                0x1F6EB to 2,
+                0x1F6EC to 2,
+                0x1F6F3 to 1,
+                0x1F6F4 to 2,
+                0x1F6FC to 2,
+                0x1F7E0 to 2,
+                0x1F7EB to 2,
+                0x1F7F0 to 2,
+                0x1F90B to 1,
+                0x1F90C to 2,
+                0x1F93A to 2,
+                0x1F93B to 1,
+                0x1F93C to 2,
+                0x1F945 to 2,
+                0x1F946 to 1,
+                0x1F947 to 2,
+                0x1F9FF to 2,
+                0x1FA00 to 1,
+                0x1FA70 to 2,
+                0x1FA7C to 2,
+                0x1FA80 to 2,
+                0x1FA89 to 2,
+                0x1FA8F to 2,
+                0x1FAC6 to 2,
+                0x1FACE to 2,
+                0x1FADC to 2,
+                0x1FADF to 2,
+                0x1FAE9 to 2,
+                0x1FAF0 to 2,
+                0x1FAF8 to 2,
+                0x20000 to 2,
+                0x2A6DF to 2,
+                0x2A700 to 2,
+                0x2B739 to 2,
+                0x2B740 to 2,
+                0x2B81D to 2,
+                0x2B820 to 2,
+                0x2CEA1 to 2,
+                0x2CEB0 to 2,
+                0x2EBE0 to 2,
+                0x2EBF0 to 2,
+                0x2EE5D to 2,
+                0x2F800 to 2,
+                0x2FA1D to 2,
+                0x30000 to 2,
+                0x3134A to 2,
+                0x31350 to 2,
+                0x323AF to 2,
+                0xE0001 to 0,
+                0xE0020 to 0,
+                0xE007F to 0,
+            )
 
         probes.forEach { (codePoint, expected) ->
             assertWithMessage("U+%04X".format(codePoint))

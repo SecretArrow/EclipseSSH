@@ -1,15 +1,15 @@
 package dev.eclipse.ssh.linux
 
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -57,7 +57,6 @@ class RootfsTransfer(
     private val storage: RuntimeStorageManager = RuntimeStorageManager(rootDir),
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-
     /**
      * Where an import unpacks, deliberately not the installer's `rootfs.staging`; see the class doc.
      */
@@ -97,45 +96,47 @@ class RootfsTransfer(
      * @throws IllegalStateException when there is nothing to export or an operation is in flight
      * @throws IOException when the document cannot be written or the rootfs cannot be read
      */
-    suspend fun exportTo(output: OutputStream): Unit = withContext(Dispatchers.IO) {
-        val current = manager.state.value
-        check(current !is LinuxUserspaceState.NotInstalled) {
-            "there is no userspace installed to export"
-        }
-        check(current !is LinuxUserspaceState.Installing && current !is LinuxUserspaceState.Stopping) {
-            "a userspace is $current - wait for it to finish before exporting"
-        }
-        storage.requireReady()
-        // The install lock, not a second mechanism of our own: an export racing a repair would read
-        // a tree that is being rewritten under it, and the lock is what the whole feature already
-        // agrees means "one userspace operation at a time".
-        storage.acquireInstallLock(distro.id, "export")
-        val startedAt = clock()
-        try {
-            _state.value = RootfsTransferState.Exporting(0, 0, 0)
-            val report = RootfsArchive(storage.rootfsDir).export(output) { progress ->
-                _state.value =
-                    RootfsTransferState.Exporting(progress.bytes, progress.total, progress.entries)
+    suspend fun exportTo(output: OutputStream): Unit =
+        withContext(Dispatchers.IO) {
+            val current = manager.state.value
+            check(current !is LinuxUserspaceState.NotInstalled) {
+                "there is no userspace installed to export"
             }
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "rootfs exported",
-                durationMs = clock() - startedAt,
-                detail = "${report.entries} entries, ${report.bytes / MIB}MB" + warningsDetail(report.warnings),
-            )
-        } catch (t: Throwable) {
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "rootfs export failed",
-                durationMs = clock() - startedAt,
-                detail = t.message ?: t.javaClass.simpleName,
-            )
-            throw t
-        } finally {
-            storage.releaseInstallLock()
-            _state.value = RootfsTransferState.Idle
+            check(current !is LinuxUserspaceState.Installing && current !is LinuxUserspaceState.Stopping) {
+                "a userspace is $current - wait for it to finish before exporting"
+            }
+            storage.requireReady()
+            // The install lock, not a second mechanism of our own: an export racing a repair would read
+            // a tree that is being rewritten under it, and the lock is what the whole feature already
+            // agrees means "one userspace operation at a time".
+            storage.acquireInstallLock(distro.id, "export")
+            val startedAt = clock()
+            try {
+                _state.value = RootfsTransferState.Exporting(0, 0, 0)
+                val report =
+                    RootfsArchive(storage.rootfsDir).export(output) { progress ->
+                        _state.value =
+                            RootfsTransferState.Exporting(progress.bytes, progress.total, progress.entries)
+                    }
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "rootfs exported",
+                    durationMs = clock() - startedAt,
+                    detail = "${report.entries} entries, ${report.bytes / MIB}MB" + warningsDetail(report.warnings),
+                )
+            } catch (t: Throwable) {
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "rootfs export failed",
+                    durationMs = clock() - startedAt,
+                    detail = t.message ?: t.javaClass.simpleName,
+                )
+                throw t
+            } finally {
+                storage.releaseInstallLock()
+                _state.value = RootfsTransferState.Idle
+            }
         }
-    }
 
     /**
      * Replaces whatever is installed with the userspace in [source] — the archive the user picked —
@@ -170,91 +171,97 @@ class RootfsTransfer(
      * @throws IOException when the archive is unreadable, escapes its directory, expands beyond the
      *   budget, or is not a userspace this device can adopt
      */
-    suspend fun importFrom(source: InputStream, archiveBytes: Long): Unit = withContext(Dispatchers.IO) {
-        val before = manager.state.value
-        check(before !is LinuxUserspaceState.Installing && before !is LinuxUserspaceState.Stopping) {
-            "a userspace is $before - wait for it to finish before importing over it"
-        }
-        storage.requireReady()
-        // Taken here rather than inside the try: acquiring a lock someone else holds must not be
-        // followed by releasing *their* lock in a finally.
-        storage.acquireInstallLock(distro.id, "import")
-        val startedAt = clock()
-        try {
-            importSwapped = false
-            if (before !is LinuxUserspaceState.NotInstalled) {
-                // From Running this is what closes the live sessions; from Stopped or NeedsRepair it
-                // is a no-op that lands on Stopped — which is also what makes the handoff's repair()
-                // legal, since repair() accepts nothing else.
-                manager.stop()
+    suspend fun importFrom(
+        source: InputStream,
+        archiveBytes: Long,
+    ): Unit =
+        withContext(Dispatchers.IO) {
+            val before = manager.state.value
+            check(before !is LinuxUserspaceState.Installing && before !is LinuxUserspaceState.Stopping) {
+                "a userspace is $before - wait for it to finish before importing over it"
             }
-            deleteTreeNoFollow(stagingDir)
-            stagingDir.mkdirs()
-            _state.value = RootfsTransferState.Importing(0, archiveBytes, 0)
-            val archive = RootfsArchive(stagingDir)
-            val report = archive.extract(source, importBudgetBytes(archiveBytes), archiveBytes) { progress ->
-                _state.value =
-                    RootfsTransferState.Importing(progress.bytes, progress.total, progress.entries)
-            }
-            val findings = archive.verify(distro)
-            if (findings.isNotEmpty()) {
-                throw IOException(
-                    "this archive cannot be used as a ${distro.displayName} userspace: " +
-                        findings.joinToString("; "),
+            storage.requireReady()
+            // Taken here rather than inside the try: acquiring a lock someone else holds must not be
+            // followed by releasing *their* lock in a finally.
+            storage.acquireInstallLock(distro.id, "import")
+            val startedAt = clock()
+            try {
+                importSwapped = false
+                if (before !is LinuxUserspaceState.NotInstalled) {
+                    // From Running this is what closes the live sessions; from Stopped or NeedsRepair it
+                    // is a no-op that lands on Stopped — which is also what makes the handoff's repair()
+                    // legal, since repair() accepts nothing else.
+                    manager.stop()
+                }
+                deleteTreeNoFollow(stagingDir)
+                stagingDir.mkdirs()
+                _state.value = RootfsTransferState.Importing(0, archiveBytes, 0)
+                val archive = RootfsArchive(stagingDir)
+                val report =
+                    archive.extract(source, importBudgetBytes(archiveBytes), archiveBytes) { progress ->
+                        _state.value =
+                            RootfsTransferState.Importing(progress.bytes, progress.total, progress.entries)
+                    }
+                val findings = archive.verify(distro)
+                if (findings.isNotEmpty()) {
+                    throw IOException(
+                        "this archive cannot be used as a ${distro.displayName} userspace: " +
+                            findings.joinToString("; "),
+                    )
+                }
+                _state.value = RootfsTransferState.Swapping
+                // The point of no return, and the one cancellation check that has to be written out: a
+                // cancel that arrived while the last entry was unpacking must be answered *here*, where
+                // the installed userspace is still untouched and [importSwapped] is still false, rather
+                // than after the swap — where the only honest thing left to do is finish.
+                coroutineContext.ensureActive()
+                // A snapshot parked by an earlier keep-workspace uninstall is restored by the setup at
+                // step 5 — over the workspace this archive has just brought back. The archive's copy is
+                // what the user asked for by importing it; the parked one is what they left behind when
+                // they uninstalled the userspace that held it, and the newer intent wins.
+                val discardedBackup = storage.workspaceBackupFile.delete()
+                swapIntoPlace()
+                importSwapped = true
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "rootfs imported",
+                    durationMs = clock() - startedAt,
+                    detail =
+                        "${report.entries} entries, ${report.bytes / MIB}MB" +
+                            warningsDetail(report.warnings) +
+                            if (discardedBackup) "; discarded the workspace saved by an earlier uninstall" else "",
                 )
+            } catch (t: Throwable) {
+                // A half-unpacked tree is only ever garbage: nothing installed was touched, and the next
+                // attempt starts from the first byte. Best-effort, like every cleanup here — the failure
+                // that got us here may be the one refusing deletes.
+                deleteTreeNoFollow(stagingDir)
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "rootfs import failed",
+                    durationMs = clock() - startedAt,
+                    detail = t.message ?: t.javaClass.simpleName,
+                )
+                throw t
+            } finally {
+                storage.releaseInstallLock()
+                _state.value = RootfsTransferState.Idle
             }
-            _state.value = RootfsTransferState.Swapping
-            // The point of no return, and the one cancellation check that has to be written out: a
-            // cancel that arrived while the last entry was unpacking must be answered *here*, where
-            // the installed userspace is still untouched and [importSwapped] is still false, rather
-            // than after the swap — where the only honest thing left to do is finish.
-            coroutineContext.ensureActive()
-            // A snapshot parked by an earlier keep-workspace uninstall is restored by the setup at
-            // step 5 — over the workspace this archive has just brought back. The archive's copy is
-            // what the user asked for by importing it; the parked one is what they left behind when
-            // they uninstalled the userspace that held it, and the newer intent wins.
-            val discardedBackup = storage.workspaceBackupFile.delete()
-            swapIntoPlace()
-            importSwapped = true
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "rootfs imported",
-                durationMs = clock() - startedAt,
-                detail = "${report.entries} entries, ${report.bytes / MIB}MB" +
-                    warningsDetail(report.warnings) +
-                    if (discardedBackup) "; discarded the workspace saved by an earlier uninstall" else "",
-            )
-        } catch (t: Throwable) {
-            // A half-unpacked tree is only ever garbage: nothing installed was touched, and the next
-            // attempt starts from the first byte. Best-effort, like every cleanup here — the failure
-            // that got us here may be the one refusing deletes.
-            deleteTreeNoFollow(stagingDir)
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "rootfs import failed",
-                durationMs = clock() - startedAt,
-                detail = t.message ?: t.javaClass.simpleName,
-            )
-            throw t
-        } finally {
-            storage.releaseInstallLock()
-            _state.value = RootfsTransferState.Idle
+            // Outside the lock, and outside the try: install() and repair() take the install lock
+            // themselves, so holding it across this call would refuse our own handoff. NonCancellable for
+            // the mirror-image reason: past the swap there is nothing left to abandon, and a setup
+            // pipeline interrupted half way would leave a userspace no state names — an imported tree
+            // that is not configured for this device. Cancellation therefore lands on one side of the
+            // swap or the other, never in the middle of either.
+            withContext(NonCancellable) {
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "imported rootfs adopted",
+                    detail = "running ${if (before is LinuxUserspaceState.NotInstalled) "install" else "repair"} over it",
+                )
+                if (before is LinuxUserspaceState.NotInstalled) manager.install() else manager.repair()
+            }
         }
-        // Outside the lock, and outside the try: install() and repair() take the install lock
-        // themselves, so holding it across this call would refuse our own handoff. NonCancellable for
-        // the mirror-image reason: past the swap there is nothing left to abandon, and a setup
-        // pipeline interrupted half way would leave a userspace no state names — an imported tree
-        // that is not configured for this device. Cancellation therefore lands on one side of the
-        // swap or the other, never in the middle of either.
-        withContext(NonCancellable) {
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "imported rootfs adopted",
-                detail = "running ${if (before is LinuxUserspaceState.NotInstalled) "install" else "repair"} over it",
-            )
-            if (before is LinuxUserspaceState.NotInstalled) manager.install() else manager.repair()
-        }
-    }
 
     /**
      * What an archive is allowed to unpack to: the same multiple of its own size the pinned install
@@ -263,8 +270,7 @@ class RootfsTransfer(
      * no phone's storage could reach and therefore no protection against a bomb: the honest failure
      * there is the write that runs out of space, with the staging tree reclaimable.
      */
-    internal fun importBudgetBytes(archiveBytes: Long): Long =
-        if (archiveBytes > 0) archiveBytes * BUDGET_MULTIPLE else FALLBACK_BUDGET_BYTES
+    internal fun importBudgetBytes(archiveBytes: Long): Long = if (archiveBytes > 0) archiveBytes * BUDGET_MULTIPLE else FALLBACK_BUDGET_BYTES
 
     /**
      * Replaces the installed rootfs with the staging tree by rename, parking the old one beside it
@@ -296,8 +302,7 @@ class RootfsTransfer(
     }
 
     /** A report's warnings as one detail string; empty when there were none. */
-    private fun warningsDetail(warnings: List<String>): String =
-        if (warnings.isEmpty()) "" else "; ${warnings.size} warning(s): ${warnings.first()}"
+    private fun warningsDetail(warnings: List<String>): String = if (warnings.isEmpty()) "" else "; ${warnings.size} warning(s): ${warnings.first()}"
 
     private companion object {
         const val MIB = 1024L * 1024
@@ -331,13 +336,21 @@ sealed interface RootfsTransferState {
     data object Idle : RootfsTransferState
 
     /** Writing the installed rootfs into the document the user chose; nothing on disk changes. */
-    data class Exporting(val bytes: Long, val totalBytes: Long, val entries: Int) : RootfsTransferState
+    data class Exporting(
+        val bytes: Long,
+        val totalBytes: Long,
+        val entries: Int,
+    ) : RootfsTransferState
 
     /**
      * Unpacking the chosen archive into the staging tree. The installed userspace is untouched for
      * the whole of this phase, which is the promise the confirmation dialog makes.
      */
-    data class Importing(val bytes: Long, val totalBytes: Long, val entries: Int) : RootfsTransferState
+    data class Importing(
+        val bytes: Long,
+        val totalBytes: Long,
+        val entries: Int,
+    ) : RootfsTransferState
 
     /** The staging tree is verified; the installed rootfs is being replaced by it. */
     data object Swapping : RootfsTransferState
@@ -354,13 +367,16 @@ sealed interface RootfsTransferState {
  * and a transfer row is exactly the file that would have to import both names and could not.
  */
 val RootfsTransferState.percentDone: Int?
-    get() = when (this) {
-        is RootfsTransferState.Exporting -> percentOf(bytes, totalBytes)
-        is RootfsTransferState.Importing -> percentOf(bytes, totalBytes)
-        RootfsTransferState.Swapping,
-        RootfsTransferState.Idle,
-        -> null
-    }
+    get() =
+        when (this) {
+            is RootfsTransferState.Exporting -> percentOf(bytes, totalBytes)
+            is RootfsTransferState.Importing -> percentOf(bytes, totalBytes)
+            RootfsTransferState.Swapping,
+            RootfsTransferState.Idle,
+            -> null
+        }
 
-private fun percentOf(bytes: Long, totalBytes: Long): Int? =
-    if (totalBytes > 0) ((bytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100) else null
+private fun percentOf(
+    bytes: Long,
+    totalBytes: Long,
+): Int? = if (totalBytes > 0) ((bytes.toDouble() / totalBytes) * 100).toInt().coerceIn(0, 100) else null

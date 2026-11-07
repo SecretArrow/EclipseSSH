@@ -28,7 +28,6 @@ class TerminalFlingBehavior(
     private val decay: DecayAnimationSpec<Float>,
     private val roomPx: (Float) -> Float,
 ) : FlingBehavior {
-
     override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
         if (!initialVelocity.isFinite() || initialVelocity == 0f) return 0f
         val room = roomPx(initialVelocity)

@@ -21,9 +21,10 @@ package dev.eclipse.ssh.archive
  *  reload -> rescan (fresh metadata, the flag clears).
  */
 sealed interface ArchiveUiState {
-
     /** The scan is running. [progress] is null until the first callback arrives. */
-    data class Loading(val progress: ArchiveScanProgress?) : ArchiveUiState
+    data class Loading(
+        val progress: ArchiveScanProgress?,
+    ) : ArchiveUiState
 
     /**
      * The archive is open and browsable.
@@ -42,10 +43,14 @@ sealed interface ArchiveUiState {
     ) : ArchiveUiState
 
     /** The scan ended in something the user must be told, with the message to tell them. */
-    data class Failed(val message: String) : ArchiveUiState
+    data class Failed(
+        val message: String,
+    ) : ArchiveUiState
 
     /** The archive is encrypted and needs a password before anything can be listed. */
-    data class PasswordRequired(val message: String) : ArchiveUiState
+    data class PasswordRequired(
+        val message: String,
+    ) : ArchiveUiState
 }
 
 /**
@@ -65,11 +70,17 @@ data class ArchiveValidation(
      * everywhere else: a backend that cannot report an mtime must not put every archive into
      * conflict.
      */
-    fun differsFrom(size: Long?, modifiedEpochMillis: Long?): Boolean {
+    fun differsFrom(
+        size: Long?,
+        modifiedEpochMillis: Long?,
+    ): Boolean {
         if (size != null && size != this.size) return true
-        if (modifiedEpochMillis != null && this.modifiedEpochMillis != null &&
+        if (modifiedEpochMillis != null &&
+            this.modifiedEpochMillis != null &&
             modifiedEpochMillis != this.modifiedEpochMillis
-        ) return true
+        ) {
+            return true
+        }
         // A file that vanished is the strongest change there is.
         if (size == null) return true
         return false
@@ -83,20 +94,23 @@ data class ArchiveValidation(
  * vs connection); anything else is a connection-shaped failure in practice, because the scan's
  * non-I/O failure modes all have their own types.
  */
-fun archiveFailureState(error: Throwable): ArchiveUiState.Failed = ArchiveUiState.Failed(
-    when (error) {
-        is ArchivePasswordRequiredException ->
-            // Password-required is not a failure of the archive; the state exists so the unlock
-            // sheet is offered. But if the path reaches here, the message is the honest one.
-            error.message ?: "This archive is password protected."
-        else -> "Unable to read the archive. It may be corrupted or unsupported."
-    },
-)
+fun archiveFailureState(error: Throwable): ArchiveUiState.Failed =
+    ArchiveUiState.Failed(
+        when (error) {
+            is ArchivePasswordRequiredException ->
+                // Password-required is not a failure of the archive; the state exists so the unlock
+                // sheet is offered. But if the path reaches here, the message is the honest one.
+                error.message ?: "This archive is password protected."
+            else -> "Unable to read the archive. It may be corrupted or unsupported."
+        },
+    )
 
 /** Same mapping, but password-required keeps its own state so the unlock sheet is what shows. */
-fun archiveStateFor(error: Throwable): ArchiveUiState = when (error) {
-    is ArchivePasswordRequiredException -> ArchiveUiState.PasswordRequired(
-        error.message ?: "This archive is password protected."
-    )
-    else -> archiveFailureState(error)
-}
+fun archiveStateFor(error: Throwable): ArchiveUiState =
+    when (error) {
+        is ArchivePasswordRequiredException ->
+            ArchiveUiState.PasswordRequired(
+                error.message ?: "This archive is password protected.",
+            )
+        else -> archiveFailureState(error)
+    }

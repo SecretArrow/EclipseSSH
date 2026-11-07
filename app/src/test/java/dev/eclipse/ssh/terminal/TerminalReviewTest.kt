@@ -24,26 +24,24 @@ import org.junit.Test
  * ```
  */
 class TerminalReviewTest {
-    private fun prompt(column: Int? = 13): PromptMark =
-        PromptMark(setOf(PromptMarkKind.PROMPT, PromptMarkKind.INPUT), inputColumn = column)
+    private fun prompt(column: Int? = 13): PromptMark = PromptMark(setOf(PromptMarkKind.PROMPT, PromptMarkKind.INPUT), inputColumn = column)
 
     private fun accepted(): PromptMark = PromptMark(setOf(PromptMarkKind.OUTPUT))
 
-    private fun finished(status: Int?): PromptMark =
-        PromptMark(setOf(PromptMarkKind.FINISHED), exitCode = status)
+    private fun finished(status: Int?): PromptMark = PromptMark(setOf(PromptMarkKind.FINISHED), exitCode = status)
 
     /** One line per pair, so the line each mark sits on is visible in the fixture. */
-    private fun lines(vararg line: Pair<String, PromptMark?>): List<SessionLine> =
-        line.map { SessionLine(it.first, it.second) }
+    private fun lines(vararg line: Pair<String, PromptMark?>): List<SessionLine> = line.map { SessionLine(it.first, it.second) }
 
-    private fun session(): List<SessionLine> = lines(
-        "user@host:~$ ls" to prompt(),
-        "notes.txt" to accepted(),
-        "" to finished(0),
-        "user@host:~$ grep nope file" to prompt(),
-        "grep: file: No such file or directory" to accepted(),
-        "" to finished(2),
-    )
+    private fun session(): List<SessionLine> =
+        lines(
+            "user@host:~$ ls" to prompt(),
+            "notes.txt" to accepted(),
+            "" to finished(0),
+            "user@host:~$ grep nope file" to prompt(),
+            "grep: file: No such file or directory" to accepted(),
+            "" to finished(2),
+        )
 
     @Test
     fun `a session is cut into one command per prompt, in the order they ran`() {
@@ -69,7 +67,8 @@ class TerminalReviewTest {
     @Test
     fun `how a command ended is reported in words that keep the three states apart`() {
         assertThat(reviewCommands(session()).map { it.end })
-            .containsExactly("exited 0", "exited 2").inOrder()
+            .containsExactly("exited 0", "exited 2")
+            .inOrder()
 
         // A `D` with no status: the command finished and the shell did not say how.
         assertThat(reviewCommands(lines("$ " to prompt(2), "" to finished(null))).single().end)
@@ -83,13 +82,14 @@ class TerminalReviewTest {
     fun `the row carrying one command's end and the next prompt belongs to both, and its status to neither but the first`() {
         // The boundary row: `D;0` and the next prompt's `A`/`B` on one line, which is what a shell emits
         // when its prompt hook reports the end and its prompt is printed on the row it reported from.
-        val commands = reviewCommands(
-            lines(
-                "user@host:~$ ls" to prompt(),
-                "notes.txt" to accepted(),
-                "user@host:~$ " to prompt().and(finished(0)),
-            ),
-        )
+        val commands =
+            reviewCommands(
+                lines(
+                    "user@host:~$ ls" to prompt(),
+                    "notes.txt" to accepted(),
+                    "user@host:~$ " to prompt().and(finished(0)),
+                ),
+            )
 
         // The command above it ends there, which is the status a reader looks at that row for.
         assertThat(commands[0].endLine).isEqualTo(2)
@@ -106,14 +106,15 @@ class TerminalReviewTest {
 
     @Test
     fun `a command that never reported an end does not borrow the next one's status`() {
-        val commands = reviewCommands(
-            lines(
-                "user@host:~$ sleep 999" to prompt(),
-                "user@host:~$ " to prompt(),
-                "done" to accepted(),
-                "" to finished(0),
-            ),
-        )
+        val commands =
+            reviewCommands(
+                lines(
+                    "user@host:~$ sleep 999" to prompt(),
+                    "user@host:~$ " to prompt(),
+                    "done" to accepted(),
+                    "" to finished(0),
+                ),
+            )
 
         assertThat(commands).hasSize(2)
         assertThat(commands[0].endLine).isNull()
@@ -127,16 +128,17 @@ class TerminalReviewTest {
         // The shell accepts the command line only once the last continuation is entered, so the
         // acceptance mark lands on the line *after* it - the line the command's output starts on, which
         // is why the three lines above it are the command and not output.
-        val command = reviewCommands(
-            lines(
-                "user@host:~$ for f in a b; do" to prompt(),
-                "> echo \$f" to null,
-                "> done" to null,
-                "a" to accepted(),
-                "b" to null,
-                "" to finished(0),
-            ),
-        ).single()
+        val command =
+            reviewCommands(
+                lines(
+                    "user@host:~$ for f in a b; do" to prompt(),
+                    "> echo \$f" to null,
+                    "> done" to null,
+                    "a" to accepted(),
+                    "b" to null,
+                    "" to finished(0),
+                ),
+            ).single()
 
         assertThat(command.command).isEqualTo("for f in a b; do\n> echo \$f\n> done")
         assertThat(command.outputFrom).isEqualTo(3)
@@ -148,13 +150,14 @@ class TerminalReviewTest {
     fun `a shell that never says where the output begins still yields the command line`() {
         // No acceptance mark: the prompt line is the whole of the command and everything under it is
         // output. A shell that sends `A`/`B`/`D` and not `C` is configured, not broken.
-        val command = reviewCommands(
-            lines(
-                "user@host:~$ ls" to prompt(),
-                "notes.txt" to null,
-                "" to finished(0),
-            ),
-        ).single()
+        val command =
+            reviewCommands(
+                lines(
+                    "user@host:~$ ls" to prompt(),
+                    "notes.txt" to null,
+                    "" to finished(0),
+                ),
+            ).single()
 
         assertThat(command.command).isEqualTo("ls")
         assertThat(command.outputFrom).isEqualTo(1)
@@ -173,9 +176,10 @@ class TerminalReviewTest {
 
     @Test
     fun `the prompt the user is typing at is the last command, with no output and no end`() {
-        val commands = reviewCommands(
-            session() + listOf(SessionLine("user@host:~$ ec", prompt())),
-        )
+        val commands =
+            reviewCommands(
+                session() + listOf(SessionLine("user@host:~$ ec", prompt())),
+            )
 
         assertThat(commands).hasSize(3)
         val typing = commands.last()
@@ -196,6 +200,7 @@ class TerminalReviewTest {
     fun `the review of a real session agrees with the marks a feed produces`() {
         val buffer = AnsiTerminalBuffer(columns = 40, rows = 6, scrollbackLimit = 100)
         val esc = Char(0x1B).toString()
+
         fun mark(body: String) = "$esc]133;$body$esc\\"
 
         buffer.feed(
@@ -208,7 +213,8 @@ class TerminalReviewTest {
         val commands = reviewCommands(buffer.sessionLines())
         assertThat(commands.map { it.command }).containsExactly("ls", "grep nope file").inOrder()
         assertThat(commands.map { it.output })
-            .containsExactly("notes.txt", "grep: file: No such file or directory").inOrder()
+            .containsExactly("notes.txt", "grep: file: No such file or directory")
+            .inOrder()
         assertThat(commands.map { it.exitCode }).containsExactly(0, 2).inOrder()
     }
 

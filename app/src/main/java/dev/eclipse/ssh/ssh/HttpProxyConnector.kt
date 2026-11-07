@@ -31,9 +31,10 @@ data class HttpProxyConfig(
      * Enumerated by hand, so a new field has to be added here too. The check is
      * `ProxyConfigTest.neither proxy config can print its password`.
      */
-    override fun toString(): String = "HttpProxyConfig(host=$host, port=$port, " +
-        "connectTimeoutMs=$connectTimeoutMs, username=$username, " +
-        "password=${if (password.isNullOrEmpty()) "none" else REDACTED})"
+    override fun toString(): String =
+        "HttpProxyConfig(host=$host, port=$port, " +
+            "connectTimeoutMs=$connectTimeoutMs, username=$username, " +
+            "password=${if (password.isNullOrEmpty()) "none" else REDACTED})"
 
     companion object {
         /** Deliberately says nothing about the value, not even its length. */
@@ -47,20 +48,29 @@ data class HttpProxyConfig(
 
 /** HTTP/1.1 CONNECT handshake (RFC 7231 §4.3.6) over an asynchronous socket channel. */
 object HttpConnectHandshake {
-    fun perform(channel: AsynchronousSocketChannel, targetHost: String, targetPort: Int, config: HttpProxyConfig) {
+    fun perform(
+        channel: AsynchronousSocketChannel,
+        targetHost: String,
+        targetPort: Int,
+        config: HttpProxyConfig,
+    ) {
         val timeoutMs = config.connectTimeoutMs
-        val authHeader = if (config.hasCredentials) {
-            val token = Base64.getEncoder()
-                .encodeToString("${config.username.orEmpty()}:${config.password.orEmpty()}".toByteArray(Charsets.UTF_8))
-            "Proxy-Authorization: Basic $token\r\n"
-        } else {
-            ""
-        }
+        val authHeader =
+            if (config.hasCredentials) {
+                val token =
+                    Base64
+                        .getEncoder()
+                        .encodeToString("${config.username.orEmpty()}:${config.password.orEmpty()}".toByteArray(Charsets.UTF_8))
+                "Proxy-Authorization: Basic $token\r\n"
+            } else {
+                ""
+            }
         val authority = authority(targetHost, targetPort)
-        val request = "CONNECT $authority HTTP/1.1\r\n" +
-            "Host: $authority\r\n" +
-            authHeader +
-            "Proxy-Connection: Keep-Alive\r\n\r\n"
+        val request =
+            "CONNECT $authority HTTP/1.1\r\n" +
+                "Host: $authority\r\n" +
+                authHeader +
+                "Proxy-Connection: Keep-Alive\r\n\r\n"
         writeFully(channel, request.toByteArray(Charsets.US_ASCII), timeoutMs)
         val response = readLine(channel, timeoutMs)
         if (!response.startsWith("HTTP/")) throw IOException("Invalid HTTP proxy response: $response")
@@ -105,7 +115,10 @@ object HttpConnectHandshake {
      * exactly minimal. Bytes above DEL go too: the request is encoded as US-ASCII a few lines below,
      * which would silently turn an IDN host into question marks, so it has to be punycode by now.
      */
-    private fun authority(host: String, port: Int): String {
+    private fun authority(
+        host: String,
+        port: Int,
+    ): String {
         if (host.isEmpty()) throw IOException("HTTP CONNECT requires a target host name")
         host.forEach { character ->
             if (character.code <= 0x20 || character.code >= 0x7F) {
@@ -119,7 +132,11 @@ object HttpConnectHandshake {
         return if (!bracketed && host.contains(':')) "[$host]:$port" else "$host:$port"
     }
 
-    private fun writeFully(channel: AsynchronousSocketChannel, bytes: ByteArray, timeoutMs: Long) {
+    private fun writeFully(
+        channel: AsynchronousSocketChannel,
+        bytes: ByteArray,
+        timeoutMs: Long,
+    ) {
         val buffer = ByteBuffer.wrap(bytes)
         while (buffer.hasRemaining()) {
             val written = channel.write(buffer).get(timeoutMs, TimeUnit.MILLISECONDS)
@@ -127,7 +144,10 @@ object HttpConnectHandshake {
         }
     }
 
-    private fun readLine(channel: AsynchronousSocketChannel, timeoutMs: Long): String {
+    private fun readLine(
+        channel: AsynchronousSocketChannel,
+        timeoutMs: Long,
+    ): String {
         val line = StringBuilder()
         while (true) {
             val byte = ByteArray(1)

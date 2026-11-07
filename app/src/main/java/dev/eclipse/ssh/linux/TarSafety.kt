@@ -1,5 +1,6 @@
 package dev.eclipse.ssh.linux
 
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -13,7 +14,6 @@ import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.zip.GZIPInputStream
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 
 /**
  * Resolves a tar entry name inside [root], refusing anything that escapes it — `../` components,
@@ -27,7 +27,10 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
  * [root] must exist; `canonicalFile` is what makes symlinked directories inside the archive
  * unable to route the resolution outside.
  */
-internal fun resolveInsideRoot(root: File, name: String): File {
+internal fun resolveInsideRoot(
+    root: File,
+    name: String,
+): File {
     val cleaned = name.removePrefix("./")
     val resolved = File(root, cleaned).canonicalFile
     if (!resolved.path.startsWith(root.canonicalPath + File.separator)) {
@@ -46,8 +49,10 @@ internal fun resolveInsideRoot(root: File, name: String): File {
  * (0x1f 0x8b) decides the wrap; anything else passes through untouched, so a plain tar still
  * works.
  */
-internal fun openTarStream(file: File, bufferSize: Int): TarArchiveInputStream =
-    openTarStream(file.inputStream(), bufferSize)
+internal fun openTarStream(
+    file: File,
+    bufferSize: Int,
+): TarArchiveInputStream = openTarStream(file.inputStream(), bufferSize)
 
 /**
  * [openTarStream] over a file that reports how much of itself it has handed over.
@@ -65,16 +70,20 @@ internal fun openTarStream(
 ): TarArchiveInputStream = openTarStream(CountingFileStream(file, onBytesRead), bufferSize)
 
 /** The read path both overloads share: sniff the gzip magic, then parse what follows as tar. */
-internal fun openTarStream(raw: InputStream, bufferSize: Int): TarArchiveInputStream {
+internal fun openTarStream(
+    raw: InputStream,
+    bufferSize: Int,
+): TarArchiveInputStream {
     val probe = PushbackInputStream(raw.buffered(bufferSize), 2)
     val magic = ByteArray(2)
     val read = probe.read(magic)
     if (read > 0) probe.unread(magic, 0, read)
-    val source = if (read == 2 && magic[0] == 0x1f.toByte() && magic[1] == 0x8b.toByte()) {
-        GZIPInputStream(probe, bufferSize)
-    } else {
-        probe
-    }
+    val source =
+        if (read == 2 && magic[0] == 0x1f.toByte() && magic[1] == 0x8b.toByte()) {
+            GZIPInputStream(probe, bufferSize)
+        } else {
+            probe
+        }
     return TarArchiveInputStream(source)
 }
 
@@ -89,7 +98,10 @@ internal fun openTarStream(raw: InputStream, bufferSize: Int): TarArchiveInputSt
  * an extraction stuck at 0% while the tarball drained. The byte-at-a-time form is overridden for
  * the same reason: a probe reads one byte at a time.
  */
-internal class CountingFileStream(file: File, private val onBytesRead: (Long) -> Unit) : FileInputStream(file) {
+internal class CountingFileStream(
+    file: File,
+    private val onBytesRead: (Long) -> Unit,
+) : FileInputStream(file) {
     private var total = 0L
 
     override fun read(): Int {
@@ -100,7 +112,11 @@ internal class CountingFileStream(file: File, private val onBytesRead: (Long) ->
 
     override fun read(buffer: ByteArray): Int = read(buffer, 0, buffer.size)
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         val count = super.read(buffer, offset, length)
         if (count > 0) report(count.toLong())
         return count
@@ -136,16 +152,24 @@ internal class CountingFileStream(file: File, private val onBytesRead: (Long) ->
  * `usr/bin/pager -> /etc/alternatives/pager`, …). Refused — either way — is a target whose
  * components climb above the root.
  */
-internal fun resolveLinkInsideRoot(root: File, name: String, linkName: String) {
+internal fun resolveLinkInsideRoot(
+    root: File,
+    name: String,
+    linkName: String,
+) {
     if (linkName.isEmpty()) {
         throw IOException("Archive entry is a symlink with an empty target: $name")
     }
-    val entryParent = resolveInsideRoot(root, name).parentFile
-        ?: throw IOException("Archive entry has no parent directory: $name")
+    val entryParent =
+        resolveInsideRoot(root, name).parentFile
+            ?: throw IOException("Archive entry has no parent directory: $name")
     // Where the link lives, as components relative to the root. resolveInsideRoot hands back a
     // canonical path under the root's, so the relativize is well-defined; empty is the root itself.
     val where =
-        root.canonicalFile.toPath().relativize(entryParent.toPath()).map { it.toString() }
+        root.canonicalFile
+            .toPath()
+            .relativize(entryParent.toPath())
+            .map { it.toString() }
     val stack = ArrayDeque(where)
     if (linkName.startsWith("/")) {
         // An absolute target means the rootfs's root: the walk starts there, discarding the
@@ -158,7 +182,7 @@ internal fun resolveLinkInsideRoot(root: File, name: String, linkName: String) {
             ".." ->
                 if (stack.removeLastOrNull() == null) {
                     throw IOException(
-                        "Archive symlink points outside the extraction directory: $name -> $linkName"
+                        "Archive symlink points outside the extraction directory: $name -> $linkName",
                     )
                 }
             else -> stack.addLast(part)
@@ -186,22 +210,23 @@ internal fun resolveLinkInsideRoot(root: File, name: String, linkName: String) {
  * Entries are yielded parent-first, and a symlink is yielded as itself, never as its target: the
  * caller decides what a link means, and for archiving that decision is "write a link".
  */
-internal fun walkTreeNoFollow(root: File): Sequence<File> = sequence {
-    val pending = ArrayDeque<File>()
-    pending.addLast(root)
-    while (pending.isNotEmpty()) {
-        // Losing a directory to a permissions error must not end the walk: the entries already
-        // yielded are still true, and the callers here measure rather than account.
-        val children = pending.removeLast().listFiles() ?: continue
-        for (child in children) {
-            yield(child)
-            // NOFOLLOW asks about the entry itself, which is the whole point: a symlink to a
-            // directory is yielded as a link and never descended into, so no walk can cycle
-            // and no walk can leave the tree.
-            if (Files.isDirectory(child.toPath(), LinkOption.NOFOLLOW_LINKS)) pending.addLast(child)
+internal fun walkTreeNoFollow(root: File): Sequence<File> =
+    sequence {
+        val pending = ArrayDeque<File>()
+        pending.addLast(root)
+        while (pending.isNotEmpty()) {
+            // Losing a directory to a permissions error must not end the walk: the entries already
+            // yielded are still true, and the callers here measure rather than account.
+            val children = pending.removeLast().listFiles() ?: continue
+            for (child in children) {
+                yield(child)
+                // NOFOLLOW asks about the entry itself, which is the whole point: a symlink to a
+                // directory is yielded as a link and never descended into, so no walk can cycle
+                // and no walk can leave the tree.
+                if (Files.isDirectory(child.toPath(), LinkOption.NOFOLLOW_LINKS)) pending.addLast(child)
+            }
         }
     }
-}
 
 /**
  * Whether [this] is a regular file *itself* — a symlink to a file is a link here, not the file it
@@ -213,16 +238,14 @@ internal fun walkTreeNoFollow(root: File): Sequence<File> = sequence {
  * `File.length()` answers for a link (the size of its target path). A total built that way answers
  * a question — "how many bytes do the links' targets' names take up" — that no caller asked.
  */
-internal fun File.isRegularFileNoFollow(): Boolean =
-    Files.isRegularFile(toPath(), LinkOption.NOFOLLOW_LINKS)
+internal fun File.isRegularFileNoFollow(): Boolean = Files.isRegularFile(toPath(), LinkOption.NOFOLLOW_LINKS)
 
 /**
  * Whether [this] is a directory *itself*, on the same terms as [isRegularFileNoFollow]: a symlink
  * to a directory is a link, not a directory, so callers that mean "the entries a user sees" count
  * it rather than treating it as structure.
  */
-internal fun File.isDirectoryNoFollow(): Boolean =
-    Files.isDirectory(toPath(), LinkOption.NOFOLLOW_LINKS)
+internal fun File.isDirectoryNoFollow(): Boolean = Files.isDirectory(toPath(), LinkOption.NOFOLLOW_LINKS)
 
 /**
  * Deletes a tree of extracted archive content without following symlinks, replacing
@@ -236,22 +259,32 @@ internal fun File.isDirectoryNoFollow(): Boolean =
 internal fun deleteTreeNoFollow(root: File): Boolean {
     val path = root.toPath()
     if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS) && !Files.isSymbolicLink(path)) return true
-    val visitor = object : SimpleFileVisitor<Path>() {
-        override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-            Files.deleteIfExists(file)
-            return FileVisitResult.CONTINUE
-        }
+    val visitor =
+        object : SimpleFileVisitor<Path>() {
+            override fun visitFile(
+                file: Path,
+                attrs: BasicFileAttributes,
+            ): FileVisitResult {
+                Files.deleteIfExists(file)
+                return FileVisitResult.CONTINUE
+            }
 
-        override fun postVisitDirectory(dir: Path, error: IOException?): FileVisitResult {
-            Files.deleteIfExists(dir)
-            return FileVisitResult.CONTINUE
-        }
+            override fun postVisitDirectory(
+                dir: Path,
+                error: IOException?,
+            ): FileVisitResult {
+                Files.deleteIfExists(dir)
+                return FileVisitResult.CONTINUE
+            }
 
-        override fun visitFileFailed(file: Path, error: IOException): FileVisitResult =
-            // One undeletable file must not preserve the whole tree: keep walking so the rest
-            // is reclaimed, and let the caller learn the outcome from the return value.
-            FileVisitResult.CONTINUE
-    }
+            override fun visitFileFailed(
+                file: Path,
+                error: IOException,
+            ): FileVisitResult =
+                // One undeletable file must not preserve the whole tree: keep walking so the rest
+                // is reclaimed, and let the caller learn the outcome from the return value.
+                FileVisitResult.CONTINUE
+        }
     return runCatching {
         // walkFileTree never follows symlinks unless FileVisitOption.FOLLOW_LINKS is passed,
         // so an empty options set IS the no-follow walk: the second parameter is visit

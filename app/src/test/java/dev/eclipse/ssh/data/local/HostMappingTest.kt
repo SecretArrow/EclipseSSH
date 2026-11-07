@@ -14,28 +14,29 @@ import org.junit.Test
 class HostMappingTest {
     @Test
     fun `host profiles round trip through Room entity`() {
-        val original = HostProfile(
-            id = "host-1",
-            name = "Edge",
-            host = "edge.example.com",
-            username = "deploy",
-            port = 2222,
-            authMethod = AuthMethod.SSH_KEY,
-            group = "Work",
-            tags = listOf("production", "priority"),
-            isFavorite = true,
-            lastConnectedAt = 1234L,
-            fingerprint = "SHA256:abc",
-            proxyType = ProxyType.PROXY_JUMP,
-            proxyJump = "gateway@bastion.example.com:22",
-            socksHost = "127.0.0.1",
-            socksPort = 9050,
-            socksUsername = "proxy-user",
-            socksPassword = "proxy-secret",
-            connectTimeoutSeconds = 45,
-            keepAliveSeconds = 90,
-            autoLoginSftp = false,
-        )
+        val original =
+            HostProfile(
+                id = "host-1",
+                name = "Edge",
+                host = "edge.example.com",
+                username = "deploy",
+                port = 2222,
+                authMethod = AuthMethod.SSH_KEY,
+                group = "Work",
+                tags = listOf("production", "priority"),
+                isFavorite = true,
+                lastConnectedAt = 1234L,
+                fingerprint = "SHA256:abc",
+                proxyType = ProxyType.PROXY_JUMP,
+                proxyJump = "gateway@bastion.example.com:22",
+                socksHost = "127.0.0.1",
+                socksPort = 9050,
+                socksUsername = "proxy-user",
+                socksPassword = "proxy-secret",
+                connectTimeoutSeconds = 45,
+                keepAliveSeconds = 90,
+                autoLoginSftp = false,
+            )
 
         assertThat(original.toEntity().toDomain()).isEqualTo(original)
     }
@@ -96,14 +97,15 @@ class HostMappingTest {
     fun `connection options round trip at both range bounds`() {
         for (timeout in listOf(CONNECT_TIMEOUT_RANGE.first, CONNECT_TIMEOUT_RANGE.last)) {
             for (keepAlive in listOf(null, KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last)) {
-                val host = HostProfile(
-                    id = "bounds-$timeout-$keepAlive",
-                    name = "Bounds",
-                    host = "b.example.com",
-                    username = "root",
-                    connectTimeoutSeconds = timeout,
-                    keepAliveSeconds = keepAlive,
-                )
+                val host =
+                    HostProfile(
+                        id = "bounds-$timeout-$keepAlive",
+                        name = "Bounds",
+                        host = "b.example.com",
+                        username = "root",
+                        connectTimeoutSeconds = timeout,
+                        keepAliveSeconds = keepAlive,
+                    )
 
                 assertThat(host.toEntity().toDomain()).isEqualTo(host)
             }
@@ -119,41 +121,42 @@ class HostMappingTest {
      */
     @Test
     fun `advanced per host options round trip through Room entity`() {
-        val tuned = HostProfile(
-            id = "h5",
-            name = "Tuned",
-            host = "tuned.example.com",
-            username = "root",
-            compression = true,
-            keepAliveEnabled = false,
-            serverAliveCountMax = 7,
-            authTimeoutSeconds = 120,
-            autoReconnect = false,
-            maxReconnectAttempts = 11,
-            reconnectBackoffSeconds = 20,
-            usePty = false,
-            terminalType = "vt100",
-            terminalColumns = 132,
-            terminalRows = 43,
-            keyboardInteractiveAuth = false,
-            legacyAlgorithms = true,
-            ciphers = "aes256-gcm@openssh.com,aes128-ctr",
-            kexAlgorithms = "curve25519-sha256,diffie-hellman-group14-sha256",
-            macs = "hmac-sha2-256-etm@openssh.com",
-            hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
-            startupCommand = "tmux attach || tmux new",
-            // The three text columns are the ones a mapper can mangle rather than drop: a newline in a
-            // column joined with anything but a newline comes back as one line, and both of these are
-            // parsed line by line at connect time.
-            environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
-            savedForwards = "L:8080:intranet.example:80\nD:1080",
-            remoteDesktop = "V:10.0.1.5:5900 view-only",
-            // The spelling as typed, not normalised: the mapping moves text, and every MAC spelling
-            // parseMac accepts is one the column can hold.
-            wakeOnLanMac = "4C-2E-81-1A-02-F7",
-            agentForwarding = true,
-            hostKeyPolicy = HostKeyPolicy.STRICT,
-        )
+        val tuned =
+            HostProfile(
+                id = "h5",
+                name = "Tuned",
+                host = "tuned.example.com",
+                username = "root",
+                compression = true,
+                keepAliveEnabled = false,
+                serverAliveCountMax = 7,
+                authTimeoutSeconds = 120,
+                autoReconnect = false,
+                maxReconnectAttempts = 11,
+                reconnectBackoffSeconds = 20,
+                usePty = false,
+                terminalType = "vt100",
+                terminalColumns = 132,
+                terminalRows = 43,
+                keyboardInteractiveAuth = false,
+                legacyAlgorithms = true,
+                ciphers = "aes256-gcm@openssh.com,aes128-ctr",
+                kexAlgorithms = "curve25519-sha256,diffie-hellman-group14-sha256",
+                macs = "hmac-sha2-256-etm@openssh.com",
+                hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
+                startupCommand = "tmux attach || tmux new",
+                // The three text columns are the ones a mapper can mangle rather than drop: a newline in a
+                // column joined with anything but a newline comes back as one line, and both of these are
+                // parsed line by line at connect time.
+                environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
+                savedForwards = "L:8080:intranet.example:80\nD:1080",
+                remoteDesktop = "V:10.0.1.5:5900 view-only",
+                // The spelling as typed, not normalised: the mapping moves text, and every MAC spelling
+                // parseMac accepts is one the column can hold.
+                wakeOnLanMac = "4C-2E-81-1A-02-F7",
+                agentForwarding = true,
+                hostKeyPolicy = HostKeyPolicy.STRICT,
+            )
 
         assertThat(tuned.toEntity().toDomain()).isEqualTo(tuned)
     }
@@ -222,9 +225,10 @@ class HostMappingTest {
      */
     @Test
     fun `an unknown host key policy falls back to asking`() {
-        val entity = HostProfile(id = "h7", name = "P", host = "p.example.com", username = "root")
-            .toEntity()
-            .copy(hostKeyPolicy = "SOMETHING_ELSE")
+        val entity =
+            HostProfile(id = "h7", name = "P", host = "p.example.com", username = "root")
+                .toEntity()
+                .copy(hostKeyPolicy = "SOMETHING_ELSE")
 
         assertThat(entity.toDomain().hostKeyPolicy).isEqualTo(HostKeyPolicy.ASK)
     }
@@ -232,21 +236,22 @@ class HostMappingTest {
     /** No advanced value is redacted, but nothing here may leak a secret either. */
     @Test
     fun `the redacting toString reports advanced options and still hides secrets`() {
-        val tuned = HostProfile(
-            id = "h8",
-            name = "Tuned",
-            host = "tuned.example.com",
-            username = "root",
-            socksPassword = "socks-secret",
-            compression = true,
-            terminalType = "screen-256color",
-            // Both of these are free text the user typed, and both have an obvious way to end up
-            // holding a credential: a startup command that logs into something else, an environment
-            // carrying an API token. So neither may be printed, however useful it would be.
-            startupCommand = "vault login token=startup-secret",
-            environment = "API_TOKEN=environment-secret",
-            hostKeyPolicy = HostKeyPolicy.ACCEPT_NEW,
-        )
+        val tuned =
+            HostProfile(
+                id = "h8",
+                name = "Tuned",
+                host = "tuned.example.com",
+                username = "root",
+                socksPassword = "socks-secret",
+                compression = true,
+                terminalType = "screen-256color",
+                // Both of these are free text the user typed, and both have an obvious way to end up
+                // holding a credential: a startup command that logs into something else, an environment
+                // carrying an API token. So neither may be printed, however useful it would be.
+                startupCommand = "vault login token=startup-secret",
+                environment = "API_TOKEN=environment-secret",
+                hostKeyPolicy = HostKeyPolicy.ACCEPT_NEW,
+            )
 
         val rendered = tuned.toString()
 

@@ -1,16 +1,16 @@
 package dev.eclipse.ssh.linux
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Files
 import java.util.zip.GZIPOutputStream
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -56,8 +56,9 @@ import kotlin.coroutines.coroutineContext
  * @param root the tree the archive is rooted at: the installed rootfs on the way out, the staging
  *   directory on the way in
  */
-internal class RootfsArchive(private val root: File) {
-
+internal class RootfsArchive(
+    private val root: File,
+) {
     /**
      * One progress reading: [bytes] of [total] moved, after [entries] archive members.
      *
@@ -65,13 +66,21 @@ internal class RootfsArchive(private val root: File) {
      * archive's length — and the reader is then expected to draw an indeterminate bar rather than
      * one at zero, the same rule the transfer rows follow everywhere else.
      */
-    data class Progress(val entries: Int, val bytes: Long, val total: Long)
+    data class Progress(
+        val entries: Int,
+        val bytes: Long,
+        val total: Long,
+    )
 
     /**
      * What one pass did: how many members it wrote or read, how many bytes of real file content
      * they were, and the entries it could not carry over.
      */
-    data class Report(val entries: Int, val bytes: Long, val warnings: List<String>)
+    data class Report(
+        val entries: Int,
+        val bytes: Long,
+        val warnings: List<String>,
+    )
 
     /**
      * Writes the tree out as a gzipped tar. Streaming throughout: a userspace is hundreds of
@@ -83,59 +92,60 @@ internal class RootfsArchive(private val root: File) {
     suspend fun export(
         output: OutputStream,
         onProgress: (Progress) -> Unit = {},
-    ): Report = withContext(Dispatchers.IO) {
-        if (!root.isDirectory) {
-            throw IOException("there is no root filesystem at $root to export")
-        }
-        val plan = planExport()
-        val total = plan.items.sumOf { it.bytes }
-        var entries = 0
-        var written = 0L
-        var reported = 0L
-        GZIPOutputStream(output, COPY_BUFFER).use { gzip ->
-            TarArchiveOutputStream(gzip, COPY_BUFFER).use { tar ->
-                // POSIX long names, like the workspace snapshot: a rootfs is deeper than 100
-                // characters in places, and GNU's `./PaxHeaders` noise is what the alternative
-                // writes into an archive a user may open on a desktop.
-                tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
-                tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
-                for (item in plan.items) {
-                    coroutineContext.ensureActive()
-                    // The one thing an archive cannot represent here. A fifo read would block until
-                    // a writer appeared — inside an export, on a device where no writer ever will —
-                    // and a device node needs privileges Android does not grant. Skipped and named:
-                    // a gap nobody hears about is a userspace that is subtly not the one that was
-                    // backed up.
-                    if (item.kind == Kind.SKIPPED) continue
-                    tar.putArchiveEntry(item.entry())
-                    if (item.kind == Kind.FILE) {
-                        item.file.inputStream().use { input ->
-                            val buffer = ByteArray(COPY_BUFFER)
-                            while (true) {
-                                coroutineContext.ensureActive()
-                                val read = input.read(buffer)
-                                if (read < 0) break
-                                tar.write(buffer, 0, read)
-                                written += read
-                                if (written - reported >= REPORT_EVERY_BYTES) {
-                                    reported = written
-                                    onProgress(Progress(entries, written, total))
+    ): Report =
+        withContext(Dispatchers.IO) {
+            if (!root.isDirectory) {
+                throw IOException("there is no root filesystem at $root to export")
+            }
+            val plan = planExport()
+            val total = plan.items.sumOf { it.bytes }
+            var entries = 0
+            var written = 0L
+            var reported = 0L
+            GZIPOutputStream(output, COPY_BUFFER).use { gzip ->
+                TarArchiveOutputStream(gzip, COPY_BUFFER).use { tar ->
+                    // POSIX long names, like the workspace snapshot: a rootfs is deeper than 100
+                    // characters in places, and GNU's `./PaxHeaders` noise is what the alternative
+                    // writes into an archive a user may open on a desktop.
+                    tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX)
+                    tar.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
+                    for (item in plan.items) {
+                        coroutineContext.ensureActive()
+                        // The one thing an archive cannot represent here. A fifo read would block until
+                        // a writer appeared — inside an export, on a device where no writer ever will —
+                        // and a device node needs privileges Android does not grant. Skipped and named:
+                        // a gap nobody hears about is a userspace that is subtly not the one that was
+                        // backed up.
+                        if (item.kind == Kind.SKIPPED) continue
+                        tar.putArchiveEntry(item.entry())
+                        if (item.kind == Kind.FILE) {
+                            item.file.inputStream().use { input ->
+                                val buffer = ByteArray(COPY_BUFFER)
+                                while (true) {
+                                    coroutineContext.ensureActive()
+                                    val read = input.read(buffer)
+                                    if (read < 0) break
+                                    tar.write(buffer, 0, read)
+                                    written += read
+                                    if (written - reported >= REPORT_EVERY_BYTES) {
+                                        reported = written
+                                        onProgress(Progress(entries, written, total))
+                                    }
                                 }
                             }
+                        } else {
+                            written += item.bytes
                         }
-                    } else {
-                        written += item.bytes
+                        tar.closeArchiveEntry()
+                        entries++
                     }
-                    tar.closeArchiveEntry()
-                    entries++
                 }
             }
+            // The last reading is the end by definition rather than by the counter, which no longer
+            // moves once the last entry is written.
+            onProgress(Progress(entries, total, total))
+            Report(entries, total, plan.skipped.map { "$it cannot be stored in an archive" })
         }
-        // The last reading is the end by definition rather than by the counter, which no longer
-        // moves once the last entry is written.
-        onProgress(Progress(entries, total, total))
-        Report(entries, total, plan.skipped.map { "$it cannot be stored in an archive" })
-    }
 
     /**
      * Unpacks [source] into [root], which must be a directory the caller has already emptied and
@@ -160,92 +170,97 @@ internal class RootfsArchive(private val root: File) {
         budgetBytes: Long,
         sourceBytes: Long = 0L,
         onProgress: (Progress) -> Unit = {},
-    ): Report = withContext(Dispatchers.IO) {
-        deleteTreeNoFollow(root)
-        root.mkdirs()
-        val warnings = mutableListOf<String>()
-        var entries = 0
-        var written = 0L
-        var consumed = 0L
-        var sawUserspace = false
-        // Through the shared gzip-aware opener: an export is a `.tar.gz`, and a raw
-        // TarArchiveInputStream would read one as an empty archive — after which every check below
-        // would pass on a tree of nothing.
-        openTarStream(counting(source) { consumed = it }, COPY_BUFFER).use { tar ->
-            while (true) {
-                val entry = tar.nextTarEntry ?: break
-                val name = entry.name.removePrefix("./")
-                val target = resolveInsideRoot(root, entry.name)
-                // 0 is LF_OLDNORM - NUL is the pre-POSIX encoding of "regular file" and real
-                // tarballs (Ubuntu Base included) still emit it for early entries.
-                when (entry.linkFlag) {
-                    TarArchiveEntry.LF_DIR -> target.mkdirs()
-                    TarArchiveEntry.LF_SYMLINK -> {
-                        target.parentFile?.mkdirs()
-                        // Where a link points must stay inside the staging root too: a symlink
-                        // pointing out is an escape hatch no entry-name check would catch, because
-                        // nothing here writes through it.
-                        resolveLinkInsideRoot(root, entry.name, entry.linkName)
-                        target.delete()
-                        deleteTreeNoFollow(target)
-                        Files.createSymbolicLink(target.toPath(), java.nio.file.Path.of(entry.linkName))
-                    }
-                    TarArchiveEntry.LF_LINK -> {
-                        target.parentFile?.mkdirs()
-                        val linkTarget = resolveInsideRoot(root, entry.linkName)
-                        // The portable equivalent of a hard link, and the same one the installer
-                        // makes. A forward link — one whose target arrives later in the archive —
-                        // is skipped and named rather than silently dropped: it is a file that is
-                        // absent from the imported userspace, and the warning is what turns a later
-                        // "command not found" into a sentence about the archive.
-                        if (linkTarget.isFile) {
-                            linkTarget.copyTo(target, overwrite = true)
+    ): Report =
+        withContext(Dispatchers.IO) {
+            deleteTreeNoFollow(root)
+            root.mkdirs()
+            val warnings = mutableListOf<String>()
+            var entries = 0
+            var written = 0L
+            var consumed = 0L
+            var sawUserspace = false
+            // Through the shared gzip-aware opener: an export is a `.tar.gz`, and a raw
+            // TarArchiveInputStream would read one as an empty archive — after which every check below
+            // would pass on a tree of nothing.
+            openTarStream(counting(source) { consumed = it }, COPY_BUFFER).use { tar ->
+                while (true) {
+                    val entry = tar.nextTarEntry ?: break
+                    val name = entry.name.removePrefix("./")
+                    val target = resolveInsideRoot(root, entry.name)
+                    // 0 is LF_OLDNORM - NUL is the pre-POSIX encoding of "regular file" and real
+                    // tarballs (Ubuntu Base included) still emit it for early entries.
+                    when (entry.linkFlag) {
+                        TarArchiveEntry.LF_DIR -> target.mkdirs()
+                        TarArchiveEntry.LF_SYMLINK -> {
+                            target.parentFile?.mkdirs()
+                            // Where a link points must stay inside the staging root too: a symlink
+                            // pointing out is an escape hatch no entry-name check would catch, because
+                            // nothing here writes through it.
+                            resolveLinkInsideRoot(root, entry.name, entry.linkName)
+                            target.delete()
+                            deleteTreeNoFollow(target)
+                            Files.createSymbolicLink(
+                                target.toPath(),
+                                java.nio.file.Path
+                                    .of(entry.linkName),
+                            )
+                        }
+                        TarArchiveEntry.LF_LINK -> {
+                            target.parentFile?.mkdirs()
+                            val linkTarget = resolveInsideRoot(root, entry.linkName)
+                            // The portable equivalent of a hard link, and the same one the installer
+                            // makes. A forward link — one whose target arrives later in the archive —
+                            // is skipped and named rather than silently dropped: it is a file that is
+                            // absent from the imported userspace, and the warning is what turns a later
+                            // "command not found" into a sentence about the archive.
+                            if (linkTarget.isFile) {
+                                linkTarget.copyTo(target, overwrite = true)
+                                written += target.length()
+                            } else {
+                                warnings += "hardlink $name skipped: its target ${entry.linkName} was not in the archive yet"
+                            }
+                        }
+                        TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
+                            target.parentFile?.mkdirs()
+                            target.outputStream().use { out -> tar.copyTo(out, COPY_BUFFER) }
+                            applyMode(target, entry.mode)
                             written += target.length()
-                        } else {
-                            warnings += "hardlink $name skipped: its target ${entry.linkName} was not in the archive yet"
+                        }
+                        else -> {
+                            // Device nodes, fifos and sockets: proot binds the device's own /dev, so a
+                            // userspace does not need them, and creating one would need privileges the
+                            // app does not have anyway.
                         }
                     }
-                    TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
-                        target.parentFile?.mkdirs()
-                        target.outputStream().use { out -> tar.copyTo(out, COPY_BUFFER) }
-                        applyMode(target, entry.mode)
-                        written += target.length()
+                    if (name.removeSuffix("/") in ROOTFS_MARKERS) sawUserspace = true
+                    // The expansion budget, the same shape the pinned install enforces: the archive's
+                    // own size times a multiple is what a real userspace unpacks to, and a gzip bomb
+                    // that would fill the device dies here with a staging tree the caller can reclaim.
+                    if (written > budgetBytes) {
+                        throw IOException(
+                            "the archive expands beyond the expected size (${written / MIB} MB unpacked " +
+                                "from a ${sourceBytes / MIB} MB file) - refusing to continue",
+                        )
                     }
-                    else -> {
-                        // Device nodes, fifos and sockets: proot binds the device's own /dev, so a
-                        // userspace does not need them, and creating one would need privileges the
-                        // app does not have anyway.
+                    entries++
+                    if (entries % PROGRESS_EVERY_ENTRIES == 0) {
+                        coroutineContext.ensureActive()
+                        onProgress(Progress(entries, consumed, sourceBytes))
                     }
-                }
-                if (name.removeSuffix("/") in ROOTFS_MARKERS) sawUserspace = true
-                // The expansion budget, the same shape the pinned install enforces: the archive's
-                // own size times a multiple is what a real userspace unpacks to, and a gzip bomb
-                // that would fill the device dies here with a staging tree the caller can reclaim.
-                if (written > budgetBytes) {
-                    throw IOException(
-                        "the archive expands beyond the expected size (${written / MIB} MB unpacked " +
-                            "from a ${sourceBytes / MIB} MB file) - refusing to continue",
-                    )
-                }
-                entries++
-                if (entries % PROGRESS_EVERY_ENTRIES == 0) {
-                    coroutineContext.ensureActive()
-                    onProgress(Progress(entries, consumed, sourceBytes))
                 }
             }
+            if (!sawUserspace) {
+                throw IOException(
+                    "this archive is not a Linux userspace: it carries none of " +
+                        ROOTFS_MARKERS.joinToString(", "),
+                )
+            }
+            // 1 by definition, not by the counter: the byte counter reads through a gzip stream that
+            // stops at the end-of-archive padding, so the last honest reading sits a little short of the
+            // total it has, in fact, reached.
+            onProgress(Progress(entries, sourceBytes, sourceBytes))
+            Report(entries, written, warnings)
         }
-        if (!sawUserspace) {
-            throw IOException(
-                "this archive is not a Linux userspace: it carries none of " +
-                    ROOTFS_MARKERS.joinToString(", "),
-            )
-        }
-        // 1 by definition, not by the counter: the byte counter reads through a gzip stream that
-        // stops at the end-of-archive padding, so the last honest reading sits a little short of the
-        // total it has, in fact, reached.
-        onProgress(Progress(entries, sourceBytes, sourceBytes))
-        Report(entries, written, warnings)
-    }
 
     /**
      * Why the extracted tree is not a userspace this app may adopt, as sentences naming the path —
@@ -263,16 +278,19 @@ internal class RootfsArchive(private val root: File) {
      * userspace is not a mistake this check is entitled to refuse.
      */
     fun verify(distro: LinuxDistro): List<String> {
-        val findings = RootfsValidator(expectedArch = distro.ubuntuArch)
-            .validate(root)
-            .mapTo(mutableListOf()) { finding -> "${finding.path} ${finding.problem}" }
+        val findings =
+            RootfsValidator(expectedArch = distro.ubuntuArch)
+                .validate(root)
+                .mapTo(mutableListOf()) { finding -> "${finding.path} ${finding.problem}" }
         val release = readOsRelease(root)
         val id = release["ID"]
         if (id != null && id.isNotBlank() && !id.equals(UBUNTU_ID, ignoreCase = true)) {
             findings += "the archive holds a \"$id\" system, and this app installs Ubuntu"
         }
         val codename = release["UBUNTU_CODENAME"] ?: release["VERSION_CODENAME"]
-        if (codename != null && codename.isNotBlank() && distro.release.isNotBlank() &&
+        if (codename != null &&
+            codename.isNotBlank() &&
+            distro.release.isNotBlank() &&
             !codename.equals(distro.release, ignoreCase = true)
         ) {
             findings +=
@@ -311,7 +329,10 @@ internal class RootfsArchive(private val root: File) {
     private enum class Kind { DIRECTORY, SYMLINK, FILE, SKIPPED }
 
     /** The members to write, in the order they go out, plus the ones that cannot be written. */
-    private class Plan(val items: List<Item>, val skipped: List<String>)
+    private class Plan(
+        val items: List<Item>,
+        val skipped: List<String>,
+    )
 
     /**
      * The export plan: one entry per member, the three borrow directories as empty mount points,
@@ -331,21 +352,23 @@ internal class RootfsArchive(private val root: File) {
         walkTreeNoFollow(root).forEach { file ->
             val name = file.relativeTo(root).path
             if (name.split('/').first() in RootfsPaths.HIDDEN) return@forEach
-            val linkTarget = runCatching {
-                if (Files.isSymbolicLink(file.toPath())) {
-                    // The target as the link stores it, never a resolved path: a relative link must
-                    // stay relative, so a restore lands in the same shape it was archived in.
-                    Files.readSymbolicLink(file.toPath()).toString()
-                } else {
-                    null
+            val linkTarget =
+                runCatching {
+                    if (Files.isSymbolicLink(file.toPath())) {
+                        // The target as the link stores it, never a resolved path: a relative link must
+                        // stay relative, so a restore lands in the same shape it was archived in.
+                        Files.readSymbolicLink(file.toPath()).toString()
+                    } else {
+                        null
+                    }
+                }.getOrNull()
+            val kind =
+                when {
+                    linkTarget != null -> Kind.SYMLINK
+                    file.isDirectoryNoFollow() -> Kind.DIRECTORY
+                    file.isRegularFileNoFollow() -> Kind.FILE
+                    else -> Kind.SKIPPED
                 }
-            }.getOrNull()
-            val kind = when {
-                linkTarget != null -> Kind.SYMLINK
-                file.isDirectoryNoFollow() -> Kind.DIRECTORY
-                file.isRegularFileNoFollow() -> Kind.FILE
-                else -> Kind.SKIPPED
-            }
             if (kind == Kind.SKIPPED) skipped += name
             items += Item(file, name, kind, if (kind == Kind.FILE) file.length() else 0L, linkTarget)
         }
@@ -358,7 +381,10 @@ internal class RootfsArchive(private val root: File) {
      * file in the tree has the same owner, and `setExecutable(false, false)` on a directory would
      * break traversal into it.
      */
-    private fun applyMode(target: File, mode: Int) {
+    private fun applyMode(
+        target: File,
+        mode: Int,
+    ) {
         if (target.isDirectory) return
         target.setExecutable((mode and EXEC_BITS) != 0, true)
         target.setReadable(true, true)
@@ -430,7 +456,11 @@ private class CountingStream(
         return value
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         val count = delegate.read(buffer, offset, length)
         if (count > 0) report(count.toLong())
         return count
@@ -447,4 +477,7 @@ private class CountingStream(
 }
 
 /** [source] with its reads counted; see [CountingStream]. */
-private fun counting(source: InputStream, onBytesRead: (Long) -> Unit): InputStream = CountingStream(source, onBytesRead)
+private fun counting(
+    source: InputStream,
+    onBytesRead: (Long) -> Unit,
+): InputStream = CountingStream(source, onBytesRead)

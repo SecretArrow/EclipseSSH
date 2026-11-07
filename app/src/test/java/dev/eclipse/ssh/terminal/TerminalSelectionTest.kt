@@ -13,7 +13,6 @@ import org.junit.Test
  * pasted it somewhere.
  */
 class TerminalSelectionTest {
-
     @Test
     fun `a fresh selection covers exactly one cell`() {
         val selection = TerminalSelection.at(line = 5, column = 3)
@@ -145,17 +144,18 @@ class TerminalSelectionTest {
 
     @Test
     fun `wordAt selects the things people actually copy out of a terminal`() {
-        val cases = mapOf(
-            "user@host.example.com" to "user@host.example.com",
-            "process-name_v2" to "process-name_v2",
-            "~/.ssh/id_ed25519" to "~/.ssh/id_ed25519",
-            "sha256:9f86d081" to "sha256:9f86d081",
-            "100%" to "100%",
-            "a+b" to "a+b",
-            "\$HOME" to "\$HOME",
-            "PATH=/bin" to "PATH=/bin",
-            "issue#42" to "issue#42",
-        )
+        val cases =
+            mapOf(
+                "user@host.example.com" to "user@host.example.com",
+                "process-name_v2" to "process-name_v2",
+                "~/.ssh/id_ed25519" to "~/.ssh/id_ed25519",
+                "sha256:9f86d081" to "sha256:9f86d081",
+                "100%" to "100%",
+                "a+b" to "a+b",
+                "\$HOME" to "\$HOME",
+                "PATH=/bin" to "PATH=/bin",
+                "issue#42" to "issue#42",
+            )
         cases.forEach { (text, expected) ->
             val selection = TerminalSelection.wordAt(0, text.length / 2, text)
             assertThat(selection).isNotNull()

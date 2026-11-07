@@ -14,7 +14,6 @@ import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.ui.settings.KnownHostsActivity
 import dev.eclipse.ssh.ui.settings.PinLockActivity
 import dev.eclipse.ssh.ui.settings.SavedCredentialsActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +21,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The three Security rows that open a window of their own: PIN lock, Known hosts and Saved
@@ -42,7 +42,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SettingsSecurityRowsRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -103,7 +102,11 @@ class SettingsSecurityRowsRobolectricTest {
      * unscrollable body the Activities replaced — so the dialog count is what says the row really went
      * to a window.
      */
-    private fun assertRowOpens(activity: Class<out Activity>, row: String, tap: () -> Unit) {
+    private fun assertRowOpens(
+        activity: Class<out Activity>,
+        row: String,
+        tap: () -> Unit,
+    ) {
         // Drain whatever startup queued, so the peek below only ever reports this click's doing —
         // peeking does not consume, so a stale intent would mask the row's.
         while (runCatching { shadowOf(compose.activity.application).nextStartedActivity }.getOrNull() != null) Unit
@@ -116,9 +119,11 @@ class SettingsSecurityRowsRobolectricTest {
         }
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("$row did not open ${activity.simpleName} in a window of its own")
-            .that(intent?.component?.className).isEqualTo(activity.name)
+            .that(intent?.component?.className)
+            .isEqualTo(activity.name)
         assertWithMessage("$row still opened as a dialog over Settings")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 
     /**
@@ -173,7 +178,11 @@ class SettingsSecurityRowsRobolectricTest {
      * `idle` so real `delay`s in the DataStore flows come due. Nothing here may go through
      * `waitForIdle` while a dialog could be up, because a Compose `AlertDialog` never settles it.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()

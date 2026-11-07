@@ -12,7 +12,6 @@ import org.junit.Test
  * to `bash` after `vim` crashed reads every drag as a burst of escape sequences typed at the prompt.
  */
 class TerminalMouseModesTest {
-
     @Test
     fun `a session that has been asked for nothing reports no mouse`() {
         val buffer = session()
@@ -23,12 +22,13 @@ class TerminalMouseModesTest {
 
     @Test
     fun `each tracking mode is reported as itself`() {
-        val cases = mapOf(
-            MouseModes.X10 to MouseMode.X10,
-            MouseModes.NORMAL to MouseMode.NORMAL,
-            MouseModes.BUTTON to MouseMode.BUTTON,
-            MouseModes.ANY to MouseMode.ANY,
-        )
+        val cases =
+            mapOf(
+                MouseModes.X10 to MouseMode.X10,
+                MouseModes.NORMAL to MouseMode.NORMAL,
+                MouseModes.BUTTON to MouseMode.BUTTON,
+                MouseModes.ANY to MouseMode.ANY,
+            )
 
         for ((mode, expected) in cases) {
             val buffer = session()
@@ -129,6 +129,8 @@ class TerminalMouseModesTest {
         assertThat(frame.mouseSgr).isFalse()
     }
 
-    private fun session(columns: Int = 80, rows: Int = 24): AnsiTerminalBuffer =
-        AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 200)
+    private fun session(
+        columns: Int = 80,
+        rows: Int = 24,
+    ): AnsiTerminalBuffer = AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 200)
 }

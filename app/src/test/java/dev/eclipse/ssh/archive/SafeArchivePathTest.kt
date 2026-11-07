@@ -13,7 +13,6 @@ import org.junit.Test
  * relaxation has to argue with the specific case, not with a blob of "weird names".
  */
 class SafeArchivePathTest {
-
     @Test
     fun `an ordinary relative path passes through unchanged`() {
         assertThat(SafeArchivePath.safeDestinationName("app/src/main.js")).isEqualTo("app/src/main.js")
@@ -84,25 +83,44 @@ class SafeArchivePathTest {
  * case-insensitive and capped, and a folder's subtree is exactly the extract set.
  */
 class ArchiveTreeTest {
-
-    private fun file(path: String, size: Long = 10L) = ArchiveEntry(
-        path = path, isDirectory = false, size = size, compressedSize = size / 2,
-        modifiedEpochMillis = 1_000L, method = 8, dataOffset = 123L, encrypted = false,
+    private fun file(
+        path: String,
+        size: Long = 10L,
+    ) = ArchiveEntry(
+        path = path,
+        isDirectory = false,
+        size = size,
+        compressedSize = size / 2,
+        modifiedEpochMillis = 1_000L,
+        method = 8,
+        dataOffset = 123L,
+        encrypted = false,
     )
 
-    private fun dir(path: String) = ArchiveEntry(
-        path = path, isDirectory = true, size = 0L, compressedSize = null,
-        modifiedEpochMillis = null, method = null, dataOffset = null, encrypted = false,
-    )
+    private fun dir(path: String) =
+        ArchiveEntry(
+            path = path,
+            isDirectory = true,
+            size = 0L,
+            compressedSize = null,
+            modifiedEpochMillis = null,
+            method = null,
+            dataOffset = null,
+            encrypted = false,
+        )
 
-    private val tree = ArchiveTree(
-        listOf(
-            file("package.json"), file("README.md"),
-            dir("src/"), file("src/main.js"), file("src/util/helper.js"),
-            // "docs/guide/intro.md" implies both "docs" and "docs/guide" with no dir entries.
-            file("docs/guide/intro.md"),
-        ),
-    )
+    private val tree =
+        ArchiveTree(
+            listOf(
+                file("package.json"),
+                file("README.md"),
+                dir("src/"),
+                file("src/main.js"),
+                file("src/util/helper.js"),
+                // "docs/guide/intro.md" implies both "docs" and "docs/guide" with no dir entries.
+                file("docs/guide/intro.md"),
+            ),
+        )
 
     @Test
     fun `root children list real and implied folders first, files after`() {

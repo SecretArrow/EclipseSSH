@@ -17,7 +17,6 @@ import org.junit.Test
  * without costing the host its load.
  */
 class RemoteDesktopConfigTest {
-
     @Test
     fun `a VNC target round trips through its line`() {
         val target = RemoteDesktopTarget(port = 5900)
@@ -58,14 +57,15 @@ class RemoteDesktopConfigTest {
         // The shapes a hand-edited file can hold. A port that is no port, a kind this codec does
         // not speak, an empty line, a flag that is not the one flag there is: every one of them
         // falls out, and the host keeps whatever valid line it also had.
-        val text = listOf(
-            "V:not-a-port",
-            "V:",
-            "X:5900",
-            "V:5900 unexpected-flag",
-            "",
-            "V:5900",
-        ).joinToString("\n")
+        val text =
+            listOf(
+                "V:not-a-port",
+                "V:",
+                "X:5900",
+                "V:5900 unexpected-flag",
+                "",
+                "V:5900",
+            ).joinToString("\n")
 
         val decoded = decodeRemoteDesktop(text)
         assertThat(decoded.vnc).isEqualTo(RemoteDesktopTarget(port = 5900))

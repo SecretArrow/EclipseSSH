@@ -18,7 +18,6 @@ import org.junit.Test
  * what the terminal actually needs.
  */
 class ForegroundTypePolicyTest {
-
     @Test
     fun `live sessions on a fresh budget use the type that matches the work`() {
         assertThat(foregroundNeed(budgetExhausted = false, liveSessions = 1, transferInFlight = false))

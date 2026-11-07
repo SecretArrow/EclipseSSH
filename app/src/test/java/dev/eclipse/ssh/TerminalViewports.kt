@@ -11,5 +11,7 @@ import dev.eclipse.ssh.terminal.TerminalViewport
  * app-wide height setting is a floor above the screen, which is what [TerminalViewport] documents and
  * what the geometry tests cover.
  */
-internal fun screenViewport(columns: Int, rows: Int): TerminalViewport =
-    TerminalViewport(columns = columns, ptyRows = rows, bufferRows = rows, visibleRows = rows)
+internal fun screenViewport(
+    columns: Int,
+    rows: Int,
+): TerminalViewport = TerminalViewport(columns = columns, ptyRows = rows, bufferRows = rows, visibleRows = rows)

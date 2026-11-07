@@ -1,8 +1,8 @@
 package dev.eclipse.ssh.feature.bandwidth
 
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 /**
  * A token-bucket rate limiter for SFTP transfers.
@@ -103,7 +103,7 @@ class RateLimiter(
     }
 
     companion object {
-        const val DEFAULT_BUCKET: Long = 256 * 1024  // 256 KiB burst
+        const val DEFAULT_BUCKET: Long = 256 * 1024 // 256 KiB burst
         private const val POLL_INTERVAL_MS: Long = 100
 
         /**

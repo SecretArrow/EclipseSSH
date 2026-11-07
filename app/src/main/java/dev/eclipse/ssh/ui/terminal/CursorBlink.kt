@@ -7,5 +7,8 @@ package dev.eclipse.ssh.ui.terminal
  * `TerminalScroll.kt` exists - the decision is a rule and the loop around it is Compose. All eight
  * combinations have a case in `CursorBlinkTest`.
  */
-internal fun cursorBlinks(cursorVisible: Boolean, blinkMode: Boolean, focused: Boolean): Boolean =
-    cursorVisible && blinkMode && focused
+internal fun cursorBlinks(
+    cursorVisible: Boolean,
+    blinkMode: Boolean,
+    focused: Boolean,
+): Boolean = cursorVisible && blinkMode && focused

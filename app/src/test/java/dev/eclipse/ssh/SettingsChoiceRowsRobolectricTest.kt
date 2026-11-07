@@ -18,7 +18,6 @@ import dev.eclipse.ssh.ui.settings.TerminalFontSizeActivity
 import dev.eclipse.ssh.ui.settings.TerminalHeightActivity
 import dev.eclipse.ssh.ui.settings.TerminalWidthActivity
 import dev.eclipse.ssh.ui.settings.VaultAutoLockActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The six Settings rows that open a window of their own, and where each one leads.
@@ -44,7 +44,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SettingsChoiceRowsRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -66,7 +65,11 @@ class SettingsChoiceRowsRobolectricTest {
      * Not `compose.waitUntil`, which reports only "Condition still not satisfied"; `idleFor` rather than
      * `idle` so real `delay`s in the Room and DataStore flows come due.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -124,7 +127,10 @@ class SettingsChoiceRowsRobolectricTest {
      * because a regression that went back to `AlertDialog` would keep the first assertion true-looking
      * enough to be missed while restoring the letterboxed, unscrollable body the promotion removed.
      */
-    private fun assertRowOpens(title: String, destination: Class<out Activity>) {
+    private fun assertRowOpens(
+        title: String,
+        destination: Class<out Activity>,
+    ) {
         openSettings()
 
         // Drain whatever startup queued, so the peek below only ever reports this click's doing —
@@ -139,9 +145,11 @@ class SettingsChoiceRowsRobolectricTest {
         }
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("the \"$title\" row did not open ${destination.simpleName}")
-            .that(intent?.component?.className).isEqualTo(destination.name)
+            .that(intent?.component?.className)
+            .isEqualTo(destination.name)
         assertWithMessage("\"$title\" still opened as a dialog over Settings")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 
     /**

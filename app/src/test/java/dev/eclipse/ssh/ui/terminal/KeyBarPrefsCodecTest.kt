@@ -19,7 +19,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class KeyBarPrefsCodecTest {
-
     @Test
     fun `a default configuration renders the bar the app has always shipped`() {
         val prefs = KeyBarPrefsCodec.decode("{}")
@@ -27,26 +26,42 @@ class KeyBarPrefsCodecTest {
         val row = prefs.rowsForLayout().single()
         // The compatibility contract: an install that never opens the settings screen keeps the
         // exact bar it had before the bar became configurable.
-        assertThat(row.map { it.id }).containsExactly(
-            "CTRL", "ALT", "SHIFT",
-            "ESCAPE", "TAB", "ARROW_LEFT", "ARROW_DOWN", "ARROW_UP", "ARROW_RIGHT",
-            "HOME", "END", "PAGE_UP", "PAGE_DOWN", "DELETE", "BACKSPACE", "ENTER",
-        ).inOrder()
+        assertThat(row.map { it.id })
+            .containsExactly(
+                "CTRL",
+                "ALT",
+                "SHIFT",
+                "ESCAPE",
+                "TAB",
+                "ARROW_LEFT",
+                "ARROW_DOWN",
+                "ARROW_UP",
+                "ARROW_RIGHT",
+                "HOME",
+                "END",
+                "PAGE_UP",
+                "PAGE_DOWN",
+                "DELETE",
+                "BACKSPACE",
+                "ENTER",
+            ).inOrder()
         assertThat(row.all { it.visible }).isTrue()
     }
 
     @Test
     fun `encode then decode round trips every field`() {
-        val prefs = KeyBarPrefs(
-            mode = KeyBarLayoutMode.CUSTOM,
-            size = KeyBarSize.LARGE,
-            rows = 3,
-            caps = listOf(
-                KeyBarCap("CTRL", KeyBarCapKind.LATCH, row = 0, order = 0),
-                KeyBarCap("F5", KeyBarCapKind.KEY, row = 2, order = 1, visible = false, label = "f5"),
-                KeyBarCap("c1", KeyBarCapKind.TEXT, row = 2, order = 0, text = "../", label = "up"),
-            ),
-        )
+        val prefs =
+            KeyBarPrefs(
+                mode = KeyBarLayoutMode.CUSTOM,
+                size = KeyBarSize.LARGE,
+                rows = 3,
+                caps =
+                    listOf(
+                        KeyBarCap("CTRL", KeyBarCapKind.LATCH, row = 0, order = 0),
+                        KeyBarCap("F5", KeyBarCapKind.KEY, row = 2, order = 1, visible = false, label = "f5"),
+                        KeyBarCap("c1", KeyBarCapKind.TEXT, row = 2, order = 0, text = "../", label = "up"),
+                    ),
+            )
 
         val decoded = KeyBarPrefsCodec.decode(KeyBarPrefsCodec.encode(prefs))
 
@@ -119,9 +134,10 @@ class KeyBarPrefsCodecTest {
 
     @Test
     fun `custom caps beyond the limit are dropped`() {
-        val manyCaps = (1..(KeyBarPrefsCodec.MAX_CUSTOM_CAPS + 5)).joinToString(",") {
-            """{"id":"c$it","kind":"TEXT","text":"x"}"""
-        }
+        val manyCaps =
+            (1..(KeyBarPrefsCodec.MAX_CUSTOM_CAPS + 5)).joinToString(",") {
+                """{"id":"c$it","kind":"TEXT","text":"x"}"""
+            }
 
         val prefs = KeyBarPrefsCodec.decode("""{"caps":[$manyCaps]}""")
 
@@ -143,16 +159,18 @@ class KeyBarPrefsCodecTest {
 
     @Test
     fun `DOUBLE mode halves the visible caps in reading order`() {
-        val prefs = KeyBarPrefs(
-            mode = KeyBarLayoutMode.DOUBLE,
-            caps = listOf(
-                KeyBarCap("CTRL", KeyBarCapKind.LATCH, order = 0),
-                KeyBarCap("ALT", KeyBarCapKind.LATCH, order = 1),
-                KeyBarCap("F1", KeyBarCapKind.KEY, order = 2),
-                KeyBarCap("F2", KeyBarCapKind.KEY, order = 3, visible = false),
-                KeyBarCap("F3", KeyBarCapKind.KEY, order = 4),
-            ),
-        )
+        val prefs =
+            KeyBarPrefs(
+                mode = KeyBarLayoutMode.DOUBLE,
+                caps =
+                    listOf(
+                        KeyBarCap("CTRL", KeyBarCapKind.LATCH, order = 0),
+                        KeyBarCap("ALT", KeyBarCapKind.LATCH, order = 1),
+                        KeyBarCap("F1", KeyBarCapKind.KEY, order = 2),
+                        KeyBarCap("F2", KeyBarCapKind.KEY, order = 3, visible = false),
+                        KeyBarCap("F3", KeyBarCapKind.KEY, order = 4),
+                    ),
+            )
 
         val rows = prefs.rowsForLayout()
 
@@ -164,16 +182,18 @@ class KeyBarPrefsCodecTest {
 
     @Test
     fun `CUSTOM mode draws the stored rows literally`() {
-        val prefs = KeyBarPrefs(
-            mode = KeyBarLayoutMode.CUSTOM,
-            rows = 3,
-            caps = listOf(
-                KeyBarCap("CTRL", KeyBarCapKind.LATCH, row = 0, order = 0),
-                KeyBarCap("c1", KeyBarCapKind.TEXT, row = 2, order = 0, text = "/"),
-                KeyBarCap("F4", KeyBarCapKind.KEY, row = 1, order = 0),
-                KeyBarCap("F5", KeyBarCapKind.KEY, row = 1, order = 1),
-            ),
-        )
+        val prefs =
+            KeyBarPrefs(
+                mode = KeyBarLayoutMode.CUSTOM,
+                rows = 3,
+                caps =
+                    listOf(
+                        KeyBarCap("CTRL", KeyBarCapKind.LATCH, row = 0, order = 0),
+                        KeyBarCap("c1", KeyBarCapKind.TEXT, row = 2, order = 0, text = "/"),
+                        KeyBarCap("F4", KeyBarCapKind.KEY, row = 1, order = 0),
+                        KeyBarCap("F5", KeyBarCapKind.KEY, row = 1, order = 1),
+                    ),
+            )
 
         val rows = prefs.rowsForLayout()
 
@@ -186,9 +206,10 @@ class KeyBarPrefsCodecTest {
     @Test
     fun `merging missing standard caps adds them hidden and touches nothing else`() {
         // A configuration from before F12 existed, say: no F-keys at all.
-        val old = KeyBarPrefs(
-            caps = listOf(KeyBarCap("CTRL", KeyBarCapKind.LATCH, order = 0)),
-        )
+        val old =
+            KeyBarPrefs(
+                caps = listOf(KeyBarCap("CTRL", KeyBarCapKind.LATCH, order = 0)),
+            )
 
         val merged = old.withMissingStandardCaps()
 
@@ -203,13 +224,14 @@ class KeyBarPrefsCodecTest {
 
     @Test
     fun `every preset decodes to caps that all exist and encode`() {
-        val presets = mapOf(
-            "basic" to KeyBarPresets.basic(),
-            "terminal" to KeyBarPresets.terminal(),
-            "developer" to KeyBarPresets.developer(),
-            "functionKeys" to KeyBarPresets.functionKeys(),
-            "full" to KeyBarPresets.full(),
-        )
+        val presets =
+            mapOf(
+                "basic" to KeyBarPresets.basic(),
+                "terminal" to KeyBarPresets.terminal(),
+                "developer" to KeyBarPresets.developer(),
+                "functionKeys" to KeyBarPresets.functionKeys(),
+                "full" to KeyBarPresets.full(),
+            )
 
         presets.forEach { (name, preset) ->
             val decoded = KeyBarPrefsCodec.decode(KeyBarPrefsCodec.encode(preset))
@@ -230,9 +252,10 @@ class KeyBarPrefsCodecTest {
 
     @Test
     fun `custom ids never collide across adds and deletes`() {
-        val prefs = KeyBarPrefs(
-            caps = KeyBarCatalog.DEFAULT_CAPS + KeyBarCap("c2", KeyBarCapKind.TEXT, text = "x"),
-        )
+        val prefs =
+            KeyBarPrefs(
+                caps = KeyBarCatalog.DEFAULT_CAPS + KeyBarCap("c2", KeyBarCapKind.TEXT, text = "x"),
+            )
 
         // c1 was never used here, so the next free id is c1, not c3.
         assertThat(prefs.nextCustomId()).isEqualTo("c1")
@@ -243,15 +266,17 @@ class KeyBarPrefsCodecTest {
 
     @Test
     fun `ordering swaps stay within a row and renumber densely`() {
-        val prefs = KeyBarPrefs(
-            mode = KeyBarLayoutMode.CUSTOM,
-            rows = 2,
-            caps = listOf(
-                KeyBarCap("CTRL", KeyBarCapKind.LATCH, row = 0, order = 0),
-                KeyBarCap("ALT", KeyBarCapKind.LATCH, row = 0, order = 1),
-                KeyBarCap("F1", KeyBarCapKind.KEY, row = 1, order = 0),
-            ),
-        )
+        val prefs =
+            KeyBarPrefs(
+                mode = KeyBarLayoutMode.CUSTOM,
+                rows = 2,
+                caps =
+                    listOf(
+                        KeyBarCap("CTRL", KeyBarCapKind.LATCH, row = 0, order = 0),
+                        KeyBarCap("ALT", KeyBarCapKind.LATCH, row = 0, order = 1),
+                        KeyBarCap("F1", KeyBarCapKind.KEY, row = 1, order = 0),
+                    ),
+            )
         val alt = prefs.caps.first { it.id == "ALT" }
 
         val moved = move(prefs, alt, +1)

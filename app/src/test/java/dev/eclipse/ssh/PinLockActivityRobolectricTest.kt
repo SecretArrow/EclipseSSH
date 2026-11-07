@@ -13,13 +13,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.ui.settings.PinLockActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * PIN lock, in its own window.
@@ -43,7 +43,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class PinLockActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<PinLockActivity>()
 
@@ -62,7 +61,11 @@ class PinLockActivityRobolectricTest {
      * Not `compose.waitUntil`, which reports only "Condition still not satisfied"; `idleFor` rather
      * than `idle` so the real work behind the settings read comes due.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -80,7 +83,10 @@ class PinLockActivityRobolectricTest {
      * `hasSetTextAction()` so that a field renamed, added or reordered is a missing node or an
      * ambiguous one — `onNodeWithText` fails on more than one match — instead of a silent mistarget.
      */
-    private fun typeInto(label: String, digits: String) {
+    private fun typeInto(
+        label: String,
+        digits: String,
+    ) {
         compose.onNodeWithText(label).performClick()
         compose.onNodeWithText(label).performTextInput(digits)
         pump()
@@ -125,7 +131,8 @@ class PinLockActivityRobolectricTest {
 
         val named = compose.onAllNodesWithText("PIN lock")
         assertWithMessage("the bar title and the row title are the two nodes reading \"PIN lock\"")
-            .that(named.fetchSemanticsNodes().size).isEqualTo(2)
+            .that(named.fetchSemanticsNodes().size)
+            .isEqualTo(2)
         repeat(named.fetchSemanticsNodes().size) { named[it].assertIsDisplayed() }
 
         // The shell's chrome, which is the other half of "a window, not a dialog": a dialog has no
@@ -134,7 +141,8 @@ class PinLockActivityRobolectricTest {
         compose.onNodeWithText("PIN LOCK").assertIsDisplayed()
 
         compose.onNodeWithText("Not set").assertIsDisplayed()
-        compose.onNodeWithText("The vault has no lock screen at launch, and nothing is asked for")
+        compose
+            .onNodeWithText("The vault has no lock screen at launch, and nothing is asked for")
             .assertIsDisplayed()
 
         compose.onNodeWithText("New PIN (4+ digits)").assertIsDisplayed()
@@ -146,9 +154,11 @@ class PinLockActivityRobolectricTest {
         // the stage this window opened on, said from the other side — the fields above are the stage
         // itself, and these two are the one it is not.
         assertWithMessage("the verify stage composed with no PIN to verify")
-            .that(compose.onAllNodesWithText("Current PIN").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Current PIN").fetchSemanticsNodes())
+            .isEmpty()
         assertWithMessage("the new-PIN stage offered a Cancel with no earlier stage to return to")
-            .that(compose.onAllNodesWithText("Cancel").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("Cancel").fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**
@@ -176,7 +186,8 @@ class PinLockActivityRobolectricTest {
 
         compose.onNodeWithText("PIN must be at least 4 digits").assertIsDisplayed()
         assertWithMessage("a two-digit PIN reached the store")
-            .that(compose.onAllNodesWithText("PIN saved.").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("PIN saved.").fetchSemanticsNodes())
+            .isEmpty()
     }
 
     /**
@@ -198,6 +209,7 @@ class PinLockActivityRobolectricTest {
 
         compose.onNodeWithText("PINs do not match").assertIsDisplayed()
         assertWithMessage("a mismatched confirmation reached the store")
-            .that(compose.onAllNodesWithText("PIN saved.").fetchSemanticsNodes()).isEmpty()
+            .that(compose.onAllNodesWithText("PIN saved.").fetchSemanticsNodes())
+            .isEmpty()
     }
 }

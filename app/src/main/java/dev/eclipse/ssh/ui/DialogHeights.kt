@@ -23,7 +23,10 @@ import androidx.compose.ui.unit.dp
  * windows Compose creates for dialogs and bottom sheets, so the screen is what it reports there
  * too.
  */
-internal fun dialogBodyMaxHeight(screenHeightDp: Float, fraction: Float): Dp = (screenHeightDp * fraction).dp
+internal fun dialogBodyMaxHeight(
+    screenHeightDp: Float,
+    fraction: Float,
+): Dp = (screenHeightDp * fraction).dp
 
 /** [dialogBodyMaxHeight] against the current screen, re-read on configuration change. */
 @Composable

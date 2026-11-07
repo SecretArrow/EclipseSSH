@@ -63,7 +63,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class TransferActionsActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var transferRepository: TransferRepository
@@ -103,7 +102,6 @@ class TransferActionsActivity : ComponentActivity() {
     }
 
     companion object {
-
         /** The id of the transfer this window offers actions for. */
         const val EXTRA_TRANSFER_ID = "dev.eclipse.ssh.transfers.TRANSFER_ID"
 
@@ -113,8 +111,10 @@ class TransferActionsActivity : ComponentActivity() {
          * An id and not the item: the item is live, and a copy of it taken here would be a snapshot
          * of a download's progress that stops moving.
          */
-        fun intent(context: Context, transfer: TransferItem): Intent =
-            Intent(context, TransferActionsActivity::class.java).putExtra(EXTRA_TRANSFER_ID, transfer.id)
+        fun intent(
+            context: Context,
+            transfer: TransferItem,
+        ): Intent = Intent(context, TransferActionsActivity::class.java).putExtra(EXTRA_TRANSFER_ID, transfer.id)
     }
 }
 
@@ -125,13 +125,17 @@ class TransferActionsActivity : ComponentActivity() {
  * sheet was right about the shape. What changed is where it is drawn.
  */
 @Composable
-private fun TransferActions(item: TransferItem, onAction: (TransferActionKind) -> Unit) {
+private fun TransferActions(
+    item: TransferItem,
+    onAction: (TransferActionKind) -> Unit,
+) {
     // The local file exists in full once a download completes, and from the very start for an
     // upload — it is the source the bytes come from. A download in any other state has only a
     // prefix on disk, and previewing or editing a prefix would show content the user would take
     // for the whole file.
-    val hasLocalFile = item.localUri != null &&
-        (item.status == TransferStatus.COMPLETE || item.direction == TransferDirection.UPLOAD)
+    val hasLocalFile =
+        item.localUri != null &&
+            (item.status == TransferStatus.COMPLETE || item.direction == TransferDirection.UPLOAD)
     Text(
         "${item.direction.label} · ${item.hostName} · ${item.status.name.lowercase()}",
         style = MaterialTheme.typography.labelMedium,
@@ -146,11 +150,12 @@ private fun TransferActions(item: TransferItem, onAction: (TransferActionKind) -
         TransferStatus.RUNNING -> TransferActionRow("Pause") { onAction(TransferActionKind.PAUSE) }
         TransferStatus.PAUSED -> TransferActionRow("Resume") { onAction(TransferActionKind.RESUME) }
         TransferStatus.FAILED -> TransferActionRow("Retry") { onAction(TransferActionKind.RESUME) }
-        TransferStatus.QUEUED -> if (item.scheduledAt != null) {
-            TransferActionRow("Run now") { onAction(TransferActionKind.RUN_NOW) }
-        } else {
-            TransferActionRow("Resume") { onAction(TransferActionKind.RESUME) }
-        }
+        TransferStatus.QUEUED ->
+            if (item.scheduledAt != null) {
+                TransferActionRow("Run now") { onAction(TransferActionKind.RUN_NOW) }
+            } else {
+                TransferActionRow("Resume") { onAction(TransferActionKind.RESUME) }
+            }
         TransferStatus.COMPLETE -> Unit
     }
     if (item.status != TransferStatus.COMPLETE) {
@@ -178,7 +183,11 @@ private fun TransferActions(item: TransferItem, onAction: (TransferActionKind) -
 // The click goes last so every row reads as `TransferActionRow(label) { ... }` — with a trailing
 // Boolean the trailing lambda would have nothing to bind to.
 @Composable
-private fun TransferActionRow(label: String, destructive: Boolean = false, onClick: () -> Unit) {
+private fun TransferActionRow(
+    label: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
     Text(
         label,
         Modifier

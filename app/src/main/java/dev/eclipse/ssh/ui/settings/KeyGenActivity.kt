@@ -52,7 +52,6 @@ import dev.eclipse.ssh.ssh.SshKeyAlgorithm
  */
 @AndroidEntryPoint
 class KeyGenActivity : SettingsDestinationActivity() {
-
     /**
      * The chain, scoped to this window.
      *
@@ -69,7 +68,10 @@ class KeyGenActivity : SettingsDestinationActivity() {
     // pickers, so there is nothing here for the store to hold.
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         val report = LocalSettingsReport.current
 
         // Both are declared before the effect below, which reaches both of them - a lambda cannot
@@ -79,13 +81,15 @@ class KeyGenActivity : SettingsDestinationActivity() {
         // Both callbacks do nothing but hand the result to the view model. What happens next - the
         // write, the second picker, the end of the chain and the gate - is decided there, which is
         // what makes the chain survive this composition being torn down and rebuilt.
-        val publicKeyPicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("text/plain"),
-        ) { uri: Uri? -> viewModel.onPublicKeyPicked(uri) }
+        val publicKeyPicker =
+            rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("text/plain"),
+            ) { uri: Uri? -> viewModel.onPublicKeyPicked(uri) }
 
-        val privateKeyPicker = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/x-pem-file"),
-        ) { uri: Uri? -> viewModel.onPrivateKeyPicked(uri) }
+        val privateKeyPicker =
+            rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/x-pem-file"),
+            ) { uri: Uri? -> viewModel.onPrivateKeyPicked(uri) }
 
         // The window catches up to the chain here, and this effect is the whole reason the two can be
         // separated. It runs on the first composition after a rotation as much as on the first one

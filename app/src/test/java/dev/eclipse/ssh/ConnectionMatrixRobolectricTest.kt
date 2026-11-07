@@ -18,17 +18,6 @@ import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.security.StandInAndroidKeyStore
 import dev.eclipse.ssh.ssh.SshConnectionManager
 import dev.eclipse.ssh.ssh.SshSessionStore
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.nio.file.Files
-import java.security.MessageDigest
-import java.time.Duration
-import java.util.Base64
-import java.util.Collections
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.runBlocking
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
@@ -53,6 +42,17 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.nio.file.Files
+import java.security.MessageDigest
+import java.time.Duration
+import java.util.Base64
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Every way a connection can end, driven through the app the way a tap on Connect drives it.
@@ -82,7 +82,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ConnectionMatrixRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -156,7 +155,8 @@ class ConnectionMatrixRobolectricTest {
         assertThat(stored.hasKey).isFalse()
         assertThat(stored.isEmpty).isFalse()
         assertWithMessage("the password reached a UI state object")
-            .that(stored.toString()).doesNotContain(PASSWORD)
+            .that(stored.toString())
+            .doesNotContain(PASSWORD)
     }
 
     // ---------------------------------------------------------------- the failures
@@ -178,7 +178,8 @@ class ConnectionMatrixRobolectricTest {
         awaitCount(authAttempts, 1, "passwords offered to the server")
         // Nothing was left half-open by the failure.
         assertWithMessage("a shell was started for a session that never authenticated")
-            .that(shellsStarted.get()).isEqualTo(0)
+            .that(shellsStarted.get())
+            .isEqualTo(0)
     }
 
     /**
@@ -232,12 +233,13 @@ class ConnectionMatrixRobolectricTest {
      */
     @Test
     fun aServerThatNeverSpeaksSshTimesOutInsteadOfHangingForever() {
-        val hostId = connectExpectingFailure(
-            port = silentPort,
-            password = PASSWORD,
-            timeoutSeconds = CONNECT_TIMEOUT_RANGE.first,
-            timeoutMs = 120_000,
-        )
+        val hostId =
+            connectExpectingFailure(
+                port = silentPort,
+                password = PASSWORD,
+                timeoutSeconds = CONNECT_TIMEOUT_RANGE.first,
+                timeoutMs = 120_000,
+            )
 
         val error = checkNotNull(tabFor(hostId)?.lastError)
         assertThat(error).isNotEmpty()
@@ -259,7 +261,9 @@ class ConnectionMatrixRobolectricTest {
     fun anUnknownHostKeyIsAskedAboutBeforeAnyPasswordIsSent() {
         val host = saveHost(port = serverPort, pinFingerprint = false)
         val viewModel = viewModel()
-        val saved = viewModel.uiState.value.hosts.first { it.id == host.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == host.id }
 
         compose.runOnUiThread { viewModel.connect(saved, password = PASSWORD) }
         pumpUntil(describe = { "the unknown host key was never challenged: " + diagnose(host.id) }) {
@@ -273,7 +277,8 @@ class ConnectionMatrixRobolectricTest {
         // Not a key that changed under us — this profile has never seen one.
         assertThat(challenge.changed).isFalse()
         assertWithMessage("the password was offered before the key was trusted")
-            .that(authAttempts.get()).isEqualTo(0)
+            .that(authAttempts.get())
+            .isEqualTo(0)
 
         compose.runOnUiThread { viewModel.acceptHostKey() }
         pumpUntil(describe = { "accepting the key did not connect: " + diagnose(host.id) }) {
@@ -355,7 +360,8 @@ class ConnectionMatrixRobolectricTest {
             compose.runOnUiThread { viewModel.closeTab(checkNotNull(tabFor(host.id))) }
             pumpUntil(describe = { "cycle $cycle never closed its tab" }) { tabFor(host.id) == null }
             assertWithMessage("cycle $cycle left state behind")
-                .that(viewModel.uiState.value.terminalOutput).doesNotContainKey(host.id)
+                .that(viewModel.uiState.value.terminalOutput)
+                .doesNotContainKey(host.id)
         }
 
         assertThat(viewModel.uiState.value.tabs).isEmpty()
@@ -402,9 +408,11 @@ class ConnectionMatrixRobolectricTest {
             // let that land rather than run in front of it.
             settle()
             assertWithMessage("cycle $cycle left a frame behind")
-                .that(viewModel.frames.value).doesNotContainKey(host.id)
+                .that(viewModel.frames.value)
+                .doesNotContainKey(host.id)
             assertWithMessage("cycle $cycle left a transcript behind")
-                .that(viewModel.uiState.value.terminalOutput).doesNotContainKey(host.id)
+                .that(viewModel.uiState.value.terminalOutput)
+                .doesNotContainKey(host.id)
         }
 
         awaitCount(shellsStarted, MID_OUTPUT_CYCLES, "shells the server started")
@@ -453,16 +461,20 @@ class ConnectionMatrixRobolectricTest {
         val viewModel = viewModel()
         connectSaved(host.id, password = null)
 
-        val live = viewModel.uiState.value.hosts.first { it.id == host.id }
+        val live =
+            viewModel.uiState.value.hosts
+                .first { it.id == host.id }
         compose.runOnUiThread { viewModel.deleteHost(live) }
 
         pumpUntil(describe = { "the host was never deleted: " + diagnose(host.id) }) {
-            viewModel.uiState.value.hosts.none { it.id == host.id }
+            viewModel.uiState.value.hosts
+                .none { it.id == host.id }
         }
         // The session went with it rather than being left pointing at a profile that no longer exists.
         pumpUntil(describe = { "the session outlived its host" }) { tabFor(host.id) == null }
         pumpUntil(describe = { "the saved credential outlived its host" }) {
-            viewModel.uiState.value.savedCredentials[host.id]?.hasPassword != true
+            viewModel.uiState.value.savedCredentials[host.id]
+                ?.hasPassword != true
         }
         assertThat(viewModel.frames.value).doesNotContainKey(host.id)
     }
@@ -483,9 +495,12 @@ class ConnectionMatrixRobolectricTest {
 
         val viewModel = viewModel()
         pumpUntil(describe = { "the host list never came back after recreation" }) {
-            viewModel.uiState.value.hosts.any { it.id == host.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == host.id }
         }
-        val restored = viewModel.uiState.value.hosts.first { it.id == host.id }
+        val restored =
+            viewModel.uiState.value.hosts
+                .first { it.id == host.id }
         assertThat(restored.host).isEqualTo(LOOPBACK)
         assertThat(restored.username).isEqualTo(USER)
         assertThat(restored.port).isEqualTo(serverPort)
@@ -509,14 +524,20 @@ class ConnectionMatrixRobolectricTest {
         val second = connect(port = serverPort, password = PASSWORD)
         val viewModel = viewModel()
 
-        assertThat(viewModel.uiState.value.tabs.map(SessionTab::hostId)).containsExactly(first, second).inOrder()
+        assertThat(
+            viewModel.uiState.value.tabs
+                .map(SessionTab::hostId),
+        ).containsExactly(first, second).inOrder()
         awaitCount(shellsStarted, 2, "shells the server started")
 
         compose.runOnUiThread { viewModel.closeTab(checkNotNull(tabFor(first))) }
         pumpUntil(describe = { "the first tab never closed" }) { tabFor(first) == null }
 
         assertThat(tabFor(second)?.state).isEqualTo(SessionConnectionState.CONNECTED)
-        assertThat(viewModel.uiState.value.tabs.map(SessionTab::hostId)).containsExactly(second)
+        assertThat(
+            viewModel.uiState.value.tabs
+                .map(SessionTab::hostId),
+        ).containsExactly(second)
     }
 
     /** Disconnect all, from the sessions list: every tab goes, nothing is left connected. */
@@ -529,7 +550,8 @@ class ConnectionMatrixRobolectricTest {
         compose.runOnUiThread { viewModel.disconnectAll() }
 
         pumpUntil(describe = { "sessions survived disconnectAll: " + viewModel.uiState.value.tabs }) {
-            viewModel.uiState.value.tabs.isEmpty()
+            viewModel.uiState.value.tabs
+                .isEmpty()
         }
         assertThat(viewModel.frames.value).isEmpty()
     }
@@ -545,7 +567,9 @@ class ConnectionMatrixRobolectricTest {
     fun connectingTwiceInARowLeavesOneSession() {
         val host = saveHost(port = serverPort)
         val viewModel = viewModel()
-        val saved = viewModel.uiState.value.hosts.first { it.id == host.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == host.id }
 
         compose.runOnUiThread {
             viewModel.connect(saved, password = PASSWORD)
@@ -553,7 +577,10 @@ class ConnectionMatrixRobolectricTest {
         }
         acceptAnyHostKey(host.id)
 
-        assertThat(viewModel.uiState.value.tabs.filter { it.hostId == host.id }).hasSize(1)
+        assertThat(
+            viewModel.uiState.value.tabs
+                .filter { it.hostId == host.id },
+        ).hasSize(1)
         // Only one shell reached the server, so the cancelled attempt really was cancelled.
         awaitCount(shellsStarted, 1, "shells the server started")
     }
@@ -587,7 +614,9 @@ class ConnectionMatrixRobolectricTest {
     fun aRestoredSessionWithNoShellIsGivenOneInsteadOfBeingRedialled() {
         val host = saveHost(port = serverPort)
         val viewModel = viewModel()
-        val saved = viewModel.uiState.value.hosts.first { it.id == host.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == host.id }
         // The same two singletons the service holds - it is the shared store that makes a session
         // survive a process, so the test has to reach the app's instances and not build its own.
         // By reflection deliberately: exposing them for a test would put a way to reach every live
@@ -637,7 +666,9 @@ class ConnectionMatrixRobolectricTest {
         val host = saveHostWithPassword()
         connectSaved(host.id, password = null)
         val viewModel = viewModel()
-        val saved = viewModel.uiState.value.hosts.first { it.id == host.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == host.id }
         val store = injected(viewModel, "sessionStore", SshSessionStore::class.java)
         val manager = injected(viewModel, "sshConnectionManager", SshConnectionManager::class.java)
         awaitCount(authAttempts, 1, "passwords offered to the server")
@@ -680,7 +711,10 @@ class ConnectionMatrixRobolectricTest {
      * running while it happens - the connect suspends on a real handshake, and the test is the only
      * thing driving the main looper.
      */
-    private fun dialLikeARestorePass(manager: SshConnectionManager, saved: HostProfile): ClientSession {
+    private fun dialLikeARestorePass(
+        manager: SshConnectionManager,
+        saved: HostProfile,
+    ): ClientSession {
         val dialed = AtomicReference<ClientSession?>(null)
         val failed = AtomicReference<Throwable?>(null)
         Thread({
@@ -697,15 +731,25 @@ class ConnectionMatrixRobolectricTest {
     private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     /** Reads one of the view model's injected singletons. See the test that explains the choice. */
-    private fun <T> injected(viewModel: MainViewModel, name: String, type: Class<T>): T =
+    private fun <T> injected(
+        viewModel: MainViewModel,
+        name: String,
+        type: Class<T>,
+    ): T =
         type.cast(
-            MainViewModel::class.java.getDeclaredField(name).apply { isAccessible = true }.get(viewModel),
+            MainViewModel::class.java
+                .getDeclaredField(name)
+                .apply { isAccessible = true }
+                .get(viewModel),
         )!!
 
     private fun tabFor(hostId: String): SessionTab? =
-        viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     /** Writes a profile through the view model and waits for Room to hand it back. */
+
     /**
      * Writes a profile through the view model and waits for Room to hand it back.
      *
@@ -729,24 +773,26 @@ class ConnectionMatrixRobolectricTest {
     ): HostProfile {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "matrix-" + nextHostId++,
-            name = HOST_NAME,
-            host = LOOPBACK,
-            username = USER,
-            port = port,
-            authMethod = AuthMethod.PASSWORD,
-            group = group,
-            tags = tags,
-            connectTimeoutSeconds = timeoutSeconds,
-            // Off unless a test says otherwise: this class is about the SSH half, and an SFTP login on
-            // every connect would put a second channel in the way of what is being measured.
-            autoLoginSftp = autoLoginSftp,
-            fingerprint = serverFingerprint.takeIf { pinFingerprint && port == serverPort },
-        )
+        val profile =
+            HostProfile(
+                id = "matrix-" + nextHostId++,
+                name = HOST_NAME,
+                host = LOOPBACK,
+                username = USER,
+                port = port,
+                authMethod = AuthMethod.PASSWORD,
+                group = group,
+                tags = tags,
+                connectTimeoutSeconds = timeoutSeconds,
+                // Off unless a test says otherwise: this class is about the SSH half, and an SFTP login on
+                // every connect would put a second channel in the way of what is being measured.
+                autoLoginSftp = autoLoginSftp,
+                fingerprint = serverFingerprint.takeIf { pinFingerprint && port == serverPort },
+            )
         compose.runOnUiThread { viewModel.saveHost(profile, credentials) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
         return profile
     }
@@ -761,27 +807,42 @@ class ConnectionMatrixRobolectricTest {
      * reports a failed write by leaving the flag false and putting a sentence on the status line.
      */
     private fun saveHostWithPassword(): HostProfile {
-        val host = saveHost(
-            port = serverPort,
-            credentials = HostCredentialUpdate(password = SecretEdit.Replace(PASSWORD)),
-        )
+        val host =
+            saveHost(
+                port = serverPort,
+                credentials = HostCredentialUpdate(password = SecretEdit.Replace(PASSWORD)),
+            )
         pumpUntil(describe = { "the credential was never recorded as saved: " + diagnose(host.id) }) {
-            viewModel().uiState.value.savedCredentials[host.id]?.hasPassword == true
+            viewModel()
+                .uiState.value.savedCredentials[host.id]
+                ?.hasPassword == true
         }
         return host
     }
 
-    private fun editHost(hostId: String, edit: (HostProfile) -> HostProfile) {
+    private fun editHost(
+        hostId: String,
+        edit: (HostProfile) -> HostProfile,
+    ) {
         val viewModel = viewModel()
-        val edited = edit(viewModel.uiState.value.hosts.first { it.id == hostId })
+        val edited =
+            edit(
+                viewModel.uiState.value.hosts
+                    .first { it.id == hostId },
+            )
         compose.runOnUiThread { viewModel.saveHost(edited) }
         pumpUntil(describe = { "the edit never reached the host list" }) {
-            viewModel.uiState.value.hosts.first { it.id == hostId } == edited
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId } == edited
         }
     }
 
     /** Saves a profile and connects it, expecting to arrive CONNECTED. */
-    private fun connect(port: Int, password: String?, timeoutSeconds: Int = 60): String {
+    private fun connect(
+        port: Int,
+        password: String?,
+        timeoutSeconds: Int = 60,
+    ): String {
         val host = saveHost(port = port, timeoutSeconds = timeoutSeconds)
         connectSaved(host.id, password)
         return host.id
@@ -816,7 +877,9 @@ class ConnectionMatrixRobolectricTest {
         timeoutMs: Long = SSH_TIMEOUT_MS,
     ) {
         val viewModel = viewModel()
-        val saved = viewModel.uiState.value.hosts.first { it.id == hostId }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == hostId }
         compose.runOnUiThread { viewModel.connect(saved, password = password) }
         var trusted = false
         pumpUntil(timeoutMs, describe = { "the session never reached $expect: " + diagnose(hostId) }) {
@@ -855,7 +918,11 @@ class ConnectionMatrixRobolectricTest {
      * [settle] sleeps for real rather than advancing the looper's clock, because what it is waiting for
      * is not on the looper: it is Apache MINA's threads and a socket on loopback.
      */
-    private fun awaitCount(counter: AtomicInteger, expected: Int, what: String) {
+    private fun awaitCount(
+        counter: AtomicInteger,
+        expected: Int,
+        what: String,
+    ) {
         pumpUntil(describe = { "only ${counter.get()} of $expected $what: " + diagnose("") }) {
             counter.get() >= expected
         }
@@ -881,7 +948,11 @@ class ConnectionMatrixRobolectricTest {
      * the recomposer. `idleFor` rather than `idle` because the retry backoff in `connect` is a real
      * `delay`, and `idle()` leaves the looper's virtual clock where it was so it never comes due.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -972,45 +1043,59 @@ class ConnectionMatrixRobolectricTest {
             StandInAndroidKeyStore.install()
 
             val root = Files.createTempDirectory("eclipse-connection-matrix")
-            server = SshServer.setUpDefaultServer().apply {
-                // Port 0 because Gradle runs the debug and release unit-test tasks in separate JVMs
-                // and they overlap; the loser of a fixed bind runs its whole suite against a server
-                // that never started.
-                port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("matrix-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    authAttempts.incrementAndGet()
-                    user == USER && password == PASSWORD
+            server =
+                SshServer.setUpDefaultServer().apply {
+                    // Port 0 because Gradle runs the debug and release unit-test tasks in separate JVMs
+                    // and they overlap; the loser of a fixed bind runs its whole suite against a server
+                    // that never started.
+                    port = 0
+                    keyPairProvider =
+                        SimpleGeneratorHostKeyProvider(
+                            Files.createTempDirectory("matrix-hostkey").resolve("hostkey.ser"),
+                        )
+                    passwordAuthenticator =
+                        PasswordAuthenticator { user, password, _ ->
+                            authAttempts.incrementAndGet()
+                            user == USER && password == PASSWORD
+                        }
+                    // Password only, which is what makes `authAttempts` an exact count of "how many times
+                    // was the credential offered". With the default factory list the server also advertises
+                    // keyboard-interactive, whose default authenticator delegates to this same callback, so
+                    // a client carrying a password tried it there first and again as `password` — two
+                    // increments for one authentication, and no way to tell that apart from a retry. Plenty
+                    // of real servers are configured exactly this way (`KbdInteractiveAuthentication no`).
+                    userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
+                    subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
+                    fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
+                    shellFactory = ShellFactory { CountingShell() }
+                    start()
                 }
-                // Password only, which is what makes `authAttempts` an exact count of "how many times
-                // was the credential offered". With the default factory list the server also advertises
-                // keyboard-interactive, whose default authenticator delegates to this same callback, so
-                // a client carrying a password tried it there first and again as `password` — two
-                // increments for one authentication, and no way to tell that apart from a retry. Plenty
-                // of real servers are configured exactly this way (`KbdInteractiveAuthentication no`).
-                userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
-                subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
-                fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
-                shellFactory = ShellFactory { CountingShell() }
-                start()
-            }
             serverPort = (server.boundAddresses.first() as InetSocketAddress).port
-            serverFingerprint = "SHA256:" + Base64.getEncoder().withoutPadding().encodeToString(
-                MessageDigest.getInstance("SHA-256")
-                    .digest(server.keyPairProvider.loadKeys(null).first().public.encoded),
-            )
+            serverFingerprint = "SHA256:" +
+                Base64.getEncoder().withoutPadding().encodeToString(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(
+                            server.keyPairProvider
+                                .loadKeys(null)
+                                .first()
+                                .public.encoded,
+                        ),
+                )
 
             // Accepts and holds the socket open without writing: the client waits for a version
             // string that never comes, which is what the profile's timeout is for.
             silent = ServerSocket(0, 8, java.net.InetAddress.getByName(LOOPBACK))
             silentPort = silent.localPort
-            silentAcceptor = Thread {
-                val held = mutableListOf<java.net.Socket>()
-                runCatching { while (true) held += silent.accept() }
-                held.forEach { runCatching { it.close() } }
-            }.apply { isDaemon = true; start() }
+            silentAcceptor =
+                Thread {
+                    val held = mutableListOf<java.net.Socket>()
+                    runCatching { while (true) held += silent.accept() }
+                    held.forEach { runCatching { it.close() } }
+                }.apply {
+                    isDaemon = true
+                    start()
+                }
 
             // Bound only to learn a port nothing else will take, then closed.
             deadPort = ServerSocket(0, 1, java.net.InetAddress.getByName(LOOPBACK)).use { it.localPort }
@@ -1040,34 +1125,50 @@ class ConnectionMatrixRobolectricTest {
         private var exit: ExitCallback? = null
         private var worker: Thread? = null
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            this.exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             shellsStarted.incrementAndGet()
             val source = input ?: return
             val sink = output ?: return
-            worker = Thread {
-                runCatching {
-                    sink.write("eclipse-matrix-shell\r\n$ ".toByteArray())
-                    sink.flush()
-                    val line = StringBuilder()
-                    while (true) {
-                        val byte = source.read()
-                        if (byte < 0) break
-                        if (byte == '\n'.code || byte == '\r'.code) {
-                            sink.write("echo: $line\r\n$ ".toByteArray())
-                            sink.flush()
-                            line.setLength(0)
-                        } else {
-                            line.append(byte.toChar())
+            worker =
+                Thread {
+                    runCatching {
+                        sink.write("eclipse-matrix-shell\r\n$ ".toByteArray())
+                        sink.flush()
+                        val line = StringBuilder()
+                        while (true) {
+                            val byte = source.read()
+                            if (byte < 0) break
+                            if (byte == '\n'.code || byte == '\r'.code) {
+                                sink.write("echo: $line\r\n$ ".toByteArray())
+                                sink.flush()
+                                line.setLength(0)
+                            } else {
+                                line.append(byte.toChar())
+                            }
                         }
                     }
+                    exit?.onExit(0)
+                }.apply {
+                    isDaemon = true
+                    start()
                 }
-                exit?.onExit(0)
-            }.apply { isDaemon = true; start() }
         }
 
         override fun destroy(channel: ChannelSession) {

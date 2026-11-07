@@ -1,13 +1,13 @@
 package dev.eclipse.ssh.ssh
 
 import com.google.common.truth.Truth.assertThat
+import org.apache.sshd.client.session.ClientSession
+import org.junit.Test
 import java.lang.reflect.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import org.apache.sshd.client.session.ClientSession
-import org.junit.Test
 
 /**
  * The store's answer to a concurrent question: are the host-scoped queries safe to call while
@@ -30,34 +30,35 @@ import org.junit.Test
  * because the only thing a slightly-stale answer is allowed to be is *an* answer.
  */
 class SshSessionStoreTest {
-
     @Test
     fun `host-scoped queries survive concurrent install rekey and forget churn`() {
         val store = SshSessionStore()
         // Every key the churn thread can ever file, so any query result can be checked against it.
-        val churnableKeys = (0 until KEY_COUNT)
-            .flatMap { i -> listOf("restore-$i", "tab-$i") }
-            .toHashSet()
+        val churnableKeys =
+            (0 until KEY_COUNT)
+                .flatMap { i -> listOf("restore-$i", "tab-$i") }
+                .toHashSet()
         val hosts = listOf("alpha", "beta")
         val stop = AtomicBoolean(false)
         val rounds = AtomicInteger()
         val churnFailure = AtomicReference<Throwable?>()
 
-        val churner = Thread {
-            try {
-                while (!stop.get()) {
-                    for (i in 0 until KEY_COUNT) {
-                        val host = hosts[i % hosts.size]
-                        store.install("restore-$i", stubSession(), host)
-                        store.rekey("restore-$i", "tab-$i")
-                        store.forget("tab-$i")
+        val churner =
+            Thread {
+                try {
+                    while (!stop.get()) {
+                        for (i in 0 until KEY_COUNT) {
+                            val host = hosts[i % hosts.size]
+                            store.install("restore-$i", stubSession(), host)
+                            store.rekey("restore-$i", "tab-$i")
+                            store.forget("tab-$i")
+                        }
+                        rounds.incrementAndGet()
                     }
-                    rounds.incrementAndGet()
+                } catch (t: Throwable) {
+                    churnFailure.compareAndSet(null, t)
                 }
-            } catch (t: Throwable) {
-                churnFailure.compareAndSet(null, t)
             }
-        }
         churner.start()
         try {
             // Bounded by wall clock rather than iteration count so the test costs the same on a

@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class RemoteFileEditorTest {
-
     @Test
     fun `canEdit accepts files under the cap`() {
         val editor = RemoteFileEditor()

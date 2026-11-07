@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -111,27 +110,32 @@ fun ArchiveBrowserScreen(
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (val s = state) {
                 is ArchiveUiState.Loading -> ArchiveLoading(s.progress, actions.onCancelScan)
-                is ArchiveUiState.PasswordRequired -> ArchivePasswordSheet(
-                    s.message, actions.onUnlock, actions.onClose,
-                )
+                is ArchiveUiState.PasswordRequired ->
+                    ArchivePasswordSheet(
+                        s.message,
+                        actions.onUnlock,
+                        actions.onClose,
+                    )
                 is ArchiveUiState.Failed -> ArchiveFailed(s.message, actions.onRetry, actions.onClose)
-                is ArchiveUiState.Ready -> ArchiveReady(
-                    state = s,
-                    folder = folder,
-                    onFolderChange = { folder = it },
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    selectedEntries = selectedEntries,
-                    onToggleSelect = { entry ->
-                        selectedEntries = if (entry.path in selectedEntries) {
-                            selectedEntries - entry.path
-                        } else {
-                            selectedEntries + (entry.path to entry)
-                        }
-                    },
-                    onClearSelection = { selectedEntries = emptyMap() },
-                    actions = actions,
-                )
+                is ArchiveUiState.Ready ->
+                    ArchiveReady(
+                        state = s,
+                        folder = folder,
+                        onFolderChange = { folder = it },
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { searchQuery = it },
+                        selectedEntries = selectedEntries,
+                        onToggleSelect = { entry ->
+                            selectedEntries =
+                                if (entry.path in selectedEntries) {
+                                    selectedEntries - entry.path
+                                } else {
+                                    selectedEntries + (entry.path to entry)
+                                }
+                        },
+                        onClearSelection = { selectedEntries = emptyMap() },
+                        actions = actions,
+                    )
             }
         }
     }
@@ -161,7 +165,10 @@ class ArchiveActions(
 )
 
 @Composable
-private fun ArchiveLoading(progress: ArchiveScanProgress?, onCancel: () -> Unit) {
+private fun ArchiveLoading(
+    progress: ArchiveScanProgress?,
+    onCancel: () -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -174,9 +181,10 @@ private fun ArchiveLoading(progress: ArchiveScanProgress?, onCancel: () -> Unit)
         if (progress == null) {
             CircularProgressIndicator()
         } else {
-            val fraction = progress.totalBytes
-                ?.takeIf { it > 0 }
-                ?.let { (progress.bytesScanned.toDouble() / it).coerceIn(0.0, 1.0) }
+            val fraction =
+                progress.totalBytes
+                    ?.takeIf { it > 0 }
+                    ?.let { (progress.bytesScanned.toDouble() / it).coerceIn(0.0, 1.0) }
             if (fraction != null) {
                 LinearProgressIndicator(
                     progress = { fraction.toFloat() },
@@ -198,7 +206,11 @@ private fun ArchiveLoading(progress: ArchiveScanProgress?, onCancel: () -> Unit)
 }
 
 @Composable
-private fun ArchivePasswordSheet(message: String, onUnlock: (String) -> Unit, onClose: () -> Unit) {
+private fun ArchivePasswordSheet(
+    message: String,
+    onUnlock: (String) -> Unit,
+    onClose: () -> Unit,
+) {
     var password by remember { mutableStateOf("") }
     Column(
         Modifier.fillMaxSize().padding(32.dp),
@@ -225,7 +237,11 @@ private fun ArchivePasswordSheet(message: String, onUnlock: (String) -> Unit, on
 }
 
 @Composable
-private fun ArchiveFailed(message: String, onRetry: () -> Unit, onClose: () -> Unit) {
+private fun ArchiveFailed(
+    message: String,
+    onRetry: () -> Unit,
+    onClose: () -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -257,35 +273,38 @@ private fun ArchiveReady(
         ArchiveToolbar(searchQuery, onSearchQueryChange)
         ArchiveBreadcrumb(folder, onFolderChange)
         val searching = searchQuery.isNotBlank()
-        val entries = if (searching) {
-            state.tree.search(searchQuery)
-        } else {
-            state.tree.children(folder) ?: emptyList()
-        }
+        val entries =
+            if (searching) {
+                state.tree.search(searchQuery)
+            } else {
+                state.tree.children(folder) ?: emptyList()
+            }
         // The list is weighted rather than fillMaxSize so the selection bar below it stays on
         // screen — the same arrangement the Files explorer's list and batch bar use.
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when {
-                entries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        if (searching) "Nothing matched \"$searchQuery\"." else "This folder is empty.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(entries, key = { it.path }) { entry ->
-                        ArchiveEntryRow(
-                            entry = entry,
-                            selected = entry.path in selectedEntries,
-                            selecting = selectedEntries.isNotEmpty(),
-                            onOpen = {
-                                if (entry.isDirectory) onFolderChange(entry.path) else actions.onOpenEntry(entry)
-                            },
-                            onToggleSelect = { onToggleSelect(entry) },
-                            onOpenActions = { actions.onEntryActions(entry) },
+                entries.isEmpty() ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (searching) "Nothing matched \"$searchQuery\"." else "This folder is empty.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
+                else ->
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        items(entries, key = { it.path }) { entry ->
+                            ArchiveEntryRow(
+                                entry = entry,
+                                selected = entry.path in selectedEntries,
+                                selecting = selectedEntries.isNotEmpty(),
+                                onOpen = {
+                                    if (entry.isDirectory) onFolderChange(entry.path) else actions.onOpenEntry(entry)
+                                },
+                                onToggleSelect = { onToggleSelect(entry) },
+                                onOpenActions = { actions.onEntryActions(entry) },
+                            )
+                        }
+                    }
             }
         }
         if (selectedEntries.isNotEmpty()) {
@@ -309,7 +328,11 @@ private fun ArchiveReady(
  * screen refuses everywhere else.
  */
 @Composable
-private fun ArchiveSelectionBar(count: Int, onClear: () -> Unit, onExtract: () -> Unit) {
+private fun ArchiveSelectionBar(
+    count: Int,
+    onClear: () -> Unit,
+    onExtract: () -> Unit,
+) {
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
@@ -328,7 +351,10 @@ private fun ArchiveSelectionBar(count: Int, onClear: () -> Unit, onExtract: () -
 }
 
 @Composable
-private fun ArchiveServerChangedBanner(state: ArchiveUiState.Ready, actions: ArchiveActions) {
+private fun ArchiveServerChangedBanner(
+    state: ArchiveUiState.Ready,
+    actions: ArchiveActions,
+) {
     // The notification is state on the Ready object (raised by the watcher, cleared by reload);
     // "continue" dismisses it for this session without touching the tree.
     if (!state.serverChanged) return
@@ -351,7 +377,10 @@ private fun ArchiveServerChangedBanner(state: ArchiveUiState.Ready, actions: Arc
 }
 
 @Composable
-private fun ArchiveToolbar(searchQuery: String, onSearchQueryChange: (String) -> Unit) {
+private fun ArchiveToolbar(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+) {
     OutlinedTextField(
         value = searchQuery,
         onValueChange = onSearchQueryChange,
@@ -362,7 +391,10 @@ private fun ArchiveToolbar(searchQuery: String, onSearchQueryChange: (String) ->
 }
 
 @Composable
-private fun ArchiveBreadcrumb(folder: String, onFolderChange: (String) -> Unit) {
+private fun ArchiveBreadcrumb(
+    folder: String,
+    onFolderChange: (String) -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -372,7 +404,12 @@ private fun ArchiveBreadcrumb(folder: String, onFolderChange: (String) -> Unit) 
         }
         folder.split('/').filter { it.isNotEmpty() }.forEachIndexed { index, segment ->
             Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val target = folder.split('/').filter { it.isNotEmpty() }.subList(0, index + 1).joinToString("/")
+            val target =
+                folder
+                    .split('/')
+                    .filter { it.isNotEmpty() }
+                    .subList(0, index + 1)
+                    .joinToString("/")
             TextButton(
                 onClick = { onFolderChange(target) },
                 contentPadding = PaddingValues(4.dp),
@@ -404,8 +441,7 @@ private fun ArchiveEntryRow(
             .combinedClickable(
                 onClick = if (selecting) onToggleSelect else onOpen,
                 onLongClick = onToggleSelect,
-            )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            ).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

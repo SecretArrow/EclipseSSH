@@ -10,18 +10,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
-import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.data.fs.FileSystemProvider
+import dev.eclipse.ssh.data.fs.FsEntry
 import dev.eclipse.ssh.ui.preview.FilePreviewActivity
 import dev.eclipse.ssh.ui.preview.FilePreviewRequest
 import dev.eclipse.ssh.ui.preview.PreviewRequests
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The file preview's window, as against its content.
@@ -43,30 +43,74 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class FilePreviewActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
     /** Reads back one in-memory document; the preview uses no other operation before first paint. */
-    private class SingleFileProvider(private val contents: ByteArray) : FileSystemProvider {
+    private class SingleFileProvider(
+        private val contents: ByteArray,
+    ) : FileSystemProvider {
         override val providerId: String = "test"
+
         override suspend fun homePath(): String? = null
+
         override suspend fun parentPath(path: String): String? = null
+
         override suspend fun list(path: String): List<FsEntry> = emptyList()
+
         override suspend fun stat(path: String): FsEntry? = null
+
         override suspend fun read(path: String): ByteArray = contents
-        override suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long?) = Unit
-        override suspend fun createFile(parentPath: String, name: String): FsEntry = error("unused by the preview launch")
-        override suspend fun createDirectory(parentPath: String, name: String) = error("unused by the preview launch")
-        override suspend fun rename(path: String, newName: String) = error("unused by the preview launch")
-        override suspend fun copy(sourcePath: String, targetDirectoryPath: String) = error("unused by the preview launch")
-        override suspend fun move(sourcePath: String, targetDirectoryPath: String) = error("unused by the preview launch")
+
+        override suspend fun write(
+            path: String,
+            data: ByteArray,
+            onlyIfUnmodifiedSince: Long?,
+        ) = Unit
+
+        override suspend fun createFile(
+            parentPath: String,
+            name: String,
+        ): FsEntry = error("unused by the preview launch")
+
+        override suspend fun createDirectory(
+            parentPath: String,
+            name: String,
+        ) = error("unused by the preview launch")
+
+        override suspend fun rename(
+            path: String,
+            newName: String,
+        ) = error("unused by the preview launch")
+
+        override suspend fun copy(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the preview launch")
+
+        override suspend fun move(
+            sourcePath: String,
+            targetDirectoryPath: String,
+        ) = error("unused by the preview launch")
+
         override suspend fun delete(path: String) = error("unused by the preview launch")
-        override suspend fun setPermissions(path: String, mode: Int) = error("unused by the preview launch")
-        override suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry> = emptyList()
+
+        override suspend fun setPermissions(
+            path: String,
+            mode: Int,
+        ) = error("unused by the preview launch")
+
+        override suspend fun search(
+            root: String,
+            query: String,
+            maxEntries: Int,
+        ): List<FsEntry> = emptyList()
     }
 
-    private fun entry(name: String, contents: String) = FsEntry(
+    private fun entry(
+        name: String,
+        contents: String,
+    ) = FsEntry(
         name = name,
         path = "/tmp/$name",
         isDirectory = false,
@@ -77,7 +121,10 @@ class FilePreviewActivityRobolectricTest {
     )
 
     /** The intent the app itself builds, so the handoff's two halves are the shipped ones. */
-    private fun intentFor(name: String, contents: String): Intent {
+    private fun intentFor(
+        name: String,
+        contents: String,
+    ): Intent {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return FilePreviewActivity.intent(context, entry(name, contents), SingleFileProvider(contents.toByteArray()))
     }
@@ -95,7 +142,11 @@ class FilePreviewActivityRobolectricTest {
      * than `idle` because the body reads the file on a coroutine that comes due on the main looper,
      * so a fixed number of frames would be a race even when the frames are pumped.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -117,9 +168,10 @@ class FilePreviewActivityRobolectricTest {
      */
     @Test
     fun thePreviewOpensOnTheFileItsIntentNamesAndSpendsItsToken() {
-        val token = PreviewRequests.putFile(
-            FilePreviewRequest(entry("notes.txt", "hello"), SingleFileProvider("hello".toByteArray())),
-        )
+        val token =
+            PreviewRequests.putFile(
+                FilePreviewRequest(entry("notes.txt", "hello"), SingleFileProvider("hello".toByteArray())),
+            )
         ActivityScenario.launch<FilePreviewActivity>(intentCarrying(token)).use { scenario ->
             assertThat(scenario.state).isEqualTo(Lifecycle.State.RESUMED)
             pumpUntil(describe = { "the previewed file's name never reached the window" }) {
@@ -164,9 +216,10 @@ class FilePreviewActivityRobolectricTest {
                 compose.onAllNodesWithText("first.txt").fetchSemanticsNodes().isNotEmpty()
             }
 
-            val second = PreviewRequests.putFile(
-                FilePreviewRequest(entry("second.txt", "two"), SingleFileProvider("two".toByteArray())),
-            )
+            val second =
+                PreviewRequests.putFile(
+                    FilePreviewRequest(entry("second.txt", "two"), SingleFileProvider("two".toByteArray())),
+                )
             secondToken = second
             scenario.onActivity { activity -> activity.onPreviewToken(second) }
 

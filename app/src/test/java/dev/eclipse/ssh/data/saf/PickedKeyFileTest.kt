@@ -9,10 +9,6 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import com.google.common.truth.Truth.assertThat
-import java.io.ByteArrayInputStream
-import java.io.File
-import java.io.FileNotFoundException
-import java.io.InputStream
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,6 +17,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.InputStream
 
 /**
  * Reading a picked private key.
@@ -33,67 +33,76 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class PickedKeyFileTest {
-
     private val context get() = RuntimeEnvironment.getApplication()
 
     @Test
-    fun `a small key file is read whole with its display name`() = runTest {
-        val provider = provider()
-        provider.backing = file("id_ed25519", KEY_TEXT.toByteArray())
-        provider.displayName = "id_ed25519"
+    fun `a small key file is read whole with its display name`() =
+        runTest {
+            val provider = provider()
+            provider.backing = file("id_ed25519", KEY_TEXT.toByteArray())
+            provider.displayName = "id_ed25519"
 
-        val picked = readPickedKeyFile(context, uri("id_ed25519")).getOrThrow()
+            val picked = readPickedKeyFile(context, uri("id_ed25519")).getOrThrow()
 
-        assertThat(picked.bytes.toString(Charsets.UTF_8)).isEqualTo(KEY_TEXT)
-        assertThat(picked.name).isEqualTo("id_ed25519")
-    }
-
-    @Test
-    fun `a file exactly at the ceiling is accepted`() = runTest {
-        val provider = provider()
-        provider.backing = file("exact.bin", ByteArray(MAX_PRIVATE_KEY_BYTES) { 'k'.code.toByte() })
-
-        val picked = readPickedKeyFile(context, uri("exact.bin")).getOrThrow()
-
-        assertThat(picked.bytes.size).isEqualTo(MAX_PRIVATE_KEY_BYTES)
-    }
+            assertThat(picked.bytes.toString(Charsets.UTF_8)).isEqualTo(KEY_TEXT)
+            assertThat(picked.name).isEqualTo("id_ed25519")
+        }
 
     @Test
-    fun `an oversized file is refused by its reported size without being read`() = runTest {
-        val provider = provider()
-        // No backing file at all: if the size check did not run first, the open would be the failure
-        // and the message would be the wrong one.
-        provider.reportedSize = 40L * 1024 * 1024
+    fun `a file exactly at the ceiling is accepted`() =
+        runTest {
+            val provider = provider()
+            provider.backing = file("exact.bin", ByteArray(MAX_PRIVATE_KEY_BYTES) { 'k'.code.toByte() })
 
-        val failure = readPickedKeyFile(context, uri("movie.mp4")).exceptionOrNull()
+            val picked = readPickedKeyFile(context, uri("exact.bin")).getOrThrow()
 
-        assertThat(failure).hasMessageThat().contains("too large to be a private key")
-    }
+            assertThat(picked.bytes.size).isEqualTo(MAX_PRIVATE_KEY_BYTES)
+        }
 
     @Test
-    fun `an oversized file is refused even when the provider reports no size at all`() = runTest {
-        val provider = provider()
-        // A provider is not obliged to report a size, and this one reports none by either route: no
-        // descriptor to stat, no SIZE column. Without the bounded read below, this is the
-        // OutOfMemoryError path — the whole document pulled into the heap on the strength of one tap.
-        provider.refuseDescriptor = true
-        provider.hideSize = true
-        val document = uri("liar.bin")
-        shadowOf(context.contentResolver)
-            .registerInputStream(document, ByteArrayInputStream(ByteArray(MAX_PRIVATE_KEY_BYTES + 64)))
+    fun `an oversized file is refused by its reported size without being read`() =
+        runTest {
+            val provider = provider()
+            // No backing file at all: if the size check did not run first, the open would be the failure
+            // and the message would be the wrong one.
+            provider.reportedSize = 40L * 1024 * 1024
 
-        val failure = readPickedKeyFile(context, document).exceptionOrNull()
+            val failure = readPickedKeyFile(context, uri("movie.mp4")).exceptionOrNull()
 
-        assertThat(failure).hasMessageThat().contains("too large to be a private key")
-    }
+            assertThat(failure).hasMessageThat().contains("too large to be a private key")
+        }
+
+    @Test
+    fun `an oversized file is refused even when the provider reports no size at all`() =
+        runTest {
+            val provider = provider()
+            // A provider is not obliged to report a size, and this one reports none by either route: no
+            // descriptor to stat, no SIZE column. Without the bounded read below, this is the
+            // OutOfMemoryError path — the whole document pulled into the heap on the strength of one tap.
+            provider.refuseDescriptor = true
+            provider.hideSize = true
+            val document = uri("liar.bin")
+            shadowOf(context.contentResolver)
+                .registerInputStream(document, ByteArrayInputStream(ByteArray(MAX_PRIVATE_KEY_BYTES + 64)))
+
+            val failure = readPickedKeyFile(context, document).exceptionOrNull()
+
+            assertThat(failure).hasMessageThat().contains("too large to be a private key")
+        }
 
     @Test
     fun `the bounded read stops at its limit on a stream that never ends`() {
         // /dev/zero is a document too, as far as the picker is concerned.
-        val endless = object : InputStream() {
-            override fun read(): Int = 0
-            override fun read(b: ByteArray, off: Int, len: Int): Int = len
-        }
+        val endless =
+            object : InputStream() {
+                override fun read(): Int = 0
+
+                override fun read(
+                    b: ByteArray,
+                    off: Int,
+                    len: Int,
+                ): Int = len
+            }
 
         assertThat(endless.readAtMost(1_024).size).isEqualTo(1_024)
     }
@@ -110,46 +119,56 @@ class PickedKeyFileTest {
         // A content provider streaming over a socket returns short reads. A loop that treated a short
         // read as the end would silently truncate the key.
         val payload = ByteArray(5_000) { (it % 251).toByte() }
-        val dribbling = object : InputStream() {
-            private val source = ByteArrayInputStream(payload)
-            override fun read(): Int = source.read()
-            override fun read(b: ByteArray, off: Int, len: Int): Int = source.read(b, off, minOf(len, 7))
-        }
+        val dribbling =
+            object : InputStream() {
+                private val source = ByteArrayInputStream(payload)
+
+                override fun read(): Int = source.read()
+
+                override fun read(
+                    b: ByteArray,
+                    off: Int,
+                    len: Int,
+                ): Int = source.read(b, off, minOf(len, 7))
+            }
 
         assertThat(dribbling.readAtMost(MAX_PRIVATE_KEY_BYTES)).isEqualTo(payload)
     }
 
     @Test
-    fun `an empty file is refused`() = runTest {
-        provider().backing = file("empty.bin", ByteArray(0))
+    fun `an empty file is refused`() =
+        runTest {
+            provider().backing = file("empty.bin", ByteArray(0))
 
-        val failure = readPickedKeyFile(context, uri("empty.bin")).exceptionOrNull()
+            val failure = readPickedKeyFile(context, uri("empty.bin")).exceptionOrNull()
 
-        assertThat(failure).hasMessageThat().contains("empty")
-    }
-
-    @Test
-    fun `a revoked document fails with our own wording rather than a provider string`() = runTest {
-        provider().failEverything = true
-
-        val failure = readPickedKeyFile(context, uri("gone.bin")).exceptionOrNull()
-
-        // The provider's own message is written for a stack trace, and it is text from another app.
-        assertThat(failure).isInstanceOf(KeyFileException::class.java)
-        assertThat(failure).hasMessageThat().doesNotContain("permission revoked")
-        assertThat(failure).hasMessageThat().contains("Pick the private key again")
-    }
+            assertThat(failure).hasMessageThat().contains("empty")
+        }
 
     @Test
-    fun `a provider that supplies no name falls back to the last path segment`() = runTest {
-        val provider = provider()
-        provider.backing = file("named.bin", KEY_TEXT.toByteArray())
-        provider.displayName = null
+    fun `a revoked document fails with our own wording rather than a provider string`() =
+        runTest {
+            provider().failEverything = true
 
-        val picked = readPickedKeyFile(context, uri("weird name.bin")).getOrThrow()
+            val failure = readPickedKeyFile(context, uri("gone.bin")).exceptionOrNull()
 
-        assertThat(picked.name).isEqualTo("weird name.bin")
-    }
+            // The provider's own message is written for a stack trace, and it is text from another app.
+            assertThat(failure).isInstanceOf(KeyFileException::class.java)
+            assertThat(failure).hasMessageThat().doesNotContain("permission revoked")
+            assertThat(failure).hasMessageThat().contains("Pick the private key again")
+        }
+
+    @Test
+    fun `a provider that supplies no name falls back to the last path segment`() =
+        runTest {
+            val provider = provider()
+            provider.backing = file("named.bin", KEY_TEXT.toByteArray())
+            provider.displayName = null
+
+            val picked = readPickedKeyFile(context, uri("weird name.bin")).getOrThrow()
+
+            assertThat(picked.name).isEqualTo("weird name.bin")
+        }
 
     @Test
     fun `PickedKeyFile does not print its key material`() {
@@ -197,15 +216,26 @@ class PickedKeyFileTest {
         assertThat(sanitizedKeyName("/storage/keys/")).isEqualTo("private-key")
     }
 
-    private fun file(name: String, bytes: ByteArray): File =
-        File(context.cacheDir, name).apply { parentFile?.mkdirs(); writeBytes(bytes) }
+    private fun file(
+        name: String,
+        bytes: ByteArray,
+    ): File =
+        File(context.cacheDir, name).apply {
+            parentFile?.mkdirs()
+            writeBytes(bytes)
+        }
 
     private fun uri(name: String): Uri = Uri.parse("content://$AUTHORITY/${Uri.encode(name)}")
 
     private fun provider(): FakeKeyProvider =
-        Robolectric.buildContentProvider(FakeKeyProvider::class.java)
-            .create(ProviderInfo().apply { authority = AUTHORITY; grantUriPermissions = true })
-            .get()
+        Robolectric
+            .buildContentProvider(FakeKeyProvider::class.java)
+            .create(
+                ProviderInfo().apply {
+                    authority = AUTHORITY
+                    grantUriPermissions = true
+                },
+            ).get()
 
     /** A SAF provider with a configurable name, size and payload. */
     class FakeKeyProvider : ContentProvider() {
@@ -222,7 +252,10 @@ class PickedKeyFileTest {
 
         override fun onCreate() = true
 
-        override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        override fun openFile(
+            uri: Uri,
+            mode: String,
+        ): ParcelFileDescriptor {
             if (failEverything) throw FileNotFoundException("permission revoked")
             if (refuseDescriptor) throw FileNotFoundException("stream only")
             val file = backing ?: throw FileNotFoundException("no document")
@@ -242,21 +275,37 @@ class PickedKeyFileTest {
             // asks for DISPLAY_NAME alone and takes column 0, so a provider that answered with its own
             // column order would hand it the size and the test would pass for the wrong reason.
             val columns = projection?.toList() ?: listOf(OpenableColumns.SIZE, OpenableColumns.DISPLAY_NAME)
-            val row: List<Any?> = columns.map { column ->
-                when (column) {
-                    OpenableColumns.SIZE -> size
-                    OpenableColumns.DISPLAY_NAME -> displayName
-                    else -> null
+            val row: List<Any?> =
+                columns.map { column ->
+                    when (column) {
+                        OpenableColumns.SIZE -> size
+                        OpenableColumns.DISPLAY_NAME -> displayName
+                        else -> null
+                    }
                 }
-            }
             if (row.all { it == null }) return null
             return MatrixCursor(columns.toTypedArray()).apply { addRow(row.toTypedArray()) }
         }
 
         override fun getType(uri: Uri): String = "application/octet-stream"
-        override fun insert(uri: Uri, values: ContentValues?): Uri? = null
-        override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
-        override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) = 0
+
+        override fun insert(
+            uri: Uri,
+            values: ContentValues?,
+        ): Uri? = null
+
+        override fun delete(
+            uri: Uri,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ) = 0
+
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ) = 0
     }
 
     private companion object {

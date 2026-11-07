@@ -13,7 +13,6 @@ import org.junit.Test
  * dial it.
  */
 class LocalLinuxHostTest {
-
     private val healthy =
         HealthReport(
             shellWorks = true,

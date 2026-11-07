@@ -1,11 +1,11 @@
 package dev.eclipse.ssh.feature.integrity
 
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.yield
 import java.io.InputStream
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import kotlin.coroutines.coroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.yield
 
 /**
  * File integrity verification for SFTP transfers.
@@ -24,7 +24,6 @@ import kotlinx.coroutines.yield
  * [hashStream] is what the transfer coordinator calls.
  */
 object FileIntegrity {
-
     /**
      * Reads [input] to exhaustion and returns the SHA-256 of its bytes as a
      * lowercase hex string.
@@ -59,27 +58,26 @@ object FileIntegrity {
      * Hashes [bytes] in one call. Used for the small files (host keys,
      * snippets, vault secrets) where streaming is overkill.
      */
-    fun sha256Bytes(bytes: ByteArray): String =
-        newSha256().apply { update(bytes) }.hex()
+    fun sha256Bytes(bytes: ByteArray): String = newSha256().apply { update(bytes) }.hex()
 
     /**
      * Hashes the UTF-8 bytes of [text]. Convenience wrapper for hashing the
      * known-hosts file or a config blob.
      */
-    fun sha256Text(text: String): String =
-        sha256Bytes(text.toByteArray(Charsets.UTF_8))
+    fun sha256Text(text: String): String = sha256Bytes(text.toByteArray(Charsets.UTF_8))
 
     private const val BUFFER_SIZE = 64 * 1024
 
-    private fun newSha256(): MessageDigest = try {
-        MessageDigest.getInstance("SHA-256")
-    } catch (e: NoSuchAlgorithmException) {
-        // Every Android JVM since API 21 ships SHA-256 in the platform
-        // provider. The only way this throws is a stripped provider,
-        // which is a "this build is broken" condition, not a user-
-        // facing error.
-        error("SHA-256 is not available on this platform")
-    }
+    private fun newSha256(): MessageDigest =
+        try {
+            MessageDigest.getInstance("SHA-256")
+        } catch (e: NoSuchAlgorithmException) {
+            // Every Android JVM since API 21 ships SHA-256 in the platform
+            // provider. The only way this throws is a stripped provider,
+            // which is a "this build is broken" condition, not a user-
+            // facing error.
+            error("SHA-256 is not available on this platform")
+        }
 
     private fun MessageDigest.hex(): String {
         val bytes = digest()

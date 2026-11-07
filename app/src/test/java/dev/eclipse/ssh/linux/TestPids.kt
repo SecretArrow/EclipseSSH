@@ -13,7 +13,6 @@ import java.io.File
  * test would then pass by sweeping nothing at all.
  */
 internal object TestPids {
-
     /**
      * A pid naming no running process here: the first hole found scanning down from [CEILING].
      *

@@ -148,7 +148,7 @@ class WideCharacterBoundaryTest {
         // The cursor stands on the right half, which is a cell like any other: a blank goes in and
         // the half moves with it, leaving the pair still whole and still adjacent.
         val row = buffer.snapshot().lines[0]
-        assertThat(row.text()).isEqualTo("0123${WIDE} 67")
+        assertThat(row.text()).isEqualTo("0123$WIDE 67")
         assertThat(row.count { it.wide }).isEqualTo(1)
     }
 

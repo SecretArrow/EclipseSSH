@@ -9,15 +9,15 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import dev.eclipse.ssh.di.HostCredentialsDataStore
 import dev.eclipse.ssh.security.SecretCipher
-import java.io.IOException
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Everything the UI is allowed to know about a host's saved credentials: that they exist, what the
@@ -56,13 +56,14 @@ data class StoredCredentials(
  * the type is derived from the public half.
  */
 fun StoredCredentials.describe(): String {
-    val parts = buildList {
-        if (hasPassword) add("Password")
-        keyLabel?.let { label ->
-            val suffix = listOfNotNull(keyType, "passphrase".takeIf { hasPassphrase })
-            add(if (suffix.isEmpty()) label else "$label (${suffix.joinToString(", ")})")
+    val parts =
+        buildList {
+            if (hasPassword) add("Password")
+            keyLabel?.let { label ->
+                val suffix = listOfNotNull(keyType, "passphrase".takeIf { hasPassphrase })
+                add(if (suffix.isEmpty()) label else "$label (${suffix.joinToString(", ")})")
+            }
         }
-    }
     return if (parts.isEmpty()) "Asked at every connect" else parts.joinToString(" + ")
 }
 
@@ -83,7 +84,9 @@ sealed interface SecretEdit {
     data object Forget : SecretEdit
 
     /** Replace the stored value. An empty [value] is treated as [Forget]. */
-    data class Replace(val value: String) : SecretEdit {
+    data class Replace(
+        val value: String,
+    ) : SecretEdit {
         /** Redacted, for the same reason [KeyEdit.Replace] is not a data class at all. */
         override fun toString(): String = "Replace(***)"
     }
@@ -103,7 +106,11 @@ sealed interface KeyEdit {
      * identity and, worse, print it. `toString` on a credential is how key material reaches a crash
      * report.
      */
-    class Replace(val bytes: ByteArray, val label: String, val type: String?) : KeyEdit
+    class Replace(
+        val bytes: ByteArray,
+        val label: String,
+        val type: String?,
+    ) : KeyEdit
 }
 
 /**
@@ -176,252 +183,277 @@ data class RdpCredentialUpdate(
  * parameter is what makes the rules below testable at all; see `HostCredentialStoreTest`.
  */
 @Singleton
-class HostCredentialStore @Inject constructor(
-    @HostCredentialsDataStore private val dataStore: DataStore<Preferences>,
-    private val cipher: SecretCipher,
-) {
-    /**
-     * Saved-credential metadata per host id, for the hosts that have any.
-     *
-     * An unreadable file yields "nothing is saved" rather than terminating the flow. This one is
-     * combined into the state the whole UI renders from, and a flow that throws is a flow that has
-     * ended: letting the [IOException] through would freeze the host list, not just the credential
-     * badges. Falling back means the user is asked for a password they had saved — recoverable, and
-     * the safe direction for a store of secrets.
-     */
-    val credentials: Flow<Map<String, StoredCredentials>> = dataStore.data
-        .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
-        .map(::summarise)
+class HostCredentialStore
+    @Inject
+    constructor(
+        @HostCredentialsDataStore private val dataStore: DataStore<Preferences>,
+        private val cipher: SecretCipher,
+    ) {
+        /**
+         * Saved-credential metadata per host id, for the hosts that have any.
+         *
+         * An unreadable file yields "nothing is saved" rather than terminating the flow. This one is
+         * combined into the state the whole UI renders from, and a flow that throws is a flow that has
+         * ended: letting the [IOException] through would freeze the host list, not just the credential
+         * badges. Falling back means the user is asked for a password they had saved — recoverable, and
+         * the safe direction for a store of secrets.
+         */
+        val credentials: Flow<Map<String, StoredCredentials>> =
+            dataStore.data
+                .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+                .map(::summarise)
 
-    /** Metadata for one host. Never returns secret material. */
-    suspend fun stored(hostId: String): StoredCredentials =
-        credentials.first()[hostId] ?: StoredCredentials()
+        /** Metadata for one host. Never returns secret material. */
+        suspend fun stored(hostId: String): StoredCredentials = credentials.first()[hostId] ?: StoredCredentials()
 
-    /**
-     * Applies [update], leaving every field it does not mention alone.
-     *
-     * A single `edit` so the write is atomic: a passphrase that landed without its key, or a key that
-     * landed without its label, would both be states the reads below have to defend against forever.
-     */
-    suspend fun apply(hostId: String, update: HostCredentialUpdate) {
-        require(hostId.isNotBlank()) { "Cannot store credentials for a host with no id" }
-        if (update.isNoop) return
-        editPrefs { prefs ->
-            applySecret(prefs, passwordKey(hostId), update.password)
-            applyKey(prefs, hostId, update.key)
-            applySecret(prefs, passphraseKey(hostId), update.passphrase)
-            // A passphrase with no key left to unlock is a secret nobody can account for, so
-            // forgetting a key forgets its passphrase in the same transaction. Enforced here rather
-            // than asked of every caller, because the caller that forgets is the one about to
-            // navigate away.
-            if (prefs[keyKey(hostId)] == null) prefs.remove(passphraseKey(hostId))
+        /**
+         * Applies [update], leaving every field it does not mention alone.
+         *
+         * A single `edit` so the write is atomic: a passphrase that landed without its key, or a key that
+         * landed without its label, would both be states the reads below have to defend against forever.
+         */
+        suspend fun apply(
+            hostId: String,
+            update: HostCredentialUpdate,
+        ) {
+            require(hostId.isNotBlank()) { "Cannot store credentials for a host with no id" }
+            if (update.isNoop) return
+            editPrefs { prefs ->
+                applySecret(prefs, passwordKey(hostId), update.password)
+                applyKey(prefs, hostId, update.key)
+                applySecret(prefs, passphraseKey(hostId), update.passphrase)
+                // A passphrase with no key left to unlock is a secret nobody can account for, so
+                // forgetting a key forgets its passphrase in the same transaction. Enforced here rather
+                // than asked of every caller, because the caller that forgets is the one about to
+                // navigate away.
+                if (prefs[keyKey(hostId)] == null) prefs.remove(passphraseKey(hostId))
+            }
         }
-    }
 
-    /** The saved password, or null if none is stored or it cannot be decrypted. */
-    suspend fun password(hostId: String): String? = secret(passwordKey(hostId))
+        /** The saved password, or null if none is stored or it cannot be decrypted. */
+        suspend fun password(hostId: String): String? = secret(passwordKey(hostId))
 
-    /** The saved passphrase for the stored key, or null. */
-    suspend fun passphrase(hostId: String): String? = secret(passphraseKey(hostId))
+        /** The saved passphrase for the stored key, or null. */
+        suspend fun passphrase(hostId: String): String? = secret(passphraseKey(hostId))
 
-    /** The saved private key's bytes, or null if none is stored or it cannot be decoded. */
-    suspend fun keyBytes(hostId: String): ByteArray? = secret(keyKey(hostId))?.let { encoded ->
-        runCatching { Base64.decode(encoded, Base64.NO_WRAP) }.getOrNull()?.takeIf { it.isNotEmpty() }
-    }
+        /** The saved private key's bytes, or null if none is stored or it cannot be decoded. */
+        suspend fun keyBytes(hostId: String): ByteArray? =
+            secret(keyKey(hostId))?.let { encoded ->
+                runCatching { Base64.decode(encoded, Base64.NO_WRAP) }.getOrNull()?.takeIf { it.isNotEmpty() }
+            }
 
-    /**
-     * Applies [update] to [hostId]'s RDP credential, leaving every field it does not mention alone.
-     *
-     * One `edit` for the same reason [apply] is one: a username that landed without its password is
-     * a state every read below has to defend against forever. The whole credential is one unit to
-     * NLA, so it is one unit here too — see the orphan rule inside.
-     */
-    suspend fun applyRdp(hostId: String, update: RdpCredentialUpdate) {
-        require(hostId.isNotBlank()) { "Cannot store credentials for a host with no id" }
-        if (update.isNoop) return
-        editPrefs { prefs ->
-            applySecret(prefs, rdpUsernameKey(hostId), update.username)
-            applySecret(prefs, rdpDomainKey(hostId), update.domain)
-            applySecret(prefs, rdpPasswordKey(hostId), update.password)
-            // An RDP credential missing either half can never answer an NLA challenge, so it is a
-            // secret at rest that nothing can use — the same accounting as a passphrase with no
-            // key. Enforced here rather than asked of every caller, so no write can leave one
-            // behind: a password without a username, or a username without a password, clears the
-            // domain with it.
-            if (prefs[rdpUsernameKey(hostId)] == null || prefs[rdpPasswordKey(hostId)] == null) {
+        /**
+         * Applies [update] to [hostId]'s RDP credential, leaving every field it does not mention alone.
+         *
+         * One `edit` for the same reason [apply] is one: a username that landed without its password is
+         * a state every read below has to defend against forever. The whole credential is one unit to
+         * NLA, so it is one unit here too — see the orphan rule inside.
+         */
+        suspend fun applyRdp(
+            hostId: String,
+            update: RdpCredentialUpdate,
+        ) {
+            require(hostId.isNotBlank()) { "Cannot store credentials for a host with no id" }
+            if (update.isNoop) return
+            editPrefs { prefs ->
+                applySecret(prefs, rdpUsernameKey(hostId), update.username)
+                applySecret(prefs, rdpDomainKey(hostId), update.domain)
+                applySecret(prefs, rdpPasswordKey(hostId), update.password)
+                // An RDP credential missing either half can never answer an NLA challenge, so it is a
+                // secret at rest that nothing can use — the same accounting as a passphrase with no
+                // key. Enforced here rather than asked of every caller, so no write can leave one
+                // behind: a password without a username, or a username without a password, clears the
+                // domain with it.
+                if (prefs[rdpUsernameKey(hostId)] == null || prefs[rdpPasswordKey(hostId)] == null) {
+                    prefs.remove(rdpUsernameKey(hostId))
+                    prefs.remove(rdpDomainKey(hostId))
+                    prefs.remove(rdpPasswordKey(hostId))
+                }
+            }
+        }
+
+        /**
+         * The saved RDP credential for [hostId], or null when none is stored, only part of one is, or it
+         * cannot be decrypted. The domain is null when the credential was saved without one.
+         */
+        suspend fun rdpCredentials(hostId: String): RdpCredentials? {
+            val username = secret(rdpUsernameKey(hostId)) ?: return null
+            val password = secret(rdpPasswordKey(hostId)) ?: return null
+            return RdpCredentials(username = username, domain = secret(rdpDomainKey(hostId)), password = password)
+        }
+
+        /** Removes the stored RDP credential for [hostId], leaving the SSH credentials alone. */
+        suspend fun forgetRdp(hostId: String) {
+            editPrefs { prefs ->
                 prefs.remove(rdpUsernameKey(hostId))
                 prefs.remove(rdpDomainKey(hostId))
                 prefs.remove(rdpPasswordKey(hostId))
             }
         }
-    }
 
-    /**
-     * The saved RDP credential for [hostId], or null when none is stored, only part of one is, or it
-     * cannot be decrypted. The domain is null when the credential was saved without one.
-     */
-    suspend fun rdpCredentials(hostId: String): RdpCredentials? {
-        val username = secret(rdpUsernameKey(hostId)) ?: return null
-        val password = secret(rdpPasswordKey(hostId)) ?: return null
-        return RdpCredentials(username = username, domain = secret(rdpDomainKey(hostId)), password = password)
-    }
-
-    /** Removes the stored RDP credential for [hostId], leaving the SSH credentials alone. */
-    suspend fun forgetRdp(hostId: String) {
-        editPrefs { prefs ->
-            prefs.remove(rdpUsernameKey(hostId))
-            prefs.remove(rdpDomainKey(hostId))
-            prefs.remove(rdpPasswordKey(hostId))
-        }
-    }
-
-    /** Removes everything stored for [hostId]. Called when a host profile is deleted. */
-    suspend fun forget(hostId: String) {
-        editPrefs { prefs ->
-            prefs.remove(passwordKey(hostId))
-            prefs.remove(keyKey(hostId))
-            prefs.remove(passphraseKey(hostId))
-            prefs.remove(keyLabelKey(hostId))
-            prefs.remove(keyTypeKey(hostId))
-            prefs.remove(rdpUsernameKey(hostId))
-            prefs.remove(rdpDomainKey(hostId))
-            prefs.remove(rdpPasswordKey(hostId))
-        }
-    }
-
-    /** Removes every stored credential, for the Settings "forget all saved credentials" action. */
-    suspend fun forgetAll() {
-        editPrefs { prefs ->
-            prefs.asMap().keys.filter { it.name.isCredentialKey() }.forEach { key ->
-                @Suppress("UNCHECKED_CAST")
-                prefs.remove(key as Preferences.Key<Any>)
-            }
-        }
-    }
-
-    /**
-     * Every write goes through here so none of them runs on the caller's dispatcher.
-     *
-     * DataStore invokes an `edit` transform with `withContext(callerContext)`, so a transform started
-     * from `viewModelScope` runs on the main thread -- AES encryption plus a file write on the UI thread. Worse, writes are
-     * serialised through a single actor, so one transform parked on a stalled dispatcher blocks every
-     * later write to this store for the life of the process.
-     */
-    private suspend fun editPrefs(block: suspend (MutablePreferences) -> Unit): Preferences =
-        withContext(Dispatchers.IO) { dataStore.edit(block) }
-
-    /**
-     * Decrypts one stored field, or returns null.
-     *
-     * Failure is swallowed on purpose, and it is a case that really happens: a payload encrypted
-     * under a vault key that no longer exists — the app's data restored onto another device, or the
-     * keystore cleared — cannot be decrypted by anyone, ever. Throwing would take the connection
-     * attempt down with it; returning null falls back to asking the user, which is what the app did
-     * before the credential was saved.
-     */
-    private suspend fun secret(key: Preferences.Key<String>): String? {
-        val payload = dataStore.data
-            .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
-            .first()[key] ?: return null
-        return runCatching { cipher.decrypt(payload) }.getOrNull()?.takeIf(String::isNotEmpty)
-    }
-
-    private fun applySecret(prefs: MutablePreferences, key: Preferences.Key<String>, edit: SecretEdit) {
-        when (edit) {
-            SecretEdit.Keep -> Unit
-            SecretEdit.Forget -> prefs.remove(key)
-            is SecretEdit.Replace ->
-                if (edit.value.isEmpty()) prefs.remove(key) else prefs[key] = cipher.encrypt(edit.value)
-        }
-    }
-
-    private fun applyKey(prefs: MutablePreferences, hostId: String, edit: KeyEdit) {
-        when (edit) {
-            KeyEdit.Keep -> Unit
-            KeyEdit.Forget -> {
+        /** Removes everything stored for [hostId]. Called when a host profile is deleted. */
+        suspend fun forget(hostId: String) {
+            editPrefs { prefs ->
+                prefs.remove(passwordKey(hostId))
                 prefs.remove(keyKey(hostId))
+                prefs.remove(passphraseKey(hostId))
                 prefs.remove(keyLabelKey(hostId))
                 prefs.remove(keyTypeKey(hostId))
-            }
-            is KeyEdit.Replace -> if (edit.bytes.isEmpty()) {
-                applyKey(prefs, hostId, KeyEdit.Forget)
-            } else {
-                prefs[keyKey(hostId)] = cipher.encrypt(Base64.encodeToString(edit.bytes, Base64.NO_WRAP))
-                prefs[keyLabelKey(hostId)] = edit.label.ifBlank { DEFAULT_KEY_LABEL }
-                edit.type?.let { prefs[keyTypeKey(hostId)] = it } ?: prefs.remove(keyTypeKey(hostId))
+                prefs.remove(rdpUsernameKey(hostId))
+                prefs.remove(rdpDomainKey(hostId))
+                prefs.remove(rdpPasswordKey(hostId))
             }
         }
-    }
 
-    private companion object {
-        // Distinct prefixes, none a prefix of another, so splitting a key name back into
-        // (field, hostId) is unambiguous. `key_` and `key_label_` would not have been: a host called
-        // `label_x` and the label of a host called `x` produce the same preference name.
-        const val PASSWORD = "secret_password_"
-        const val KEY = "secret_key_"
-        const val PASSPHRASE = "secret_passphrase_"
-        const val KEY_LABEL = "meta_keylabel_"
-        const val KEY_TYPE = "meta_keytype_"
-        const val DEFAULT_KEY_LABEL = "Private key"
-
-        // The RDP credential's three fields, all encrypted: the password because it is a password,
-        // the username and domain because together they name an account on the server, and a
-        // partial NLA identity is worth less than the file it costs to keep it in the clear.
-        const val RDP_USERNAME = "secret_rdp_username_"
-        const val RDP_DOMAIN = "secret_rdp_domain_"
-        const val RDP_PASSWORD = "secret_rdp_password_"
-
-        val PREFIXES = listOf(PASSWORD, KEY, PASSPHRASE, KEY_LABEL, KEY_TYPE, RDP_USERNAME, RDP_DOMAIN, RDP_PASSWORD)
-
-        fun passwordKey(hostId: String) = stringPreferencesKey("$PASSWORD$hostId")
-        fun keyKey(hostId: String) = stringPreferencesKey("$KEY$hostId")
-        fun passphraseKey(hostId: String) = stringPreferencesKey("$PASSPHRASE$hostId")
-        fun keyLabelKey(hostId: String) = stringPreferencesKey("$KEY_LABEL$hostId")
-        fun keyTypeKey(hostId: String) = stringPreferencesKey("$KEY_TYPE$hostId")
-        fun rdpUsernameKey(hostId: String) = stringPreferencesKey("$RDP_USERNAME$hostId")
-        fun rdpDomainKey(hostId: String) = stringPreferencesKey("$RDP_DOMAIN$hostId")
-        fun rdpPasswordKey(hostId: String) = stringPreferencesKey("$RDP_PASSWORD$hostId")
-
-        fun String.isCredentialKey() = PREFIXES.any { startsWith(it) }
+        /** Removes every stored credential, for the Settings "forget all saved credentials" action. */
+        suspend fun forgetAll() {
+            editPrefs { prefs ->
+                prefs.asMap().keys.filter { it.name.isCredentialKey() }.forEach { key ->
+                    @Suppress("UNCHECKED_CAST")
+                    prefs.remove(key as Preferences.Key<Any>)
+                }
+            }
+        }
 
         /**
-         * Folds the raw preferences into per-host metadata.
+         * Every write goes through here so none of them runs on the caller's dispatcher.
          *
-         * The key secret decides whether a host "has a key"; the label and type are only reported
-         * alongside one. A label without its secret is what a half-finished restore or a hand-edited
-         * file looks like, and reporting it would put a key on the screen that no connection could
-         * use. A secret without a label gets a generic one, so the invariant the UI relies on —
-         * non-null label means a usable key — holds from either direction.
+         * DataStore invokes an `edit` transform with `withContext(callerContext)`, so a transform started
+         * from `viewModelScope` runs on the main thread -- AES encryption plus a file write on the UI thread. Worse, writes are
+         * serialised through a single actor, so one transform parked on a stalled dispatcher blocks every
+         * later write to this store for the life of the process.
          */
-        fun summarise(prefs: Preferences): Map<String, StoredCredentials> {
-            val passwords = mutableSetOf<String>()
-            val keys = mutableSetOf<String>()
-            val passphrases = mutableSetOf<String>()
-            val labels = mutableMapOf<String, String>()
-            val types = mutableMapOf<String, String>()
-            prefs.asMap().forEach { (key, value) ->
-                val name = key.name
-                val text = value as? String ?: return@forEach
-                if (text.isEmpty()) return@forEach
-                when {
-                    name.startsWith(PASSWORD) -> passwords += name.removePrefix(PASSWORD)
-                    name.startsWith(PASSPHRASE) -> passphrases += name.removePrefix(PASSPHRASE)
-                    name.startsWith(KEY) -> keys += name.removePrefix(KEY)
-                    name.startsWith(KEY_LABEL) -> labels[name.removePrefix(KEY_LABEL)] = text
-                    name.startsWith(KEY_TYPE) -> types[name.removePrefix(KEY_TYPE)] = text
-                }
+        private suspend fun editPrefs(block: suspend (MutablePreferences) -> Unit): Preferences = withContext(Dispatchers.IO) { dataStore.edit(block) }
+
+        /**
+         * Decrypts one stored field, or returns null.
+         *
+         * Failure is swallowed on purpose, and it is a case that really happens: a payload encrypted
+         * under a vault key that no longer exists — the app's data restored onto another device, or the
+         * keystore cleared — cannot be decrypted by anyone, ever. Throwing would take the connection
+         * attempt down with it; returning null falls back to asking the user, which is what the app did
+         * before the credential was saved.
+         */
+        private suspend fun secret(key: Preferences.Key<String>): String? {
+            val payload =
+                dataStore.data
+                    .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
+                    .first()[key] ?: return null
+            return runCatching { cipher.decrypt(payload) }.getOrNull()?.takeIf(String::isNotEmpty)
+        }
+
+        private fun applySecret(
+            prefs: MutablePreferences,
+            key: Preferences.Key<String>,
+            edit: SecretEdit,
+        ) {
+            when (edit) {
+                SecretEdit.Keep -> Unit
+                SecretEdit.Forget -> prefs.remove(key)
+                is SecretEdit.Replace ->
+                    if (edit.value.isEmpty()) prefs.remove(key) else prefs[key] = cipher.encrypt(edit.value)
             }
-            return (passwords + keys)
-                .filter(String::isNotEmpty)
-                .associateWith { hostId ->
-                    val hasKey = hostId in keys
-                    StoredCredentials(
-                        hasPassword = hostId in passwords,
-                        keyLabel = if (hasKey) labels[hostId] ?: DEFAULT_KEY_LABEL else null,
-                        keyType = if (hasKey) types[hostId] else null,
-                        hasPassphrase = hasKey && hostId in passphrases,
-                    )
+        }
+
+        private fun applyKey(
+            prefs: MutablePreferences,
+            hostId: String,
+            edit: KeyEdit,
+        ) {
+            when (edit) {
+                KeyEdit.Keep -> Unit
+                KeyEdit.Forget -> {
+                    prefs.remove(keyKey(hostId))
+                    prefs.remove(keyLabelKey(hostId))
+                    prefs.remove(keyTypeKey(hostId))
                 }
+                is KeyEdit.Replace ->
+                    if (edit.bytes.isEmpty()) {
+                        applyKey(prefs, hostId, KeyEdit.Forget)
+                    } else {
+                        prefs[keyKey(hostId)] = cipher.encrypt(Base64.encodeToString(edit.bytes, Base64.NO_WRAP))
+                        prefs[keyLabelKey(hostId)] = edit.label.ifBlank { DEFAULT_KEY_LABEL }
+                        edit.type?.let { prefs[keyTypeKey(hostId)] = it } ?: prefs.remove(keyTypeKey(hostId))
+                    }
+            }
+        }
+
+        private companion object {
+            // Distinct prefixes, none a prefix of another, so splitting a key name back into
+            // (field, hostId) is unambiguous. `key_` and `key_label_` would not have been: a host called
+            // `label_x` and the label of a host called `x` produce the same preference name.
+            const val PASSWORD = "secret_password_"
+            const val KEY = "secret_key_"
+            const val PASSPHRASE = "secret_passphrase_"
+            const val KEY_LABEL = "meta_keylabel_"
+            const val KEY_TYPE = "meta_keytype_"
+            const val DEFAULT_KEY_LABEL = "Private key"
+
+            // The RDP credential's three fields, all encrypted: the password because it is a password,
+            // the username and domain because together they name an account on the server, and a
+            // partial NLA identity is worth less than the file it costs to keep it in the clear.
+            const val RDP_USERNAME = "secret_rdp_username_"
+            const val RDP_DOMAIN = "secret_rdp_domain_"
+            const val RDP_PASSWORD = "secret_rdp_password_"
+
+            val PREFIXES = listOf(PASSWORD, KEY, PASSPHRASE, KEY_LABEL, KEY_TYPE, RDP_USERNAME, RDP_DOMAIN, RDP_PASSWORD)
+
+            fun passwordKey(hostId: String) = stringPreferencesKey("$PASSWORD$hostId")
+
+            fun keyKey(hostId: String) = stringPreferencesKey("$KEY$hostId")
+
+            fun passphraseKey(hostId: String) = stringPreferencesKey("$PASSPHRASE$hostId")
+
+            fun keyLabelKey(hostId: String) = stringPreferencesKey("$KEY_LABEL$hostId")
+
+            fun keyTypeKey(hostId: String) = stringPreferencesKey("$KEY_TYPE$hostId")
+
+            fun rdpUsernameKey(hostId: String) = stringPreferencesKey("$RDP_USERNAME$hostId")
+
+            fun rdpDomainKey(hostId: String) = stringPreferencesKey("$RDP_DOMAIN$hostId")
+
+            fun rdpPasswordKey(hostId: String) = stringPreferencesKey("$RDP_PASSWORD$hostId")
+
+            fun String.isCredentialKey() = PREFIXES.any { startsWith(it) }
+
+            /**
+             * Folds the raw preferences into per-host metadata.
+             *
+             * The key secret decides whether a host "has a key"; the label and type are only reported
+             * alongside one. A label without its secret is what a half-finished restore or a hand-edited
+             * file looks like, and reporting it would put a key on the screen that no connection could
+             * use. A secret without a label gets a generic one, so the invariant the UI relies on —
+             * non-null label means a usable key — holds from either direction.
+             */
+            fun summarise(prefs: Preferences): Map<String, StoredCredentials> {
+                val passwords = mutableSetOf<String>()
+                val keys = mutableSetOf<String>()
+                val passphrases = mutableSetOf<String>()
+                val labels = mutableMapOf<String, String>()
+                val types = mutableMapOf<String, String>()
+                prefs.asMap().forEach { (key, value) ->
+                    val name = key.name
+                    val text = value as? String ?: return@forEach
+                    if (text.isEmpty()) return@forEach
+                    when {
+                        name.startsWith(PASSWORD) -> passwords += name.removePrefix(PASSWORD)
+                        name.startsWith(PASSPHRASE) -> passphrases += name.removePrefix(PASSPHRASE)
+                        name.startsWith(KEY) -> keys += name.removePrefix(KEY)
+                        name.startsWith(KEY_LABEL) -> labels[name.removePrefix(KEY_LABEL)] = text
+                        name.startsWith(KEY_TYPE) -> types[name.removePrefix(KEY_TYPE)] = text
+                    }
+                }
+                return (passwords + keys)
+                    .filter(String::isNotEmpty)
+                    .associateWith { hostId ->
+                        val hasKey = hostId in keys
+                        StoredCredentials(
+                            hasPassword = hostId in passwords,
+                            keyLabel = if (hasKey) labels[hostId] ?: DEFAULT_KEY_LABEL else null,
+                            keyType = if (hasKey) types[hostId] else null,
+                            hasPassphrase = hasKey && hostId in passphrases,
+                        )
+                    }
+            }
         }
     }
-}

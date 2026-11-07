@@ -30,8 +30,9 @@ internal fun foregroundNeed(
     budgetExhausted: Boolean,
     liveSessions: Int,
     transferInFlight: Boolean,
-): ForegroundNeed = when {
-    liveSessions > 0 || transferInFlight ->
-        if (budgetExhausted) ForegroundNeed.SPECIAL_USE else ForegroundNeed.DATA_SYNC
-    else -> ForegroundNeed.STOP
-}
+): ForegroundNeed =
+    when {
+        liveSessions > 0 || transferInFlight ->
+            if (budgetExhausted) ForegroundNeed.SPECIAL_USE else ForegroundNeed.DATA_SYNC
+        else -> ForegroundNeed.STOP
+    }

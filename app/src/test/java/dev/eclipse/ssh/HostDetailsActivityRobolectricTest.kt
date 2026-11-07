@@ -28,7 +28,6 @@ import dev.eclipse.ssh.ui.actions.ActionAnswer
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.HostDetailsKind
 import dev.eclipse.ssh.ui.hosts.HostDetailsActivity
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -38,6 +37,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * One host's details, as a window: what is saved about it, what the vault holds for it, and what it is
@@ -59,7 +59,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class HostDetailsActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -94,17 +93,18 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun theSavedConfigurationIsReadFromTheHost() {
-        val host = seedHost(
-            HostProfile(
-                id = "b2-details-full",
-                name = "Detailed",
-                host = "details.example.test",
-                username = "reader",
-                port = 2022,
-                group = "Staging",
-                fingerprint = "SHA256:abcdefghijklmnop",
-            ),
-        )
+        val host =
+            seedHost(
+                HostProfile(
+                    id = "b2-details-full",
+                    name = "Detailed",
+                    host = "details.example.test",
+                    username = "reader",
+                    port = 2022,
+                    group = "Staging",
+                    fingerprint = "SHA256:abcdefghijklmnop",
+                ),
+            )
 
         launchWindow(host, stats = null).use {
             awaitText("Staging")
@@ -123,9 +123,10 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun aHostWithNothingSavedSaysSoAndOffersNoWayToForgetIt() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-empty", name = "Bare", host = "bare.example.test", username = "nobody"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-empty", name = "Bare", host = "bare.example.test", username = "nobody"),
+            )
 
         launchWindow(host, stats = null).use {
             awaitText(StoredCredentials().describe())
@@ -136,9 +137,10 @@ class HostDetailsActivityRobolectricTest {
     /** The vault's summary, and the one row that changes it: forgetting what is saved. */
     @Test
     fun whatTheVaultHoldsIsSummarisedAndCanBeForgotten() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-saved", name = "Saved", host = "saved.example.test", username = "saver"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-saved", name = "Saved", host = "saved.example.test", username = "saver"),
+            )
         savePassword(host.id, "hunter2")
 
         launchWindow(host, stats = null).use { scenario ->
@@ -162,9 +164,10 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun theCredentialsLineFollowsTheStoreWhileTheWindowIsOpen() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-live", name = "Live", host = "live.example.test", username = "liver"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-live", name = "Live", host = "live.example.test", username = "liver"),
+            )
 
         launchWindow(host, stats = null).use { scenario ->
             awaitText(StoredCredentials().describe())
@@ -177,8 +180,10 @@ class HostDetailsActivityRobolectricTest {
                 }
             }
             pumpUntil(describe = { "the credentials line never caught up with the vault" }) {
-                compose.onAllNodes(hasText(StoredCredentials(hasPassword = true).describe()))
-                    .fetchSemanticsNodes().isNotEmpty()
+                compose
+                    .onAllNodes(hasText(StoredCredentials(hasPassword = true).describe()))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
             }
         }
     }
@@ -192,9 +197,10 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun withNoStatsTheMonitoringBlockOffersToLoadThem() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-nostats", name = "Quiet", host = "quiet.example.test", username = "quiet"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-nostats", name = "Quiet", host = "quiet.example.test", username = "quiet"),
+            )
 
         launchWindow(host, stats = null).use {
             awaitText("Load server stats")
@@ -212,9 +218,10 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun theWorkspacesStatsSnapshotIsDrawnWhole() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-stats", name = "Busy", host = "busy.example.test", username = "busy"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-stats", name = "Busy", host = "busy.example.test", username = "busy"),
+            )
 
         launchWindow(host, stats = STATS).use {
             awaitText(STATS.hostname)
@@ -237,9 +244,10 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun refreshStatsFilesTheAnswerAndClosesTheWindow() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-refresh", name = "Stale", host = "stale.example.test", username = "stale"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-refresh", name = "Stale", host = "stale.example.test", username = "stale"),
+            )
 
         launchWindow(host, stats = STATS).use { scenario ->
             awaitText("Refresh stats")
@@ -261,9 +269,10 @@ class HostDetailsActivityRobolectricTest {
      */
     @Test
     fun theWindowClosesWhenItsHostIsRemoved() {
-        val host = seedHost(
-            HostProfile(id = "b2-details-gone", name = "Doomed", host = "doomed.example.test", username = "doomed"),
-        )
+        val host =
+            seedHost(
+                HostProfile(id = "b2-details-gone", name = "Doomed", host = "doomed.example.test", username = "doomed"),
+            )
 
         launchWindow(host, stats = null).use { scenario ->
             awaitText("Credentials")
@@ -282,19 +291,23 @@ class HostDetailsActivityRobolectricTest {
     @Test
     fun anIntentWithNoTokenOpensNothing() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        ActivityScenario.launch<HostDetailsActivity>(
-            Intent(context, HostDetailsActivity::class.java),
-        ).use { scenario ->
-            pumpUntil(describe = { "an intent with no subject token opened a window anyway" }) {
-                scenario.state == Lifecycle.State.DESTROYED
+        ActivityScenario
+            .launch<HostDetailsActivity>(
+                Intent(context, HostDetailsActivity::class.java),
+            ).use { scenario ->
+                pumpUntil(describe = { "an intent with no subject token opened a window anyway" }) {
+                    scenario.state == Lifecycle.State.DESTROYED
+                }
             }
-        }
     }
 
     // ---------------------------------------------------------------- driving the app
 
     /** The intent the app itself builds, so the handoff's two halves are the shipped ones. */
-    private fun launchWindow(host: HostProfile, stats: ServerStats?): ActivityScenario<HostDetailsActivity> {
+    private fun launchWindow(
+        host: HostProfile,
+        stats: ServerStats?,
+    ): ActivityScenario<HostDetailsActivity> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return ActivityScenario.launch<HostDetailsActivity>(HostDetailsActivity.intent(context, host, stats))
     }
@@ -324,23 +337,29 @@ class HostDetailsActivityRobolectricTest {
      * Deliberately a separate launch rather than part of [seedHost]: the credential store and the host
      * repository are two writes, and a test that needs only the first should not depend on the second.
      */
-    private fun savePassword(hostId: String, password: String) {
+    private fun savePassword(
+        hostId: String,
+        password: String,
+    ) {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity -> runBlocking { workspaceCredentials(activity).apply(hostId, HostCredentialUpdate(password = SecretEdit.Replace(password))) } }
         }
     }
 
     /** The host repository the workspace holds, by reflection. */
-    private fun workspaceRepository(activity: MainActivity): HostRepository =
-        workspaceField(activity, "hostRepository", HostRepository::class.java)
+    private fun workspaceRepository(activity: MainActivity): HostRepository = workspaceField(activity, "hostRepository", HostRepository::class.java)
 
     /** The credential store the workspace holds, by reflection. */
-    private fun workspaceCredentials(activity: MainActivity): HostCredentialStore =
-        workspaceField(activity, "credentialStore", HostCredentialStore::class.java)
+    private fun workspaceCredentials(activity: MainActivity): HostCredentialStore = workspaceField(activity, "credentialStore", HostCredentialStore::class.java)
 
-    private fun <T> workspaceField(activity: MainActivity, name: String, type: Class<T>): T {
+    private fun <T> workspaceField(
+        activity: MainActivity,
+        name: String,
+        type: Class<T>,
+    ): T {
         val viewModel = ViewModelProvider(activity)[MainViewModel::class.java]
-        return MainViewModel::class.java.getDeclaredField(name)
+        return MainViewModel::class.java
+            .getDeclaredField(name)
             .apply { isAccessible = true }
             .get(viewModel) as T
     }
@@ -361,7 +380,11 @@ class HostDetailsActivityRobolectricTest {
      * The shape the suites that drive live state all share - see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -379,7 +402,10 @@ class HostDetailsActivityRobolectricTest {
      * the next, and [pumpUntil] asks twice — once to leave the loop and once to decide whether it
      * timed out. Read straight, an answer that did arrive is reported as one that never did.
      */
-    private fun awaitAnswer(expected: ActionAnswer, describe: () -> String): ActionAnswer {
+    private fun awaitAnswer(
+        expected: ActionAnswer,
+        describe: () -> String,
+    ): ActionAnswer {
         var answer: ActionAnswer? = null
         pumpUntil(describe = describe) {
             answer = answer ?: ActionRequests.takeAnswer()
@@ -405,7 +431,10 @@ class HostDetailsActivityRobolectricTest {
      * closes *before* it is ever resumed — no token — still asserts the state directly: that one
      * closes during the launch, and it is a different fact.
      */
-    private fun awaitClosing(scenario: ActivityScenario<HostDetailsActivity>, describe: () -> String) {
+    private fun awaitClosing(
+        scenario: ActivityScenario<HostDetailsActivity>,
+        describe: () -> String,
+    ) {
         var closing = false
         pumpUntil(describe = describe) {
             runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }
@@ -417,14 +446,15 @@ class HostDetailsActivityRobolectricTest {
         const val TIMEOUT_MS = 30_000L
 
         /** A snapshot of a server's numbers, as the workspace would hand one over. */
-        val STATS = ServerStats(
-            hostname = "edge-01.example.test",
-            uptime = "12 days",
-            loadAverage = "0.42, 0.31, 0.28",
-            memoryUsed = "3.1G",
-            memoryTotal = "7.8G",
-            diskUsed = "41G",
-            diskTotal = "98G",
-        )
+        val STATS =
+            ServerStats(
+                hostname = "edge-01.example.test",
+                uptime = "12 days",
+                loadAverage = "0.42, 0.31, 0.28",
+                memoryUsed = "3.1G",
+                memoryTotal = "7.8G",
+                diskUsed = "41G",
+                diskTotal = "98G",
+            )
     }
 }

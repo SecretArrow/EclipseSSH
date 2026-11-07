@@ -13,7 +13,6 @@ import org.junit.Test
  * guarantee that can only be checked by looking at a phone is not one.
  */
 class TerminalPanFollowTest {
-
     @Test
     fun `only painted columns are pannable`() {
         // 46 on screen, 46 painted: nothing to pan to, and being able to drag the text off the edge to
@@ -30,7 +29,8 @@ class TerminalPanFollowTest {
         // 120 cells long because that is what they were printed at, and every one of those characters
         // has to be reachable on a screen that now fits 46.
         assertThat(maxPanPx(contentColumns = 120, visibleColumns = 46, cellWidth = 23.4f))
-            .isWithin(TOLERANCE).of(74 * 23.4f)
+            .isWithin(TOLERANCE)
+            .of(74 * 23.4f)
     }
 
     @Test
@@ -65,15 +65,16 @@ class TerminalPanFollowTest {
         // in the 48th, on a phone whose window is 44 columns. Following the row's paint alone settled the
         // pan at 4 - which parks the cursor's own cell, [480,490), entirely outside the window [40,480),
         // and a cell drawn outside the window is a frame with no cursor block in it at all.
-        val pan = panForCursor(
-            current = 0f,
-            cursorColumn = 48,
-            cursorRowInk = 47,
-            cursorOnScreen = true,
-            cellWidth = 10f,
-            visibleWidthPx = 440f,
-            maxPan = 100f,
-        )
+        val pan =
+            panForCursor(
+                current = 0f,
+                cursorColumn = 48,
+                cursorRowInk = 47,
+                cursorOnScreen = true,
+                cellWidth = 10f,
+                visibleWidthPx = 440f,
+                maxPan = 100f,
+            )
         assertThat(pan).isEqualTo(50f)
         // And the cell the cursor is drawn in is inside: [480,490) against the window [50,490).
         assertThat(48 * 10f).isAtLeast(pan)
@@ -173,9 +174,9 @@ class TerminalPanFollowTest {
         // covering T/90 of the gap per restart, the shortfall settles at 90/T cells - 2.7 of them at
         // 30 fps, which is most of a phone's screen margin and every character the user just wrote.
         val tween = PAN_FOLLOW_MS.toLong() * 1_000_000L
-        assertThat(followShouldAnimate(33_000_000L, cellsMoved = 1)).isFalse()   // 30 fps of streaming
-        assertThat(followShouldAnimate(16_000_000L, cellsMoved = 1)).isFalse()   // 60 fps, harder
-        assertThat(followShouldAnimate(0L, cellsMoved = 1)).isFalse()            // two frames in one tick
+        assertThat(followShouldAnimate(33_000_000L, cellsMoved = 1)).isFalse() // 30 fps of streaming
+        assertThat(followShouldAnimate(16_000_000L, cellsMoved = 1)).isFalse() // 60 fps, harder
+        assertThat(followShouldAnimate(0L, cellsMoved = 1)).isFalse() // two frames in one tick
 
         // A keystroke, which is the case the tween exists for: the interval is longer than the tween, so
         // the slide finishes and there is nothing to fall behind. One cell of movement, animated.

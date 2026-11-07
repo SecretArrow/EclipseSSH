@@ -35,8 +35,9 @@ data class FsEntry(
  * and offer reload/overwrite/cancel, while every other failure keeps flowing through the ordinary
  * error path.
  */
-class FsModificationConflictException(path: String) :
-    Exception("The file at $path changed after it was opened")
+class FsModificationConflictException(
+    path: String,
+) : Exception("The file at $path changed after it was opened")
 
 /**
  * A filesystem the Files Explorer can browse: the device's own storage behind the Storage Access
@@ -86,7 +87,11 @@ interface FileSystemProvider {
      * [FsModificationConflictException] is thrown instead — never a silent overwrite. Backends
      * that cannot compare times ignore the guard rather than fail the write.
      */
-    suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long? = null)
+    suspend fun write(
+        path: String,
+        data: ByteArray,
+        onlyIfUnmodifiedSince: Long? = null,
+    )
 
     /**
      * Creates an empty file named [name] inside [parentPath] and returns its entry.
@@ -100,10 +105,16 @@ interface FileSystemProvider {
      * Implementations that cannot create atomically (SAF may adjust the name to match the MIME type)
      * return the entry as it actually landed, so the caller can show the user the real name.
      */
-    suspend fun createFile(parentPath: String, name: String): FsEntry
+    suspend fun createFile(
+        parentPath: String,
+        name: String,
+    ): FsEntry
 
     /** Creates an empty directory named [name] inside [parentPath]. Same parent-plus-name rule. */
-    suspend fun createDirectory(parentPath: String, name: String)
+    suspend fun createDirectory(
+        parentPath: String,
+        name: String,
+    )
 
     /**
      * Renames the entry at [path] to [newName], staying in its parent directory.
@@ -111,7 +122,10 @@ interface FileSystemProvider {
      * SAF's only rename is a display-name change on the document itself; a *cross-directory* move is
      * a different operation ([move]) on every backend, so the two are not conflated here.
      */
-    suspend fun rename(path: String, newName: String)
+    suspend fun rename(
+        path: String,
+        newName: String,
+    )
 
     /**
      * Copies the entry at [sourcePath] into [targetDirectoryPath], keeping its name.
@@ -119,13 +133,19 @@ interface FileSystemProvider {
      * The destination is a directory the caller listed, not a full destination path — for the same
      * reason as [createFile]. A directory copies recursively.
      */
-    suspend fun copy(sourcePath: String, targetDirectoryPath: String)
+    suspend fun copy(
+        sourcePath: String,
+        targetDirectoryPath: String,
+    )
 
     /**
      * Moves the entry at [sourcePath] into [targetDirectoryPath], keeping its name, falling back to
      * copy-then-delete when the backend cannot rename across the gap.
      */
-    suspend fun move(sourcePath: String, targetDirectoryPath: String)
+    suspend fun move(
+        sourcePath: String,
+        targetDirectoryPath: String,
+    )
 
     /** Deletes the file or (recursively) the directory at [path]. */
     suspend fun delete(path: String)
@@ -134,14 +154,21 @@ interface FileSystemProvider {
      * Sets POSIX permission bits. Throws [UnsupportedOperationException] when the backend has no
      * such notion (local SAF) — the UI hides the action for those providers rather than calling.
      */
-    suspend fun setPermissions(path: String, mode: Int)
+    suspend fun setPermissions(
+        path: String,
+        mode: Int,
+    )
 
     /**
      * Names under [root] matching [query], each with the path it was found at. Bounded by
      * [maxEntries] because a search walks a tree the provider does not control; over-limit results
      * are cut, not fatal. Case-insensitive by the implementation's own locale rules.
      */
-    suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry>
+    suspend fun search(
+        root: String,
+        query: String,
+        maxEntries: Int,
+    ): List<FsEntry>
 
     /** Whether this provider can report and set POSIX permissions; drives UI affordances. */
     val supportsPermissions: Boolean

@@ -21,7 +21,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class LocalFileBrowserTest {
-
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     /** Shaped like the real thing: what the system file picker hands back for a chosen folder. */
@@ -37,10 +36,11 @@ class LocalFileBrowserTest {
 
     @Test
     fun `the failure names the folder and nothing else`() {
-        val message = runCatching { LocalFileBrowser.list(context, treeUri) }
-            .exceptionOrNull()
-            ?.message
-            .orEmpty()
+        val message =
+            runCatching { LocalFileBrowser.list(context, treeUri) }
+                .exceptionOrNull()
+                ?.message
+                .orEmpty()
 
         assertThat(message).contains(treeUri.toString())
     }

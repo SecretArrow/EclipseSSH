@@ -2,19 +2,18 @@ package dev.eclipse.ssh.data.local
 
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
-import androidx.room.testing.MigrationTestHelper
 import com.google.common.truth.Truth.assertThat
 import dev.eclipse.ssh.data.TransferEntity
-import java.io.File
-import org.json.JSONObject
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.File
 
 /**
  * The database has grown from version 2 to 16 through hand-written `ALTER TABLE` migrations.
@@ -29,7 +28,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class MigrationTest {
-
     private val context get() = RuntimeEnvironment.getApplication()
     private var database: EclipseDatabase? = null
 
@@ -42,551 +40,635 @@ class MigrationTest {
     }
 
     @Test
-    fun `a version 2 database migrates all the way to 16 with its rows intact`() = runTest {
-        seedVersion2()
+    fun `a version 2 database migrates all the way to 16 with its rows intact`() =
+        runTest {
+            seedVersion2()
 
-        val db = openWithMigrations()
+            val db = openWithMigrations()
 
-        val hosts = db.hostDao().observeAll().first()
-        assertThat(hosts).hasSize(1)
-        val host = hosts.single()
-        assertThat(host.id).isEqualTo("legacy-host")
-        assertThat(host.name).isEqualTo("Legacy edge")
-        assertThat(host.host).isEqualTo("old.example.com")
-        assertThat(host.username).isEqualTo("admin")
-        assertThat(host.port).isEqualTo(2022)
-        assertThat(host.groupName).isEqualTo("Work")
-        assertThat(host.isFavorite).isTrue()
-        assertThat(host.fingerprint).isEqualTo("SHA256:legacy")
-        // The unit-separator encoding predates every migration, so old tags must still decode.
-        assertThat(host.toDomain().tags).containsExactly("legacy", "eu")
+            val hosts = db.hostDao().observeAll().first()
+            assertThat(hosts).hasSize(1)
+            val host = hosts.single()
+            assertThat(host.id).isEqualTo("legacy-host")
+            assertThat(host.name).isEqualTo("Legacy edge")
+            assertThat(host.host).isEqualTo("old.example.com")
+            assertThat(host.username).isEqualTo("admin")
+            assertThat(host.port).isEqualTo(2022)
+            assertThat(host.groupName).isEqualTo("Work")
+            assertThat(host.isFavorite).isTrue()
+            assertThat(host.fingerprint).isEqualTo("SHA256:legacy")
+            // The unit-separator encoding predates every migration, so old tags must still decode.
+            assertThat(host.toDomain().tags).containsExactly("legacy", "eu")
 
-        val transfers = db.transferDao().observeAll().first()
-        assertThat(transfers).hasSize(1)
-        assertThat(transfers.single().name).isEqualTo("old.log")
-    }
-
-    @Test
-    fun `columns added after version 2 arrive with safe defaults`() = runTest {
-        seedVersion2()
-
-        val db = openWithMigrations()
-
-        val host = db.hostDao().observeAll().first().single()
-        // proxyType/socksPort carry NOT NULL defaults; everything else must read as absent
-        // rather than as an empty string the UI would show as a configured proxy.
-        assertThat(host.proxyType).isEqualTo("NONE")
-        assertThat(host.socksPort).isEqualTo(1080)
-        assertThat(host.proxyJump).isNull()
-        assertThat(host.socksHost).isNull()
-        assertThat(host.socksUsername).isNull()
-        assertThat(host.socksPassword).isNull()
-        assertThat(host.accentColor).isNull()
-        // The per-host connect timeout arrived in version 10 with a NOT NULL default equal to the
-        // value the engine used to hard-code, so an upgraded profile keeps connecting exactly as it
-        // did. keepAliveSeconds is null on purpose: null means "follow the global setting", which is
-        // what every host predating the column was already doing.
-        assertThat(host.connectTimeoutSeconds).isEqualTo(15)
-        assertThat(host.keepAliveSeconds).isNull()
-        // Version 11's column defaults to 1 - on - because connecting used to list the remote home
-        // directory unconditionally. An upgrade that silently switched the file browser off would
-        // read as the Files tab having broken, so an existing profile keeps the behaviour it had.
-        assertThat(host.autoLoginSftp).isTrue()
-        // Version 12's advanced settings. Every default reproduces what the engine did before the
-        // column existed, so an upgraded profile connects identically until the user edits it: no
-        // compression was ever offered, the heartbeat was always armed with three missed replies
-        // allowed, MINA's own 30-second auth timeout applied, the reconnect ladder used 5 attempts
-        // from a 5-second base, the pty request was unconditional at xterm-256color, the geometry came
-        // from the view (the 0 sentinel), MINA's full authentication method list was offered, and the
-        // verifier asked about an unknown key. legacyAlgorithms is null because "follow the global
-        // switch" was the only behaviour there was.
-        assertThat(host.compression).isFalse()
-        assertThat(host.keepAliveEnabled).isTrue()
-        assertThat(host.serverAliveCountMax).isEqualTo(3)
-        assertThat(host.authTimeoutSeconds).isEqualTo(30)
-        assertThat(host.autoReconnect).isTrue()
-        assertThat(host.maxReconnectAttempts).isEqualTo(5)
-        assertThat(host.reconnectBackoffSeconds).isEqualTo(0)
-        assertThat(host.usePty).isTrue()
-        assertThat(host.terminalType).isEqualTo("xterm-256color")
-        assertThat(host.terminalColumns).isEqualTo(0)
-        assertThat(host.terminalRows).isEqualTo(0)
-        assertThat(host.keyboardInteractiveAuth).isTrue()
-        assertThat(host.legacyAlgorithms).isNull()
-        assertThat(host.hostKeyPolicy).isEqualTo("ASK")
-        // Version 13's four algorithm preferences are null for the same reason legacyAlgorithms is:
-        // null means "no opinion, negotiate normally", which is the only behaviour that existed. An
-        // empty string would be a different instruction entirely - propose nothing at all - and would
-        // make an upgraded host unable to connect to anything.
-        assertThat(host.ciphers).isNull()
-        assertThat(host.kexAlgorithms).isNull()
-        assertThat(host.macs).isNull()
-        assertThat(host.hostKeyAlgorithms).isNull()
-        // The other three are NOT NULL and empty, because "" is genuinely the absence of them: no
-        // command to run at login, no environment to request, no forwarding rules to bind. Nullable
-        // would have bought a second way to say the same thing at every read site.
-        assertThat(host.startupCommand).isEmpty()
-        assertThat(host.environment).isEmpty()
-        assertThat(host.savedForwards).isEmpty()
-        // Version 15's remote-desktop column is NOT NULL and empty for the same reason: "" is the
-        // absence of an endpoint, so an upgraded host configures nothing until its user does.
-        assertThat(host.remoteDesktop).isEmpty()
-        // Version 16's Wake-on-LAN column likewise: "" is "no address to wake", which is true of
-        // every host that predates the column, and null would only hand the read sites a second
-        // way to say nothing.
-        assertThat(host.wakeOnLanMac).isEmpty()
-        // Version 18's agent-forwarding switch is the one boolean whose default is a security
-        // property: enabling it grants the server's administrator signature requests while a
-        // session is open, so an upgraded host must keep it off until its own user turns it on.
-        assertThat(host.agentForwarding).isFalse()
-
-        val transfer = db.transferDao().observeAll().first().single()
-        assertThat(transfer.hostId).isNull()
-        assertThat(transfer.remotePath).isNull()
-        assertThat(transfer.localUri).isNull()
-        assertThat(transfer.transferredBytes).isEqualTo(0L)
-        assertThat(transfer.totalBytes).isNull()
-        assertThat(transfer.retryCount).isEqualTo(0)
-        assertThat(transfer.scheduledAt).isNull()
-        assertThat(transfer.repeatMinutes).isNull()
-        // Version 14's column is null for the same reason the algorithm lists are: null is the only
-        // value that can mean "no failure is recorded", which is true of every row that predates it.
-        assertThat(transfer.errorMessage).isNull()
-        // Version 16's cross-host columns, same reasoning: a transfer that predates them had no
-        // second host and no destination directory, and both stay null until a cross-host copy
-        // writes them.
-        assertThat(transfer.sourceHostId).isNull()
-        assertThat(transfer.destPath).isNull()
-    }
+            val transfers = db.transferDao().observeAll().first()
+            assertThat(transfers).hasSize(1)
+            assertThat(transfers.single().name).isEqualTo("old.log")
+        }
 
     @Test
-    fun `the migrated database still accepts writes on every new column`() = runTest {
-        seedVersion2()
-        val db = openWithMigrations()
+    fun `columns added after version 2 arrive with safe defaults`() =
+        runTest {
+            seedVersion2()
 
-        db.transferDao().upsert(
-            TransferEntity(
-                id = "post-migration",
-                name = "new.bin",
-                direction = "DOWNLOAD",
-                hostName = "Edge",
-                progress = 0.25f,
-                status = "RUNNING",
-                sizeLabel = "10 MB",
-                hostId = "legacy-host",
-                remotePath = "/srv/new.bin",
-                localUri = "content://docs/new.bin",
-                transferredBytes = 2_621_440L,
-                totalBytes = 10_485_760L,
-                retryCount = 2,
-                scheduledAt = 1_800_000_000_000L,
-                repeatMinutes = 60L,
-                errorMessage = "Connection reset by peer",
-                // Version 16's columns, through the same door: a host id and a real path with a
-                // space in it, the shape most likely to be mangled by a mis-typed column name or
-                // an affinity that quietly truncates it.
-                sourceHostId = "origin-host",
-                destPath = "/srv/incoming/site backups",
-            ),
-        )
+            val db = openWithMigrations()
 
-        val stored = db.transferDao().observeAll().first().single { it.id == "post-migration" }
-        assertThat(stored.transferredBytes).isEqualTo(2_621_440L)
-        assertThat(stored.repeatMinutes).isEqualTo(60L)
-        assertThat(stored.scheduledAt).isEqualTo(1_800_000_000_000L)
-        // The failure reason is the one new column a real failure writes, and a sentence with spaces
-        // and lowercase is the shape most likely to be mangled by a mis-typed affinity or a NOT NULL
-        // default that silently empties it.
-        assertThat(stored.errorMessage).isEqualTo("Connection reset by peer")
-        assertThat(stored.sourceHostId).isEqualTo("origin-host")
-        assertThat(stored.destPath).isEqualTo("/srv/incoming/site backups")
-    }
+            val host =
+                db
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
+            // proxyType/socksPort carry NOT NULL defaults; everything else must read as absent
+            // rather than as an empty string the UI would show as a configured proxy.
+            assertThat(host.proxyType).isEqualTo("NONE")
+            assertThat(host.socksPort).isEqualTo(1080)
+            assertThat(host.proxyJump).isNull()
+            assertThat(host.socksHost).isNull()
+            assertThat(host.socksUsername).isNull()
+            assertThat(host.socksPassword).isNull()
+            assertThat(host.accentColor).isNull()
+            // The per-host connect timeout arrived in version 10 with a NOT NULL default equal to the
+            // value the engine used to hard-code, so an upgraded profile keeps connecting exactly as it
+            // did. keepAliveSeconds is null on purpose: null means "follow the global setting", which is
+            // what every host predating the column was already doing.
+            assertThat(host.connectTimeoutSeconds).isEqualTo(15)
+            assertThat(host.keepAliveSeconds).isNull()
+            // Version 11's column defaults to 1 - on - because connecting used to list the remote home
+            // directory unconditionally. An upgrade that silently switched the file browser off would
+            // read as the Files tab having broken, so an existing profile keeps the behaviour it had.
+            assertThat(host.autoLoginSftp).isTrue()
+            // Version 12's advanced settings. Every default reproduces what the engine did before the
+            // column existed, so an upgraded profile connects identically until the user edits it: no
+            // compression was ever offered, the heartbeat was always armed with three missed replies
+            // allowed, MINA's own 30-second auth timeout applied, the reconnect ladder used 5 attempts
+            // from a 5-second base, the pty request was unconditional at xterm-256color, the geometry came
+            // from the view (the 0 sentinel), MINA's full authentication method list was offered, and the
+            // verifier asked about an unknown key. legacyAlgorithms is null because "follow the global
+            // switch" was the only behaviour there was.
+            assertThat(host.compression).isFalse()
+            assertThat(host.keepAliveEnabled).isTrue()
+            assertThat(host.serverAliveCountMax).isEqualTo(3)
+            assertThat(host.authTimeoutSeconds).isEqualTo(30)
+            assertThat(host.autoReconnect).isTrue()
+            assertThat(host.maxReconnectAttempts).isEqualTo(5)
+            assertThat(host.reconnectBackoffSeconds).isEqualTo(0)
+            assertThat(host.usePty).isTrue()
+            assertThat(host.terminalType).isEqualTo("xterm-256color")
+            assertThat(host.terminalColumns).isEqualTo(0)
+            assertThat(host.terminalRows).isEqualTo(0)
+            assertThat(host.keyboardInteractiveAuth).isTrue()
+            assertThat(host.legacyAlgorithms).isNull()
+            assertThat(host.hostKeyPolicy).isEqualTo("ASK")
+            // Version 13's four algorithm preferences are null for the same reason legacyAlgorithms is:
+            // null means "no opinion, negotiate normally", which is the only behaviour that existed. An
+            // empty string would be a different instruction entirely - propose nothing at all - and would
+            // make an upgraded host unable to connect to anything.
+            assertThat(host.ciphers).isNull()
+            assertThat(host.kexAlgorithms).isNull()
+            assertThat(host.macs).isNull()
+            assertThat(host.hostKeyAlgorithms).isNull()
+            // The other three are NOT NULL and empty, because "" is genuinely the absence of them: no
+            // command to run at login, no environment to request, no forwarding rules to bind. Nullable
+            // would have bought a second way to say the same thing at every read site.
+            assertThat(host.startupCommand).isEmpty()
+            assertThat(host.environment).isEmpty()
+            assertThat(host.savedForwards).isEmpty()
+            // Version 15's remote-desktop column is NOT NULL and empty for the same reason: "" is the
+            // absence of an endpoint, so an upgraded host configures nothing until its user does.
+            assertThat(host.remoteDesktop).isEmpty()
+            // Version 16's Wake-on-LAN column likewise: "" is "no address to wake", which is true of
+            // every host that predates the column, and null would only hand the read sites a second
+            // way to say nothing.
+            assertThat(host.wakeOnLanMac).isEmpty()
+            // Version 18's agent-forwarding switch is the one boolean whose default is a security
+            // property: enabling it grants the server's administrator signature requests while a
+            // session is open, so an upgraded host must keep it off until its own user turns it on.
+            assertThat(host.agentForwarding).isFalse()
 
-    @Test
-    fun `a version 12 host keeps every configured value across the step to 13`() = runTest {
-        // The step this release adds, on its own. The other tests here start at version 2, so every
-        // value they can check is a default - which cannot catch the failure this one is for: an
-        // `ALTER TABLE` that rebuilds the table instead of extending it, or a column list that drifts
-        // out of order, loses settings the user chose and would look exactly like the app resetting
-        // itself. Seeded from the committed version-12 schema rather than a copy of it, so this stays
-        // honest as the ladder grows.
-        seedVersion12()
-
-        val host = openWithMigrations().hostDao().observeAll().first().single()
-
-        // Every version-12 column, read back after the migration, none of them at its default.
-        assertThat(host.id).isEqualTo("tuned-host")
-        assertThat(host.name).isEqualTo("Tuned edge")
-        assertThat(host.host).isEqualTo("edge.example.com")
-        assertThat(host.username).isEqualTo("ops")
-        assertThat(host.port).isEqualTo(2222)
-        assertThat(host.authMethod).isEqualTo("KEY")
-        assertThat(host.groupName).isEqualTo("Production")
-        assertThat(host.toDomain().tags).containsExactly("eu", "edge")
-        assertThat(host.isFavorite).isFalse()
-        assertThat(host.lastConnectedAt).isEqualTo(1_750_000_000_000L)
-        assertThat(host.fingerprint).isEqualTo("SHA256:tuned")
-        assertThat(host.proxyType).isEqualTo("SOCKS5")
-        assertThat(host.proxyJump).isEqualTo("bastion.example.com")
-        assertThat(host.socksHost).isEqualTo("10.0.0.1")
-        assertThat(host.socksPort).isEqualTo(9050)
-        assertThat(host.socksUsername).isEqualTo("ops")
-        assertThat(host.accentColor).isEqualTo(0xFF2196F3)
-        assertThat(host.connectTimeoutSeconds).isEqualTo(25)
-        assertThat(host.keepAliveSeconds).isEqualTo(45)
-        assertThat(host.autoLoginSftp).isFalse()
-        assertThat(host.compression).isTrue()
-        assertThat(host.keepAliveEnabled).isFalse()
-        assertThat(host.serverAliveCountMax).isEqualTo(6)
-        assertThat(host.authTimeoutSeconds).isEqualTo(90)
-        assertThat(host.autoReconnect).isFalse()
-        assertThat(host.maxReconnectAttempts).isEqualTo(9)
-        assertThat(host.reconnectBackoffSeconds).isEqualTo(12)
-        assertThat(host.usePty).isFalse()
-        assertThat(host.terminalType).isEqualTo("screen-256color")
-        assertThat(host.terminalColumns).isEqualTo(132)
-        assertThat(host.terminalRows).isEqualTo(50)
-        assertThat(host.keyboardInteractiveAuth).isFalse()
-        assertThat(host.legacyAlgorithms).isTrue()
-        assertThat(host.hostKeyPolicy).isEqualTo("STRICT")
-
-        // And the new ones arrive absent, so a host configured before this release connects the way
-        // it did yesterday: negotiate normally, run nothing at login, bind nothing.
-        assertThat(host.ciphers).isNull()
-        assertThat(host.kexAlgorithms).isNull()
-        assertThat(host.macs).isNull()
-        assertThat(host.hostKeyAlgorithms).isNull()
-        assertThat(host.startupCommand).isEmpty()
-        assertThat(host.environment).isEmpty()
-        assertThat(host.savedForwards).isEmpty()
-    }
-
-    @Test
-    fun `the version 13 columns accept and return what the form can put in them`() = runTest {
-        // The other half of the migration: a column Room can validate is not necessarily a column the
-        // DAO round trips. An `ALTER TABLE` naming the right column with the wrong affinity passes the
-        // schema check and then loses data, so the widest realistic value for each new column is
-        // written through the DAO and read back.
-        seedVersion2()
-        val db = openWithMigrations()
-        val migrated = db.hostDao().observeAll().first().single()
-
-        val configured = migrated.copy(
-            ciphers = "aes256-gcm@openssh.com,aes128-ctr",
-            kexAlgorithms = "curve25519-sha256,diffie-hellman-group14-sha256",
-            macs = "hmac-sha2-256-etm@openssh.com",
-            hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
-            startupCommand = "tmux attach || tmux new",
-            // Newline separated, which is the shape most likely to be mangled by a text column.
-            environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
-            savedForwards = "L:8080:intranet.example:80\nD:1080",
-            // The version-15 column through the same door: packed lines, flags set off by
-            // whitespace, exactly the text the form will put there.
-            remoteDesktop = "V:10.0.1.5:5900 view-only",
-            // And the version-16 column: a MAC in the spelling a user would type, dashes included.
-            wakeOnLanMac = "4C-2E-81-1A-02-F7",
-        )
-        db.hostDao().upsert(configured)
-
-        assertThat(db.hostDao().observeAll().first().single()).isEqualTo(configured)
-    }
+            val transfer =
+                db
+                    .transferDao()
+                    .observeAll()
+                    .first()
+                    .single()
+            assertThat(transfer.hostId).isNull()
+            assertThat(transfer.remotePath).isNull()
+            assertThat(transfer.localUri).isNull()
+            assertThat(transfer.transferredBytes).isEqualTo(0L)
+            assertThat(transfer.totalBytes).isNull()
+            assertThat(transfer.retryCount).isEqualTo(0)
+            assertThat(transfer.scheduledAt).isNull()
+            assertThat(transfer.repeatMinutes).isNull()
+            // Version 14's column is null for the same reason the algorithm lists are: null is the only
+            // value that can mean "no failure is recorded", which is true of every row that predates it.
+            assertThat(transfer.errorMessage).isNull()
+            // Version 16's cross-host columns, same reasoning: a transfer that predates them had no
+            // second host and no destination directory, and both stay null until a cross-host copy
+            // writes them.
+            assertThat(transfer.sourceHostId).isNull()
+            assertThat(transfer.destPath).isNull()
+        }
 
     @Test
-    fun `a version 11 database - the oldest a device can hold - migrates to 16 with its row intact`() = runTest {
-        // Eleven is the real floor. The first public release (1.0.0) shipped at exactly this version, so
-        // it is the oldest schema any device in the field can be holding and the oldest upgrade a user
-        // actually runs. `seedVersion2` walks the same 11->12->13 steps, but from a hand-written schema;
-        // this one starts from the committed 11.json the shipped build validated against, and carries a
-        // fully configured row so the climb proves it preserves the values a user chose, not just that a
-        // fresh column lands on its default.
-        seedVersion11()
+    fun `the migrated database still accepts writes on every new column`() =
+        runTest {
+            seedVersion2()
+            val db = openWithMigrations()
 
-        val db = openWithMigrations()
+            db.transferDao().upsert(
+                TransferEntity(
+                    id = "post-migration",
+                    name = "new.bin",
+                    direction = "DOWNLOAD",
+                    hostName = "Edge",
+                    progress = 0.25f,
+                    status = "RUNNING",
+                    sizeLabel = "10 MB",
+                    hostId = "legacy-host",
+                    remotePath = "/srv/new.bin",
+                    localUri = "content://docs/new.bin",
+                    transferredBytes = 2_621_440L,
+                    totalBytes = 10_485_760L,
+                    retryCount = 2,
+                    scheduledAt = 1_800_000_000_000L,
+                    repeatMinutes = 60L,
+                    errorMessage = "Connection reset by peer",
+                    // Version 16's columns, through the same door: a host id and a real path with a
+                    // space in it, the shape most likely to be mangled by a mis-typed column name or
+                    // an affinity that quietly truncates it.
+                    sourceHostId = "origin-host",
+                    destPath = "/srv/incoming/site backups",
+                ),
+            )
 
-        val host = db.hostDao().observeAll().first().single()
-        // Every value set at version 11 survives to 16, none of it reverted to a column default.
-        assertThat(host.id).isEqualTo("v11-host")
-        assertThat(host.port).isEqualTo(2211)
-        assertThat(host.authMethod).isEqualTo("KEY")
-        assertThat(host.groupName).isEqualTo("Prod")
-        assertThat(host.toDomain().tags).containsExactly("eu", "edge")
-        assertThat(host.isFavorite).isTrue()
-        assertThat(host.fingerprint).isEqualTo("SHA256:v11")
-        assertThat(host.proxyType).isEqualTo("SOCKS5")
-        assertThat(host.proxyJump).isEqualTo("bastion11.example.com")
-        assertThat(host.socksHost).isEqualTo("10.0.0.11")
-        assertThat(host.socksPort).isEqualTo(9051)
-        assertThat(host.socksUsername).isEqualTo("ops")
-        assertThat(host.accentColor).isEqualTo(0xFF2196F3)
-        assertThat(host.connectTimeoutSeconds).isEqualTo(33)
-        assertThat(host.keepAliveSeconds).isEqualTo(44)
-        // Off, and not the column's DEFAULT 1: a migration that rebuilt the table instead of extending
-        // it would silently flip this back on, which is the failure a fully configured row exists to catch.
-        assertThat(host.autoLoginSftp).isFalse()
-
-        // The columns added at 12 and 13 arrive absent or at their safe defaults, so a version-11 host
-        // connects exactly as it did before the upgrade.
-        assertThat(host.compression).isFalse()
-        assertThat(host.keepAliveEnabled).isTrue()
-        assertThat(host.hostKeyPolicy).isEqualTo("ASK")
-        assertThat(host.ciphers).isNull()
-        assertThat(host.kexAlgorithms).isNull()
-        assertThat(host.macs).isNull()
-        assertThat(host.hostKeyAlgorithms).isNull()
-        assertThat(host.startupCommand).isEmpty()
-        assertThat(host.environment).isEmpty()
-        assertThat(host.savedForwards).isEmpty()
-        assertThat(host.remoteDesktop).isEmpty()
-        assertThat(host.wakeOnLanMac).isEmpty()
-
-        // The transfer row and its version-11 columns survive the climb too, and version 16's
-        // cross-host columns arrive null: an eleven-era transfer had no second host and no
-        // destination directory, and null is the only value that says so without inventing a
-        // sentinel path an old row would be read as configuring.
-        val transfer = db.transferDao().observeAll().first().single()
-        assertThat(transfer.id).isEqualTo("v11-transfer")
-        assertThat(transfer.transferredBytes).isEqualTo(4_194_304L)
-        assertThat(transfer.totalBytes).isEqualTo(8_388_608L)
-        assertThat(transfer.retryCount).isEqualTo(3)
-        assertThat(transfer.scheduledAt).isEqualTo(1_750_000_000_001L)
-        assertThat(transfer.repeatMinutes).isEqualTo(15L)
-        assertThat(transfer.sourceHostId).isNull()
-        assertThat(transfer.destPath).isNull()
-    }
+            val stored =
+                db
+                    .transferDao()
+                    .observeAll()
+                    .first()
+                    .single { it.id == "post-migration" }
+            assertThat(stored.transferredBytes).isEqualTo(2_621_440L)
+            assertThat(stored.repeatMinutes).isEqualTo(60L)
+            assertThat(stored.scheduledAt).isEqualTo(1_800_000_000_000L)
+            // The failure reason is the one new column a real failure writes, and a sentence with spaces
+            // and lowercase is the shape most likely to be mangled by a mis-typed affinity or a NOT NULL
+            // default that silently empties it.
+            assertThat(stored.errorMessage).isEqualTo("Connection reset by peer")
+            assertThat(stored.sourceHostId).isEqualTo("origin-host")
+            assertThat(stored.destPath).isEqualTo("/srv/incoming/site backups")
+        }
 
     @Test
-    fun `a version 14 host keeps every configured value across the step to 15`() = runTest {
-        // The previous release's step, on its own, for the same reason the 12->13 step test exists:
-        // the v2 and v11 climbs above can only ever see the new column at its default, which cannot
-        // catch the one failure an ALTER TABLE can commit without failing - rebuilding the table
-        // instead of extending it, and losing everything the user configured. Seeded from the
-        // committed 14.json with a fully configured row, so what survives is what was chosen.
-        seedVersion14()
+    fun `a version 12 host keeps every configured value across the step to 13`() =
+        runTest {
+            // The step this release adds, on its own. The other tests here start at version 2, so every
+            // value they can check is a default - which cannot catch the failure this one is for: an
+            // `ALTER TABLE` that rebuilds the table instead of extending it, or a column list that drifts
+            // out of order, loses settings the user chose and would look exactly like the app resetting
+            // itself. Seeded from the committed version-12 schema rather than a copy of it, so this stays
+            // honest as the ladder grows.
+            seedVersion12()
 
-        val host = openWithMigrations().hostDao().observeAll().first().single()
+            val host =
+                openWithMigrations()
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
 
-        // Every version-14 column, read back after the step, none of them at its default.
-        assertThat(host.id).isEqualTo("v14-host")
-        assertThat(host.name).isEqualTo("V14 edge")
-        assertThat(host.host).isEqualTo("edge14.example.com")
-        assertThat(host.username).isEqualTo("ops")
-        assertThat(host.port).isEqualTo(2214)
-        assertThat(host.authMethod).isEqualTo("KEY")
-        assertThat(host.groupName).isEqualTo("Prod")
-        assertThat(host.toDomain().tags).containsExactly("eu", "edge")
-        assertThat(host.isFavorite).isTrue()
-        assertThat(host.lastConnectedAt).isEqualTo(1_750_000_000_002L)
-        assertThat(host.fingerprint).isEqualTo("SHA256:v14")
-        assertThat(host.proxyType).isEqualTo("SOCKS5")
-        assertThat(host.proxyJump).isEqualTo("bastion14.example.com")
-        assertThat(host.socksHost).isEqualTo("10.0.0.14")
-        assertThat(host.socksPort).isEqualTo(9052)
-        assertThat(host.socksUsername).isEqualTo("ops")
-        assertThat(host.accentColor).isEqualTo(0xFF2196F3)
-        assertThat(host.connectTimeoutSeconds).isEqualTo(21)
-        assertThat(host.keepAliveSeconds).isEqualTo(42)
-        assertThat(host.autoLoginSftp).isFalse()
-        assertThat(host.compression).isTrue()
-        assertThat(host.keepAliveEnabled).isFalse()
-        assertThat(host.serverAliveCountMax).isEqualTo(4)
-        assertThat(host.authTimeoutSeconds).isEqualTo(60)
-        assertThat(host.autoReconnect).isFalse()
-        assertThat(host.maxReconnectAttempts).isEqualTo(7)
-        assertThat(host.reconnectBackoffSeconds).isEqualTo(11)
-        assertThat(host.usePty).isFalse()
-        assertThat(host.terminalType).isEqualTo("screen-256color")
-        assertThat(host.terminalColumns).isEqualTo(120)
-        assertThat(host.terminalRows).isEqualTo(40)
-        assertThat(host.keyboardInteractiveAuth).isFalse()
-        assertThat(host.legacyAlgorithms).isTrue()
-        assertThat(host.hostKeyPolicy).isEqualTo("STRICT")
-        assertThat(host.ciphers).isEqualTo("aes256-gcm@openssh.com")
-        assertThat(host.kexAlgorithms).isEqualTo("curve25519-sha256")
-        assertThat(host.macs).isEqualTo("hmac-sha2-256-etm@openssh.com")
-        assertThat(host.hostKeyAlgorithms).isEqualTo("ssh-ed25519")
-        assertThat(host.startupCommand).isEqualTo("tmux attach || tmux new")
-        assertThat(host.environment).isEqualTo("LANG=en_US.UTF-8")
-        assertThat(host.savedForwards).isEqualTo("L:8080:intranet.example:80")
+            // Every version-12 column, read back after the migration, none of them at its default.
+            assertThat(host.id).isEqualTo("tuned-host")
+            assertThat(host.name).isEqualTo("Tuned edge")
+            assertThat(host.host).isEqualTo("edge.example.com")
+            assertThat(host.username).isEqualTo("ops")
+            assertThat(host.port).isEqualTo(2222)
+            assertThat(host.authMethod).isEqualTo("KEY")
+            assertThat(host.groupName).isEqualTo("Production")
+            assertThat(host.toDomain().tags).containsExactly("eu", "edge")
+            assertThat(host.isFavorite).isFalse()
+            assertThat(host.lastConnectedAt).isEqualTo(1_750_000_000_000L)
+            assertThat(host.fingerprint).isEqualTo("SHA256:tuned")
+            assertThat(host.proxyType).isEqualTo("SOCKS5")
+            assertThat(host.proxyJump).isEqualTo("bastion.example.com")
+            assertThat(host.socksHost).isEqualTo("10.0.0.1")
+            assertThat(host.socksPort).isEqualTo(9050)
+            assertThat(host.socksUsername).isEqualTo("ops")
+            assertThat(host.accentColor).isEqualTo(0xFF2196F3)
+            assertThat(host.connectTimeoutSeconds).isEqualTo(25)
+            assertThat(host.keepAliveSeconds).isEqualTo(45)
+            assertThat(host.autoLoginSftp).isFalse()
+            assertThat(host.compression).isTrue()
+            assertThat(host.keepAliveEnabled).isFalse()
+            assertThat(host.serverAliveCountMax).isEqualTo(6)
+            assertThat(host.authTimeoutSeconds).isEqualTo(90)
+            assertThat(host.autoReconnect).isFalse()
+            assertThat(host.maxReconnectAttempts).isEqualTo(9)
+            assertThat(host.reconnectBackoffSeconds).isEqualTo(12)
+            assertThat(host.usePty).isFalse()
+            assertThat(host.terminalType).isEqualTo("screen-256color")
+            assertThat(host.terminalColumns).isEqualTo(132)
+            assertThat(host.terminalRows).isEqualTo(50)
+            assertThat(host.keyboardInteractiveAuth).isFalse()
+            assertThat(host.legacyAlgorithms).isTrue()
+            assertThat(host.hostKeyPolicy).isEqualTo("STRICT")
 
-        // And the one column that step adds arrives empty: no endpoint configured, nothing bound.
-        assertThat(host.remoteDesktop).isEmpty()
-        assertThat(host.agentForwarding).isFalse()
-    }
-
-    @Test
-    fun `a version 15 host keeps every configured value across the step to 16`() = runTest {
-        // This release's step, on its own, for the same reason the 14->15 test above exists: the
-        // climbs from v2 and v11 can only ever see the new column at its default, which cannot
-        // catch the one failure an ALTER TABLE can commit without failing - rebuilding the table
-        // instead of extending it, and losing everything the user configured. Seeded from the
-        // committed 15.json with a fully configured row, so what survives is what was chosen.
-        seedVersion15()
-
-        val host = openWithMigrations().hostDao().observeAll().first().single()
-
-        // Every version-15 column, read back after the step, none of them at its default.
-        assertThat(host.id).isEqualTo("v15-host")
-        assertThat(host.name).isEqualTo("V15 edge")
-        assertThat(host.host).isEqualTo("edge15.example.com")
-        assertThat(host.username).isEqualTo("ops")
-        assertThat(host.port).isEqualTo(2215)
-        assertThat(host.authMethod).isEqualTo("KEY")
-        assertThat(host.groupName).isEqualTo("Prod")
-        assertThat(host.toDomain().tags).containsExactly("eu", "edge")
-        assertThat(host.isFavorite).isTrue()
-        assertThat(host.lastConnectedAt).isEqualTo(1_750_000_000_003L)
-        assertThat(host.fingerprint).isEqualTo("SHA256:v15")
-        assertThat(host.proxyType).isEqualTo("SOCKS5")
-        assertThat(host.proxyJump).isEqualTo("bastion15.example.com")
-        assertThat(host.socksHost).isEqualTo("10.0.0.15")
-        assertThat(host.socksPort).isEqualTo(9053)
-        assertThat(host.socksUsername).isEqualTo("ops")
-        assertThat(host.accentColor).isEqualTo(0xFF2196F3)
-        assertThat(host.connectTimeoutSeconds).isEqualTo(23)
-        assertThat(host.keepAliveSeconds).isEqualTo(43)
-        assertThat(host.autoLoginSftp).isFalse()
-        assertThat(host.compression).isTrue()
-        assertThat(host.keepAliveEnabled).isFalse()
-        assertThat(host.serverAliveCountMax).isEqualTo(5)
-        assertThat(host.authTimeoutSeconds).isEqualTo(75)
-        assertThat(host.autoReconnect).isFalse()
-        assertThat(host.maxReconnectAttempts).isEqualTo(8)
-        assertThat(host.reconnectBackoffSeconds).isEqualTo(13)
-        assertThat(host.usePty).isFalse()
-        assertThat(host.terminalType).isEqualTo("screen-256color")
-        assertThat(host.terminalColumns).isEqualTo(125)
-        assertThat(host.terminalRows).isEqualTo(42)
-        assertThat(host.keyboardInteractiveAuth).isFalse()
-        assertThat(host.legacyAlgorithms).isTrue()
-        assertThat(host.hostKeyPolicy).isEqualTo("STRICT")
-        assertThat(host.ciphers).isEqualTo("aes256-gcm@openssh.com")
-        assertThat(host.kexAlgorithms).isEqualTo("curve25519-sha256")
-        assertThat(host.macs).isEqualTo("hmac-sha2-256-etm@openssh.com")
-        assertThat(host.hostKeyAlgorithms).isEqualTo("ssh-ed25519")
-        assertThat(host.startupCommand).isEqualTo("tmux attach || tmux new")
-        assertThat(host.environment).isEqualTo("LANG=en_US.UTF-8")
-        assertThat(host.savedForwards).isEqualTo("L:8080:intranet.example:80")
-        assertThat(host.remoteDesktop).isEqualTo("V:10.0.1.5:5900 view-only")
-
-        // And the one column this step adds arrives empty: no MAC saved, nothing to wake.
-        assertThat(host.wakeOnLanMac).isEmpty()
-    }
+            // And the new ones arrive absent, so a host configured before this release connects the way
+            // it did yesterday: negotiate normally, run nothing at login, bind nothing.
+            assertThat(host.ciphers).isNull()
+            assertThat(host.kexAlgorithms).isNull()
+            assertThat(host.macs).isNull()
+            assertThat(host.hostKeyAlgorithms).isNull()
+            assertThat(host.startupCommand).isEmpty()
+            assertThat(host.environment).isEmpty()
+            assertThat(host.savedForwards).isEmpty()
+        }
 
     @Test
-    fun `a version 17 host keeps every configured value across the step to 18`() = runTest {
-        // This release's step, on its own, for the same reason the 15->16 step test above exists:
-        // the v2 and v11 climbs can only ever see the new column at its default, which cannot
-        // catch the one failure an ALTER TABLE can commit without failing - rebuilding the table
-        // instead of extending it, and losing everything the user configured. Seeded from the
-        // committed 17.json with a fully configured host row (the wake column's value included),
-        // so what survives is what was chosen. Numbered from 17 because wake-on-LAN took 15->16
-        // and the cross-host transfer columns 16->17 on main while this branch was open.
-        seedVersion17()
+    fun `the version 13 columns accept and return what the form can put in them`() =
+        runTest {
+            // The other half of the migration: a column Room can validate is not necessarily a column the
+            // DAO round trips. An `ALTER TABLE` naming the right column with the wrong affinity passes the
+            // schema check and then loses data, so the widest realistic value for each new column is
+            // written through the DAO and read back.
+            seedVersion2()
+            val db = openWithMigrations()
+            val migrated =
+                db
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
 
-        val host = openWithMigrations().hostDao().observeAll().first().single()
+            val configured =
+                migrated.copy(
+                    ciphers = "aes256-gcm@openssh.com,aes128-ctr",
+                    kexAlgorithms = "curve25519-sha256,diffie-hellman-group14-sha256",
+                    macs = "hmac-sha2-256-etm@openssh.com",
+                    hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
+                    startupCommand = "tmux attach || tmux new",
+                    // Newline separated, which is the shape most likely to be mangled by a text column.
+                    environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
+                    savedForwards = "L:8080:intranet.example:80\nD:1080",
+                    // The version-15 column through the same door: packed lines, flags set off by
+                    // whitespace, exactly the text the form will put there.
+                    remoteDesktop = "V:10.0.1.5:5900 view-only",
+                    // And the version-16 column: a MAC in the spelling a user would type, dashes included.
+                    wakeOnLanMac = "4C-2E-81-1A-02-F7",
+                )
+            db.hostDao().upsert(configured)
 
-        // Every version-17 column, read back after the step, none of them at its default.
-        assertThat(host.id).isEqualTo("v17-host")
-        assertThat(host.name).isEqualTo("V17 edge")
-        assertThat(host.host).isEqualTo("edge17.example.com")
-        assertThat(host.username).isEqualTo("ops")
-        assertThat(host.port).isEqualTo(2217)
-        assertThat(host.authMethod).isEqualTo("KEY")
-        assertThat(host.groupName).isEqualTo("Prod")
-        assertThat(host.toDomain().tags).containsExactly("eu", "edge")
-        assertThat(host.isFavorite).isTrue()
-        assertThat(host.fingerprint).isEqualTo("SHA256:v17")
-        assertThat(host.proxyType).isEqualTo("SOCKS5")
-        assertThat(host.socksPort).isEqualTo(9057)
-        assertThat(host.terminalType).isEqualTo("screen-256color")
-        assertThat(host.remoteDesktop).isEqualTo("V:10.0.1.5:5900 view-only")
-        assertThat(host.wakeOnLanMac).isEqualTo("4C-2E-81-1A-02-F7")
-
-        // And the one column this step adds arrives off. Its default is a security property: the
-        // switch is a grant to the server's administrator, so a migration that landed it on - or a
-        // rebuild that flipped it - would be a permission change no user made.
-        assertThat(host.agentForwarding).isFalse()
-    }
-
-    @Test
-    fun `a version 16 transfer keeps every configured value across the step to 17`() = runTest {
-        // This release's step, on its own, for the same reason the 15->16 step test above exists:
-        // the v2 and v11 climbs can only ever see the new columns at their null default, which
-        // cannot catch the one failure an ALTER TABLE can commit without failing - rebuilding the
-        // table instead of extending it, and losing everything the user configured. Seeded from
-        // the committed 16.json with a fully configured transfer row, so what survives is what was
-        // chosen. Numbered from 16 rather than 15 because the Wake-on-LAN column took 15->16 on
-        // main while this branch was open.
-        seedVersion16()
-
-        val transfer = openWithMigrations().transferDao().observeAll().first().single()
-
-        // Every version-16 column, read back after the step, none of them at its default.
-        assertThat(transfer.id).isEqualTo("v16-transfer")
-        assertThat(transfer.name).isEqualTo("site-backup")
-        assertThat(transfer.direction).isEqualTo("CROSS_HOST")
-        assertThat(transfer.hostName).isEqualTo("Destination edge")
-        assertThat(transfer.progress).isEqualTo(0.25f)
-        assertThat(transfer.status).isEqualTo("RUNNING")
-        assertThat(transfer.sizeLabel).isEqualTo("1.2 GB")
-        assertThat(transfer.hostId).isEqualTo("dest-host")
-        assertThat(transfer.remotePath).isEqualTo("/srv/incoming/site-backup")
-        assertThat(transfer.localUri).isNull()
-        assertThat(transfer.transferredBytes).isEqualTo(322_122_547L)
-        assertThat(transfer.totalBytes).isEqualTo(1_288_490_188L)
-        assertThat(transfer.retryCount).isEqualTo(1)
-        assertThat(transfer.scheduledAt).isEqualTo(1_750_000_000_003L)
-        assertThat(transfer.repeatMinutes).isNull()
-        assertThat(transfer.errorMessage).isEqualTo("Connection reset by peer")
-
-        // And the two columns this step adds arrive null: null is the absence of a second host and
-        // of a destination directory, which is true of every row written before this release.
-        assertThat(transfer.sourceHostId).isNull()
-        assertThat(transfer.destPath).isNull()
-    }
+            assertThat(
+                db
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single(),
+            ).isEqualTo(configured)
+        }
 
     @Test
-    fun `an upgrade with no migration path fails loudly instead of silently wiping`() = runTest {
-        // The reason the production fallback is downgrade-only. No release ever shipped below schema 11,
-        // so a version this build has no *upgrade* path for can only come from a developer bumping the
-        // version and forgetting the migration. Under the old blanket fallbackToDestructiveMigration that
-        // reached the user as every host and transfer silently dropped on the next launch; version 1
-        // stands in for that gap. Opening has to throw instead, so the mistake is caught in QA and CI.
-        seedVersion2(userVersion = 1)
+    fun `a version 11 database - the oldest a device can hold - migrates to 16 with its row intact`() =
+        runTest {
+            // Eleven is the real floor. The first public release (1.0.0) shipped at exactly this version, so
+            // it is the oldest schema any device in the field can be holding and the oldest upgrade a user
+            // actually runs. `seedVersion2` walks the same 11->12->13 steps, but from a hand-written schema;
+            // this one starts from the committed 11.json the shipped build validated against, and carries a
+            // fully configured row so the climb proves it preserves the values a user chose, not just that a
+            // fresh column lands on its default.
+            seedVersion11()
 
-        // Room opens lazily, so the missing 1_2 step surfaces on first access rather than at build().
-        val thrown = runCatching { openLikeProduction().hostDao().count() }.exceptionOrNull()
+            val db = openWithMigrations()
 
-        assertThat(thrown).isInstanceOf(IllegalStateException::class.java)
-    }
+            val host =
+                db
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
+            // Every value set at version 11 survives to 16, none of it reverted to a column default.
+            assertThat(host.id).isEqualTo("v11-host")
+            assertThat(host.port).isEqualTo(2211)
+            assertThat(host.authMethod).isEqualTo("KEY")
+            assertThat(host.groupName).isEqualTo("Prod")
+            assertThat(host.toDomain().tags).containsExactly("eu", "edge")
+            assertThat(host.isFavorite).isTrue()
+            assertThat(host.fingerprint).isEqualTo("SHA256:v11")
+            assertThat(host.proxyType).isEqualTo("SOCKS5")
+            assertThat(host.proxyJump).isEqualTo("bastion11.example.com")
+            assertThat(host.socksHost).isEqualTo("10.0.0.11")
+            assertThat(host.socksPort).isEqualTo(9051)
+            assertThat(host.socksUsername).isEqualTo("ops")
+            assertThat(host.accentColor).isEqualTo(0xFF2196F3)
+            assertThat(host.connectTimeoutSeconds).isEqualTo(33)
+            assertThat(host.keepAliveSeconds).isEqualTo(44)
+            // Off, and not the column's DEFAULT 1: a migration that rebuilt the table instead of extending
+            // it would silently flip this back on, which is the failure a fully configured row exists to catch.
+            assertThat(host.autoLoginSftp).isFalse()
+
+            // The columns added at 12 and 13 arrive absent or at their safe defaults, so a version-11 host
+            // connects exactly as it did before the upgrade.
+            assertThat(host.compression).isFalse()
+            assertThat(host.keepAliveEnabled).isTrue()
+            assertThat(host.hostKeyPolicy).isEqualTo("ASK")
+            assertThat(host.ciphers).isNull()
+            assertThat(host.kexAlgorithms).isNull()
+            assertThat(host.macs).isNull()
+            assertThat(host.hostKeyAlgorithms).isNull()
+            assertThat(host.startupCommand).isEmpty()
+            assertThat(host.environment).isEmpty()
+            assertThat(host.savedForwards).isEmpty()
+            assertThat(host.remoteDesktop).isEmpty()
+            assertThat(host.wakeOnLanMac).isEmpty()
+
+            // The transfer row and its version-11 columns survive the climb too, and version 16's
+            // cross-host columns arrive null: an eleven-era transfer had no second host and no
+            // destination directory, and null is the only value that says so without inventing a
+            // sentinel path an old row would be read as configuring.
+            val transfer =
+                db
+                    .transferDao()
+                    .observeAll()
+                    .first()
+                    .single()
+            assertThat(transfer.id).isEqualTo("v11-transfer")
+            assertThat(transfer.transferredBytes).isEqualTo(4_194_304L)
+            assertThat(transfer.totalBytes).isEqualTo(8_388_608L)
+            assertThat(transfer.retryCount).isEqualTo(3)
+            assertThat(transfer.scheduledAt).isEqualTo(1_750_000_000_001L)
+            assertThat(transfer.repeatMinutes).isEqualTo(15L)
+            assertThat(transfer.sourceHostId).isNull()
+            assertThat(transfer.destPath).isNull()
+        }
 
     @Test
-    fun `a database written by a newer build is reset rather than refused`() = runTest {
-        // The half the audit kept on purpose (AUDIT-REPORT.md sections 5 and 12.9): a downgrade - a file
-        // left by a build one version ahead, e.g. after a Play Store rollback - has no migration path
-        // back and never can, so refusing to open it would be a crash loop with no way out from inside
-        // the app. Resetting is the recoverable direction. user_version 19 is that newer build; the row
-        // shape beneath it is irrelevant, because a destructive downgrade drops every table first. One
-        // *ahead* of this build's own 18, not equal to it: a file that claims the current schema has
-        // its rows validated against it, and the v2 table below would not survive that.
-        seedVersion2(userVersion = 19)
+    fun `a version 14 host keeps every configured value across the step to 15`() =
+        runTest {
+            // The previous release's step, on its own, for the same reason the 12->13 step test exists:
+            // the v2 and v11 climbs above can only ever see the new column at its default, which cannot
+            // catch the one failure an ALTER TABLE can commit without failing - rebuilding the table
+            // instead of extending it, and losing everything the user configured. Seeded from the
+            // committed 14.json with a fully configured row, so what survives is what was chosen.
+            seedVersion14()
 
-        val db = openLikeProduction()
+            val host =
+                openWithMigrations()
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
 
-        assertThat(db.hostDao().count()).isEqualTo(0)
-        assertThat(db.transferDao().count()).isEqualTo(0)
-    }
+            // Every version-14 column, read back after the step, none of them at its default.
+            assertThat(host.id).isEqualTo("v14-host")
+            assertThat(host.name).isEqualTo("V14 edge")
+            assertThat(host.host).isEqualTo("edge14.example.com")
+            assertThat(host.username).isEqualTo("ops")
+            assertThat(host.port).isEqualTo(2214)
+            assertThat(host.authMethod).isEqualTo("KEY")
+            assertThat(host.groupName).isEqualTo("Prod")
+            assertThat(host.toDomain().tags).containsExactly("eu", "edge")
+            assertThat(host.isFavorite).isTrue()
+            assertThat(host.lastConnectedAt).isEqualTo(1_750_000_000_002L)
+            assertThat(host.fingerprint).isEqualTo("SHA256:v14")
+            assertThat(host.proxyType).isEqualTo("SOCKS5")
+            assertThat(host.proxyJump).isEqualTo("bastion14.example.com")
+            assertThat(host.socksHost).isEqualTo("10.0.0.14")
+            assertThat(host.socksPort).isEqualTo(9052)
+            assertThat(host.socksUsername).isEqualTo("ops")
+            assertThat(host.accentColor).isEqualTo(0xFF2196F3)
+            assertThat(host.connectTimeoutSeconds).isEqualTo(21)
+            assertThat(host.keepAliveSeconds).isEqualTo(42)
+            assertThat(host.autoLoginSftp).isFalse()
+            assertThat(host.compression).isTrue()
+            assertThat(host.keepAliveEnabled).isFalse()
+            assertThat(host.serverAliveCountMax).isEqualTo(4)
+            assertThat(host.authTimeoutSeconds).isEqualTo(60)
+            assertThat(host.autoReconnect).isFalse()
+            assertThat(host.maxReconnectAttempts).isEqualTo(7)
+            assertThat(host.reconnectBackoffSeconds).isEqualTo(11)
+            assertThat(host.usePty).isFalse()
+            assertThat(host.terminalType).isEqualTo("screen-256color")
+            assertThat(host.terminalColumns).isEqualTo(120)
+            assertThat(host.terminalRows).isEqualTo(40)
+            assertThat(host.keyboardInteractiveAuth).isFalse()
+            assertThat(host.legacyAlgorithms).isTrue()
+            assertThat(host.hostKeyPolicy).isEqualTo("STRICT")
+            assertThat(host.ciphers).isEqualTo("aes256-gcm@openssh.com")
+            assertThat(host.kexAlgorithms).isEqualTo("curve25519-sha256")
+            assertThat(host.macs).isEqualTo("hmac-sha2-256-etm@openssh.com")
+            assertThat(host.hostKeyAlgorithms).isEqualTo("ssh-ed25519")
+            assertThat(host.startupCommand).isEqualTo("tmux attach || tmux new")
+            assertThat(host.environment).isEqualTo("LANG=en_US.UTF-8")
+            assertThat(host.savedForwards).isEqualTo("L:8080:intranet.example:80")
+
+            // And the one column that step adds arrives empty: no endpoint configured, nothing bound.
+            assertThat(host.remoteDesktop).isEmpty()
+            assertThat(host.agentForwarding).isFalse()
+        }
+
+    @Test
+    fun `a version 15 host keeps every configured value across the step to 16`() =
+        runTest {
+            // This release's step, on its own, for the same reason the 14->15 test above exists: the
+            // climbs from v2 and v11 can only ever see the new column at its default, which cannot
+            // catch the one failure an ALTER TABLE can commit without failing - rebuilding the table
+            // instead of extending it, and losing everything the user configured. Seeded from the
+            // committed 15.json with a fully configured row, so what survives is what was chosen.
+            seedVersion15()
+
+            val host =
+                openWithMigrations()
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
+
+            // Every version-15 column, read back after the step, none of them at its default.
+            assertThat(host.id).isEqualTo("v15-host")
+            assertThat(host.name).isEqualTo("V15 edge")
+            assertThat(host.host).isEqualTo("edge15.example.com")
+            assertThat(host.username).isEqualTo("ops")
+            assertThat(host.port).isEqualTo(2215)
+            assertThat(host.authMethod).isEqualTo("KEY")
+            assertThat(host.groupName).isEqualTo("Prod")
+            assertThat(host.toDomain().tags).containsExactly("eu", "edge")
+            assertThat(host.isFavorite).isTrue()
+            assertThat(host.lastConnectedAt).isEqualTo(1_750_000_000_003L)
+            assertThat(host.fingerprint).isEqualTo("SHA256:v15")
+            assertThat(host.proxyType).isEqualTo("SOCKS5")
+            assertThat(host.proxyJump).isEqualTo("bastion15.example.com")
+            assertThat(host.socksHost).isEqualTo("10.0.0.15")
+            assertThat(host.socksPort).isEqualTo(9053)
+            assertThat(host.socksUsername).isEqualTo("ops")
+            assertThat(host.accentColor).isEqualTo(0xFF2196F3)
+            assertThat(host.connectTimeoutSeconds).isEqualTo(23)
+            assertThat(host.keepAliveSeconds).isEqualTo(43)
+            assertThat(host.autoLoginSftp).isFalse()
+            assertThat(host.compression).isTrue()
+            assertThat(host.keepAliveEnabled).isFalse()
+            assertThat(host.serverAliveCountMax).isEqualTo(5)
+            assertThat(host.authTimeoutSeconds).isEqualTo(75)
+            assertThat(host.autoReconnect).isFalse()
+            assertThat(host.maxReconnectAttempts).isEqualTo(8)
+            assertThat(host.reconnectBackoffSeconds).isEqualTo(13)
+            assertThat(host.usePty).isFalse()
+            assertThat(host.terminalType).isEqualTo("screen-256color")
+            assertThat(host.terminalColumns).isEqualTo(125)
+            assertThat(host.terminalRows).isEqualTo(42)
+            assertThat(host.keyboardInteractiveAuth).isFalse()
+            assertThat(host.legacyAlgorithms).isTrue()
+            assertThat(host.hostKeyPolicy).isEqualTo("STRICT")
+            assertThat(host.ciphers).isEqualTo("aes256-gcm@openssh.com")
+            assertThat(host.kexAlgorithms).isEqualTo("curve25519-sha256")
+            assertThat(host.macs).isEqualTo("hmac-sha2-256-etm@openssh.com")
+            assertThat(host.hostKeyAlgorithms).isEqualTo("ssh-ed25519")
+            assertThat(host.startupCommand).isEqualTo("tmux attach || tmux new")
+            assertThat(host.environment).isEqualTo("LANG=en_US.UTF-8")
+            assertThat(host.savedForwards).isEqualTo("L:8080:intranet.example:80")
+            assertThat(host.remoteDesktop).isEqualTo("V:10.0.1.5:5900 view-only")
+
+            // And the one column this step adds arrives empty: no MAC saved, nothing to wake.
+            assertThat(host.wakeOnLanMac).isEmpty()
+        }
+
+    @Test
+    fun `a version 17 host keeps every configured value across the step to 18`() =
+        runTest {
+            // This release's step, on its own, for the same reason the 15->16 step test above exists:
+            // the v2 and v11 climbs can only ever see the new column at its default, which cannot
+            // catch the one failure an ALTER TABLE can commit without failing - rebuilding the table
+            // instead of extending it, and losing everything the user configured. Seeded from the
+            // committed 17.json with a fully configured host row (the wake column's value included),
+            // so what survives is what was chosen. Numbered from 17 because wake-on-LAN took 15->16
+            // and the cross-host transfer columns 16->17 on main while this branch was open.
+            seedVersion17()
+
+            val host =
+                openWithMigrations()
+                    .hostDao()
+                    .observeAll()
+                    .first()
+                    .single()
+
+            // Every version-17 column, read back after the step, none of them at its default.
+            assertThat(host.id).isEqualTo("v17-host")
+            assertThat(host.name).isEqualTo("V17 edge")
+            assertThat(host.host).isEqualTo("edge17.example.com")
+            assertThat(host.username).isEqualTo("ops")
+            assertThat(host.port).isEqualTo(2217)
+            assertThat(host.authMethod).isEqualTo("KEY")
+            assertThat(host.groupName).isEqualTo("Prod")
+            assertThat(host.toDomain().tags).containsExactly("eu", "edge")
+            assertThat(host.isFavorite).isTrue()
+            assertThat(host.fingerprint).isEqualTo("SHA256:v17")
+            assertThat(host.proxyType).isEqualTo("SOCKS5")
+            assertThat(host.socksPort).isEqualTo(9057)
+            assertThat(host.terminalType).isEqualTo("screen-256color")
+            assertThat(host.remoteDesktop).isEqualTo("V:10.0.1.5:5900 view-only")
+            assertThat(host.wakeOnLanMac).isEqualTo("4C-2E-81-1A-02-F7")
+
+            // And the one column this step adds arrives off. Its default is a security property: the
+            // switch is a grant to the server's administrator, so a migration that landed it on - or a
+            // rebuild that flipped it - would be a permission change no user made.
+            assertThat(host.agentForwarding).isFalse()
+        }
+
+    @Test
+    fun `a version 16 transfer keeps every configured value across the step to 17`() =
+        runTest {
+            // This release's step, on its own, for the same reason the 15->16 step test above exists:
+            // the v2 and v11 climbs can only ever see the new columns at their null default, which
+            // cannot catch the one failure an ALTER TABLE can commit without failing - rebuilding the
+            // table instead of extending it, and losing everything the user configured. Seeded from
+            // the committed 16.json with a fully configured transfer row, so what survives is what was
+            // chosen. Numbered from 16 rather than 15 because the Wake-on-LAN column took 15->16 on
+            // main while this branch was open.
+            seedVersion16()
+
+            val transfer =
+                openWithMigrations()
+                    .transferDao()
+                    .observeAll()
+                    .first()
+                    .single()
+
+            // Every version-16 column, read back after the step, none of them at its default.
+            assertThat(transfer.id).isEqualTo("v16-transfer")
+            assertThat(transfer.name).isEqualTo("site-backup")
+            assertThat(transfer.direction).isEqualTo("CROSS_HOST")
+            assertThat(transfer.hostName).isEqualTo("Destination edge")
+            assertThat(transfer.progress).isEqualTo(0.25f)
+            assertThat(transfer.status).isEqualTo("RUNNING")
+            assertThat(transfer.sizeLabel).isEqualTo("1.2 GB")
+            assertThat(transfer.hostId).isEqualTo("dest-host")
+            assertThat(transfer.remotePath).isEqualTo("/srv/incoming/site-backup")
+            assertThat(transfer.localUri).isNull()
+            assertThat(transfer.transferredBytes).isEqualTo(322_122_547L)
+            assertThat(transfer.totalBytes).isEqualTo(1_288_490_188L)
+            assertThat(transfer.retryCount).isEqualTo(1)
+            assertThat(transfer.scheduledAt).isEqualTo(1_750_000_000_003L)
+            assertThat(transfer.repeatMinutes).isNull()
+            assertThat(transfer.errorMessage).isEqualTo("Connection reset by peer")
+
+            // And the two columns this step adds arrive null: null is the absence of a second host and
+            // of a destination directory, which is true of every row written before this release.
+            assertThat(transfer.sourceHostId).isNull()
+            assertThat(transfer.destPath).isNull()
+        }
+
+    @Test
+    fun `an upgrade with no migration path fails loudly instead of silently wiping`() =
+        runTest {
+            // The reason the production fallback is downgrade-only. No release ever shipped below schema 11,
+            // so a version this build has no *upgrade* path for can only come from a developer bumping the
+            // version and forgetting the migration. Under the old blanket fallbackToDestructiveMigration that
+            // reached the user as every host and transfer silently dropped on the next launch; version 1
+            // stands in for that gap. Opening has to throw instead, so the mistake is caught in QA and CI.
+            seedVersion2(userVersion = 1)
+
+            // Room opens lazily, so the missing 1_2 step surfaces on first access rather than at build().
+            val thrown = runCatching { openLikeProduction().hostDao().count() }.exceptionOrNull()
+
+            assertThat(thrown).isInstanceOf(IllegalStateException::class.java)
+        }
+
+    @Test
+    fun `a database written by a newer build is reset rather than refused`() =
+        runTest {
+            // The half the audit kept on purpose (AUDIT-REPORT.md sections 5 and 12.9): a downgrade - a file
+            // left by a build one version ahead, e.g. after a Play Store rollback - has no migration path
+            // back and never can, so refusing to open it would be a crash loop with no way out from inside
+            // the app. Resetting is the recoverable direction. user_version 19 is that newer build; the row
+            // shape beneath it is irrelevant, because a destructive downgrade drops every table first. One
+            // *ahead* of this build's own 18, not equal to it: a file that claims the current schema has
+            // its rows validated against it, and the v2 table below would not survive that.
+            seedVersion2(userVersion = 19)
+
+            val db = openLikeProduction()
+
+            assertThat(db.hostDao().count()).isEqualTo(0)
+            assertThat(db.transferDao().count()).isEqualTo(0)
+        }
 
     private fun openWithMigrations(): EclipseDatabase =
-        Room.databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
+        Room
+            .databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
             .addMigrations(
-                Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5,
-                Migrations.MIGRATION_5_6, Migrations.MIGRATION_6_7, Migrations.MIGRATION_7_8,
+                Migrations.MIGRATION_2_3,
+                Migrations.MIGRATION_3_4,
+                Migrations.MIGRATION_4_5,
+                Migrations.MIGRATION_5_6,
+                Migrations.MIGRATION_6_7,
+                Migrations.MIGRATION_7_8,
                 Migrations.MIGRATION_8_9,
-                Migrations.MIGRATION_9_10, Migrations.MIGRATION_10_11,
-                Migrations.MIGRATION_11_12, Migrations.MIGRATION_12_13,
-                Migrations.MIGRATION_13_14, Migrations.MIGRATION_14_15,
-                Migrations.MIGRATION_15_16, Migrations.MIGRATION_16_17, Migrations.MIGRATION_17_18,
+                Migrations.MIGRATION_9_10,
+                Migrations.MIGRATION_10_11,
+                Migrations.MIGRATION_11_12,
+                Migrations.MIGRATION_12_13,
+                Migrations.MIGRATION_13_14,
+                Migrations.MIGRATION_14_15,
+                Migrations.MIGRATION_15_16,
+                Migrations.MIGRATION_16_17,
+                Migrations.MIGRATION_17_18,
             )
             // No destructive fallback: a schema mismatch must fail the test, not wipe data.
             .allowMainThreadQueries()
@@ -599,17 +681,26 @@ class MigrationTest {
      * production decision rather than a copy of it that could drift from the wiring it is meant to prove.
      */
     private fun openLikeProduction(): EclipseDatabase =
-        Room.databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
+        Room
+            .databaseBuilder(context, EclipseDatabase::class.java, DB_NAME)
             .addMigrations(
-                Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5,
-                Migrations.MIGRATION_5_6, Migrations.MIGRATION_6_7, Migrations.MIGRATION_7_8,
+                Migrations.MIGRATION_2_3,
+                Migrations.MIGRATION_3_4,
+                Migrations.MIGRATION_4_5,
+                Migrations.MIGRATION_5_6,
+                Migrations.MIGRATION_6_7,
+                Migrations.MIGRATION_7_8,
                 Migrations.MIGRATION_8_9,
-                Migrations.MIGRATION_9_10, Migrations.MIGRATION_10_11,
-                Migrations.MIGRATION_11_12, Migrations.MIGRATION_12_13,
-                Migrations.MIGRATION_13_14, Migrations.MIGRATION_14_15,
-                Migrations.MIGRATION_15_16, Migrations.MIGRATION_16_17, Migrations.MIGRATION_17_18,
-            )
-            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+                Migrations.MIGRATION_9_10,
+                Migrations.MIGRATION_10_11,
+                Migrations.MIGRATION_11_12,
+                Migrations.MIGRATION_12_13,
+                Migrations.MIGRATION_13_14,
+                Migrations.MIGRATION_14_15,
+                Migrations.MIGRATION_15_16,
+                Migrations.MIGRATION_16_17,
+                Migrations.MIGRATION_17_18,
+            ).fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .allowMainThreadQueries()
             .build()
             .also { database = it }
@@ -618,7 +709,11 @@ class MigrationTest {
 
     /** Writes the version-2 schema and a row in each table, exactly as the shipped v2 did. */
     private fun seedVersion2(userVersion: Int = 2) {
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `host_profiles` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
@@ -657,7 +752,11 @@ class MigrationTest {
      */
     private fun seedVersion11() {
         val schema = JSONObject(schemaFile(11).readText()).getJSONObject("database")
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         val entities = schema.getJSONArray("entities")
         for (index in 0 until entities.length()) {
@@ -699,7 +798,11 @@ class MigrationTest {
      */
     private fun seedVersion12() {
         val schema = JSONObject(schemaFile(12).readText()).getJSONObject("database")
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         val entities = schema.getJSONArray("entities")
         for (index in 0 until entities.length()) {
@@ -738,7 +841,11 @@ class MigrationTest {
      */
     private fun seedVersion14() {
         val schema = JSONObject(schemaFile(14).readText()).getJSONObject("database")
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         val entities = schema.getJSONArray("entities")
         for (index in 0 until entities.length()) {
@@ -777,7 +884,11 @@ class MigrationTest {
      */
     private fun seedVersion15() {
         val schema = JSONObject(schemaFile(15).readText()).getJSONObject("database")
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         val entities = schema.getJSONArray("entities")
         for (index in 0 until entities.length()) {
@@ -821,7 +932,11 @@ class MigrationTest {
      */
     private fun seedVersion16() {
         val schema = JSONObject(schemaFile(16).readText()).getJSONObject("database")
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         val entities = schema.getJSONArray("entities")
         for (index in 0 until entities.length()) {
@@ -854,7 +969,11 @@ class MigrationTest {
      */
     private fun seedVersion17() {
         val schema = JSONObject(schemaFile(17).readText()).getJSONObject("database")
-        val file = databaseFile().apply { parentFile?.mkdirs(); delete() }
+        val file =
+            databaseFile().apply {
+                parentFile?.mkdirs()
+                delete()
+            }
         val db = SQLiteDatabase.openOrCreateDatabase(file, null)
         val entities = schema.getJSONArray("entities")
         for (index in 0 until entities.length()) {

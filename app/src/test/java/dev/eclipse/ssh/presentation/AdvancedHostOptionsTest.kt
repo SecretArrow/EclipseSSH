@@ -30,7 +30,6 @@ import org.junit.Test
  * host saved with 5-second backoff quietly overrides whatever Settings says - so each rule is stated.
  */
 class AdvancedHostOptionsTest {
-
     @Test
     fun `a new host starts on the behaviour the app had before any of this was configurable`() {
         val defaults = AdvancedHostOptions.DEFAULTS
@@ -72,30 +71,31 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `every option survives the trip from a host into the form and back`() {
-        val tuned = profile().copy(
-            compression = true,
-            keepAliveEnabled = false,
-            serverAliveCountMax = 6,
-            authTimeoutSeconds = 90,
-            autoReconnect = false,
-            maxReconnectAttempts = 12,
-            reconnectBackoffSeconds = 9,
-            usePty = false,
-            terminalType = "screen-256color",
-            terminalColumns = 132,
-            terminalRows = 43,
-            keyboardInteractiveAuth = false,
-            legacyAlgorithms = true,
-            hostKeyPolicy = HostKeyPolicy.ACCEPT_NEW,
-            ciphers = "aes256-gcm@openssh.com,aes128-ctr",
-            kexAlgorithms = "curve25519-sha256",
-            macs = "hmac-sha2-256-etm@openssh.com",
-            hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
-            startupCommand = "tmux attach || tmux new",
-            environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
-            savedForwards = "L:8080:intranet.example:80\nD:1080",
-            agentForwarding = true,
-        )
+        val tuned =
+            profile().copy(
+                compression = true,
+                keepAliveEnabled = false,
+                serverAliveCountMax = 6,
+                authTimeoutSeconds = 90,
+                autoReconnect = false,
+                maxReconnectAttempts = 12,
+                reconnectBackoffSeconds = 9,
+                usePty = false,
+                terminalType = "screen-256color",
+                terminalColumns = 132,
+                terminalRows = 43,
+                keyboardInteractiveAuth = false,
+                legacyAlgorithms = true,
+                hostKeyPolicy = HostKeyPolicy.ACCEPT_NEW,
+                ciphers = "aes256-gcm@openssh.com,aes128-ctr",
+                kexAlgorithms = "curve25519-sha256",
+                macs = "hmac-sha2-256-etm@openssh.com",
+                hostKeyAlgorithms = "ssh-ed25519,rsa-sha2-512",
+                startupCommand = "tmux attach || tmux new",
+                environment = "LANG=en_US.UTF-8\nTZ=Europe/Amsterdam",
+                savedForwards = "L:8080:intranet.example:80\nD:1080",
+                agentForwarding = true,
+            )
 
         val edited = AdvancedHostOptions.from(tuned)
 
@@ -145,14 +145,15 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `a number outside its range is refused per field and blocks the save`() {
-        val bad = AdvancedHostOptions.DEFAULTS.copy(
-            serverAliveCountMax = (SERVER_ALIVE_COUNT_RANGE.last + 1).toString(),
-            authTimeoutSeconds = (AUTH_TIMEOUT_RANGE.first - 1).toString(),
-            maxReconnectAttempts = "0",
-            reconnectBackoffSeconds = (RECONNECT_BACKOFF_RANGE.last + 1).toString(),
-            terminalColumns = (TERMINAL_COLUMNS_RANGE.first - 1).toString(),
-            terminalRows = (TERMINAL_ROWS_RANGE.last + 1).toString(),
-        )
+        val bad =
+            AdvancedHostOptions.DEFAULTS.copy(
+                serverAliveCountMax = (SERVER_ALIVE_COUNT_RANGE.last + 1).toString(),
+                authTimeoutSeconds = (AUTH_TIMEOUT_RANGE.first - 1).toString(),
+                maxReconnectAttempts = "0",
+                reconnectBackoffSeconds = (RECONNECT_BACKOFF_RANGE.last + 1).toString(),
+                terminalColumns = (TERMINAL_COLUMNS_RANGE.first - 1).toString(),
+                terminalRows = (TERMINAL_ROWS_RANGE.last + 1).toString(),
+            )
 
         assertThat(bad.serverAliveCountValid).isFalse()
         assertThat(bad.authTimeoutValid).isFalse()
@@ -165,14 +166,15 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `the edges of every range are accepted`() {
-        val edges = AdvancedHostOptions.DEFAULTS.copy(
-            serverAliveCountMax = SERVER_ALIVE_COUNT_RANGE.first.toString(),
-            authTimeoutSeconds = AUTH_TIMEOUT_RANGE.last.toString(),
-            maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS_RANGE.last.toString(),
-            reconnectBackoffSeconds = RECONNECT_BACKOFF_RANGE.first.toString(),
-            terminalColumns = TERMINAL_COLUMNS_RANGE.last.toString(),
-            terminalRows = TERMINAL_ROWS_RANGE.first.toString(),
-        )
+        val edges =
+            AdvancedHostOptions.DEFAULTS.copy(
+                serverAliveCountMax = SERVER_ALIVE_COUNT_RANGE.first.toString(),
+                authTimeoutSeconds = AUTH_TIMEOUT_RANGE.last.toString(),
+                maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS_RANGE.last.toString(),
+                reconnectBackoffSeconds = RECONNECT_BACKOFF_RANGE.first.toString(),
+                terminalColumns = TERMINAL_COLUMNS_RANGE.last.toString(),
+                terminalRows = TERMINAL_ROWS_RANGE.first.toString(),
+            )
 
         assertThat(edges.isValid).isTrue()
     }
@@ -181,11 +183,12 @@ class AdvancedHostOptionsTest {
     fun `a required number cannot be left blank`() {
         // Unlike the three optional fields, these have no meaning as "unset": there is no sensible
         // "inherit" for an authentication timeout, so an empty box is an unfinished form.
-        val blank = AdvancedHostOptions.DEFAULTS.copy(
-            serverAliveCountMax = "",
-            authTimeoutSeconds = "",
-            maxReconnectAttempts = "",
-        )
+        val blank =
+            AdvancedHostOptions.DEFAULTS.copy(
+                serverAliveCountMax = "",
+                authTimeoutSeconds = "",
+                maxReconnectAttempts = "",
+            )
 
         assertThat(blank.serverAliveCountValid).isFalse()
         assertThat(blank.authTimeoutValid).isFalse()
@@ -194,11 +197,12 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `text that is not a number is refused rather than read as one`() {
-        val nonsense = AdvancedHostOptions.DEFAULTS.copy(
-            authTimeoutSeconds = "30s",
-            terminalColumns = "-80",
-            terminalRows = "8O",
-        )
+        val nonsense =
+            AdvancedHostOptions.DEFAULTS.copy(
+                authTimeoutSeconds = "30s",
+                terminalColumns = "-80",
+                terminalRows = "8O",
+            )
 
         assertThat(nonsense.authTimeoutValid).isFalse()
         assertThat(nonsense.columnsValid).isFalse()
@@ -211,14 +215,15 @@ class AdvancedHostOptionsTest {
      */
     @Test
     fun `an out of range value that reached the form anyway is clamped on save`() {
-        val wild = AdvancedHostOptions.DEFAULTS.copy(
-            serverAliveCountMax = "9999",
-            authTimeoutSeconds = "1",
-            maxReconnectAttempts = "9999",
-            reconnectBackoffSeconds = "9999",
-            terminalColumns = "9999",
-            terminalRows = "1",
-        )
+        val wild =
+            AdvancedHostOptions.DEFAULTS.copy(
+                serverAliveCountMax = "9999",
+                authTimeoutSeconds = "1",
+                maxReconnectAttempts = "9999",
+                reconnectBackoffSeconds = "9999",
+                terminalColumns = "9999",
+                terminalRows = "1",
+            )
 
         val applied = wild.applyTo(profile())
 
@@ -260,9 +265,10 @@ class AdvancedHostOptionsTest {
     fun `switching one option off does not disturb the others`() {
         // The section edits twenty-one columns with one value object, so a copy that dropped a field
         // would silently reset it - the failure mode of every form that maps widgets to columns by hand.
-        val tuned = AdvancedHostOptions.from(
-            profile().copy(compression = true, terminalColumns = 132, hostKeyPolicy = HostKeyPolicy.STRICT),
-        )
+        val tuned =
+            AdvancedHostOptions.from(
+                profile().copy(compression = true, terminalColumns = 132, hostKeyPolicy = HostKeyPolicy.STRICT),
+            )
 
         val applied = tuned.copy(keepAliveEnabled = false).applyTo(profile())
 
@@ -276,14 +282,15 @@ class AdvancedHostOptionsTest {
     fun `the section leaves the rest of the host alone`() {
         // applyTo is handed a profile the main form has already filled in, so anything it touched
         // outside its own twenty-one columns would be an edit the user never made.
-        val host = profile().copy(
-            name = "Prod",
-            host = "prod.example.com",
-            port = 2222,
-            username = "deploy",
-            keepAliveSeconds = 20,
-            connectTimeoutSeconds = 45,
-        )
+        val host =
+            profile().copy(
+                name = "Prod",
+                host = "prod.example.com",
+                port = 2222,
+                username = "deploy",
+                keepAliveSeconds = 20,
+                connectTimeoutSeconds = 45,
+            )
 
         val applied = AdvancedHostOptions.from(host).copy(compression = true).applyTo(host)
 
@@ -367,9 +374,10 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `comments and blank lines are not mistakes in the environment box`() {
-        val options = AdvancedHostOptions.DEFAULTS.copy(
-            environment = "# the shell needs these\n\nLANG=en_US.UTF-8\n\nTZ=Europe/Amsterdam\n",
-        )
+        val options =
+            AdvancedHostOptions.DEFAULTS.copy(
+                environment = "# the shell needs these\n\nLANG=en_US.UTF-8\n\nTZ=Europe/Amsterdam\n",
+            )
 
         assertThat(options.environmentValid).isTrue()
         assertThat(options.isValid).isTrue()
@@ -379,10 +387,12 @@ class AdvancedHostOptionsTest {
     fun `an environment longer than the column blocks the save`() {
         // Every line is a real assignment with a name of its own, so the only thing wrong with this box
         // is its size - which is the case the per-line check cannot see.
-        val options = AdvancedHostOptions.DEFAULTS.copy(
-            environment = List(ENVIRONMENT_MAX_LENGTH / 6 + 2) { "V" + it.toString().padStart(3, '0') + "=x" }
-                .joinToString("\n"),
-        )
+        val options =
+            AdvancedHostOptions.DEFAULTS.copy(
+                environment =
+                    List(ENVIRONMENT_MAX_LENGTH / 6 + 2) { "V" + it.toString().padStart(3, '0') + "=x" }
+                        .joinToString("\n"),
+            )
 
         assertThat(options.environment.length).isGreaterThan(ENVIRONMENT_MAX_LENGTH)
         assertThat(options.environmentValid).isFalse()
@@ -391,9 +401,10 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `the startup command and the environment lose the whitespace around them on save`() {
-        val applied = AdvancedHostOptions.DEFAULTS
-            .copy(startupCommand = "  tmux attach  ", environment = "\n LANG=en_US.UTF-8 \n")
-            .applyTo(profile())
+        val applied =
+            AdvancedHostOptions.DEFAULTS
+                .copy(startupCommand = "  tmux attach  ", environment = "\n LANG=en_US.UTF-8 \n")
+                .applyTo(profile())
 
         assertThat(applied.startupCommand).isEqualTo("tmux attach")
         assertThat(applied.environment).isEqualTo("LANG=en_US.UTF-8")
@@ -407,7 +418,8 @@ class AdvancedHostOptionsTest {
 
         assertThat(edited.forwards).hasSize(2)
         assertThat(edited.forwards.map { it.type })
-            .containsExactly(ForwardType.LOCAL, ForwardType.DYNAMIC).inOrder()
+            .containsExactly(ForwardType.LOCAL, ForwardType.DYNAMIC)
+            .inOrder()
         // Tagged with the host that owns them, because a running forward is stopped by host id.
         assertThat(edited.forwards.map { it.hostId }).containsExactly(host.id, host.id)
         assertThat(edited.applyTo(profile())).isEqualTo(host)
@@ -428,9 +440,10 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `more forwards than a host may carry blocks the save`() {
-        val tooMany = List(MAX_SAVED_FORWARDS + 1) { index ->
-            ForwardEntry(type = ForwardType.DYNAMIC, localPort = 1080 + index, hostId = "advanced-host")
-        }
+        val tooMany =
+            List(MAX_SAVED_FORWARDS + 1) { index ->
+                ForwardEntry(type = ForwardType.DYNAMIC, localPort = 1080 + index, hostId = "advanced-host")
+            }
 
         val options = AdvancedHostOptions.DEFAULTS.copy(forwards = tooMany)
 
@@ -458,22 +471,24 @@ class AdvancedHostOptionsTest {
 
     @Test
     fun `reset clears the new options too`() {
-        val configured = AdvancedHostOptions.from(
-            profile().copy(
-                ciphers = "aes128-ctr",
-                startupCommand = "tmux attach",
-                environment = "LANG=C",
-                savedForwards = "D:1080",
-            ),
-        )
+        val configured =
+            AdvancedHostOptions.from(
+                profile().copy(
+                    ciphers = "aes128-ctr",
+                    startupCommand = "tmux attach",
+                    environment = "LANG=C",
+                    savedForwards = "D:1080",
+                ),
+            )
 
         assertThat(AdvancedHostOptions.DEFAULTS.applyTo(configured.applyTo(profile()))).isEqualTo(profile())
     }
 
-    private fun profile() = HostProfile(
-        id = "advanced-host",
-        name = "Advanced",
-        host = "advanced.example.com",
-        username = "root",
-    )
+    private fun profile() =
+        HostProfile(
+            id = "advanced-host",
+            name = "Advanced",
+            host = "advanced.example.com",
+            username = "root",
+        )
 }

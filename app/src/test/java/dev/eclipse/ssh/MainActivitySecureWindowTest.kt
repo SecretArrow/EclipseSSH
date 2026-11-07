@@ -55,14 +55,12 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class MainActivitySecureWindowTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
     private val repository get() = SettingsRepository(RuntimeEnvironment.getApplication())
 
-    private fun secureFlagSet(): Boolean =
-        compose.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+    private fun secureFlagSet(): Boolean = compose.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
 
     /**
      * Runs [body] and writes the setting back to its default afterwards, however [body] ends.
@@ -110,29 +108,31 @@ class MainActivitySecureWindowTest {
     }
 
     @Test
-    fun `the window is not secured unless the user asks for it`() = restoringTheSetting {
-        // The default has to be off: FLAG_SECURE blocks the user's own screenshots as bluntly as
-        // anyone else's, and pasting terminal output into a ticket is ordinary work for this app.
-        //
-        // Waits for real UI first, so this is an assertion about a composition that has run and read
-        // the settings rather than about a window nothing ever touched — which is what the previous
-        // version of this test could not tell apart, and admitted as much.
-        assertWithMessage("the workspace never rendered, so the settings were never read")
-            .that(pumpUntil { compose.onAllNodesWithText("Hosts").fetchSemanticsNodes().isNotEmpty() })
-            .isTrue()
+    fun `the window is not secured unless the user asks for it`() =
+        restoringTheSetting {
+            // The default has to be off: FLAG_SECURE blocks the user's own screenshots as bluntly as
+            // anyone else's, and pasting terminal output into a ticket is ordinary work for this app.
+            //
+            // Waits for real UI first, so this is an assertion about a composition that has run and read
+            // the settings rather than about a window nothing ever touched — which is what the previous
+            // version of this test could not tell apart, and admitted as much.
+            assertWithMessage("the workspace never rendered, so the settings were never read")
+                .that(pumpUntil { compose.onAllNodesWithText("Hosts").fetchSemanticsNodes().isNotEmpty() })
+                .isTrue()
 
-        assertThat(secureFlagSet()).isFalse()
-    }
+            assertThat(secureFlagSet()).isFalse()
+        }
 
     @Test
-    fun `enabling the setting secures the window and disabling it releases it again`() = restoringTheSetting {
-        runBlocking { repository.setBlockScreenshots(true) }
-        awaitSecureFlag(expected = true)
+    fun `enabling the setting secures the window and disabling it releases it again`() =
+        restoringTheSetting {
+            runBlocking { repository.setBlockScreenshots(true) }
+            awaitSecureFlag(expected = true)
 
-        // And back. The flag is applied from a keyed effect rather than once in onCreate precisely so
-        // the switch works while the app is open; if only `addFlags` were wired, turning the setting
-        // off would leave the user unable to screenshot their own terminal until the next launch.
-        runBlocking { repository.setBlockScreenshots(false) }
-        awaitSecureFlag(expected = false)
-    }
+            // And back. The flag is applied from a keyed effect rather than once in onCreate precisely so
+            // the switch works while the app is open; if only `addFlags` were wired, turning the setting
+            // off would leave the user unable to screenshot their own terminal until the next launch.
+            runBlocking { repository.setBlockScreenshots(false) }
+            awaitSecureFlag(expected = false)
+        }
 }

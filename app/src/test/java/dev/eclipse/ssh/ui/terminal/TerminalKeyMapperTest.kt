@@ -18,7 +18,6 @@ import org.junit.Test
  * three cases assertions rather than field reports.
  */
 class TerminalKeyMapperTest {
-
     @Test
     fun `only a key down acts, so a press is not sent twice`() {
         // Android reports a down and an up for one press. Acting on both would run every command twice.
@@ -127,10 +126,22 @@ class TerminalKeyMapperTest {
     fun `the shortcut bar carries every key a touch device cannot otherwise reach`() {
         val labels = NAMED_ROW.map { it.first }
 
-        assertThat(labels).containsExactly(
-            "ESC", "TAB", "←", "↓", "↑", "→",
-            "HOME", "END", "PGUP", "PGDN", "DEL", "BKSP", "ENTER",
-        ).inOrder()
+        assertThat(labels)
+            .containsExactly(
+                "ESC",
+                "TAB",
+                "←",
+                "↓",
+                "↑",
+                "→",
+                "HOME",
+                "END",
+                "PGUP",
+                "PGDN",
+                "DEL",
+                "BKSP",
+                "ENTER",
+            ).inOrder()
     }
 
     @Test
@@ -169,10 +180,11 @@ private fun map(
     held: TerminalModifiers = TerminalModifiers.NONE,
     armed: TerminalModifiers = TerminalModifiers.NONE,
     keyDown: Boolean = true,
-): TerminalKeyAction = mapTerminalKeyEvent(
-    keyDown = keyDown,
-    key = key,
-    codePoint = codePoint,
-    held = held,
-    armed = armed,
-)
+): TerminalKeyAction =
+    mapTerminalKeyEvent(
+        keyDown = keyDown,
+        key = key,
+        codePoint = codePoint,
+        held = held,
+        armed = armed,
+    )

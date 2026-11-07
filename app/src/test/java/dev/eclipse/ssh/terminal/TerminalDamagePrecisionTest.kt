@@ -53,11 +53,13 @@ class TerminalDamagePrecisionTest {
     }
 
     /** The lines the frame shows, by absolute buffer line, so two frames are comparable across a scroll. */
-    private fun absoluteRows(frame: TerminalFrame): Map<Int, List<TerminalCell>> =
-        frame.lines.withIndex().associate { (index, line) -> frame.firstLine + index to line }
+    private fun absoluteRows(frame: TerminalFrame): Map<Int, List<TerminalCell>> = frame.lines.withIndex().associate { (index, line) -> frame.firstLine + index to line }
 
     /** The absolute lines the second frame shows holding different cells than the first did. */
-    private fun changedLines(before: TerminalFrame, after: TerminalFrame): Set<Int> {
+    private fun changedLines(
+        before: TerminalFrame,
+        after: TerminalFrame,
+    ): Set<Int> {
         val was = absoluteRows(before)
         return absoluteRows(after).filter { (line, cells) -> was[line] != cells }.keys
     }

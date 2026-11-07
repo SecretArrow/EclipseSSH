@@ -1,10 +1,10 @@
 package dev.eclipse.ssh.linux
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import java.util.zip.GZIPOutputStream
 
 /**
@@ -13,7 +13,6 @@ import java.util.zip.GZIPOutputStream
  * rather than a hand-rolled byte layout that could agree with the installer's bugs.
  */
 internal object TestTarballs {
-
     /**
      * Writes a minimal Ubuntu-Base-shaped tar.gz: `bin/`, `etc/{passwd,group,shadow}`,
      * `etc/apt/` (a directory Ubuntu Base ships and setup writes `sources.list` into), a
@@ -28,7 +27,10 @@ internal object TestTarballs {
      * @param linkerName which architecture's dynamic linker to ship; the wrong one on purpose is
      *   how the validator's architecture check is tested
      */
-    fun writeRootfsFixture(target: File, linkerName: String = "ld-linux-aarch64.so.1"): File {
+    fun writeRootfsFixture(
+        target: File,
+        linkerName: String = "ld-linux-aarch64.so.1",
+    ): File {
         target.parentFile?.mkdirs()
         GZIPOutputStream(target.outputStream().buffered()).use { gzip ->
             TarArchiveOutputStream(gzip).use { tar ->
@@ -156,17 +158,18 @@ internal object TestTarballs {
      * The padding is the description field's own continuation lines rather than filler bytes outside
      * a field: a file whose records do not parse is the opposite of what this is for.
      */
-    fun dpkgStatusText(vararg packages: String): String = buildString {
-        for (name in packages.ifEmpty { arrayOf("base-files") }) {
-            append("Package: $name\n")
-            append("Status: install ok installed\n")
-            append("Priority: required\n")
-            append("Architecture: arm64\n")
-            append("Version: 12ubuntu4\n")
-            append("Description: fixture package $name\n")
-            append(" " + "a continuation line long enough to carry the file past the reader's floor. ".repeat(8) + "\n")
+    fun dpkgStatusText(vararg packages: String): String =
+        buildString {
+            for (name in packages.ifEmpty { arrayOf("base-files") }) {
+                append("Package: $name\n")
+                append("Status: install ok installed\n")
+                append("Priority: required\n")
+                append("Architecture: arm64\n")
+                append("Version: 12ubuntu4\n")
+                append("Description: fixture package $name\n")
+                append(" " + "a continuation line long enough to carry the file past the reader's floor. ".repeat(8) + "\n")
+            }
         }
-    }
 
     fun sha256(file: File): String =
         MessageDigest.getInstance("SHA-256").let { digest ->
@@ -220,14 +223,22 @@ internal object TestTarballs {
             }
         }
 
-    private fun putDirectory(tar: TarArchiveOutputStream, name: String) {
+    private fun putDirectory(
+        tar: TarArchiveOutputStream,
+        name: String,
+    ) {
         val entry = TarArchiveEntry("$name/")
         entry.mode = 0b111_101_101
         tar.putArchiveEntry(entry)
         tar.closeArchiveEntry()
     }
 
-    private fun putFile(tar: TarArchiveOutputStream, name: String, content: ByteArray, mode: Int = 0b110_100_100) {
+    private fun putFile(
+        tar: TarArchiveOutputStream,
+        name: String,
+        content: ByteArray,
+        mode: Int = 0b110_100_100,
+    ) {
         val entry = TarArchiveEntry(name)
         entry.size = content.size.toLong()
         entry.mode = mode
@@ -236,7 +247,11 @@ internal object TestTarballs {
         tar.closeArchiveEntry()
     }
 
-    private fun putSymlink(tar: TarArchiveOutputStream, name: String, target: String) {
+    private fun putSymlink(
+        tar: TarArchiveOutputStream,
+        name: String,
+        target: String,
+    ) {
         // The link-type constructor is what makes this a symlink entry; setting linkName alone
         // would leave it typed as a regular file, which is exactly the bug the installer's
         // per-type handling would silently forgive.
@@ -253,13 +268,21 @@ internal object TestTarballs {
      * installer copies from an already-extracted target, so a forward link is skipped — and the
      * skip must be named, not silent.
      */
-    private fun putForwardHardlink(tar: TarArchiveOutputStream, name: String, notYetExtractedTarget: String) {
+    private fun putForwardHardlink(
+        tar: TarArchiveOutputStream,
+        name: String,
+        notYetExtractedTarget: String,
+    ) {
         putHardlink(tar, name, notYetExtractedTarget)
     }
 
     /** A hard-link entry, `name` linking `source` — the source's position in the archive is the
      * caller's business, and is what separates a forward link from an ordinary one. */
-    private fun putHardlink(tar: TarArchiveOutputStream, name: String, source: String) {
+    private fun putHardlink(
+        tar: TarArchiveOutputStream,
+        name: String,
+        source: String,
+    ) {
         val entry = TarArchiveEntry(name, TarArchiveEntry.LF_LINK)
         entry.linkName = source
         entry.size = 0

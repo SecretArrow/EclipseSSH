@@ -24,17 +24,17 @@ import java.util.Random
  * side of the bridge are exactly what a real `tar czf` would have produced.
  */
 class TarArchiveTest {
-
     @Test
     fun `a plain tar with three files and a directory lists all four with names, sizes and mtimes`() {
-        val tar = buildTar(
-            listOf(
-                file("hello.txt", "hello".toByteArray()),
-                file("data.bin", ByteArray(600) { 'z'.code.toByte() }),
-                file("nested/deep/last.txt", "bye".toByteArray()),
-                dir("folder/"),
-            ),
-        )
+        val tar =
+            buildTar(
+                listOf(
+                    file("hello.txt", "hello".toByteArray()),
+                    file("data.bin", ByteArray(600) { 'z'.code.toByte() }),
+                    file("nested/deep/last.txt", "bye".toByteArray()),
+                    dir("folder/"),
+                ),
+            )
         val entries = list(tar)
 
         assertThat(entries.map { it.path })
@@ -91,13 +91,14 @@ class TarArchiveTest {
 
     @Test
     fun `tar gz, tar bz2 and tar xz round trip to the same entries with null data offsets`() {
-        val plain = buildTar(
-            listOf(
-                file("hello.txt", "hello".toByteArray()),
-                file("nested/data.bin", ByteArray(600)),
-                dir("folder/"),
-            ),
-        )
+        val plain =
+            buildTar(
+                listOf(
+                    file("hello.txt", "hello".toByteArray()),
+                    file("nested/data.bin", ByteArray(600)),
+                    dir("folder/"),
+                ),
+            )
         // The compressed listings must equal the plain one except that no offset into a
         // compressed stream is a seek target.
         val expected = list(plain).map { it.copy(dataOffset = null) }
@@ -109,48 +110,53 @@ class TarArchiveTest {
     }
 
     @Test
-    fun `readEntry returns an uncompressed tar member by one ranged read`() = runBlocking {
-        // The preview path's promise for TAR: the offset the listing tracked is a real seek
-        // target, so the file comes back exactly - no second pass over the archive, and the
-        // bytes that moved are the entry's own. This is the contract the UI's "open" gesture
-        // rides for plain tars.
-        val first = "head".toByteArray()
-        val second = "the file the person asked to see".toByteArray()
-        val tar = buildTar(listOf(file("first.txt", first), file("second.txt", second)))
-        val source = ByteArrayByteSource(tar)
-        val entries = ArchiveReader.list(ArchiveReader.Format.TAR, source)
+    fun `readEntry returns an uncompressed tar member by one ranged read`() =
+        runBlocking {
+            // The preview path's promise for TAR: the offset the listing tracked is a real seek
+            // target, so the file comes back exactly - no second pass over the archive, and the
+            // bytes that moved are the entry's own. This is the contract the UI's "open" gesture
+            // rides for plain tars.
+            val first = "head".toByteArray()
+            val second = "the file the person asked to see".toByteArray()
+            val tar = buildTar(listOf(file("first.txt", first), file("second.txt", second)))
+            val source = ByteArrayByteSource(tar)
+            val entries = ArchiveReader.list(ArchiveReader.Format.TAR, source)
 
-        val bytes = ArchiveReader.readEntry(
-            ArchiveReader.Format.TAR,
-            source,
-            entries.single { it.path == "second.txt" },
-        )
+            val bytes =
+                ArchiveReader.readEntry(
+                    ArchiveReader.Format.TAR,
+                    source,
+                    entries.single { it.path == "second.txt" },
+                )
 
-        assertThat(bytes).isEqualTo(second)
-    }
+            assertThat(bytes).isEqualTo(second)
+        }
 
     @Test
-    fun `readEntry refuses to pretend for a compressed tar member`() = runBlocking {
-        // A null answer, not a hidden stream-through: the UI renders "cannot preview, extract
-        // instead" for exactly this case, so the null is a contract the sheet labels honestly.
-        val tar = compress(buildTar(listOf(file("file.txt", "content".toByteArray()))), TarCompression.GZIP)
-        val source = ByteArrayByteSource(tar)
-        val entries = ArchiveReader.list(ArchiveReader.Format.TAR_GZ, source)
+    fun `readEntry refuses to pretend for a compressed tar member`() =
+        runBlocking {
+            // A null answer, not a hidden stream-through: the UI renders "cannot preview, extract
+            // instead" for exactly this case, so the null is a contract the sheet labels honestly.
+            val tar = compress(buildTar(listOf(file("file.txt", "content".toByteArray()))), TarCompression.GZIP)
+            val source = ByteArrayByteSource(tar)
+            val entries = ArchiveReader.list(ArchiveReader.Format.TAR_GZ, source)
 
-        val bytes = ArchiveReader.readEntry(
-            ArchiveReader.Format.TAR_GZ,
-            source,
-            entries.single(),
-        )
+            val bytes =
+                ArchiveReader.readEntry(
+                    ArchiveReader.Format.TAR_GZ,
+                    source,
+                    entries.single(),
+                )
 
-        assertThat(bytes).isNull()
-    }
+            assertThat(bytes).isNull()
+        }
 
     @Test
     fun `a five megabyte entry followed by a small one both list, with progress advancing through the skip`() {
-        val tar = buildTar(
-            listOf(file("big.bin", ByteArray(5_000_000)), file("tail.txt", "t".toByteArray())),
-        )
+        val tar =
+            buildTar(
+                listOf(file("big.bin", ByteArray(5_000_000)), file("tail.txt", "t".toByteArray())),
+            )
         val progress = ArrayList<ArchiveScanProgress>()
         val entries = list(tar) { progress.add(it) }
 
@@ -187,10 +193,11 @@ class TarArchiveTest {
         // than letting the inflater finish early on compressible bytes.
         val random = Random(42)
         val payload = ByteArray(100_000).also { random.nextBytes(it) }
-        val full = compress(
-            buildTar(listOf(file("big.bin", payload), file("after.txt", "t".toByteArray()))),
-            TarCompression.GZIP,
-        )
+        val full =
+            compress(
+                buildTar(listOf(file("big.bin", payload), file("after.txt", "t".toByteArray()))),
+                TarCompression.GZIP,
+            )
         val cut = full.copyOfRange(0, full.size / 2)
 
         val thrown = runCatching { list(cut, TarCompression.GZIP) }.exceptionOrNull()
@@ -231,13 +238,14 @@ class TarArchiveTest {
 
     @Test
     fun `symlinks and hard links are listed as size zero non directory entries`() {
-        val tar = buildTar(
-            listOf(
-                symlink("shortcut.txt", "real.txt"),
-                hardLink("alias.txt", "real.txt"),
-                file("real.txt", "data".toByteArray()),
-            ),
-        )
+        val tar =
+            buildTar(
+                listOf(
+                    symlink("shortcut.txt", "real.txt"),
+                    hardLink("alias.txt", "real.txt"),
+                    file("real.txt", "data".toByteArray()),
+                ),
+            )
         val entries = list(tar)
 
         assertThat(entries.map { it.path }).containsExactly("shortcut.txt", "alias.txt", "real.txt").inOrder()
@@ -302,13 +310,22 @@ class TarArchiveTest {
         val hardLinkTo: String? = null,
     )
 
-    private fun file(name: String, content: ByteArray) = TarEntryFixture(name, content)
+    private fun file(
+        name: String,
+        content: ByteArray,
+    ) = TarEntryFixture(name, content)
 
     private fun dir(name: String) = TarEntryFixture(name)
 
-    private fun symlink(name: String, target: String) = TarEntryFixture(name, symbolicLinkTo = target)
+    private fun symlink(
+        name: String,
+        target: String,
+    ) = TarEntryFixture(name, symbolicLinkTo = target)
 
-    private fun hardLink(name: String, target: String) = TarEntryFixture(name, hardLinkTo = target)
+    private fun hardLink(
+        name: String,
+        target: String,
+    ) = TarEntryFixture(name, hardLinkTo = target)
 
     private fun buildTar(
         entries: List<TarEntryFixture>,
@@ -318,16 +335,17 @@ class TarArchiveTest {
         TarArchiveOutputStream(out).use { tar ->
             tar.setLongFileMode(longFileMode)
             for (fixture in entries) {
-                val entry = when {
-                    fixture.symbolicLinkTo != null ->
-                        TarArchiveEntry(fixture.name, TarArchiveEntry.LF_SYMLINK)
-                            .apply { linkName = fixture.symbolicLinkTo }
-                    fixture.hardLinkTo != null ->
-                        TarArchiveEntry(fixture.name, TarArchiveEntry.LF_LINK)
-                            .apply { linkName = fixture.hardLinkTo }
-                    else ->
-                        TarArchiveEntry(fixture.name).apply { size = fixture.content.size.toLong() }
-                }
+                val entry =
+                    when {
+                        fixture.symbolicLinkTo != null ->
+                            TarArchiveEntry(fixture.name, TarArchiveEntry.LF_SYMLINK)
+                                .apply { linkName = fixture.symbolicLinkTo }
+                        fixture.hardLinkTo != null ->
+                            TarArchiveEntry(fixture.name, TarArchiveEntry.LF_LINK)
+                                .apply { linkName = fixture.hardLinkTo }
+                        else ->
+                            TarArchiveEntry(fixture.name).apply { size = fixture.content.size.toLong() }
+                    }
                 // The explicit long overload: the synthetic modTime property would be the Date
                 // variant, and the fixture carries epoch millis.
                 entry.setModTime(fixture.mtimeMillis)
@@ -339,7 +357,10 @@ class TarArchiveTest {
         return out.toByteArray()
     }
 
-    private fun compress(tar: ByteArray, compression: TarCompression): ByteArray {
+    private fun compress(
+        tar: ByteArray,
+        compression: TarCompression,
+    ): ByteArray {
         if (compression == TarCompression.NONE) return tar
         val out = ByteArrayOutputStream()
         when (compression) {
@@ -355,9 +376,10 @@ class TarArchiveTest {
         bytes: ByteArray,
         compression: TarCompression = TarCompression.NONE,
         onProgress: (ArchiveScanProgress) -> Unit = {},
-    ): List<ArchiveEntry> = runBlocking {
-        TarArchive(ByteArrayByteSource(bytes)).listEntries(compression, onProgress)
-    }
+    ): List<ArchiveEntry> =
+        runBlocking {
+            TarArchive(ByteArrayByteSource(bytes)).listEntries(compression, onProgress)
+        }
 
     /** Tar pads every payload up to a multiple of the 512-byte record. */
     private fun padded(size: Long): Long = ((size + 511) / 512) * 512

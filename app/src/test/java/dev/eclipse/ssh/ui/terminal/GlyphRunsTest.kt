@@ -14,7 +14,6 @@ import org.junit.Test
  * by a whole em.
  */
 class GlyphRunsTest {
-
     @Test
     fun `printable ascii is settled without a measurement`() {
         // The fast path, and the one that matters for cost: this is asked once per cell per row per
@@ -82,12 +81,16 @@ class GlyphRunsTest {
         // `joins` - see `terminalFaceFor` - so the loop below must not reach the measurement for a
         // cell that already failed it.
         val measured = mutableListOf<Int>()
-        val end = glyphRunEnd(
-            from = 0,
-            lastColumn = 40,
-            joins = { it < 4 },
-            fitsOneCell = { measured += it; true },
-        )
+        val end =
+            glyphRunEnd(
+                from = 0,
+                lastColumn = 40,
+                joins = { it < 4 },
+                fitsOneCell = {
+                    measured += it
+                    true
+                },
+            )
 
         assertThat(end).isEqualTo(4)
         assertThat(measured).containsExactly(0, 1, 2, 3)

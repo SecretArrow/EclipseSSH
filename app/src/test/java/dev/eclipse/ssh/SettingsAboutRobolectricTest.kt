@@ -14,7 +14,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.google.common.truth.Truth.assertWithMessage
 import dev.eclipse.ssh.ui.about.AboutActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +21,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The About entry on Settings, and where it leads.
@@ -40,7 +40,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SettingsAboutRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -68,7 +67,11 @@ class SettingsAboutRobolectricTest {
      * Not `compose.waitUntil`, which reports only "Condition still not satisfied"; `idleFor` rather than
      * `idle` so real `delay`s in the Room and DataStore flows come due.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -147,8 +150,10 @@ class SettingsAboutRobolectricTest {
         }
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("the About row did not open AboutActivity")
-            .that(intent?.component?.className).isEqualTo(AboutActivity::class.java.name)
+            .that(intent?.component?.className)
+            .isEqualTo(AboutActivity::class.java.name)
         assertWithMessage("About still opened as a dialog over Settings")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 }

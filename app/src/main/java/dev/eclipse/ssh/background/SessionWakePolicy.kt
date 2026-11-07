@@ -20,9 +20,14 @@ internal enum class WakeNeed {
  * held for exactly one situation - a live session on an app the user is not looking at, on a service
  * that is not already shutting down.
  */
-internal fun wakeNeed(appVisible: Boolean, liveSessions: Int, stopping: Boolean): WakeNeed = when {
-    stopping -> WakeNeed.NONE
-    liveSessions <= 0 -> WakeNeed.NONE
-    appVisible -> WakeNeed.NONE
-    else -> WakeNeed.PARTIAL
-}
+internal fun wakeNeed(
+    appVisible: Boolean,
+    liveSessions: Int,
+    stopping: Boolean,
+): WakeNeed =
+    when {
+        stopping -> WakeNeed.NONE
+        liveSessions <= 0 -> WakeNeed.NONE
+        appVisible -> WakeNeed.NONE
+        else -> WakeNeed.PARTIAL
+    }

@@ -10,7 +10,6 @@ import org.junit.Test
  * device by hand.
  */
 class CursorBlinkTest {
-
     @Test
     fun `the cursor blinks only when it is visible, asked for and focused`() {
         assertThat(cursorBlinks(cursorVisible = true, blinkMode = true, focused = true)).isTrue()

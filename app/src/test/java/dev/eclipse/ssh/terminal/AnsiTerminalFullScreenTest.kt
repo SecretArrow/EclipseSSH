@@ -1,9 +1,9 @@
 package dev.eclipse.ssh.terminal
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import org.junit.Test
 
 /** ESC, built from its code point so this file contains no literal control byte. */
 private val ESCAPE: String = Char(0x1B).toString()
@@ -30,11 +30,9 @@ private const val LONG_COMMAND =
  * scribbling over the user's history.
  */
 class AnsiTerminalFullScreenTest {
-    private fun lines(buffer: AnsiTerminalBuffer): List<String> =
-        buffer.snapshot().lines.map { line -> line.joinToString("") { it.value.toString() }.trimEnd() }
+    private fun lines(buffer: AnsiTerminalBuffer): List<String> = buffer.snapshot().lines.map { line -> line.joinToString("") { it.value.toString() }.trimEnd() }
 
-    private fun lines(frame: TerminalFrame): List<String> =
-        frame.lines.map { line -> line.joinToString("") { it.value.toString() }.trimEnd() }
+    private fun lines(frame: TerminalFrame): List<String> = frame.lines.map { line -> line.joinToString("") { it.value.toString() }.trimEnd() }
 
     // --- The alternate screen: what keeps vim, less and htop out of the scrollback ---
 
@@ -44,12 +42,12 @@ class AnsiTerminalFullScreenTest {
         buffer.feed("shell one\nshell two\n")
 
         // What vim sends on startup, then what it draws.
-        buffer.feed("${ESCAPE}[?1049h${ESCAPE}[2J${ESCAPE}[HEDITOR")
+        buffer.feed("$ESCAPE[?1049h$ESCAPE[2J$ESCAPE[HEDITOR")
 
         assertThat(buffer.plainText()).isEqualTo("EDITOR")
 
         // And what it sends on exit.
-        buffer.feed("${ESCAPE}[?1049l")
+        buffer.feed("$ESCAPE[?1049l")
 
         assertThat(buffer.plainText()).contains("shell one")
         assertThat(buffer.plainText()).contains("shell two")
@@ -66,7 +64,7 @@ class AnsiTerminalFullScreenTest {
     @Test
     fun `the alternate screen never grows the scrollback`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 4, scrollbackLimit = 100)
-        buffer.feed("${ESCAPE}[?1049h")
+        buffer.feed("$ESCAPE[?1049h")
 
         repeat(50) { buffer.feed("frame $it\n") }
 
@@ -83,10 +81,10 @@ class AnsiTerminalFullScreenTest {
         // `ESC [ ? 47 h`, then `alt` reads `alt` on the *second* row, because that is where the
         // newline left the cursor. 47 and 1047 do not save it the way 1049 does, so there is nothing
         // for the way out to put back either.
-        buffer.feed("${ESCAPE}[?47halt")
+        buffer.feed("$ESCAPE[?47halt")
         assertThat(buffer.plainText()).isEqualTo("\nalt")
 
-        buffer.feed("${ESCAPE}[?47l")
+        buffer.feed("$ESCAPE[?47l")
         assertThat(buffer.plainText()).isEqualTo("primary")
     }
 
@@ -94,10 +92,10 @@ class AnsiTerminalFullScreenTest {
     fun `a rotation while a full screen program is open resizes the shell underneath it`() {
         val buffer = AnsiTerminalBuffer(columns = 40, rows = 6)
         buffer.feed("a shell line that is quite long here\n")
-        buffer.feed("${ESCAPE}[?1049h")
+        buffer.feed("$ESCAPE[?1049h")
 
         buffer.resize(20, 4)
-        buffer.feed("${ESCAPE}[?1049l")
+        buffer.feed("$ESCAPE[?1049l")
 
         val snapshot = buffer.snapshot()
         assertThat(snapshot.columns).isEqualTo(20)
@@ -109,10 +107,10 @@ class AnsiTerminalFullScreenTest {
     @Test
     fun `a scroll region scrolls only its own rows`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 5, scrollbackLimit = 20)
-        buffer.feed("${ESCAPE}[1;1Htop${ESCAPE}[2;1Ha${ESCAPE}[3;1Hb${ESCAPE}[4;1Hc${ESCAPE}[5;1Hbottom")
+        buffer.feed("$ESCAPE[1;1Htop$ESCAPE[2;1Ha$ESCAPE[3;1Hb$ESCAPE[4;1Hc$ESCAPE[5;1Hbottom")
 
-        buffer.feed("${ESCAPE}[2;4r")
-        buffer.feed("${ESCAPE}[4;1H\n")
+        buffer.feed("$ESCAPE[2;4r")
+        buffer.feed("$ESCAPE[4;1H\n")
 
         // "a" left the region at the top; "top" and "bottom" never moved.
         assertThat(lines(buffer)).containsExactly("top", "b", "c", "", "bottom").inOrder()
@@ -123,9 +121,9 @@ class AnsiTerminalFullScreenTest {
     @Test
     fun `a reverse index at the top of a region scrolls it back down`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 4)
-        buffer.feed("${ESCAPE}[1;1Hone${ESCAPE}[2;1Htwo${ESCAPE}[3;1Hthree")
+        buffer.feed("$ESCAPE[1;1Hone$ESCAPE[2;1Htwo$ESCAPE[3;1Hthree")
 
-        buffer.feed("${ESCAPE}[1;3r${ESCAPE}[1;1H${ESCAPE}M")
+        buffer.feed("$ESCAPE[1;3r$ESCAPE[1;1H${ESCAPE}M")
 
         assertThat(lines(buffer)).containsExactly("", "one", "two", "").inOrder()
     }
@@ -134,7 +132,7 @@ class AnsiTerminalFullScreenTest {
     fun `an inverted or degenerate region falls back to the whole screen`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 4, scrollbackLimit = 10)
 
-        buffer.feed("${ESCAPE}[4;2r")
+        buffer.feed("$ESCAPE[4;2r")
         repeat(8) { buffer.feed("row $it\n") }
 
         // A full-screen region archives, so the history grew rather than the rows being discarded.
@@ -154,20 +152,22 @@ class AnsiTerminalFullScreenTest {
         // stays where it is. Both were measured against tmux before they were written, and both were
         // measured the hard way - the marker for each is overwritten by the case that follows it, so a
         // fixture that ran them in sequence showed nothing until each was given a band of its own.
-        val cases = listOf(
-            "${ESCAPE}[25;5H${ESCAPE}[9A" to 21,   // from inside, up: the region's top row
-            "${ESCAPE}[25;5H${ESCAPE}[9B" to 27,   // from inside, down: the region's bottom row
-            "${ESCAPE}[20;3H${ESCAPE}[3A" to 16,   // above the region: the screen is the bound
-            "${ESCAPE}[30;3H${ESCAPE}[20A" to 21,  // below the region: the margin still stops it
-            "${ESCAPE}[30;3H${ESCAPE}[3B" to 32,   // below it, moving down: nothing in the way
-            "${ESCAPE}[22;1H${ESCAPE}[1A" to 21,   // on the top row, up: still the top row
-            "${ESCAPE}[28;1H${ESCAPE}[1B" to 27,   // on the bottom row, down: still the bottom row
-        )
-        val landed = cases.map { (sequence, _) ->
-            val buffer = AnsiTerminalBuffer(columns = 10, rows = 40, scrollbackLimit = 20)
-            buffer.feed("${ESCAPE}[2J${ESCAPE}[22;28r$sequence")
-            buffer.frame().cursorRow
-        }
+        val cases =
+            listOf(
+                "$ESCAPE[25;5H$ESCAPE[9A" to 21, // from inside, up: the region's top row
+                "$ESCAPE[25;5H$ESCAPE[9B" to 27, // from inside, down: the region's bottom row
+                "$ESCAPE[20;3H$ESCAPE[3A" to 16, // above the region: the screen is the bound
+                "$ESCAPE[30;3H$ESCAPE[20A" to 21, // below the region: the margin still stops it
+                "$ESCAPE[30;3H$ESCAPE[3B" to 32, // below it, moving down: nothing in the way
+                "$ESCAPE[22;1H$ESCAPE[1A" to 21, // on the top row, up: still the top row
+                "$ESCAPE[28;1H$ESCAPE[1B" to 27, // on the bottom row, down: still the bottom row
+            )
+        val landed =
+            cases.map { (sequence, _) ->
+                val buffer = AnsiTerminalBuffer(columns = 10, rows = 40, scrollbackLimit = 20)
+                buffer.feed("$ESCAPE[2J$ESCAPE[22;28r$sequence")
+                buffer.frame().cursorRow
+            }
 
         assertThat(landed).containsExactly(21, 27, 16, 21, 32, 21, 27).inOrder()
     }
@@ -177,7 +177,7 @@ class AnsiTerminalFullScreenTest {
     fun `autowrap off keeps overwriting the last column`() {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 3)
 
-        buffer.feed("${ESCAPE}[?7l0123456789ABC")
+        buffer.feed("$ESCAPE[?7l0123456789ABC")
 
         assertThat(buffer.plainText()).isEqualTo("012345678C")
         assertThat(buffer.snapshot().cursorRow).isEqualTo(0)
@@ -201,10 +201,10 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         assertThat(buffer.frame().applicationCursorKeys).isFalse()
 
-        buffer.feed("${ESCAPE}[?1h")
+        buffer.feed("$ESCAPE[?1h")
         assertThat(buffer.frame().applicationCursorKeys).isTrue()
 
-        buffer.feed("${ESCAPE}[?1l")
+        buffer.feed("$ESCAPE[?1l")
         assertThat(buffer.frame().applicationCursorKeys).isFalse()
     }
 
@@ -212,10 +212,10 @@ class AnsiTerminalFullScreenTest {
     fun `the application keypad switch is tracked`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("${ESCAPE}=")
+        buffer.feed("$ESCAPE=")
         assertThat(buffer.frame().applicationKeypad).isTrue()
 
-        buffer.feed("${ESCAPE}>")
+        buffer.feed("$ESCAPE>")
         assertThat(buffer.frame().applicationKeypad).isFalse()
     }
 
@@ -228,11 +228,11 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         assertThat(buffer.bracketedPasteEnabled()).isFalse()
 
-        buffer.feed("${ESCAPE}[?2004h")
+        buffer.feed("$ESCAPE[?2004h")
         assertThat(buffer.bracketedPasteEnabled()).isTrue()
         assertThat(buffer.frame().bracketedPaste).isTrue()
 
-        buffer.feed("${ESCAPE}[?2004l")
+        buffer.feed("$ESCAPE[?2004l")
         assertThat(buffer.bracketedPasteEnabled()).isFalse()
     }
 
@@ -241,10 +241,10 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         assertThat(buffer.frame().cursorVisible).isTrue()
 
-        buffer.feed("${ESCAPE}[?25l")
+        buffer.feed("$ESCAPE[?25l")
         assertThat(buffer.frame().cursorVisible).isFalse()
 
-        buffer.feed("${ESCAPE}[?25h")
+        buffer.feed("$ESCAPE[?25h")
         assertThat(buffer.frame().cursorVisible).isTrue()
     }
 
@@ -256,9 +256,9 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[3;7H${ESCAPE}[6n")
+        buffer.feed("$ESCAPE[3;7H$ESCAPE[6n")
 
-        assertThat(replies).containsExactly("${ESCAPE}[3;7R")
+        assertThat(replies).containsExactly("$ESCAPE[3;7R")
     }
 
     @Test
@@ -267,9 +267,9 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[c${ESCAPE}[5n${ESCAPE}[>c")
+        buffer.feed("$ESCAPE[c$ESCAPE[5n$ESCAPE[>c")
 
-        assertThat(replies).containsExactly("${ESCAPE}[?1;2c", "${ESCAPE}[0n", "${ESCAPE}[>0;95;0c").inOrder()
+        assertThat(replies).containsExactly("$ESCAPE[?1;2c", "$ESCAPE[0n", "$ESCAPE[>0;95;0c").inOrder()
     }
 
     @Test
@@ -278,7 +278,7 @@ class AnsiTerminalFullScreenTest {
         var calls = 0
         buffer.responder = { calls++ }
 
-        buffer.feed("${ESCAPE}[31mjust some coloured text${ESCAPE}[0m\n")
+        buffer.feed("$ESCAPE[31mjust some coloured text$ESCAPE[0m\n")
 
         assertThat(calls).isEqualTo(0)
     }
@@ -289,7 +289,7 @@ class AnsiTerminalFullScreenTest {
         var seen: String? = null
         buffer.responder = { seen = buffer.plainText() }
 
-        buffer.feed("prompt${ESCAPE}[6n")
+        buffer.feed("prompt$ESCAPE[6n")
 
         assertThat(seen).isEqualTo("prompt")
     }
@@ -314,7 +314,7 @@ class AnsiTerminalFullScreenTest {
             readerFinished.await(5, TimeUnit.SECONDS)
         }
 
-        buffer.feed("${ESCAPE}[6n")
+        buffer.feed("$ESCAPE[6n")
 
         assertThat(readerFinished.count).isEqualTo(0L)
     }
@@ -329,7 +329,7 @@ class AnsiTerminalFullScreenTest {
 
         // Both spellings a program uses: Claude Code writes `CSI > 0 q`, xterm's own docs say
         // `CSI > Ps q` with the parameter optional.
-        buffer.feed("${ESCAPE}[>0q${ESCAPE}[>q")
+        buffer.feed("$ESCAPE[>0q$ESCAPE[>q")
 
         assertThat(replies).containsExactly(
             "${ESCAPE}P>|$TERMINAL_IDENTITY${ESCAPE}\\",
@@ -345,7 +345,7 @@ class AnsiTerminalFullScreenTest {
 
         // DECLL and a secondary request with a parameter are not XTVERSION, and answering either with
         // a version string would put a DCS into a stream the program reads as something else.
-        buffer.feed("${ESCAPE}[5q${ESCAPE}[>5q${ESCAPE}[q")
+        buffer.feed("$ESCAPE[5q$ESCAPE[>5q$ESCAPE[q")
 
         assertThat(replies).isEmpty()
     }
@@ -356,10 +356,10 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?25${'$'}p")
-        buffer.feed("${ESCAPE}[?25l${ESCAPE}[?25${'$'}p")
+        buffer.feed("$ESCAPE[?25${'$'}p")
+        buffer.feed("$ESCAPE[?25l$ESCAPE[?25${'$'}p")
 
-        assertThat(replies).containsExactly("${ESCAPE}[?25;1${'$'}y", "${ESCAPE}[?25;2${'$'}y").inOrder()
+        assertThat(replies).containsExactly("$ESCAPE[?25;1${'$'}y", "$ESCAPE[?25;2${'$'}y").inOrder()
     }
 
     @Test
@@ -371,12 +371,13 @@ class AnsiTerminalFullScreenTest {
         // 1048 saves a cursor and is not a switch; 7727 is a mode nothing here has heard of. Both
         // answer 0, so a program falls back rather than being told a feature it asked for is there.
         // a program falls back rather than being told a feature it asked for is there.
-        buffer.feed("${ESCAPE}[?1048${'$'}p${ESCAPE}[?7727${'$'}p")
+        buffer.feed("$ESCAPE[?1048${'$'}p$ESCAPE[?7727${'$'}p")
 
-        assertThat(replies).containsExactly(
-            "${ESCAPE}[?1048;0${'$'}y",
-            "${ESCAPE}[?7727;0${'$'}y",
-        ).inOrder()
+        assertThat(replies)
+            .containsExactly(
+                "$ESCAPE[?1048;0${'$'}y",
+                "$ESCAPE[?7727;0${'$'}y",
+            ).inOrder()
     }
 
     @Test
@@ -387,13 +388,14 @@ class AnsiTerminalFullScreenTest {
 
         // 2026 is what the app under test asks about before wrapping a repaint in a batch. Answered
         // from the latch rather than claimed: telling it 1 is what makes it go on to use the mode.
-        buffer.feed("${ESCAPE}[?2026${'$'}p${ESCAPE}[?2026h${ESCAPE}[?2026${'$'}p${ESCAPE}[?2026l${ESCAPE}[?2026${'$'}p")
+        buffer.feed("$ESCAPE[?2026${'$'}p$ESCAPE[?2026h$ESCAPE[?2026${'$'}p$ESCAPE[?2026l$ESCAPE[?2026${'$'}p")
 
-        assertThat(replies).containsExactly(
-            "${ESCAPE}[?2026;2${'$'}y",
-            "${ESCAPE}[?2026;1${'$'}y",
-            "${ESCAPE}[?2026;2${'$'}y",
-        ).inOrder()
+        assertThat(replies)
+            .containsExactly(
+                "$ESCAPE[?2026;2${'$'}y",
+                "$ESCAPE[?2026;1${'$'}y",
+                "$ESCAPE[?2026;2${'$'}y",
+            ).inOrder()
     }
 
     @Test
@@ -402,9 +404,9 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?1000h${ESCAPE}[?1000${'$'}p${ESCAPE}[?1000l${ESCAPE}[?1000${'$'}p")
+        buffer.feed("$ESCAPE[?1000h$ESCAPE[?1000${'$'}p$ESCAPE[?1000l$ESCAPE[?1000${'$'}p")
 
-        assertThat(replies).containsExactly("${ESCAPE}[?1000;1${'$'}y", "${ESCAPE}[?1000;2${'$'}y").inOrder()
+        assertThat(replies).containsExactly("$ESCAPE[?1000;1${'$'}y", "$ESCAPE[?1000;2${'$'}y").inOrder()
     }
 
     @Test
@@ -414,9 +416,9 @@ class AnsiTerminalFullScreenTest {
         buffer.responder = { replies += it }
 
         // 4 is IRM, the one ANSI mode implemented here; 20 is LNM, which the display has no say in.
-        buffer.feed("${ESCAPE}[4h${ESCAPE}[4${'$'}p${ESCAPE}[20${'$'}p")
+        buffer.feed("$ESCAPE[4h$ESCAPE[4${'$'}p$ESCAPE[20${'$'}p")
 
-        assertThat(replies).containsExactly("${ESCAPE}[4;1${'$'}y", "${ESCAPE}[20;0${'$'}y").inOrder()
+        assertThat(replies).containsExactly("$ESCAPE[4;1${'$'}y", "$ESCAPE[20;0${'$'}y").inOrder()
     }
 
     @Test
@@ -425,14 +427,15 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?47${'$'}p${ESCAPE}[?1049h${ESCAPE}[?47${'$'}p${ESCAPE}[?1047${'$'}p${ESCAPE}[?1049${'$'}p")
+        buffer.feed("$ESCAPE[?47${'$'}p$ESCAPE[?1049h$ESCAPE[?47${'$'}p$ESCAPE[?1047${'$'}p$ESCAPE[?1049${'$'}p")
 
-        assertThat(replies).containsExactly(
-            "${ESCAPE}[?47;2${'$'}y",
-            "${ESCAPE}[?47;1${'$'}y",
-            "${ESCAPE}[?1047;1${'$'}y",
-            "${ESCAPE}[?1049;1${'$'}y",
-        ).inOrder()
+        assertThat(replies)
+            .containsExactly(
+                "$ESCAPE[?47;2${'$'}y",
+                "$ESCAPE[?47;1${'$'}y",
+                "$ESCAPE[?1047;1${'$'}y",
+                "$ESCAPE[?1049;1${'$'}y",
+            ).inOrder()
     }
 
     @Test
@@ -441,13 +444,14 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?25;1006;2026${'$'}p")
+        buffer.feed("$ESCAPE[?25;1006;2026${'$'}p")
 
-        assertThat(replies).containsExactly(
-            "${ESCAPE}[?25;1${'$'}y",
-            "${ESCAPE}[?1006;2${'$'}y",
-            "${ESCAPE}[?2026;2${'$'}y",
-        ).inOrder()
+        assertThat(replies)
+            .containsExactly(
+                "$ESCAPE[?25;1${'$'}y",
+                "$ESCAPE[?1006;2${'$'}y",
+                "$ESCAPE[?2026;2${'$'}y",
+            ).inOrder()
     }
 
     @Test
@@ -456,9 +460,9 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?${'$'}p")
+        buffer.feed("$ESCAPE[?${'$'}p")
 
-        assertThat(replies).containsExactly("${ESCAPE}[?0;0${'$'}y")
+        assertThat(replies).containsExactly("$ESCAPE[?0;0${'$'}y")
     }
 
     @Test
@@ -469,7 +473,7 @@ class AnsiTerminalFullScreenTest {
 
         // `$` leads the soft-reset and request-mode families, so this parses as one of those with no
         // body at all rather than as a DECRQM. Nothing is answered, and nothing is drawn.
-        buffer.feed("${ESCAPE}[${'$'}p")
+        buffer.feed("$ESCAPE[${'$'}p")
 
         assertThat(replies).isEmpty()
     }
@@ -479,9 +483,9 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
-        buffer.feed("${ESCAPE}[?25l")
+        buffer.feed("$ESCAPE[?25l")
 
-        buffer.feed("${ESCAPE}[!p")
+        buffer.feed("$ESCAPE[!p")
 
         assertThat(replies).isEmpty()
         assertThat(buffer.frame().cursorVisible).isTrue()
@@ -491,10 +495,10 @@ class AnsiTerminalFullScreenTest {
     fun `neither probe moves anything on the screen`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         buffer.responder = { }
-        buffer.feed("abc${ESCAPE}[2;2H")
+        buffer.feed("abc$ESCAPE[2;2H")
         val before = buffer.frame()
 
-        buffer.feed("${ESCAPE}[>0q${ESCAPE}[?2026${'$'}p${ESCAPE}[?25${'$'}p")
+        buffer.feed("$ESCAPE[>0q$ESCAPE[?2026${'$'}p$ESCAPE[?25${'$'}p")
 
         val after = buffer.frame()
         assertThat(after.cursorRow).isEqualTo(before.cursorRow)
@@ -513,9 +517,9 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[18t")
+        buffer.feed("$ESCAPE[18t")
 
-        assertThat(replies).containsExactly("${ESCAPE}[8;4;20t")
+        assertThat(replies).containsExactly("$ESCAPE[8;4;20t")
     }
 
     @Test
@@ -524,9 +528,9 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[19t")
+        buffer.feed("$ESCAPE[19t")
 
-        assertThat(replies).containsExactly("${ESCAPE}[9;4;20t")
+        assertThat(replies).containsExactly("$ESCAPE[9;4;20t")
     }
 
     @Test
@@ -536,9 +540,9 @@ class AnsiTerminalFullScreenTest {
         buffer.responder = { replies += it }
 
         buffer.resize(30, 6)
-        buffer.feed("${ESCAPE}[18t")
+        buffer.feed("$ESCAPE[18t")
 
-        assertThat(replies).containsExactly("${ESCAPE}[8;6;30t")
+        assertThat(replies).containsExactly("$ESCAPE[8;6;30t")
     }
 
     @Test
@@ -551,13 +555,13 @@ class AnsiTerminalFullScreenTest {
         // answers would have to be invented. The screen is the user's, and the pty was sized to match
         // it, so a program asking for 80 columns here must not get them.
         buffer.feed(
-            "${ESCAPE}[1t${ESCAPE}[2t${ESCAPE}[3;0;0t${ESCAPE}[4;400;800t${ESCAPE}[5t${ESCAPE}[6t" +
-                "${ESCAPE}[7t${ESCAPE}[8;24;80t${ESCAPE}[9t${ESCAPE}[11t${ESCAPE}[13t${ESCAPE}[14t" +
-                "${ESCAPE}[16t${ESCAPE}[20t${ESCAPE}[24t",
+            "$ESCAPE[1t$ESCAPE[2t$ESCAPE[3;0;0t$ESCAPE[4;400;800t$ESCAPE[5t$ESCAPE[6t" +
+                "$ESCAPE[7t$ESCAPE[8;24;80t$ESCAPE[9t$ESCAPE[11t$ESCAPE[13t$ESCAPE[14t" +
+                "$ESCAPE[16t$ESCAPE[20t$ESCAPE[24t",
         )
-        buffer.feed("${ESCAPE}[18t")
+        buffer.feed("$ESCAPE[18t")
 
-        assertThat(replies).containsExactly("${ESCAPE}[8;4;20t")
+        assertThat(replies).containsExactly("$ESCAPE[8;4;20t")
     }
 
     @Test
@@ -567,7 +571,7 @@ class AnsiTerminalFullScreenTest {
         buffer.responder = { replies += it }
 
         // `CSI ? Pm t` and `CSI > Pm t` are other sequences that happen to end in the same byte.
-        buffer.feed("${ESCAPE}[?18t${ESCAPE}[>18t")
+        buffer.feed("$ESCAPE[?18t$ESCAPE[>18t")
 
         assertThat(replies).isEmpty()
     }
@@ -576,10 +580,10 @@ class AnsiTerminalFullScreenTest {
     fun `xtwinops saves and restores the window title`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("${ESCAPE}]0;first${chars(0x07)}")
-        buffer.feed("${ESCAPE}[22;0t")
-        buffer.feed("${ESCAPE}]0;second${chars(0x07)}")
-        buffer.feed("${ESCAPE}[23;0t")
+        buffer.feed("$ESCAPE]0;first${chars(0x07)}")
+        buffer.feed("$ESCAPE[22;0t")
+        buffer.feed("$ESCAPE]0;second${chars(0x07)}")
+        buffer.feed("$ESCAPE[23;0t")
 
         assertThat(buffer.frame().title).isEqualTo("first")
     }
@@ -590,17 +594,17 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}]0;user@host${chars(0x07)}${ESCAPE}[21t")
+        buffer.feed("$ESCAPE]0;user@host${chars(0x07)}$ESCAPE[21t")
 
-        assertThat(replies).containsExactly("${ESCAPE}]luser@host${ESCAPE}\\")
+        assertThat(replies).containsExactly("$ESCAPE]luser@host${ESCAPE}\\")
     }
 
     @Test
     fun `a restore with nothing saved leaves the title alone`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
-        buffer.feed("${ESCAPE}]0;keep me${chars(0x07)}")
+        buffer.feed("$ESCAPE]0;keep me${chars(0x07)}")
 
-        buffer.feed("${ESCAPE}[23;0t")
+        buffer.feed("$ESCAPE[23;0t")
 
         assertThat(buffer.frame().title).isEqualTo("keep me")
     }
@@ -609,16 +613,16 @@ class AnsiTerminalFullScreenTest {
     fun `the icon and window title stacks are kept apart`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("${ESCAPE}]0;icon copy${chars(0x07)}")
-        buffer.feed("${ESCAPE}[22;1t")
-        buffer.feed("${ESCAPE}]0;replaced${chars(0x07)}")
+        buffer.feed("$ESCAPE]0;icon copy${chars(0x07)}")
+        buffer.feed("$ESCAPE[22;1t")
+        buffer.feed("$ESCAPE]0;replaced${chars(0x07)}")
 
         // Saved on the icon stack and restored from the window one: that stack is empty, so nothing
         // happens - a program cannot reach a title it never saved by picking the wrong stack.
-        buffer.feed("${ESCAPE}[23;2t")
+        buffer.feed("$ESCAPE[23;2t")
         assertThat(buffer.frame().title).isEqualTo("replaced")
 
-        buffer.feed("${ESCAPE}[23;1t")
+        buffer.feed("$ESCAPE[23;1t")
         assertThat(buffer.frame().title).isEqualTo("icon copy")
     }
 
@@ -626,14 +630,14 @@ class AnsiTerminalFullScreenTest {
     fun `a title saved on the window stack is not restored from the icon one`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("${ESCAPE}]0;window copy${chars(0x07)}")
-        buffer.feed("${ESCAPE}[22;2t")
-        buffer.feed("${ESCAPE}]0;replaced${chars(0x07)}")
+        buffer.feed("$ESCAPE]0;window copy${chars(0x07)}")
+        buffer.feed("$ESCAPE[22;2t")
+        buffer.feed("$ESCAPE]0;replaced${chars(0x07)}")
 
-        buffer.feed("${ESCAPE}[23;1t")
+        buffer.feed("$ESCAPE[23;1t")
         assertThat(buffer.frame().title).isEqualTo("replaced")
 
-        buffer.feed("${ESCAPE}[23;2t")
+        buffer.feed("$ESCAPE[23;2t")
         assertThat(buffer.frame().title).isEqualTo("window copy")
     }
 
@@ -641,9 +645,9 @@ class AnsiTerminalFullScreenTest {
     fun `a title saved before any was set restores to no title`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("${ESCAPE}[22;0t")
-        buffer.feed("${ESCAPE}]0;borrowed${chars(0x07)}")
-        buffer.feed("${ESCAPE}[23;0t")
+        buffer.feed("$ESCAPE[22;0t")
+        buffer.feed("$ESCAPE]0;borrowed${chars(0x07)}")
+        buffer.feed("$ESCAPE[23;0t")
 
         assertThat(buffer.frame().title).isNull()
     }
@@ -656,12 +660,12 @@ class AnsiTerminalFullScreenTest {
         // first ten are kept and the last two were never made - which is the direction to fail in,
         // since a dropped save costs a title and an overwritten one loses the caller's.
         repeat(12) { index ->
-            buffer.feed("${ESCAPE}]0;s$index${chars(0x07)}${ESCAPE}[22;0t")
+            buffer.feed("$ESCAPE]0;s$index${chars(0x07)}$ESCAPE[22;0t")
         }
 
         val restored = mutableListOf<String?>()
         repeat(11) {
-            buffer.feed("${ESCAPE}[23;0t")
+            buffer.feed("$ESCAPE[23;0t")
             restored += buffer.frame().title
         }
 
@@ -677,13 +681,13 @@ class AnsiTerminalFullScreenTest {
         buffer.responder = { replies += it }
         buffer.themeColors = { darkTheme() }
 
-        buffer.feed("${ESCAPE}]10;?${ESCAPE}\\${ESCAPE}]11;?${ESCAPE}\\")
+        buffer.feed("$ESCAPE]10;?${ESCAPE}\\$ESCAPE]11;?${ESCAPE}\\")
 
         // Each 8-bit component doubled rather than zero-padded into place, and the low components are
         // the interesting ones: 0x09 and 0x0D are one digit in hex and have to print as two.
         assertThat(replies).containsExactly(
-            "${ESCAPE}]10;rgb:B3B3/C1C1/D9D9${ESCAPE}\\",
-            "${ESCAPE}]11;rgb:0909/0D0D/1616${ESCAPE}\\",
+            "$ESCAPE]10;rgb:B3B3/C1C1/D9D9${ESCAPE}\\",
+            "$ESCAPE]11;rgb:0909/0D0D/1616${ESCAPE}\\",
         )
     }
 
@@ -693,7 +697,7 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}]10;?${ESCAPE}\\${ESCAPE}]11;?${ESCAPE}\\")
+        buffer.feed("$ESCAPE]10;?${ESCAPE}\\$ESCAPE]11;?${ESCAPE}\\")
 
         assertThat(replies).isEmpty()
     }
@@ -706,15 +710,15 @@ class AnsiTerminalFullScreenTest {
         var background = 0xFF090D16.toInt()
         buffer.themeColors = { TerminalColors(0xFFFFFFFF.toInt(), background) }
 
-        buffer.feed("${ESCAPE}]11;?${ESCAPE}\\")
+        buffer.feed("$ESCAPE]11;?${ESCAPE}\\")
         background = 0xFFFDF6E3.toInt()
-        buffer.feed("${ESCAPE}]11;?${ESCAPE}\\")
+        buffer.feed("$ESCAPE]11;?${ESCAPE}\\")
 
         // The theme is read per question, not copied in, so a user switching themes mid-session is
         // answered with the colour the screen has actually changed to.
         assertThat(replies).containsExactly(
-            "${ESCAPE}]11;rgb:0909/0D0D/1616${ESCAPE}\\",
-            "${ESCAPE}]11;rgb:FDFD/F6F6/E3E3${ESCAPE}\\",
+            "$ESCAPE]11;rgb:0909/0D0D/1616${ESCAPE}\\",
+            "$ESCAPE]11;rgb:FDFD/F6F6/E3E3${ESCAPE}\\",
         )
     }
 
@@ -725,7 +729,7 @@ class AnsiTerminalFullScreenTest {
         buffer.responder = { replies += it }
         buffer.themeColors = { darkTheme() }
 
-        buffer.feed("${ESCAPE}]10;#FF0000${ESCAPE}\\${ESCAPE}]11;rgb:00/00/00${ESCAPE}\\")
+        buffer.feed("$ESCAPE]10;#FF0000${ESCAPE}\\$ESCAPE]11;rgb:00/00/00${ESCAPE}\\")
 
         // Answering a set would be a reply to something that was not a question, and honouring it
         // would be a remote repainting the display it was given for the length of a session.
@@ -741,7 +745,7 @@ class AnsiTerminalFullScreenTest {
 
         // Same family, no true answer: this terminal has no per-session palette of its own and no
         // cursor colour to report.
-        buffer.feed("${ESCAPE}]4;1;?${ESCAPE}\\${ESCAPE}]12;?${ESCAPE}\\")
+        buffer.feed("$ESCAPE]4;1;?${ESCAPE}\\$ESCAPE]12;?${ESCAPE}\\")
 
         assertThat(replies).isEmpty()
     }
@@ -751,12 +755,12 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         buffer.responder = { }
         buffer.themeColors = { darkTheme() }
-        buffer.feed("abc${ESCAPE}[2;2H")
+        buffer.feed("abc$ESCAPE[2;2H")
         val before = buffer.frame()
 
         buffer.feed(
-            "${ESCAPE}[18t${ESCAPE}[19t${ESCAPE}[21t${ESCAPE}[22;0t${ESCAPE}[23;0t" +
-                "${ESCAPE}]10;?${ESCAPE}\\${ESCAPE}]11;?${ESCAPE}\\${ESCAPE}]0;title${chars(0x07)}",
+            "$ESCAPE[18t$ESCAPE[19t$ESCAPE[21t$ESCAPE[22;0t$ESCAPE[23;0t" +
+                "$ESCAPE]10;?${ESCAPE}\\$ESCAPE]11;?${ESCAPE}\\$ESCAPE]0;title${chars(0x07)}",
         )
 
         val after = buffer.frame()
@@ -772,7 +776,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
         // What ncurses sends for the top edge of a dialog.
-        buffer.feed("${ESCAPE}(0lqqk${ESCAPE}(B done")
+        buffer.feed("$ESCAPE(0lqqk$ESCAPE(B done")
 
         assertThat(buffer.plainText()).isEqualTo(chars(0x250C, 0x2500, 0x2500, 0x2510) + " done")
     }
@@ -785,7 +789,7 @@ class AnsiTerminalFullScreenTest {
     fun `bright colours are distinguishable from their normal counterparts`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
-        buffer.feed("${ESCAPE}[30mA${ESCAPE}[90mB${ESCAPE}[31mC${ESCAPE}[91mD")
+        buffer.feed("$ESCAPE[30mA$ESCAPE[90mB$ESCAPE[31mC$ESCAPE[91mD")
 
         val line = buffer.snapshot().lines[0]
         assertThat(line[0].style.foreground).isNotEqualTo(line[1].style.foreground)
@@ -797,7 +801,7 @@ class AnsiTerminalFullScreenTest {
     fun `the 256 colour palette keeps its bright block distinct as well`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
-        buffer.feed("${ESCAPE}[38;5;0mA${ESCAPE}[38;5;8mB")
+        buffer.feed("$ESCAPE[38;5;0mA$ESCAPE[38;5;8mB")
 
         val line = buffer.snapshot().lines[0]
         assertThat(line[0].style.foreground).isNotEqualTo(line[1].style.foreground)
@@ -807,7 +811,7 @@ class AnsiTerminalFullScreenTest {
     fun `the extended styles a modern shell prompt uses are recorded`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
-        buffer.feed("${ESCAPE}[2mA${ESCAPE}[3mB${ESCAPE}[9mC${ESCAPE}[8mD${ESCAPE}[0mE")
+        buffer.feed("$ESCAPE[2mA$ESCAPE[3mB$ESCAPE[9mC$ESCAPE[8mD$ESCAPE[0mE")
 
         val line = buffer.snapshot().lines[0]
         assertThat(line[0].style.dim).isTrue()
@@ -833,7 +837,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
         buffer.feed("abcdefgh")
 
-        buffer.feed("${ESCAPE}[1;3H${ESCAPE}[3X")
+        buffer.feed("$ESCAPE[1;3H$ESCAPE[3X")
 
         assertThat(buffer.plainText()).isEqualTo("ab   fgh")
     }
@@ -843,7 +847,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
         buffer.feed("world")
 
-        buffer.feed("${ESCAPE}[1;1H${ESCAPE}[4hhello ${ESCAPE}[4l")
+        buffer.feed("$ESCAPE[1;1H$ESCAPE[4hhello $ESCAPE[4l")
 
         assertThat(buffer.plainText()).isEqualTo("hello world")
         assertThat(buffer.snapshot().lines[0]).hasSize(20)
@@ -853,7 +857,7 @@ class AnsiTerminalFullScreenTest {
     fun `repeat draws the last character again`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
-        buffer.feed("-${ESCAPE}[9b")
+        buffer.feed("-$ESCAPE[9b")
 
         assertThat(buffer.plainText()).isEqualTo("-".repeat(10))
     }
@@ -862,9 +866,9 @@ class AnsiTerminalFullScreenTest {
     fun `a custom tab stop replaces the default eight column grid`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 3)
 
-        buffer.feed("${ESCAPE}[3g")
-        buffer.feed("${ESCAPE}[1;5H${ESCAPE}H")
-        buffer.feed("${ESCAPE}[1;1HA\tB")
+        buffer.feed("$ESCAPE[3g")
+        buffer.feed("$ESCAPE[1;5H${ESCAPE}H")
+        buffer.feed("$ESCAPE[1;1HA\tB")
 
         assertThat(buffer.plainText()).isEqualTo("A   B")
     }
@@ -873,7 +877,7 @@ class AnsiTerminalFullScreenTest {
     fun `an osc title is captured for the session tab`() {
         val buffer = AnsiTerminalBuffer(columns = 30, rows = 3)
 
-        buffer.feed("${ESCAPE}]0;user@host: ~${chars(0x07)}ready")
+        buffer.feed("$ESCAPE]0;user@host: ~${chars(0x07)}ready")
 
         assertThat(buffer.frame().title).isEqualTo("user@host: ~")
         assertThat(buffer.plainText()).isEqualTo("ready")
@@ -882,9 +886,9 @@ class AnsiTerminalFullScreenTest {
     @Test
     fun `a soft reset returns the terminal to a usable state`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
-        buffer.feed("${ESCAPE}[?1049h${ESCAPE}[?7l${ESCAPE}[?25l${ESCAPE}[31mconfused")
+        buffer.feed("$ESCAPE[?1049h$ESCAPE[?7l$ESCAPE[?25l$ESCAPE[31mconfused")
 
-        buffer.feed("${ESCAPE}[!p")
+        buffer.feed("$ESCAPE[!p")
 
         val frame = buffer.frame()
         assertThat(frame.alternateScreen).isFalse()
@@ -917,9 +921,9 @@ class AnsiTerminalFullScreenTest {
 
         // One of top's frames, ending where the real one ends: on the last row, with no newline after
         // it, which is how it avoids scrolling itself off the screen.
-        buffer.feed("${ESCAPE}[Htop - 09:41:02 up 3 days\n${ESCAPE}[KTasks: 84 total\n")
-        repeat(9) { buffer.feed("${ESCAPE}[Krow $it\n") }
-        buffer.feed("${ESCAPE}[K  PID USER")
+        buffer.feed("$ESCAPE[Htop - 09:41:02 up 3 days\n$ESCAPE[KTasks: 84 total\n")
+        repeat(9) { buffer.feed("$ESCAPE[Krow $it\n") }
+        buffer.feed("$ESCAPE[K  PID USER")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
         assertThat(buffer.frame().alternateScreen).isFalse()
@@ -936,7 +940,7 @@ class AnsiTerminalFullScreenTest {
     fun `output that scrolls the screen takes the mark off again`() {
         val buffer = AnsiTerminalBuffer(columns = 80, rows = 4, scrollbackLimit = 50)
         buffer.feed("one\ntwo\n")
-        buffer.feed("${ESCAPE}[Hpainted")
+        buffer.feed("$ESCAPE[Hpainted")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
 
@@ -961,7 +965,7 @@ class AnsiTerminalFullScreenTest {
         buffer.feed("one\ntwo\nthree\n")
 
         // Exactly what `clear` sends, in that order.
-        buffer.feed("${ESCAPE}[H${ESCAPE}[2J${ESCAPE}[3J")
+        buffer.feed("$ESCAPE[H$ESCAPE[2J$ESCAPE[3J")
 
         assertThat(buffer.frame().positionalScreen).isFalse()
 
@@ -981,11 +985,11 @@ class AnsiTerminalFullScreenTest {
     fun `erasing the screen without dropping the scrollback keeps the mark`() {
         val buffer = AnsiTerminalBuffer(columns = 80, rows = 12, scrollbackLimit = 50)
         buffer.feed("$ top\n")
-        buffer.feed("${ESCAPE}[H${ESCAPE}[2J")
+        buffer.feed("$ESCAPE[H$ESCAPE[2J")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
 
-        buffer.feed("top - 09:41:02 up 3 days\n${ESCAPE}[KTasks: 84 total")
+        buffer.feed("top - 09:41:02 up 3 days\n$ESCAPE[KTasks: 84 total")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
     }
@@ -997,9 +1001,9 @@ class AnsiTerminalFullScreenTest {
 
         // Colour, erase-to-end-of-line and a carriage return: what a progress bar and a coloured `ls`
         // send, none of which moves the cursor up a row.
-        repeat(12) { buffer.feed("${ESCAPE}[32mfile $it${ESCAPE}[0m${ESCAPE}[K\n") }
+        repeat(12) { buffer.feed("$ESCAPE[32mfile $it$ESCAPE[0m$ESCAPE[K\n") }
         buffer.feed("  10%\r  20%\r 100%\n")
-        buffer.feed("${ESCAPE}[2Bdown two${ESCAPE}[4Gcolumn four")
+        buffer.feed("$ESCAPE[2Bdown two$ESCAPE[4Gcolumn four")
 
         assertThat(buffer.frame().positionalScreen).isFalse()
     }
@@ -1011,11 +1015,11 @@ class AnsiTerminalFullScreenTest {
         buffer.feed("$ vi notes\n")
         // What vi does on the way in: take the alternate screen, paint two rows, then home and paint
         // again - the home being the repaint this test is about.
-        buffer.feed("${ESCAPE}[?1049h~ one\n~ two\n${ESCAPE}[H~ file")
+        buffer.feed("$ESCAPE[?1049h~ one\n~ two\n$ESCAPE[H~ file")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
 
-        buffer.feed("${ESCAPE}[?1049l")
+        buffer.feed("$ESCAPE[?1049l")
 
         assertThat(buffer.frame().positionalScreen).isFalse()
     }
@@ -1046,15 +1050,15 @@ class AnsiTerminalFullScreenTest {
 
         // Ctrl-A on a line that has wrapped, byte for byte from a real bash at 46 columns: up one row,
         // carriage return, then forward to the column the cursor belongs on.
-        buffer.feed("${ESCAPE}[A\r${ESCAPE}[C${ESCAPE}[C")
+        buffer.feed("$ESCAPE[A\r$ESCAPE[C$ESCAPE[C")
         assertThat(buffer.frame().positionalScreen).isFalse()
 
         // And the rest of the relative row moves: the two that go up, which each used to set the mark,
         // and the two that go down, which never did and still must not.
-        buffer.feed("${ESCAPE}[2A") // CUU, up
-        buffer.feed("${ESCAPE}[F") // CPL, up and to column zero
-        buffer.feed("${ESCAPE}[B") // CUD, down
-        buffer.feed("${ESCAPE}[E") // CNL, down and to column zero
+        buffer.feed("$ESCAPE[2A") // CUU, up
+        buffer.feed("$ESCAPE[F") // CPL, up and to column zero
+        buffer.feed("$ESCAPE[B") // CUD, down
+        buffer.feed("$ESCAPE[E") // CNL, down and to column zero
         buffer.feed("${ESCAPE}OA") // the SS3 arrow, which is the same move an arrow key sends
         assertThat(buffer.frame().positionalScreen).isFalse()
     }
@@ -1073,7 +1077,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 46, rows = 20, scrollbackLimit = 50)
         buffer.feed("$ ")
         buffer.feed(LONG_COMMAND)
-        buffer.feed("${ESCAPE}[A\r${ESCAPE}[K${ESCAPE}[C")
+        buffer.feed("$ESCAPE[A\r$ESCAPE[K$ESCAPE[C")
 
         val frame = buffer.frame()
         val flowing = terminalLayout(frame, width = 20, maxRows = 24)
@@ -1101,7 +1105,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 40, rows = 6, scrollbackLimit = 50)
 
         // The top row of a fresh screen, with nothing above the cursor to move up from.
-        buffer.feed("${ESCAPE}[H")
+        buffer.feed("$ESCAPE[H")
 
         assertThat(buffer.frame().positionalScreen).isTrue()
     }
@@ -1117,7 +1121,7 @@ class AnsiTerminalFullScreenTest {
     fun `a jump to a row below the cursor is not a repaint`() {
         val buffer = AnsiTerminalBuffer(columns = 40, rows = 6, scrollbackLimit = 50)
 
-        buffer.feed("${ESCAPE}[5;1H")
+        buffer.feed("$ESCAPE[5;1H")
 
         assertThat(buffer.frame().positionalScreen).isFalse()
     }
@@ -1129,7 +1133,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 10, rows = 4, scrollbackLimit = 50)
         repeat(20) { buffer.feed("line $it\n") }
 
-        buffer.feed("${ESCAPE}[H${ESCAPE}[2J")
+        buffer.feed("$ESCAPE[H$ESCAPE[2J")
 
         assertThat(buffer.plainText()).contains("line 3")
         assertThat(buffer.lineCount()).isGreaterThan(4)
@@ -1141,7 +1145,7 @@ class AnsiTerminalFullScreenTest {
         repeat(20) { buffer.feed("line $it\n") }
         assertThat(buffer.lineCount()).isGreaterThan(4)
 
-        buffer.feed("${ESCAPE}[3J")
+        buffer.feed("$ESCAPE[3J")
 
         assertThat(buffer.lineCount()).isEqualTo(4)
     }
@@ -1234,7 +1238,7 @@ class AnsiTerminalFullScreenTest {
         // One shape, eight sequences, and every one used to print its own final byte: `ESC % G` a `G`,
         // `ESC * 0` a `0`, `ESC  F` an `F`. The defect `ESC O` had, one byte further along.
         buffer.feed(
-            "${ESCAPE}%G${ESCAPE}%@${ESCAPE}*0${ESCAPE}+0${ESCAPE} F${ESCAPE}-A${ESCAPE}.A${ESCAPE}/A",
+            "$ESCAPE%G$ESCAPE%@$ESCAPE*0$ESCAPE+0$ESCAPE F$ESCAPE-A$ESCAPE.A$ESCAPE/A",
         )
 
         assertThat(buffer.plainText()).isEmpty()
@@ -1248,7 +1252,7 @@ class AnsiTerminalFullScreenTest {
 
         // #3 and #4 are double-height, #5 and #6 double-width, and this display has one size of cell.
         // A double-width line still takes one cell per column, so obeying them here would draw a lie.
-        buffer.feed("${ESCAPE}#3${ESCAPE}#4${ESCAPE}#5${ESCAPE}#6")
+        buffer.feed("$ESCAPE#3$ESCAPE#4$ESCAPE#5$ESCAPE#6")
 
         assertThat(buffer.plainText()).isEqualTo("abc")
         assertThat(buffer.frame().cursorColumn).isEqualTo(3)
@@ -1258,12 +1262,17 @@ class AnsiTerminalFullScreenTest {
     fun `the screen alignment test fills every cell with an E and homes the cursor`() {
         val buffer = AnsiTerminalBuffer(columns = 6, rows = 3, scrollbackLimit = 20)
         buffer.feed("old one\nold two\nold three\nold four\n")
-        buffer.feed("${ESCAPE}[2;5H")
+        buffer.feed("$ESCAPE[2;5H")
 
-        buffer.feed("${ESCAPE}#8")
+        buffer.feed("$ESCAPE#8")
 
-        assertThat(buffer.snapshot().lines.takeLast(3).map { line -> line.map { it.value }.joinToString("") })
-            .containsExactly("EEEEEE", "EEEEEE", "EEEEEE")
+        assertThat(
+            buffer
+                .snapshot()
+                .lines
+                .takeLast(3)
+                .map { line -> line.map { it.value }.joinToString("") },
+        ).containsExactly("EEEEEE", "EEEEEE", "EEEEEE")
         // The screen, not the history: the pattern is a test card, and the lines that have already
         // scrolled off it are still the user's output.
         assertThat(buffer.plainText()).startsWith("old on\ne\nold tw")
@@ -1271,19 +1280,41 @@ class AnsiTerminalFullScreenTest {
         // And the cursor is home, which is what the pattern is read from: the next character lands on
         // the top-left cell of the screen rather than wherever the program left it.
         buffer.feed("Z")
-        assertThat(buffer.snapshot().lines.takeLast(3).first()[0].value).isEqualTo('Z')
+        assertThat(
+            buffer
+                .snapshot()
+                .lines
+                .takeLast(3)
+                .first()[0]
+                .value,
+        ).isEqualTo('Z')
     }
 
     @Test
     fun `the screen alignment test fills in the rendition the program set`() {
         val buffer = AnsiTerminalBuffer(columns = 6, rows = 3)
-        buffer.feed("${ESCAPE}[41mX")
-        val painted = buffer.snapshot().lines[0][0].style.background
+        buffer.feed("$ESCAPE[41mX")
+        val painted =
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.background
 
-        buffer.feed("${ESCAPE}#8")
+        buffer.feed("$ESCAPE#8")
 
-        assertThat(buffer.snapshot().lines[0].map { it.style.background }.toSet()).containsExactly(painted)
-        assertThat(buffer.snapshot().lines[2][5].style.background).isEqualTo(painted)
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[0]
+                .map { it.style.background }
+                .toSet(),
+        ).containsExactly(painted)
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[2][5]
+                .style.background,
+        ).isEqualTo(painted)
     }
 
     @Test
@@ -1291,7 +1322,7 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 8, rows = 3)
 
         // `ESC ) 0` is the G1 half of the same table, reached through SO and left through SI.
-        buffer.feed("${ESCAPE})0${chars(0x0E)}q${chars(0x0F)}q")
+        buffer.feed("$ESCAPE)0${chars(0x0E)}q${chars(0x0F)}q")
 
         assertThat(buffer.plainText()).isEqualTo(chars(0x2500) + "q")
     }
@@ -1302,7 +1333,7 @@ class AnsiTerminalFullScreenTest {
 
         // `ESC SP b` implements nothing here, and an unimplemented sequence is ignored whole: the `b`
         // is its final byte, not text. Letting it print puts a stray letter in the user's output.
-        buffer.feed("a${ESCAPE} b")
+        buffer.feed("a$ESCAPE b")
 
         assertThat(buffer.plainText()).isEqualTo("a")
     }
@@ -1314,20 +1345,32 @@ class AnsiTerminalFullScreenTest {
         // A program killed mid-designation. The newline it was about to be followed by still breaks the
         // line, and the `q` after it is an ordinary letter because no set was ever selected - the
         // alternative is a screen full of line-drawing characters.
-        buffer.feed("${ESCAPE}(${chars(0x0A)}q")
+        buffer.feed("$ESCAPE(${chars(0x0A)}q")
 
         assertThat(buffer.plainText()).isEqualTo("\nq")
-        assertThat(buffer.snapshot().lines[1].map { it.value }.joinToString("").trimEnd()).isEqualTo("q")
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[1]
+                .map { it.value }
+                .joinToString("")
+                .trimEnd(),
+        ).isEqualTo("q")
     }
 
     @Test
     fun `a second escape inside an escape sequence takes over`() {
         val buffer = AnsiTerminalBuffer(columns = 8, rows = 3)
 
-        buffer.feed("${ESCAPE}(${ESCAPE}[3mA")
+        buffer.feed("$ESCAPE($ESCAPE[3mA")
 
         assertThat(buffer.plainText()).isEqualTo("A")
-        assertThat(buffer.snapshot().lines[0][0].style.italic).isTrue()
+        assertThat(
+            buffer
+                .snapshot()
+                .lines[0][0]
+                .style.italic,
+        ).isTrue()
     }
 
     @Test
@@ -1336,20 +1379,21 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?12${'$'}p")
+        buffer.feed("$ESCAPE[?12${'$'}p")
         assertThat(buffer.frame().cursorBlink).isTrue()
 
-        buffer.feed("${ESCAPE}[?12l${ESCAPE}[?12${'$'}p")
+        buffer.feed("$ESCAPE[?12l$ESCAPE[?12${'$'}p")
         assertThat(buffer.frame().cursorBlink).isFalse()
 
-        buffer.feed("${ESCAPE}[?12h${ESCAPE}[?12${'$'}p")
+        buffer.feed("$ESCAPE[?12h$ESCAPE[?12${'$'}p")
         assertThat(buffer.frame().cursorBlink).isTrue()
 
-        assertThat(replies).containsExactly(
-            "${ESCAPE}[?12;1${'$'}y",
-            "${ESCAPE}[?12;2${'$'}y",
-            "${ESCAPE}[?12;1${'$'}y",
-        ).inOrder()
+        assertThat(replies)
+            .containsExactly(
+                "$ESCAPE[?12;1${'$'}y",
+                "$ESCAPE[?12;2${'$'}y",
+                "$ESCAPE[?12;1${'$'}y",
+            ).inOrder()
     }
 
     @Test
@@ -1358,17 +1402,17 @@ class AnsiTerminalFullScreenTest {
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
 
-        buffer.feed("${ESCAPE}[?12l${ESCAPE}[!p${ESCAPE}[?12${'$'}p")
+        buffer.feed("$ESCAPE[?12l$ESCAPE[!p$ESCAPE[?12${'$'}p")
 
         assertThat(buffer.frame().cursorBlink).isTrue()
-        assertThat(replies).containsExactly("${ESCAPE}[?12;1${'$'}y")
+        assertThat(replies).containsExactly("$ESCAPE[?12;1${'$'}y")
     }
 
     @Test
     fun `the cursor blink mode outlives the alternate screen, unlike the mouse modes`() {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
 
-        buffer.feed("${ESCAPE}[?12l${ESCAPE}[?1000h${ESCAPE}[?1049h${ESCAPE}[?1049l")
+        buffer.feed("$ESCAPE[?12l$ESCAPE[?1000h$ESCAPE[?1049h$ESCAPE[?1049l")
 
         // The mouse modes are dropped when the program hands the screen back, because one that dies
         // without undoing them would leave the shell reporting every drag. The blink mode is the
@@ -1382,21 +1426,22 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
-        buffer.feed("abc${ESCAPE}[1;1H")
+        buffer.feed("abc$ESCAPE[1;1H")
 
         buffer.feed(
             // DECCOLM (3) would clear the screen and resize it to 132 columns, which this app sizes to
             // the device instead; DECSCNM (5) would invert every cell; DECSLRM (69) would set left and
             // right margins, which nothing here draws.
-            "${ESCAPE}[?3h${ESCAPE}[?5h${ESCAPE}[?69h" +
-                "${ESCAPE}[?3${'$'}p${ESCAPE}[?5${'$'}p${ESCAPE}[?69${'$'}p",
+            "$ESCAPE[?3h$ESCAPE[?5h$ESCAPE[?69h" +
+                "$ESCAPE[?3${'$'}p$ESCAPE[?5${'$'}p$ESCAPE[?69${'$'}p",
         )
 
-        assertThat(replies).containsExactly(
-            "${ESCAPE}[?3;0${'$'}y",
-            "${ESCAPE}[?5;0${'$'}y",
-            "${ESCAPE}[?69;0${'$'}y",
-        ).inOrder()
+        assertThat(replies)
+            .containsExactly(
+                "$ESCAPE[?3;0${'$'}y",
+                "$ESCAPE[?5;0${'$'}y",
+                "$ESCAPE[?69;0${'$'}y",
+            ).inOrder()
         assertThat(buffer.plainText()).isEqualTo("abc")
         assertThat(buffer.snapshot().lines[0][0].style).isEqualTo(TerminalStyle())
     }
@@ -1406,14 +1451,14 @@ class AnsiTerminalFullScreenTest {
         val buffer = AnsiTerminalBuffer(columns = 20, rows = 4)
         val replies = mutableListOf<String>()
         buffer.responder = { replies += it }
-        buffer.feed("abc${ESCAPE}[2;2H")
+        buffer.feed("abc$ESCAPE[2;2H")
         val before = buffer.frame()
 
         buffer.feed(
             // XTWINOPS 11, 13, 14, 16 and 20 ask for window state, screen pixels and an icon label,
             // and 24 wants a different number of rows: none of them exists here, and none is answered.
-            "${ESCAPE}[11t${ESCAPE}[13t${ESCAPE}[14t${ESCAPE}[16t${ESCAPE}[20t${ESCAPE}[24t" +
-                "${ESCAPE}#3${ESCAPE}%G${ESCAPE}*0${ESCAPE}+0${ESCAPE}-A",
+            "$ESCAPE[11t$ESCAPE[13t$ESCAPE[14t$ESCAPE[16t$ESCAPE[20t$ESCAPE[24t" +
+                "$ESCAPE#3$ESCAPE%G$ESCAPE*0$ESCAPE+0$ESCAPE-A",
         )
 
         assertThat(replies).isEmpty()

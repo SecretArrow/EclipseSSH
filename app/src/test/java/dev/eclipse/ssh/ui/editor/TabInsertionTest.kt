@@ -13,7 +13,6 @@ import org.junit.Test
  * preferences; everything downstream (cursor math, undo) treats the result as an opaque string.
  */
 class TabInsertionTest {
-
     @Test
     fun `the default inserts one tab character`() {
         // Real tabs by default, matching what the file will contain if the user never opens the

@@ -6,9 +6,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.eclipse.ssh.data.HostRepository
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.ssh.SshConnectionManager
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.flow.first
 
 /**
  * Writes the encrypted vault backup to a document the user picked.
@@ -28,39 +28,48 @@ import kotlinx.coroutines.flow.first
  * sentence.
  */
 @Singleton
-class VaultExporter @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val hostRepository: HostRepository,
-    private val settingsRepository: SettingsRepository,
-    private val sshConnectionManager: SshConnectionManager,
-) {
+class VaultExporter
+    @Inject
+    constructor(
+        @ApplicationContext private val context: Context,
+        private val hostRepository: HostRepository,
+        private val settingsRepository: SettingsRepository,
+        private val sshConnectionManager: SshConnectionManager,
+    ) {
+        /**
+         * Encrypt the vault and write it to [uri]. Returns the number of hosts that went into it.
+         *
+         * The count is returned rather than reported because "Exported 3 host(s)" needs a number the
+         * caller does not otherwise have, and it is the one fact worth confirming back: it is what tells
+         * a user their backup is not silently empty.
+         */
+        suspend fun export(
+            passphrase: String,
+            uri: Uri,
+        ): Int {
+            val hosts = hostRepository.hosts.first()
+            val settings = settingsRepository.settings.first()
+            val payload =
+                VaultBackup.encrypt(
+                    VaultBackup.toJson(hosts, settings, sshConnectionManager.knownHosts()),
+                    passphrase,
+                )
+            write(uri, payload)
+            return hosts.size
+        }
 
-    /**
-     * Encrypt the vault and write it to [uri]. Returns the number of hosts that went into it.
-     *
-     * The count is returned rather than reported because "Exported 3 host(s)" needs a number the
-     * caller does not otherwise have, and it is the one fact worth confirming back: it is what tells
-     * a user their backup is not silently empty.
-     */
-    suspend fun export(passphrase: String, uri: Uri): Int {
-        val hosts = hostRepository.hosts.first()
-        val settings = settingsRepository.settings.first()
-        val payload = VaultBackup.encrypt(
-            VaultBackup.toJson(hosts, settings, sshConnectionManager.knownHosts()),
-            passphrase,
-        )
-        write(uri, payload)
-        return hosts.size
+        /**
+         * `"wt"` and not the default: a document provider that already holds a longer file would
+         * otherwise leave its tail behind, and a truncated backup that still parses is worse than one
+         * that does not. Same mode the view model used.
+         */
+        private fun write(
+            uri: Uri,
+            payload: String,
+        ) {
+            val stream =
+                context.contentResolver.openOutputStream(uri, "wt")
+                    ?: throw BackupFormatException("That location could not be written")
+            stream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+        }
     }
-
-    /**
-     * `"wt"` and not the default: a document provider that already holds a longer file would
-     * otherwise leave its tail behind, and a truncated backup that still parses is worse than one
-     * that does not. Same mode the view model used.
-     */
-    private fun write(uri: Uri, payload: String) {
-        val stream = context.contentResolver.openOutputStream(uri, "wt")
-            ?: throw BackupFormatException("That location could not be written")
-        stream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-    }
-}

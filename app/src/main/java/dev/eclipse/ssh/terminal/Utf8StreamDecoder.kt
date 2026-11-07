@@ -31,9 +31,11 @@ import java.nio.charset.CodingErrorAction
  * Not thread-safe: one instance per session, confined to the coroutine that feeds the buffer.
  */
 class Utf8StreamDecoder {
-    private val decoder: CharsetDecoder = Charsets.UTF_8.newDecoder()
-        .onMalformedInput(CodingErrorAction.REPLACE)
-        .onUnmappableCharacter(CodingErrorAction.REPLACE)
+    private val decoder: CharsetDecoder =
+        Charsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
 
     /**
      * The tail of the previous chunk that was a valid *prefix* of a codepoint but not a whole one.
@@ -56,18 +58,23 @@ class Utf8StreamDecoder {
     private var reusable = CharBuffer.allocate(INITIAL_CHARS)
 
     /** Decodes [length] bytes of [bytes] from [offset], holding back any partial trailing codepoint. */
-    fun decode(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset): String {
+    fun decode(
+        bytes: ByteArray,
+        offset: Int = 0,
+        length: Int = bytes.size - offset,
+    ): String {
         if (length <= 0) return ""
-        val input = if (carried == 0) {
-            // The common case, and no copy: the decoder reads straight out of the caller's array.
-            ByteBuffer.wrap(bytes, offset, length)
-        } else {
-            ByteBuffer.allocate(carried + length).apply {
-                put(carry, 0, carried)
-                put(bytes, offset, length)
-                flip()
+        val input =
+            if (carried == 0) {
+                // The common case, and no copy: the decoder reads straight out of the caller's array.
+                ByteBuffer.wrap(bytes, offset, length)
+            } else {
+                ByteBuffer.allocate(carried + length).apply {
+                    put(carry, 0, carried)
+                    put(bytes, offset, length)
+                    flip()
+                }
             }
-        }
         carried = 0
         return drain(input, endOfInput = false)
     }
@@ -92,7 +99,10 @@ class Utf8StreamDecoder {
         decoder.reset()
     }
 
-    private fun drain(input: ByteBuffer, endOfInput: Boolean): String {
+    private fun drain(
+        input: ByteBuffer,
+        endOfInput: Boolean,
+    ): String {
         val out = bufferFor(input.remaining())
         // UTF-8 never produces more than one char per byte, so `out` cannot overflow and this loop
         // runs exactly once. The OVERFLOW branch is kept rather than asserted away because being

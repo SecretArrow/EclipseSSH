@@ -56,7 +56,10 @@ import androidx.compose.ui.unit.sp
  * content, and the spacing is what keeps it from reading as one more row's title.
  */
 @Composable
-fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.2.sp, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), content = content)
 }
@@ -77,7 +80,12 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
  * prose describing the setting, not a value, and some of them genuinely need two lines.
  */
 @Composable
-fun SettingRow(icon: ImageVector, title: String, subtitle: String, trailing: @Composable () -> Unit) {
+fun SettingRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    trailing: @Composable () -> Unit,
+) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))
         Spacer(Modifier.width(14.dp))
@@ -140,7 +148,10 @@ fun <T> SettingDropdown(
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(optionLabel(option), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    onClick = { expanded = false; onSelect(option) },
+                    onClick = {
+                        expanded = false
+                        onSelect(option)
+                    },
                     trailingIcon = {
                         if (option == selected) Icon(Icons.Default.Check, "Selected", modifier = Modifier.size(18.dp))
                     },

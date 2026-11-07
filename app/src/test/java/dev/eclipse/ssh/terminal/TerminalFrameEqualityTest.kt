@@ -15,8 +15,7 @@ import org.junit.Test
  * public and keep their values; only equality ignores them.
  */
 class TerminalFrameEqualityTest {
-    private fun frame(): TerminalFrame =
-        AnsiTerminalBuffer(columns = 12, rows = 4).apply { feed("hello\r\nworld") }.frame()
+    private fun frame(): TerminalFrame = AnsiTerminalBuffer(columns = 12, rows = 4).apply { feed("hello\r\nworld") }.frame()
 
     @Test
     fun `damage alone does not make a different frame`() {
@@ -52,38 +51,39 @@ class TerminalFrameEqualityTest {
     @Test
     fun `every other field still decides identity`() {
         val base = frame()
-        val others = listOf(
-            "lines" to base.copy(lines = base.lines.dropLast(1)),
-            "promptMarks" to base.copy(promptMarks = listOf(PromptMark(setOf(PromptMarkKind.PROMPT)))),
-            "firstLine" to base.copy(firstLine = base.firstLine + 1),
-            "totalLines" to base.copy(totalLines = base.totalLines + 1),
-            "liveEnd" to base.copy(liveEnd = base.liveEnd + 1),
-            "cursorRow" to base.copy(cursorRow = base.cursorRow + 1),
-            "cursorColumn" to base.copy(cursorColumn = base.cursorColumn + 1),
-            "columns" to base.copy(columns = base.columns + 1),
-            "rows" to base.copy(rows = base.rows + 1),
-            "contentColumns" to base.copy(contentColumns = base.contentColumns + 1),
-            "cursorVisible" to base.copy(cursorVisible = !base.cursorVisible),
-            "revision" to base.copy(revision = base.revision + 1),
-            "title" to base.copy(title = "a title"),
-            "alternateScreen" to base.copy(alternateScreen = !base.alternateScreen),
-            "positionalScreen" to base.copy(positionalScreen = !base.positionalScreen),
-            "synchronizedOutput" to base.copy(synchronizedOutput = !base.synchronizedOutput),
-            "applicationCursorKeys" to base.copy(applicationCursorKeys = !base.applicationCursorKeys),
-            "applicationKeypad" to base.copy(applicationKeypad = !base.applicationKeypad),
-            "bracketedPaste" to base.copy(bracketedPaste = !base.bracketedPaste),
-            "keyboardModes" to base.copy(keyboardModes = KeyboardModes(kittyFlags = 1)),
-            "cursorBlink" to base.copy(cursorBlink = !base.cursorBlink),
-            "cursorShape" to base.copy(cursorShape = TerminalCursorShape.BAR),
-            "scrollOffset" to base.copy(scrollOffset = base.scrollOffset + 1),
-            "scrollCeiling" to base.copy(scrollCeiling = base.scrollCeiling + 1),
-            "mouseMode" to base.copy(mouseMode = MouseMode.X10),
-            "mouseSgr" to base.copy(mouseSgr = !base.mouseSgr),
-            "marginAbove" to base.copy(marginAbove = listOf(listOf(TerminalCell('x')))),
-            "marginBelow" to base.copy(marginBelow = listOf(listOf(TerminalCell('x')))),
-            "stepRowsBack" to base.copy(stepRowsBack = base.stepRowsBack + 1),
-            "stepRowsForward" to base.copy(stepRowsForward = base.stepRowsForward + 1),
-        )
+        val others =
+            listOf(
+                "lines" to base.copy(lines = base.lines.dropLast(1)),
+                "promptMarks" to base.copy(promptMarks = listOf(PromptMark(setOf(PromptMarkKind.PROMPT)))),
+                "firstLine" to base.copy(firstLine = base.firstLine + 1),
+                "totalLines" to base.copy(totalLines = base.totalLines + 1),
+                "liveEnd" to base.copy(liveEnd = base.liveEnd + 1),
+                "cursorRow" to base.copy(cursorRow = base.cursorRow + 1),
+                "cursorColumn" to base.copy(cursorColumn = base.cursorColumn + 1),
+                "columns" to base.copy(columns = base.columns + 1),
+                "rows" to base.copy(rows = base.rows + 1),
+                "contentColumns" to base.copy(contentColumns = base.contentColumns + 1),
+                "cursorVisible" to base.copy(cursorVisible = !base.cursorVisible),
+                "revision" to base.copy(revision = base.revision + 1),
+                "title" to base.copy(title = "a title"),
+                "alternateScreen" to base.copy(alternateScreen = !base.alternateScreen),
+                "positionalScreen" to base.copy(positionalScreen = !base.positionalScreen),
+                "synchronizedOutput" to base.copy(synchronizedOutput = !base.synchronizedOutput),
+                "applicationCursorKeys" to base.copy(applicationCursorKeys = !base.applicationCursorKeys),
+                "applicationKeypad" to base.copy(applicationKeypad = !base.applicationKeypad),
+                "bracketedPaste" to base.copy(bracketedPaste = !base.bracketedPaste),
+                "keyboardModes" to base.copy(keyboardModes = KeyboardModes(kittyFlags = 1)),
+                "cursorBlink" to base.copy(cursorBlink = !base.cursorBlink),
+                "cursorShape" to base.copy(cursorShape = TerminalCursorShape.BAR),
+                "scrollOffset" to base.copy(scrollOffset = base.scrollOffset + 1),
+                "scrollCeiling" to base.copy(scrollCeiling = base.scrollCeiling + 1),
+                "mouseMode" to base.copy(mouseMode = MouseMode.X10),
+                "mouseSgr" to base.copy(mouseSgr = !base.mouseSgr),
+                "marginAbove" to base.copy(marginAbove = listOf(listOf(TerminalCell('x')))),
+                "marginBelow" to base.copy(marginBelow = listOf(listOf(TerminalCell('x')))),
+                "stepRowsBack" to base.copy(stepRowsBack = base.stepRowsBack + 1),
+                "stepRowsForward" to base.copy(stepRowsForward = base.stepRowsForward + 1),
+            )
 
         others.forEach { (name, other) ->
             assertWithMessage(name).that(other).isNotEqualTo(base)

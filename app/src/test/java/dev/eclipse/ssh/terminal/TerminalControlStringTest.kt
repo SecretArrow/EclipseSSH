@@ -24,14 +24,13 @@ private const val E = "\u001B"
  * `testing/tmux-replay/README.md`.
  */
 class TerminalControlStringTest {
-
     // region the payload is swallowed, and only ST ends it
 
     @Test
     fun `a tmux passthrough is swallowed whole rather than printed`() {
         val buffer = session()
 
-        buffer.feed("$E" + "Ptmux;$E${E}[?25l$E${E}[>4;2m$E\\ready")
+        buffer.feed("$E" + "Ptmux;$E$E[?25l$E$E[>4;2m$E\\ready")
 
         assertThat(buffer.plainText()).isEqualTo("ready")
     }
@@ -43,7 +42,7 @@ class TerminalControlStringTest {
         // against a terminal that was only ever asked to ignore a DCS.
         val buffer = session()
 
-        buffer.feed("$E" + "Ptmux;$E${E}[?25l$E${E}[>4;2m$E\\")
+        buffer.feed("$E" + "Ptmux;$E$E[?25l$E$E[>4;2m$E\\")
 
         assertThat(buffer.frame().cursorVisible).isTrue()
         assertThat(buffer.keyboardModes().modifyOtherKeys).isEqualTo(ModifyOtherKeys.OFF)
@@ -145,6 +144,8 @@ class TerminalControlStringTest {
 
     // endregion
 
-    private fun session(columns: Int = 20, rows: Int = 3): AnsiTerminalBuffer =
-        AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 200)
+    private fun session(
+        columns: Int = 20,
+        rows: Int = 3,
+    ): AnsiTerminalBuffer = AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = 200)
 }

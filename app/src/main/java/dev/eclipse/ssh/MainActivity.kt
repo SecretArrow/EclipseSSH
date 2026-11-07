@@ -1598,16 +1598,16 @@ private fun EclipseWorkspace(
                             },
                             onUploadLocal = { file -> transferHost()?.let { viewModel.uploadLocal(it, file) } },
                             onScheduleDownload = {
-                                    files,
-                                    scheduledAt,
-                                    repeatMinutes,
+                                files,
+                                scheduledAt,
+                                repeatMinutes,
                                 ->
                                 transferHost()?.let { host -> files.forEach { viewModel.scheduleDownload(host, it, scheduledAt, repeatMinutes) } }
                             },
                             onScheduleUpload = {
-                                    files,
-                                    scheduledAt,
-                                    repeatMinutes,
+                                files,
+                                scheduledAt,
+                                repeatMinutes,
                                 ->
                                 transferHost()?.let { host -> files.forEach { viewModel.scheduleUpload(host, it, scheduledAt, repeatMinutes) } }
                             },
@@ -1853,16 +1853,16 @@ private fun EclipseWorkspace(
                             },
                             onUploadLocal = { file -> transferHost()?.let { viewModel.uploadLocal(it, file) } },
                             onScheduleDownload = {
-                                    files,
-                                    scheduledAt,
-                                    repeatMinutes,
+                                files,
+                                scheduledAt,
+                                repeatMinutes,
                                 ->
                                 transferHost()?.let { host -> files.forEach { viewModel.scheduleDownload(host, it, scheduledAt, repeatMinutes) } }
                             },
                             onScheduleUpload = {
-                                    files,
-                                    scheduledAt,
-                                    repeatMinutes,
+                                files,
+                                scheduledAt,
+                                repeatMinutes,
                                 ->
                                 transferHost()?.let { host -> files.forEach { viewModel.scheduleUpload(host, it, scheduledAt, repeatMinutes) } }
                             },

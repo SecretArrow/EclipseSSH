@@ -20,13 +20,13 @@ import dev.eclipse.ssh.ssh.SessionEvent
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.ActionSubject
 import dev.eclipse.ssh.ui.sessions.SessionWhyActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The session "why?" window, as a window.
@@ -50,7 +50,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SessionWhyActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -202,10 +201,15 @@ class SessionWhyActivityRobolectricTest {
     }
 
     /** The same intent with the token written in by hand, which is all the window reads. */
-    private fun spentTokenIntent(context: Context, token: String): Intent =
-        Intent(context, SessionWhyActivity::class.java).putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, token)
+    private fun spentTokenIntent(
+        context: Context,
+        token: String,
+    ): Intent = Intent(context, SessionWhyActivity::class.java).putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, token)
 
-    private fun awaitText(text: String, describe: () -> String) {
+    private fun awaitText(
+        text: String,
+        describe: () -> String,
+    ) {
         pumpUntil(describe = describe) {
             compose.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -217,7 +221,11 @@ class SessionWhyActivityRobolectricTest {
      * The shape the suites that drive live state all share — see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()

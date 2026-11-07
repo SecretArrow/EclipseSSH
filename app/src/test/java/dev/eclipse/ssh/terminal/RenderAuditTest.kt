@@ -12,7 +12,6 @@ import org.junit.Test
  * test here is about a fact being written down exactly once, in the frame it happened in.
  */
 class RenderAuditTest {
-
     private var now = 1_000L
     private val audit = RenderAudit(clock = { now })
 
@@ -221,12 +220,10 @@ class RenderAuditTest {
      * assertion made on this line cannot be satisfied by the header - which names a position too, and
      * would otherwise let a note that had forgotten its own position still pass.
      */
-    private fun noteLine(text: String): String =
-        text.lineSequence().single { it.trimStart().startsWith("t=") }
+    private fun noteLine(text: String): String = text.lineSequence().single { it.trimStart().startsWith("t=") }
 
     /** The summary line: the newest frame, and how far the stream had got by the time it was published. */
-    private fun frameLine(text: String): String =
-        text.lineSequence().single { it.startsWith("last frame") }
+    private fun frameLine(text: String): String = text.lineSequence().single { it.startsWith("last frame") }
 
     @Test
     fun `a note says how far into the stream it happened, in the log's own count`() {
@@ -328,11 +325,12 @@ class RenderAuditTest {
     fun `the report names which screen the newest frame belongs to`() {
         // The three names are read by whoever the export is sent to; a frame labelled with the wrong
         // screen sends them looking at the wrong half of the app.
-        val expected = mapOf(
-            ScreenKind.PRIMARY to "primary",
-            ScreenKind.ALTERNATE to "alternate",
-            ScreenKind.POSITIONAL to "positional",
-        )
+        val expected =
+            mapOf(
+                ScreenKind.PRIMARY to "primary",
+                ScreenKind.ALTERNATE to "alternate",
+                ScreenKind.POSITIONAL to "positional",
+            )
         expected.forEach { (kind, word) ->
             val one = RenderAudit(clock = { now })
             one.onFrame(frame(revision = 1, ink = 5, screen = kind))
@@ -347,12 +345,13 @@ class RenderAuditTest {
 
     @Test
     fun `ink counts the cells the renderer would draw, not the columns a row reaches`() {
-        val line = listOf(
-            TerminalCell('a'),
-            TerminalCell(),
-            TerminalCell(),
-            TerminalCell('b'),
-        )
+        val line =
+            listOf(
+                TerminalCell('a'),
+                TerminalCell(),
+                TerminalCell(),
+                TerminalCell('b'),
+            )
         assertThat(paintedCells(listOf(line))).isEqualTo(2)
     }
 

@@ -7,13 +7,6 @@ import com.shinyhut.vernacular.client.rendering.ImageBuffer
 import dev.eclipse.ssh.data.model.RemoteDesktopTarget
 import dev.eclipse.ssh.ssh.ForwardingHandle
 import dev.eclipse.ssh.ssh.PortForwardingManager
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-import java.util.function.Supplier
-import kotlin.concurrent.thread
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +18,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.apache.sshd.client.session.ClientSession
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.function.Supplier
+import kotlin.concurrent.thread
 
 /**
  * The states of one VNC viewing session, in the order they happen.
@@ -46,17 +46,27 @@ sealed interface VncTunnelState {
     data object AwaitingPassword : VncTunnelState
 
     /** Handshake complete; [VncTunnel.frames] begins delivering as the first update arrives. */
-    data class Connected(val width: Int, val height: Int) : VncTunnelState
+    data class Connected(
+        val width: Int,
+        val height: Int,
+    ) : VncTunnelState
 
     /** The session ended against the user's will; [reason] is one line for the screen. */
-    data class Failed(val reason: String) : VncTunnelState
+    data class Failed(
+        val reason: String,
+    ) : VncTunnelState
 
     /** The session ended because the viewer left it. */
     data object Closed : VncTunnelState
 }
 
 /** One delivered frame: the bitmap to draw, its size, and a counter that grows with every frame. */
-data class VncFrame(val bitmap: Bitmap, val width: Int, val height: Int, val sequence: Long)
+data class VncFrame(
+    val bitmap: Bitmap,
+    val width: Int,
+    val height: Int,
+    val sequence: Long,
+)
 
 /**
  * One VNC viewing session over an SSH connection: an ad-hoc local forward this tunnel owns,
@@ -90,8 +100,9 @@ data class VncFrame(val bitmap: Bitmap, val width: Int, val height: Int, val seq
  * alternative is a full-screen bitmap allocation per update at up to the target frame rate,
  * and a torn frame is invisible while a GC pause at 30 fps is not.
  */
-class VncTunnel(private val forwarding: PortForwardingManager) {
-
+class VncTunnel(
+    private val forwarding: PortForwardingManager,
+) {
     private val _state = MutableStateFlow<VncTunnelState>(VncTunnelState.Idle)
     val state: StateFlow<VncTunnelState> = _state
 
@@ -114,7 +125,9 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
 
     /** Written once by the start thread; read by input methods guarded by the tunnel not being finished. */
     @Volatile private var client: VernacularClient? = null
+
     @Volatile private var socket: Socket? = null
+
     @Volatile private var forward: ForwardingHandle? = null
 
     /** Owned by the RFB reader thread alone - the one thread that ever writes pixels. */
@@ -151,9 +164,10 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
         _state.value = VncTunnelState.Connecting
         thread(name = "vnc-tunnel") {
             try {
-                val handle = runBlocking {
-                    forwarding.startLocal(session, LOOPBACK, 0, target.host, target.port)
-                }
+                val handle =
+                    runBlocking {
+                        forwarding.startLocal(session, LOOPBACK, 0, target.host, target.port)
+                    }
                 forward = handle
                 // A stop()/abandon()/error during the slow startLocal above tore nothing down - there
                 // was nothing published to find - so claim and close what we just set.
@@ -169,34 +183,35 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
                     tearDown()
                     return@thread
                 }
-                val config = VernacularConfig().apply {
-                    targetFramesPerSecond = framesPerSecond
-                    // The one thing a viewer on a phone screen cannot leave to the server: cursor
-                    // feedback. A remote-drawn cursor arrives one round trip after the tap that moved
-                    // it, which reads as lag on every interaction; drawing it locally from the
-                    // server's cursor-shape notifications is instantaneous and pixel-identical.
-                    isUseLocalMousePointer = true
-                    // So a resize request can be honoured at all; without the pseudo-encoding the
-                    // server never learns we understand desktop-size changes, and [requestResolution]
-                    // would be a no-op everywhere.
-                    isEnableExtendedDesktopSize = true
-                    // The server's cut text, announced as it happens: the clipboard-sync half of
-                    // the feature, whose other direction is [copyText]. Deliberately the *plain*
-                    // cut-text messages and not the extended pseudo-encoding - which this
-                    // library's config defaults ON, so the off has to be said out loud. The
-                    // plain messages are the base protocol every RFB server answers; the
-                    // extended encoding is opt-in on the server side, and the moment the flag is
-                    // on the library switches its client-to-server wire format to it - a server
-                    // that never opted in would read the extended header as a text length and
-                    // stall. Text-only, too: the clipboard formats a desktop user actually
-                    // moves are text, and the image listener stays unwired for the same reason
-                    // RDP's does not.
-                    isEnableExtendedClipboard = false
-                    setRemoteClipboardListener { text -> _remoteClipboard.value = text }
-                    setPasswordSupplier(Supplier { answerPasswordChallenge(password) })
-                    setErrorListener { error -> onVncError(error) }
-                    setScreenUpdateListener { image -> onScreenUpdate(image) }
-                }
+                val config =
+                    VernacularConfig().apply {
+                        targetFramesPerSecond = framesPerSecond
+                        // The one thing a viewer on a phone screen cannot leave to the server: cursor
+                        // feedback. A remote-drawn cursor arrives one round trip after the tap that moved
+                        // it, which reads as lag on every interaction; drawing it locally from the
+                        // server's cursor-shape notifications is instantaneous and pixel-identical.
+                        isUseLocalMousePointer = true
+                        // So a resize request can be honoured at all; without the pseudo-encoding the
+                        // server never learns we understand desktop-size changes, and [requestResolution]
+                        // would be a no-op everywhere.
+                        isEnableExtendedDesktopSize = true
+                        // The server's cut text, announced as it happens: the clipboard-sync half of
+                        // the feature, whose other direction is [copyText]. Deliberately the *plain*
+                        // cut-text messages and not the extended pseudo-encoding - which this
+                        // library's config defaults ON, so the off has to be said out loud. The
+                        // plain messages are the base protocol every RFB server answers; the
+                        // extended encoding is opt-in on the server side, and the moment the flag is
+                        // on the library switches its client-to-server wire format to it - a server
+                        // that never opted in would read the extended header as a text length and
+                        // stall. Text-only, too: the clipboard formats a desktop user actually
+                        // moves are text, and the image listener stays unwired for the same reason
+                        // RDP's does not.
+                        isEnableExtendedClipboard = false
+                        setRemoteClipboardListener { text -> _remoteClipboard.value = text }
+                        setPasswordSupplier(Supplier { answerPasswordChallenge(password) })
+                        setErrorListener { error -> onVncError(error) }
+                        setScreenUpdateListener { image -> onScreenUpdate(image) }
+                    }
                 val vernacular = VernacularClient(config)
                 client = vernacular
                 if (finished.get()) {
@@ -244,9 +259,11 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
         // The same ImageBuffer instance comes back every time, repainted in place - holding it
         // would show the user a live mutating object and racing the reader for its pixels. The
         // copy is the frame; the bitmap is reused because it is the same size almost always.
-        val bitmap = frameBitmap?.takeIf { it.width == image.width && it.height == image.height }
-            ?: Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888)
-                .also { frameBitmap = it }
+        val bitmap =
+            frameBitmap?.takeIf { it.width == image.width && it.height == image.height }
+                ?: Bitmap
+                    .createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888)
+                    .also { frameBitmap = it }
         bitmap.setPixels(image.buffer, 0, image.width, 0, 0, image.width, image.height)
         sequence += 1
         _frames.value = VncFrame(bitmap, image.width, image.height, sequence)
@@ -324,12 +341,18 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
     // ---------------------------------------------------------------------------------------------
 
     /** Moves the remote pointer to ([x], [y]) in framebuffer coordinates. */
-    fun moveMouse(x: Int, y: Int) {
+    fun moveMouse(
+        x: Int,
+        y: Int,
+    ) {
         client?.moveMouse(x, y)
     }
 
     /** Presses or releases remote mouse button [button] (1 left, 2 middle, 3 right). */
-    fun mouseButton(button: Int, pressed: Boolean) {
+    fun mouseButton(
+        button: Int,
+        pressed: Boolean,
+    ) {
         client?.updateMouseButton(button, pressed)
     }
 
@@ -339,7 +362,10 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
     }
 
     /** Presses or releases the key with X11 keysym [keySym]. */
-    fun key(keySym: Int, pressed: Boolean) {
+    fun key(
+        keySym: Int,
+        pressed: Boolean,
+    ) {
         client?.updateKey(keySym, pressed)
     }
 
@@ -363,7 +389,10 @@ class VncTunnel(private val forwarding: PortForwardingManager) {
      * extended desktop-size pseudo-encoding ignores it, which is why the viewer treats the
      * reply, not the request, as the truth about the new size.
      */
-    fun requestResolution(width: Int, height: Int) {
+    fun requestResolution(
+        width: Int,
+        height: Int,
+    ) {
         client?.resize(width, height)
     }
 

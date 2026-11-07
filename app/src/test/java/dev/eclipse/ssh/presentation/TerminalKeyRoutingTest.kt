@@ -13,7 +13,6 @@ import org.junit.Test
  * that works everywhere else.
  */
 class TerminalKeyRoutingTest {
-
     private fun target(
         key: TerminalKey,
         modifiers: TerminalModifiers = TerminalModifiers.NONE,

@@ -33,13 +33,14 @@ package dev.eclipse.ssh.terminal
  * currently using.
  */
 object MouseEncoding {
-
     /** Mouse button codes for SGR mode. */
-    enum class Button(val code: Int) {
+    enum class Button(
+        val code: Int,
+    ) {
         LEFT(0),
         MIDDLE(1),
         RIGHT(2),
-        RELEASE(0),  // SGR uses lower-case 'm' for release
+        RELEASE(0), // SGR uses lower-case 'm' for release
         DRAG_LEFT(32),
         DRAG_MIDDLE(33),
         DRAG_RIGHT(34),
@@ -76,7 +77,7 @@ object MouseEncoding {
         val cx = column.coerceAtLeast(1)
         val cy = row.coerceAtLeast(1)
         val terminator = if (pressed) 'M' else 'm'
-        val sequence = "\u001B[<${buttonCode};${cx};${cy}${terminator}"
+        val sequence = "\u001B[<$buttonCode;$cx;${cy}$terminator"
         return sequence.toByteArray(Charsets.UTF_8)
     }
 
@@ -92,7 +93,12 @@ object MouseEncoding {
      * where the button came up. A press and a release at the same cell are a click; a press, movement and
      * a release are a drag; the two are the same three calls with the middle one present or absent.
      */
-    fun encodeGesture(gesture: MouseGesture, column: Int, row: Int, modifiers: Int = 0): ByteArray =
+    fun encodeGesture(
+        gesture: MouseGesture,
+        column: Int,
+        row: Int,
+        modifiers: Int = 0,
+    ): ByteArray =
         when (gesture) {
             MouseGesture.PRESS -> encode(Button.LEFT, column, row, modifiers, pressed = true)
             MouseGesture.RELEASE -> encode(Button.LEFT, column, row, modifiers, pressed = false)
@@ -112,22 +118,24 @@ object MouseEncoding {
      * the high bits and must be masked out before the kind is read.
      */
     fun parseButton(encoded: Int): Button {
-        val kind = encoded and 0x60  // top two meaningful bits, mask modifier bits
+        val kind = encoded and 0x60 // top two meaningful bits, mask modifier bits
         val index = encoded and 0x03
         return when (kind) {
-            0x00 -> when (index) {
-                0 -> Button.LEFT
-                1 -> Button.MIDDLE
-                2 -> Button.RIGHT
-                else -> Button.RELEASE
-            }
+            0x00 ->
+                when (index) {
+                    0 -> Button.LEFT
+                    1 -> Button.MIDDLE
+                    2 -> Button.RIGHT
+                    else -> Button.RELEASE
+                }
             0x40 -> if (index == 0) Button.SCROLL_UP else Button.SCROLL_DOWN
-            0x20 -> when (index) {
-                0 -> Button.DRAG_LEFT
-                1 -> Button.DRAG_MIDDLE
-                2 -> Button.DRAG_RIGHT
-                else -> Button.RELEASE
-            }
+            0x20 ->
+                when (index) {
+                    0 -> Button.DRAG_LEFT
+                    1 -> Button.DRAG_MIDDLE
+                    2 -> Button.DRAG_RIGHT
+                    else -> Button.RELEASE
+                }
             else -> Button.RELEASE
         }
     }

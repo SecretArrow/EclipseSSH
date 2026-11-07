@@ -8,9 +8,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
-import org.robolectric.RobolectricTestRunner
 
 /**
  * Whether biometric unlock is usable is answered before a prompt is raised, not by one failing.
@@ -30,7 +30,6 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class BiometricUnlockerTest {
-
     private lateinit var controller: ActivityController<FragmentActivity>
     private val activity: FragmentActivity get() = controller.get()
     private val unlocker = BiometricUnlocker()

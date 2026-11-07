@@ -2,8 +2,8 @@ package dev.eclipse.ssh.ui.editor.encoding
 
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
-import java.nio.charset.Charset
 import java.nio.charset.CharacterCodingException
+import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 
 /**
@@ -15,14 +15,17 @@ import java.nio.charset.CodingErrorAction
  * [FileEncodingCodec.encode] names in a refusal message, so it is spelled the way users see it
  * in other software, not the way Java spells the charset.
  */
-enum class FileEncoding(val label: String) {
+enum class FileEncoding(
+    val label: String,
+) {
     UTF_8("UTF-8"),
     UTF_8_BOM("UTF-8 with BOM"),
     UTF_16_LE("UTF-16 LE"),
     UTF_16_BE("UTF-16 BE"),
     ASCII("ASCII"),
     ISO_8859_1("ISO-8859-1"),
-    WINDOWS_1252("Windows-1252");
+    WINDOWS_1252("Windows-1252"),
+    ;
 
     companion object {
         /**
@@ -44,7 +47,10 @@ enum class FileEncoding(val label: String) {
  * explicit user choice ever reaches [FileEncodingCodec.encode]; that separation is what keeps
  * detection from silently re-encoding a file on save.
  */
-data class DecodedText(val text: String, val encoding: FileEncoding)
+data class DecodedText(
+    val text: String,
+    val encoding: FileEncoding,
+)
 
 /**
  * The encode/decode engine behind the editor's encoding selector.
@@ -61,7 +67,6 @@ data class DecodedText(val text: String, val encoding: FileEncoding)
  *   original is gone.
  */
 object FileEncodingCodec {
-
     /** The UTF-8 BOM, as it appears at the head of a file: EF BB BF. */
     private val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
 
@@ -148,15 +153,19 @@ object FileEncodingCodec {
      * so that a character the encoding cannot hold stops the save with a readable message
      * rather than landing on disk as `?`.
      */
-    fun encode(text: String, encoding: FileEncoding): ByteArray = when (encoding) {
-        FileEncoding.UTF_8 -> text.toByteArray(Charsets.UTF_8)
-        FileEncoding.UTF_8_BOM -> UTF8_BOM + text.toByteArray(Charsets.UTF_8)
-        FileEncoding.UTF_16_LE -> UTF16LE_BOM + text.toByteArray(Charsets.UTF_16LE)
-        FileEncoding.UTF_16_BE -> UTF16BE_BOM + text.toByteArray(Charsets.UTF_16BE)
-        FileEncoding.ASCII -> encodeStrict(text, Charsets.US_ASCII, encoding)
-        FileEncoding.ISO_8859_1 -> encodeStrict(text, Charsets.ISO_8859_1, encoding)
-        FileEncoding.WINDOWS_1252 -> encodeStrict(text, WINDOWS_1252, encoding)
-    }
+    fun encode(
+        text: String,
+        encoding: FileEncoding,
+    ): ByteArray =
+        when (encoding) {
+            FileEncoding.UTF_8 -> text.toByteArray(Charsets.UTF_8)
+            FileEncoding.UTF_8_BOM -> UTF8_BOM + text.toByteArray(Charsets.UTF_8)
+            FileEncoding.UTF_16_LE -> UTF16LE_BOM + text.toByteArray(Charsets.UTF_16LE)
+            FileEncoding.UTF_16_BE -> UTF16BE_BOM + text.toByteArray(Charsets.UTF_16BE)
+            FileEncoding.ASCII -> encodeStrict(text, Charsets.US_ASCII, encoding)
+            FileEncoding.ISO_8859_1 -> encodeStrict(text, Charsets.ISO_8859_1, encoding)
+            FileEncoding.WINDOWS_1252 -> encodeStrict(text, WINDOWS_1252, encoding)
+        }
 
     /**
      * Decodes [bytes] as exactly [encoding] — the chosen-encoding read behind the editor's
@@ -174,23 +183,29 @@ object FileEncodingCodec {
      * lie. The prefix is stripped only for the entries whose own encode writes one — plain UTF-8
      * keeps a stray BOM as a visible U+FEFF the user can delete.
      */
-    fun decodeStrict(bytes: ByteArray, encoding: FileEncoding): String? {
-        val body = when (encoding) {
-            FileEncoding.UTF_8_BOM -> bytes.skipPrefix(UTF8_BOM)
-            FileEncoding.UTF_16_LE -> bytes.skipPrefix(UTF16LE_BOM)
-            FileEncoding.UTF_16_BE -> bytes.skipPrefix(UTF16BE_BOM)
-            else -> bytes
-        }
-        val charset = when (encoding) {
-            FileEncoding.UTF_8, FileEncoding.UTF_8_BOM -> Charsets.UTF_8
-            FileEncoding.UTF_16_LE -> Charsets.UTF_16LE
-            FileEncoding.UTF_16_BE -> Charsets.UTF_16BE
-            FileEncoding.ASCII -> Charsets.US_ASCII
-            FileEncoding.ISO_8859_1 -> Charsets.ISO_8859_1
-            FileEncoding.WINDOWS_1252 -> WINDOWS_1252
-        }
+    fun decodeStrict(
+        bytes: ByteArray,
+        encoding: FileEncoding,
+    ): String? {
+        val body =
+            when (encoding) {
+                FileEncoding.UTF_8_BOM -> bytes.skipPrefix(UTF8_BOM)
+                FileEncoding.UTF_16_LE -> bytes.skipPrefix(UTF16LE_BOM)
+                FileEncoding.UTF_16_BE -> bytes.skipPrefix(UTF16BE_BOM)
+                else -> bytes
+            }
+        val charset =
+            when (encoding) {
+                FileEncoding.UTF_8, FileEncoding.UTF_8_BOM -> Charsets.UTF_8
+                FileEncoding.UTF_16_LE -> Charsets.UTF_16LE
+                FileEncoding.UTF_16_BE -> Charsets.UTF_16BE
+                FileEncoding.ASCII -> Charsets.US_ASCII
+                FileEncoding.ISO_8859_1 -> Charsets.ISO_8859_1
+                FileEncoding.WINDOWS_1252 -> WINDOWS_1252
+            }
         return try {
-            charset.newDecoder()
+            charset
+                .newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(body))
@@ -205,24 +220,31 @@ object FileEncodingCodec {
      * spelled out for both error kinds even though a fresh decoder already reports malformed
      * input: the probe's meaning must not depend on remembering the platform defaults.
      */
-    private fun decodeStrictUtf8(bytes: ByteArray): String? = try {
-        Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
-            .decode(ByteBuffer.wrap(bytes))
-            .toString()
-    } catch (error: CharacterCodingException) {
-        null
-    }
+    private fun decodeStrictUtf8(bytes: ByteArray): String? =
+        try {
+            Charsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (error: CharacterCodingException) {
+            null
+        }
 
     /**
      * Decodes leniently: undecodable input becomes U+FFFD instead of throwing. Every decode
      * path except the strict UTF-8 probe goes through here, which is what makes [decode] total -
      * a truncated or C1-carrying file still opens.
      */
-    private fun decodeReplacing(bytes: ByteArray, from: Int, charset: Charset): String {
+    private fun decodeReplacing(
+        bytes: ByteArray,
+        from: Int,
+        charset: Charset,
+    ): String {
         val body = if (from == 0) bytes else bytes.copyOfRange(from, bytes.size)
-        return charset.newDecoder()
+        return charset
+            .newDecoder()
             .onMalformedInput(CodingErrorAction.REPLACE)
             .onUnmappableCharacter(CodingErrorAction.REPLACE)
             .decode(ByteBuffer.wrap(body))
@@ -235,10 +257,16 @@ object FileEncodingCodec {
      * shows, so it has to let the user act without reading a stack trace: which encoding
      * refused, which character was the problem, and where it is.
      */
-    private fun encodeStrict(text: String, charset: Charset, encoding: FileEncoding): ByteArray {
-        val encoder = charset.newEncoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
+    private fun encodeStrict(
+        text: String,
+        charset: Charset,
+        encoding: FileEncoding,
+    ): ByteArray {
+        val encoder =
+            charset
+                .newEncoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
         try {
             val out = encoder.encode(CharBuffer.wrap(text))
             // A ByteBuffer handed back by encode() may over-allocate its backing array, so the
@@ -263,7 +291,10 @@ object FileEncodingCodec {
      * named as such, because printing the raw surrogate would put an unrenderable character in
      * the dialog.
      */
-    private fun firstUnencodable(text: String, charset: Charset): String {
+    private fun firstUnencodable(
+        text: String,
+        charset: Charset,
+    ): String {
         val probe = charset.newEncoder()
         var index = 0
         while (index < text.length) {
@@ -288,7 +319,10 @@ object FileEncodingCodec {
     }
 
     /** Whether [bytes] begins with [prefix] at [offset]. */
-    private fun ByteArray.startsWithAt(offset: Int, prefix: ByteArray): Boolean {
+    private fun ByteArray.startsWithAt(
+        offset: Int,
+        prefix: ByteArray,
+    ): Boolean {
         if (size - offset < prefix.size) return false
         for (i in prefix.indices) {
             if (this[offset + i] != prefix[i]) return false
@@ -297,6 +331,5 @@ object FileEncodingCodec {
     }
 
     /** [bytes] without a leading [prefix] when it carries one, and unchanged when it does not. */
-    private fun ByteArray.skipPrefix(prefix: ByteArray): ByteArray =
-        if (startsWithAt(0, prefix)) copyOfRange(prefix.size, size) else this
+    private fun ByteArray.skipPrefix(prefix: ByteArray): ByteArray = if (startsWithAt(0, prefix)) copyOfRange(prefix.size, size) else this
 }

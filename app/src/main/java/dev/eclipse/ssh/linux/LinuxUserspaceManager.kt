@@ -1,9 +1,6 @@
 package dev.eclipse.ssh.linux
 
 import dev.eclipse.ssh.ssh.SessionEnd
-import java.io.File
-import java.io.IOException
-import java.util.Properties
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +8,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
+import java.util.Properties
 
 /**
  * The userspace's lifecycle: Not Installed → Installing → Stopped ⇄ Starting ⇄ Running →
@@ -118,156 +118,162 @@ class LinuxUserspaceManager(
      * @throws IllegalStateException from any state but NotInstalled/NeedsRepair
      * @throws IOException on any download, verification, extraction or health-check failure
      */
-    suspend fun install(extras: List<OptionalPackage> = emptyList()): SetupReport = transition.withLock {
-        // Storage before anything: every proot spawn this install leads to needs PROOT_TMP_DIR to
-        // exist and be writable, and failing that here — by name — beats failing it five minutes
-        // in as proot's "Permission denied".
-        storage.requireReady()
-        requireIdleForInstall()
-        // One install at a time, process-wide: the lock is what makes a triple-tapped Install
-        // button or a service-retry racing the UI's retry run exactly one install.
-        storage.acquireInstallLock(distro.id, "install")
-        try {
+    suspend fun install(extras: List<OptionalPackage> = emptyList()): SetupReport =
+        transition.withLock {
+            // Storage before anything: every proot spawn this install leads to needs PROOT_TMP_DIR to
+            // exist and be writable, and failing that here — by name — beats failing it five minutes
+            // in as proot's "Permission denied".
+            storage.requireReady()
+            requireIdleForInstall()
+            // One install at a time, process-wide: the lock is what makes a triple-tapped Install
+            // button or a service-retry racing the UI's retry run exactly one install.
+            storage.acquireInstallLock(distro.id, "install")
             try {
-                // The marker first, and inside the try that types failures: it writes
-                // `installing=true`, which [initialState] reads back as "a previous install was
-                // interrupted" — needs-repair on every launch, for ever — so every way this run
-                // can end has to reach the catch below. The snapshot is one of those ways.
-                writeInstallingMarker("install")
-                // A repair-shaped install (from NeedsRepair) re-extracts, and re-extraction deletes
-                // the old rootfs — with the workspace inside it. The snapshot parks it where the
-                // restore at the end of this install picks it back up; a snapshot failure aborts,
-                // because proceeding would delete the user's projects with nothing in their place.
-                if (_state.value is LinuxUserspaceState.NeedsRepair && !installer.isExtracted() &&
-                    workspace.exists() && workspace.fileCount() > 0
-                ) {
-                    workspace.snapshotTo(backupFile)
-                }
-
-                // Whether this run has a rootfs half is decided before it can be consumed by the
-                // half itself: a repair that finds an extracted rootfs skips the download, and the
-                // percentage the user watches must start at 0 for the work that is actually left.
-                val plan = installPlan()
-                var extractionWarnings: List<String> = emptyList()
-                if (!installer.isExtracted()) {
-                    storage.updateInstallLockPhase("download")
-                    installer.install(
-                        onProgress = { progress ->
-                            _state.value = LinuxUserspaceState.Installing(progress.toInstallStep(), plan)
-                        },
-                        onExtractionWarnings = { extractionWarnings = it },
-                    )
-                }
-                // The belt under the installer's own promise: an extraction that produced nothing
-                // must fail here — an install failure the UI can name — rather than deep inside
-                // setup, where it surfaces as a missing-file error that reads like corruption.
-                check(installer.isExtracted()) {
-                    "the extracted rootfs is incomplete - there is nothing to set up"
-                }
-                storage.updateInstallLockPhase("setup")
-                // Not setUpAndVerify directly: an install whose only problem is something already on
-                // the device fixes it here rather than handing the user a failure and a Repair
-                // button. See setUpVerifyAndHeal for what bounds that.
-                val report =
-                    setUpVerifyAndHeal(plan, "Ubuntu installed but failed its health check", extras)
-
-                writeInstalledState()
-                val warnings = (extractionWarnings + report.warnings).toMutableList()
-                if (backupFile.isFile) {
-                    val restored = runCatching { workspace.restoreFrom(backupFile) }.isSuccess
-                    if (restored) {
-                        backupFile.delete()
-                    } else {
-                        // Kept, not deleted: the next install (or Repair) tries again.
-                        warnings += "the saved workspace could not be restored; the backup was kept"
+                try {
+                    // The marker first, and inside the try that types failures: it writes
+                    // `installing=true`, which [initialState] reads back as "a previous install was
+                    // interrupted" — needs-repair on every launch, for ever — so every way this run
+                    // can end has to reach the catch below. The snapshot is one of those ways.
+                    writeInstallingMarker("install")
+                    // A repair-shaped install (from NeedsRepair) re-extracts, and re-extraction deletes
+                    // the old rootfs — with the workspace inside it. The snapshot parks it where the
+                    // restore at the end of this install picks it back up; a snapshot failure aborts,
+                    // because proceeding would delete the user's projects with nothing in their place.
+                    if (_state.value is LinuxUserspaceState.NeedsRepair &&
+                        !installer.isExtracted() &&
+                        workspace.exists() &&
+                        workspace.fileCount() > 0
+                    ) {
+                        workspace.snapshotTo(backupFile)
                     }
+
+                    // Whether this run has a rootfs half is decided before it can be consumed by the
+                    // half itself: a repair that finds an extracted rootfs skips the download, and the
+                    // percentage the user watches must start at 0 for the work that is actually left.
+                    val plan = installPlan()
+                    var extractionWarnings: List<String> = emptyList()
+                    if (!installer.isExtracted()) {
+                        storage.updateInstallLockPhase("download")
+                        installer.install(
+                            onProgress = { progress ->
+                                _state.value = LinuxUserspaceState.Installing(progress.toInstallStep(), plan)
+                            },
+                            onExtractionWarnings = { extractionWarnings = it },
+                        )
+                    }
+                    // The belt under the installer's own promise: an extraction that produced nothing
+                    // must fail here — an install failure the UI can name — rather than deep inside
+                    // setup, where it surfaces as a missing-file error that reads like corruption.
+                    check(installer.isExtracted()) {
+                        "the extracted rootfs is incomplete - there is nothing to set up"
+                    }
+                    storage.updateInstallLockPhase("setup")
+                    // Not setUpAndVerify directly: an install whose only problem is something already on
+                    // the device fixes it here rather than handing the user a failure and a Repair
+                    // button. See setUpVerifyAndHeal for what bounds that.
+                    val report =
+                        setUpVerifyAndHeal(plan, "Ubuntu installed but failed its health check", extras)
+
+                    writeInstalledState()
+                    val warnings = (extractionWarnings + report.warnings).toMutableList()
+                    if (backupFile.isFile) {
+                        val restored = runCatching { workspace.restoreFrom(backupFile) }.isSuccess
+                        if (restored) {
+                            backupFile.delete()
+                        } else {
+                            // Kept, not deleted: the next install (or Repair) tries again.
+                            warnings += "the saved workspace could not be restored; the backup was kept"
+                        }
+                    }
+                    _state.value = LinuxUserspaceState.Stopped
+                    SetupReport(warnings)
+                } catch (t: Throwable) {
+                    onFailedInstallRun()
+                    // Typed at this boundary rather than left as whatever the layer below said: the
+                    // installer's own refusal is the ladder's key to stop on, not a sentence, and a
+                    // user told "HTTP 503" has been told nothing they can act on. A failure the ladder
+                    // already typed comes back unchanged — the classifier returns the first
+                    // [UserspaceFailure] it finds in the chain — and the original stays the cause of
+                    // whatever does come out of here.
+                    val failure = UserspaceFailure.fromThrowable(t) ?: t
+                    _state.value = failureState(failure)
+                    throw failure
                 }
-                _state.value = LinuxUserspaceState.Stopped
-                SetupReport(warnings)
-            } catch (t: Throwable) {
-                onFailedInstallRun()
-                // Typed at this boundary rather than left as whatever the layer below said: the
-                // installer's own refusal is the ladder's key to stop on, not a sentence, and a
-                // user told "HTTP 503" has been told nothing they can act on. A failure the ladder
-                // already typed comes back unchanged — the classifier returns the first
-                // [UserspaceFailure] it finds in the chain — and the original stays the cause of
-                // whatever does come out of here.
-                val failure = UserspaceFailure.fromThrowable(t) ?: t
-                _state.value = failureState(failure)
-                throw failure
+            } finally {
+                storage.releaseInstallLock()
             }
-        } finally {
-            storage.releaseInstallLock()
         }
-    }
 
     /**
      * Marks the userspace active after verifying it still works. Starting is not ceremonial: the
      * health probe is what distinguishes "Stopped and fine" from "Stopped since the rootfs got
      * corrupted", and Running is the state the foreground service is held in.
      */
-    suspend fun start() = transition.withLock {
-        // Same storage-before-proot rule as install(): the health probe spawns proot, and a tmp
-        // directory that cannot be written to is the failure this names early.
-        storage.requireReady()
-        // Before any spawn of this run, proot's own scratch directories from launches that are
-        // over: one leaked per launch until proot patch 0006, so a userspace in use for months has
-        // thousands of them. This is the sweep a *healthy* userspace gets — such a one is never
-        // offered Repair, whose rung L clears the same litter and reports how much it cleared.
-        storage.sweepOrphanTempDirs()
-        val current = _state.value
-        check(current is LinuxUserspaceState.Stopped || current is LinuxUserspaceState.NeedsRepair) {
-            "Start is only possible from Stopped or Needs Repair, not $current"
-        }
-        _state.value = LinuxUserspaceState.Starting
-        // Before the probe, and on every start rather than only at install time: the Android group
-        // IDs a session shows are a property of the running app, so an install made before the
-        // rootfs named them is corrected here — the first terminal it opens after this — instead of
-        // only by a reinstall. Recorded and not fatal: the userspace is fine either way, what
-        // changes is whether its `groups` output prints names or numbers, and the probe below is
-        // the real verdict on it.
-        runCatching { distribution.nameSupplementaryGroups() }.onFailure { failure ->
-            distribution.diagnostics.record(
-                UserspaceDiagnosticCategory.PROOT,
-                "supplementary group names",
-                detail = failure.message ?: failure.javaClass.simpleName,
-            )
-        }
-        val health = try {
-            distribution.healthProbe()
-        } catch (t: Throwable) {
-            // A probe that cannot even run — proot failed to spawn — is a repair state, not a
-            // wedged Starting: the settings screen must be able to offer Repair.
-            _state.value = LinuxUserspaceState.NeedsRepair(t.message ?: t.javaClass.simpleName)
-            throw t
-        }
-        _lastHealth.value = health
-        _state.value =
-            if (health.healthy) {
-                LinuxUserspaceState.Running(clock())
-            } else {
-                LinuxUserspaceState.NeedsRepair(health.describe())
+    suspend fun start() =
+        transition.withLock {
+            // Same storage-before-proot rule as install(): the health probe spawns proot, and a tmp
+            // directory that cannot be written to is the failure this names early.
+            storage.requireReady()
+            // Before any spawn of this run, proot's own scratch directories from launches that are
+            // over: one leaked per launch until proot patch 0006, so a userspace in use for months has
+            // thousands of them. This is the sweep a *healthy* userspace gets — such a one is never
+            // offered Repair, whose rung L clears the same litter and reports how much it cleared.
+            storage.sweepOrphanTempDirs()
+            val current = _state.value
+            check(current is LinuxUserspaceState.Stopped || current is LinuxUserspaceState.NeedsRepair) {
+                "Start is only possible from Stopped or Needs Repair, not $current"
             }
-    }
+            _state.value = LinuxUserspaceState.Starting
+            // Before the probe, and on every start rather than only at install time: the Android group
+            // IDs a session shows are a property of the running app, so an install made before the
+            // rootfs named them is corrected here — the first terminal it opens after this — instead of
+            // only by a reinstall. Recorded and not fatal: the userspace is fine either way, what
+            // changes is whether its `groups` output prints names or numbers, and the probe below is
+            // the real verdict on it.
+            runCatching { distribution.nameSupplementaryGroups() }.onFailure { failure ->
+                distribution.diagnostics.record(
+                    UserspaceDiagnosticCategory.PROOT,
+                    "supplementary group names",
+                    detail = failure.message ?: failure.javaClass.simpleName,
+                )
+            }
+            val health =
+                try {
+                    distribution.healthProbe()
+                } catch (t: Throwable) {
+                    // A probe that cannot even run — proot failed to spawn — is a repair state, not a
+                    // wedged Starting: the settings screen must be able to offer Repair.
+                    _state.value = LinuxUserspaceState.NeedsRepair(t.message ?: t.javaClass.simpleName)
+                    throw t
+                }
+            _lastHealth.value = health
+            _state.value =
+                if (health.healthy) {
+                    LinuxUserspaceState.Running(clock())
+                } else {
+                    LinuxUserspaceState.NeedsRepair(health.describe())
+                }
+        }
 
     /**
      * The explicit stop: every live session is closed (this is the one path where closing a
      * terminal *is* logout — because the user asked for it), and the userspace returns to Stopped.
      */
-    suspend fun stop() = transition.withLock {
-        val current = _state.value
-        check(
-            current is LinuxUserspaceState.Stopped ||
-                current is LinuxUserspaceState.Starting ||
-                current is LinuxUserspaceState.Running ||
-                current is LinuxUserspaceState.NeedsRepair,
-        ) {
-            "Stop is not possible from $current"
+    suspend fun stop() =
+        transition.withLock {
+            val current = _state.value
+            check(
+                current is LinuxUserspaceState.Stopped ||
+                    current is LinuxUserspaceState.Starting ||
+                    current is LinuxUserspaceState.Running ||
+                    current is LinuxUserspaceState.NeedsRepair,
+            ) {
+                "Stop is not possible from $current"
+            }
+            _state.value = LinuxUserspaceState.Stopping
+            processes.closeAll()
+            _state.value = LinuxUserspaceState.Stopped
         }
-        _state.value = LinuxUserspaceState.Stopping
-        processes.closeAll()
-        _state.value = LinuxUserspaceState.Stopped
-    }
 
     /** Stop, then Start again — the settings screen's Restart, one operation. */
     suspend fun restart() {
@@ -327,53 +333,54 @@ class LinuxUserspaceManager(
      *   controller renders its own sentence rather than this layer's prose
      * @throws IOException when every rung ran and none of them worked, naming the last failure
      */
-    suspend fun repair(): SetupReport = transition.withLock {
-        storage.requireReady()
-        val current = _state.value
-        check(current is LinuxUserspaceState.NeedsRepair || current is LinuxUserspaceState.Stopped) {
-            "Repair is only possible from Stopped or Needs Repair, not $current"
-        }
-        storage.acquireInstallLock(distro.id, "repair")
-        try {
-            try {
-                // Mirrors install()'s own invariant ("every way this run can end has to reach the
-                // catch below"): the marker write is inside the inner try so a full-disk failure
-                // here lands in the catch at :355, runs onFailedInstallRun(), and moves _state to
-                // the failure — rather than escaping to the outer try, skipping onFailedInstallRun,
-                // and leaving _state at Stopped/NeedsRepair while the truncated state file now
-                // reads NotInstalled on the next construction.
-                writeInstallingMarker("repair")
-                val warnings = mutableListOf<String>()
-                val report = repairLadder(warnings)
-                writeInstalledState()
-                warnings += report.warnings
-                if (backupFile.isFile) {
-                    val restored = runCatching { workspace.restoreFrom(backupFile) }.isSuccess
-                    if (restored) {
-                        backupFile.delete()
-                    } else {
-                        // Kept, not deleted: the next install (or Repair) tries again.
-                        warnings += "the saved workspace could not be restored; the backup was kept"
-                    }
-                }
-                _state.value = LinuxUserspaceState.Stopped
-                SetupReport(warnings)
-            } catch (t: Throwable) {
-                onFailedInstallRun()
-                // Typed at this boundary rather than left as whatever the layer below said: the
-                // installer's own refusal is the ladder's key to stop on, not a sentence, and a
-                // user told "HTTP 503" has been told nothing they can act on. A failure the ladder
-                // already typed comes back unchanged — the classifier returns the first
-                // [UserspaceFailure] it finds in the chain — and the original stays the cause of
-                // whatever does come out of here.
-                val failure = UserspaceFailure.fromThrowable(t) ?: t
-                _state.value = failureState(failure)
-                throw failure
+    suspend fun repair(): SetupReport =
+        transition.withLock {
+            storage.requireReady()
+            val current = _state.value
+            check(current is LinuxUserspaceState.NeedsRepair || current is LinuxUserspaceState.Stopped) {
+                "Repair is only possible from Stopped or Needs Repair, not $current"
             }
-        } finally {
-            storage.releaseInstallLock()
+            storage.acquireInstallLock(distro.id, "repair")
+            try {
+                try {
+                    // Mirrors install()'s own invariant ("every way this run can end has to reach the
+                    // catch below"): the marker write is inside the inner try so a full-disk failure
+                    // here lands in the catch at :355, runs onFailedInstallRun(), and moves _state to
+                    // the failure — rather than escaping to the outer try, skipping onFailedInstallRun,
+                    // and leaving _state at Stopped/NeedsRepair while the truncated state file now
+                    // reads NotInstalled on the next construction.
+                    writeInstallingMarker("repair")
+                    val warnings = mutableListOf<String>()
+                    val report = repairLadder(warnings)
+                    writeInstalledState()
+                    warnings += report.warnings
+                    if (backupFile.isFile) {
+                        val restored = runCatching { workspace.restoreFrom(backupFile) }.isSuccess
+                        if (restored) {
+                            backupFile.delete()
+                        } else {
+                            // Kept, not deleted: the next install (or Repair) tries again.
+                            warnings += "the saved workspace could not be restored; the backup was kept"
+                        }
+                    }
+                    _state.value = LinuxUserspaceState.Stopped
+                    SetupReport(warnings)
+                } catch (t: Throwable) {
+                    onFailedInstallRun()
+                    // Typed at this boundary rather than left as whatever the layer below said: the
+                    // installer's own refusal is the ladder's key to stop on, not a sentence, and a
+                    // user told "HTTP 503" has been told nothing they can act on. A failure the ladder
+                    // already typed comes back unchanged — the classifier returns the first
+                    // [UserspaceFailure] it finds in the chain — and the original stays the cause of
+                    // whatever does come out of here.
+                    val failure = UserspaceFailure.fromThrowable(t) ?: t
+                    _state.value = failureState(failure)
+                    throw failure
+                }
+            } finally {
+                storage.releaseInstallLock()
+            }
         }
-    }
 
     /**
      * The rungs, cheapest first, each collected into [warnings] as it goes. Returns the report of
@@ -393,7 +400,10 @@ class LinuxUserspaceManager(
          * the user sees is only that the ladder keeps going. A failure no rebuild could fix is
          * thrown straight out, which is what stops the ladder before it does harm.
          */
-        suspend fun rung(label: String, action: suspend () -> SetupReport?): SetupReport? {
+        suspend fun rung(
+            label: String,
+            action: suspend () -> SetupReport?,
+        ): SetupReport? {
             attempted += label
             return try {
                 action()
@@ -424,8 +434,11 @@ class LinuxUserspaceManager(
          *
          * @return true when the rung wrote or removed something
          */
-        suspend fun localRung(label: String, action: suspend () -> Boolean): Boolean {
-            return try {
+        suspend fun localRung(
+            label: String,
+            action: suspend () -> Boolean,
+        ): Boolean =
+            try {
                 val changed = action()
                 // Only what actually happened. `(tried: …)` is read as a list of attempts, and a rung
                 // that found nothing to do did not make one.
@@ -443,7 +456,6 @@ class LinuxUserspaceManager(
                 )
                 false
             }
-        }
 
         // Rung 0 — a crashed extraction: a whole rootfs with a staging tree left beside it.
         // isExtracted() is false only because of the leftover, and every rung below checks it, so
@@ -613,16 +625,18 @@ class LinuxUserspaceManager(
         val scratch = storage.sweepOrphanTempDirs()
         if (scratch > 0) {
             changed = true
-            warnings += if (scratch == 1) {
-                "cleared 1 leftover proot scratch directory from a launch that is over"
-            } else {
-                "cleared $scratch leftover proot scratch directories from launches that are over"
-            }
+            warnings +=
+                if (scratch == 1) {
+                    "cleared 1 leftover proot scratch directory from a launch that is over"
+                } else {
+                    "cleared $scratch leftover proot scratch directories from launches that are over"
+                }
             diagnostics.record(
                 UserspaceDiagnosticCategory.PROOT,
                 "cleared leftover proot scratch directories",
-                detail = "removed $scratch under ${storage.tmpDir.name}/, made by processes that " +
-                    "are gone",
+                detail =
+                    "removed $scratch under ${storage.tmpDir.name}/, made by processes that " +
+                        "are gone",
             )
         }
 
@@ -682,11 +696,12 @@ class LinuxUserspaceManager(
         failure: Throwable?,
     ): SetupReport? {
         val said = AptDamage.of(failure?.message)
-        val damage = when {
-            said == AptDamage.INDEX_AND_CACHE -> AptDamage.INDEX_AND_CACHE
-            said == AptDamage.INDEX || installer.aptIndexLooksDamaged() -> AptDamage.INDEX
-            else -> AptDamage.NONE
-        }
+        val damage =
+            when {
+                said == AptDamage.INDEX_AND_CACHE -> AptDamage.INDEX_AND_CACHE
+                said == AptDamage.INDEX || installer.aptIndexLooksDamaged() -> AptDamage.INDEX
+                else -> AptDamage.NONE
+            }
         if (damage == AptDamage.NONE) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.APT,
@@ -697,13 +712,14 @@ class LinuxUserspaceManager(
         }
         val freed = installer.clearAptState(damage)
         val mb = freed / (1024 * 1024)
-        warnings += if (damage == AptDamage.INDEX_AND_CACHE) {
-            "apt's package lists and the packages it had already downloaded were given up " +
-                "($mb MB) because the step that failed named them; the next update re-fetches both"
-        } else {
-            "apt's package lists were given up ($mb MB) because the step that failed named them, " +
-                "and the next update rebuilds them"
-        }
+        warnings +=
+            if (damage == AptDamage.INDEX_AND_CACHE) {
+                "apt's package lists and the packages it had already downloaded were given up " +
+                    "($mb MB) because the step that failed named them; the next update re-fetches both"
+            } else {
+                "apt's package lists were given up ($mb MB) because the step that failed named them, " +
+                    "and the next update rebuilds them"
+            }
         return setUpAgain(warnings)
     }
 
@@ -727,20 +743,21 @@ class LinuxUserspaceManager(
      */
     private suspend fun restorePackageDatabase(warnings: MutableList<String>): Boolean {
         val source = installer.restorePackageDatabase(onProgress = ::emitArchiveProgress) ?: return false
-        warnings += when (source) {
-            // dpkg's own previous generation: the same database one write ago, so every package the
-            // user installed is still recorded and nothing has to be reinstalled.
-            PackageDatabaseSource.PREVIOUS ->
-                "the package database could not be read and was restored from dpkg's own previous " +
-                    "copy; the unreadable file was kept as /var/lib/dpkg/status.broken"
-            // The archive's copy: honest about the one thing it costs, because the user is the only
-            // one who can put it back.
-            PackageDatabaseSource.ARCHIVE ->
-                "the package database could not be read and was rebuilt from the Ubuntu archive, so " +
-                    "packages installed on top of the base system are no longer tracked as " +
-                    "installed; their files are still on disk and reinstalling them with apt puts " +
-                    "the record back"
-        }
+        warnings +=
+            when (source) {
+                // dpkg's own previous generation: the same database one write ago, so every package the
+                // user installed is still recorded and nothing has to be reinstalled.
+                PackageDatabaseSource.PREVIOUS ->
+                    "the package database could not be read and was restored from dpkg's own previous " +
+                        "copy; the unreadable file was kept as /var/lib/dpkg/status.broken"
+                // The archive's copy: honest about the one thing it costs, because the user is the only
+                // one who can put it back.
+                PackageDatabaseSource.ARCHIVE ->
+                    "the package database could not be read and was rebuilt from the Ubuntu archive, so " +
+                        "packages installed on top of the base system are no longer tracked as " +
+                        "installed; their files are still on disk and reinstalling them with apt puts " +
+                        "the record back"
+            }
         return true
     }
 
@@ -773,14 +790,15 @@ class LinuxUserspaceManager(
     private suspend fun restoreDamaged(warnings: MutableList<String>): SetupReport? {
         val integrity = installer.inspectAgainstPinnedArchive(onProgress = ::emitArchiveProgress)
         if (integrity.whole) return null
-        val restored = installer.restoreFromPinnedTarball(
-            integrity.damaged,
-            onProgress = ::emitArchiveProgress,
-            // The members that would not go back are part of what this rung has to say: the report
-            // below names the ones that did, and a file the archive carries that the rootfs refused
-            // is the reason the next press of Repair will find it there again.
-            onWarning = { warnings += it },
-        )
+        val restored =
+            installer.restoreFromPinnedTarball(
+                integrity.damaged,
+                onProgress = ::emitArchiveProgress,
+                // The members that would not go back are part of what this rung has to say: the report
+                // below names the ones that did, and a file the archive carries that the rootfs refused
+                // is the reason the next press of Repair will find it there again.
+                onWarning = { warnings += it },
+            )
         if (restored.isEmpty()) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.ROOTFS,
@@ -807,10 +825,11 @@ class LinuxUserspaceManager(
      * worked.
      */
     private suspend fun overlayBase(warnings: MutableList<String>): SetupReport? {
-        val members = installer.overlayFromPinnedArchive(
-            onProgress = ::emitArchiveProgress,
-            onWarning = { warnings += it },
-        )
+        val members =
+            installer.overlayFromPinnedArchive(
+                onProgress = ::emitArchiveProgress,
+                onWarning = { warnings += it },
+            )
         if (members == 0) return null
         diagnostics.record(
             UserspaceDiagnosticCategory.ROOTFS,
@@ -995,7 +1014,10 @@ class LinuxUserspaceManager(
      * before its prose ([UserspaceFailure.fromThrowable]), so the installer's own typed refusals
      * arrive with the sentence they were given rather than as the downloader's HTTP line.
      */
-    private fun repairFailed(attempted: List<String>, failure: Throwable?): Throwable {
+    private fun repairFailed(
+        attempted: List<String>,
+        failure: Throwable?,
+    ): Throwable {
         failure?.let { UserspaceFailure.fromThrowable(it) }?.let { return it }
         return IOException(
             "Ubuntu could not be repaired: ${failure?.message ?: "every repair step failed"}" +
@@ -1026,34 +1048,35 @@ class LinuxUserspaceManager(
      * projects to an IO hiccup is exactly the failure the keep option exists to prevent. Without
      * it, the workspace and any earlier backup are deleted too.
      */
-    suspend fun uninstall(keepWorkspace: Boolean) = transition.withLock {
-        val current = _state.value
-        check(current !is LinuxUserspaceState.Installing && current !is LinuxUserspaceState.Stopping) {
-            "Uninstall is not possible while $current"
-        }
-        withContext(Dispatchers.IO) {
-            processes.closeAll()
-            if (keepWorkspace && workspace.exists() && workspace.fileCount() > 0) {
-                workspace.snapshotTo(backupFile)
+    suspend fun uninstall(keepWorkspace: Boolean) =
+        transition.withLock {
+            val current = _state.value
+            check(current !is LinuxUserspaceState.Installing && current !is LinuxUserspaceState.Stopping) {
+                "Uninstall is not possible while $current"
             }
-            if (!keepWorkspace) {
-                backupFile.delete()
+            withContext(Dispatchers.IO) {
+                processes.closeAll()
+                if (keepWorkspace && workspace.exists() && workspace.fileCount() > 0) {
+                    workspace.snapshotTo(backupFile)
+                }
+                if (!keepWorkspace) {
+                    backupFile.delete()
+                }
+                installer.deleteRootfs()
+                // proot's temp dir holds its glue symlinks; NOFOLLOW so the sweep cannot chase one out.
+                deleteTreeNoFollow(runtime.tmpDir)
+                stateFile().delete()
+                // The distribution's mirror memo lives beside the rootfs, not inside it, so it
+                // survives deleteRootfs — but it describes an install that no longer exists, and a
+                // leftover here is why a "removed entirely" root still shows bytes in use.
+                distribution.clearLastGoodMirror()
+                // Belt under the not-while-Installing check: a lock left by any path is gone with
+                // everything else, so the next install starts from a clean slate.
+                storage.releaseInstallLock()
+                _lastHealth.value = null
+                _state.value = LinuxUserspaceState.NotInstalled
             }
-            installer.deleteRootfs()
-            // proot's temp dir holds its glue symlinks; NOFOLLOW so the sweep cannot chase one out.
-            deleteTreeNoFollow(runtime.tmpDir)
-            stateFile().delete()
-            // The distribution's mirror memo lives beside the rootfs, not inside it, so it
-            // survives deleteRootfs — but it describes an install that no longer exists, and a
-            // leftover here is why a "removed entirely" root still shows bytes in use.
-            distribution.clearLastGoodMirror()
-            // Belt under the not-while-Installing check: a lock left by any path is gone with
-            // everything else, so the next install starts from a clean slate.
-            storage.releaseInstallLock()
-            _lastHealth.value = null
-            _state.value = LinuxUserspaceState.NotInstalled
         }
-    }
 
     /**
      * Runs the health probe on demand and records it. A failing probe on a Stopped userspace moves
@@ -1064,34 +1087,36 @@ class LinuxUserspaceManager(
      * A probe that cannot run at all is not a verdict, and it is still recorded: the Stopped
      * userspace moves to NeedsRepair and the throwable is rethrown, exactly as [start] does it.
      */
-    suspend fun refreshHealth(): HealthReport = transition.withLock {
-        // Under the same mutex as every transition: a refresh racing a Start would otherwise
-        // record a verdict about a userspace whose state changed underneath it.
-        val health = try {
-            distribution.healthProbe()
-        } catch (c: CancellationException) {
-            // Same rule as [noteSessionEnded]'s probe: a refresh the caller walked away from says
-            // nothing about the userspace, so it moves nothing.
-            throw c
-        } catch (t: Throwable) {
-            // A probe that cannot even run — proot refused to spawn — is the same case [start]
-            // answers, and for the same reason: it is a userspace that is broken, not a refresh
-            // that was inconclusive. Left unrecorded it was the one *failure* this method could not
-            // express, so the settings screen's Verify button answered a userspace it cannot start
-            // by leaving the card exactly as it was, with Repair offered nowhere — the very state
-            // [start] refuses to leave a user in. Rethrown rather than swallowed, because the
-            // caller's error line is where the reason belongs; the state is already NeedsRepair.
-            if (_state.value is LinuxUserspaceState.Stopped) {
-                _state.value = LinuxUserspaceState.NeedsRepair(t.message ?: t.javaClass.simpleName)
+    suspend fun refreshHealth(): HealthReport =
+        transition.withLock {
+            // Under the same mutex as every transition: a refresh racing a Start would otherwise
+            // record a verdict about a userspace whose state changed underneath it.
+            val health =
+                try {
+                    distribution.healthProbe()
+                } catch (c: CancellationException) {
+                    // Same rule as [noteSessionEnded]'s probe: a refresh the caller walked away from says
+                    // nothing about the userspace, so it moves nothing.
+                    throw c
+                } catch (t: Throwable) {
+                    // A probe that cannot even run — proot refused to spawn — is the same case [start]
+                    // answers, and for the same reason: it is a userspace that is broken, not a refresh
+                    // that was inconclusive. Left unrecorded it was the one *failure* this method could not
+                    // express, so the settings screen's Verify button answered a userspace it cannot start
+                    // by leaving the card exactly as it was, with Repair offered nowhere — the very state
+                    // [start] refuses to leave a user in. Rethrown rather than swallowed, because the
+                    // caller's error line is where the reason belongs; the state is already NeedsRepair.
+                    if (_state.value is LinuxUserspaceState.Stopped) {
+                        _state.value = LinuxUserspaceState.NeedsRepair(t.message ?: t.javaClass.simpleName)
+                    }
+                    throw t
+                }
+            _lastHealth.value = health
+            if (!health.healthy && _state.value is LinuxUserspaceState.Stopped) {
+                _state.value = LinuxUserspaceState.NeedsRepair(health.describe())
             }
-            throw t
+            health
         }
-        _lastHealth.value = health
-        if (!health.healthy && _state.value is LinuxUserspaceState.Stopped) {
-            _state.value = LinuxUserspaceState.NeedsRepair(health.describe())
-        }
-        health
-    }
 
     /**
      * A local terminal session ended with the guest's own shell missing, which the manager has to be
@@ -1120,7 +1145,10 @@ class LinuxUserspaceManager(
      * pressed a button and the answer is already needed: a card that offers Repair for a healthy
      * userspace is its own kind of lie.
      */
-    suspend fun noteSessionEnded(sessionKey: String, end: SessionEnd) = transition.withLock {
+    suspend fun noteSessionEnded(
+        sessionKey: String,
+        end: SessionEnd,
+    ) = transition.withLock {
         if (!sessionEndBlamesUserspace(end)) return@withLock
         val current = _state.value
         if (current !is LinuxUserspaceState.Running && current !is LinuxUserspaceState.Starting) {
@@ -1142,23 +1170,24 @@ class LinuxUserspaceManager(
         // coroutine thread is the app's death, from a health check. A probe that cannot run is
         // therefore read as the disagreement it is: the ending stands, and the sentence is the
         // throwable's own, which is the same treatment [start] gives it.
-        val health = try {
-            distribution.healthProbe()
-        } catch (c: CancellationException) {
-            // The scope went away mid-probe (the screen closed, the ViewModel was cleared). That is
-            // not the environment disagreeing with anything, so it is not evidence — the throwable
-            // travels on and the ending is simply not acted on.
-            throw c
-        } catch (t: Throwable) {
-            val detail = t.message ?: t.javaClass.simpleName
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "a terminal session ended with exit 127 and the health check could not run",
-                detail = detail,
-            )
-            _state.value = LinuxUserspaceState.NeedsRepair(detail)
-            return@withLock
-        }
+        val health =
+            try {
+                distribution.healthProbe()
+            } catch (c: CancellationException) {
+                // The scope went away mid-probe (the screen closed, the ViewModel was cleared). That is
+                // not the environment disagreeing with anything, so it is not evidence — the throwable
+                // travels on and the ending is simply not acted on.
+                throw c
+            } catch (t: Throwable) {
+                val detail = t.message ?: t.javaClass.simpleName
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "a terminal session ended with exit 127 and the health check could not run",
+                    detail = detail,
+                )
+                _state.value = LinuxUserspaceState.NeedsRepair(detail)
+                return@withLock
+            }
         _lastHealth.value = health
         // `sound`, not `healthy`, and the difference is the whole point of this condition: the
         // userspace can be condemned only for something a Repair could have put right, and the one
@@ -1307,8 +1336,7 @@ class LinuxUserspaceManager(
      * are not work this run has to do, and [LinuxInstallProgress] renormalizes its ladder so the
      * percentage starts where the work does.
      */
-    private fun installPlan(): InstallPlan =
-        if (installer.isExtracted()) InstallPlan.SETUP_ONLY else InstallPlan.FULL
+    private fun installPlan(): InstallPlan = if (installer.isExtracted()) InstallPlan.SETUP_ONLY else InstallPlan.FULL
 
     /**
      * The second half of both [install] and [repair]: the setup pipeline for real, then the health
@@ -1343,27 +1371,29 @@ class LinuxUserspaceManager(
         var setupStep = SetupStep.REGISTER_USER
         var setupDetail: String? = null
         var setupWithin: Float? = null
-        val report = distribution.setup(
-            onStep = { step ->
-                setupStep = step
-                // Cleared, not carried: the previous step's line and its 90% both describe work
-                // that is over, and leaving either standing would attribute it to this step.
-                setupDetail = null
-                setupWithin = null
-                _state.value = LinuxUserspaceState.Installing(LinuxInstallStep.SettingUp(step), plan)
-            },
-            onProgress = { line ->
-                // Conflated by the StateFlow: a burst of apt lines collapses to the newest, which is
-                // exactly the line a watcher wants to see.
-                setupWithin = maxOf(setupWithin ?: 0f, aptProgressFraction(line) ?: 0f).takeIf { it > 0f }
-                setupDetail = progressDetail(line) ?: setupDetail
-                _state.value = LinuxUserspaceState.Installing(
-                    LinuxInstallStep.SettingUp(setupStep, setupDetail, setupWithin),
-                    plan,
-                )
-            },
-            extras = extras,
-        )
+        val report =
+            distribution.setup(
+                onStep = { step ->
+                    setupStep = step
+                    // Cleared, not carried: the previous step's line and its 90% both describe work
+                    // that is over, and leaving either standing would attribute it to this step.
+                    setupDetail = null
+                    setupWithin = null
+                    _state.value = LinuxUserspaceState.Installing(LinuxInstallStep.SettingUp(step), plan)
+                },
+                onProgress = { line ->
+                    // Conflated by the StateFlow: a burst of apt lines collapses to the newest, which is
+                    // exactly the line a watcher wants to see.
+                    setupWithin = maxOf(setupWithin ?: 0f, aptProgressFraction(line) ?: 0f).takeIf { it > 0f }
+                    setupDetail = progressDetail(line) ?: setupDetail
+                    _state.value =
+                        LinuxUserspaceState.Installing(
+                            LinuxInstallStep.SettingUp(setupStep, setupDetail, setupWithin),
+                            plan,
+                        )
+                },
+                extras = extras,
+            )
         storage.updateInstallLockPhase("health")
         _state.value = LinuxUserspaceState.Installing(LinuxInstallStep.VerifyingHealth, plan)
         val health = distribution.healthProbe()
@@ -1405,17 +1435,18 @@ class LinuxUserspaceManager(
         extras: List<OptionalPackage> = emptyList(),
     ): SetupReport {
         val healing = mutableListOf<String>()
-        val report = try {
-            setUpAndVerify(plan, healthFailure, extras)
-        } catch (unhealthy: UserspaceFailure.GuestUnhealthy) {
-            healing += "the health check failed, so the userspace was repaired in place rather than " +
-                "reporting the install as failed"
-            healInPlace(healing)
-            val health = distribution.healthProbe()
-            _lastHealth.value = health
-            if (!health.healthy) throw unhealthy
-            return SetupReport(healing)
-        }
+        val report =
+            try {
+                setUpAndVerify(plan, healthFailure, extras)
+            } catch (unhealthy: UserspaceFailure.GuestUnhealthy) {
+                healing += "the health check failed, so the userspace was repaired in place rather than " +
+                    "reporting the install as failed"
+                healInPlace(healing)
+                val health = distribution.healthProbe()
+                _lastHealth.value = health
+                if (!health.healthy) throw unhealthy
+                return SetupReport(healing)
+            }
         return SetupReport(report.warnings + healing)
     }
 
@@ -1453,8 +1484,10 @@ class LinuxUserspaceManager(
     }
 
     /** One remedy that did not finish, said in the same breath as the ones that did. */
-    private fun healWarning(what: String, t: Throwable): String =
-        "$what did not finish: ${t.message ?: t.javaClass.simpleName}"
+    private fun healWarning(
+        what: String,
+        t: Throwable,
+    ): String = "$what did not finish: ${t.message ?: t.javaClass.simpleName}"
 }
 
 /**
@@ -1483,10 +1516,11 @@ class LinuxUserspaceManager(
  * MainViewModel decides whether a session ending is worth reporting, and the manager decides what to
  * do about it, and a rule that lived in one of them would be re-derived — or drift — in the other.
  */
-internal fun sessionEndBlamesUserspace(end: SessionEnd): Boolean = when (end) {
-    is SessionEnd.ShellEnded -> end.signal == null && end.status == GUEST_SHELL_MISSING
-    else -> false
-}
+internal fun sessionEndBlamesUserspace(end: SessionEnd): Boolean =
+    when (end) {
+        is SessionEnd.ShellEnded -> end.signal == null && end.status == GUEST_SHELL_MISSING
+        else -> false
+    }
 
 /**
  * Exit 127, the status of a child whose program could not be executed.
@@ -1524,23 +1558,33 @@ sealed interface LinuxUserspaceState {
     data object Starting : LinuxUserspaceState
 
     /** Held open; sessions may exist, and closing them does not end this state. */
-    data class Running(val sinceMs: Long) : LinuxUserspaceState
+    data class Running(
+        val sinceMs: Long,
+    ) : LinuxUserspaceState
 
     /** Tearing down every session before returning to Stopped. */
     data object Stopping : LinuxUserspaceState
 
     /** Installed but not working; [detail] names the failure. Repair is the way out. */
-    data class NeedsRepair(val detail: String) : LinuxUserspaceState
+    data class NeedsRepair(
+        val detail: String,
+    ) : LinuxUserspaceState
 }
 
 /** The phases of [LinuxUserspaceState.Installing], mapped from the installer's and setup's own progress. */
 sealed interface LinuxInstallStep {
-    data class Downloading(val received: Long, val total: Long) : LinuxInstallStep
+    data class Downloading(
+        val received: Long,
+        val total: Long,
+    ) : LinuxInstallStep
 
     data object Verifying : LinuxInstallStep
 
     /** [fraction] of the tarball read, 0 to 1, when the file would report its length. */
-    data class Extracting(val entries: Int, val fraction: Float? = null) : LinuxInstallStep
+    data class Extracting(
+        val entries: Int,
+        val fraction: Float? = null,
+    ) : LinuxInstallStep
 
     /**
      * A setup step is running. [detail], when present, is the newest output line of the command

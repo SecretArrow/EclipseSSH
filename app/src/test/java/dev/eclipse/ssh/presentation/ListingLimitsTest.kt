@@ -12,8 +12,10 @@ import org.junit.Test
  * see: the rows a user can act on have to be the rows that are drawn.
  */
 class ListingLimitsTest {
-
-    private fun item(name: String, status: TransferStatus) = TransferItem(
+    private fun item(
+        name: String,
+        status: TransferStatus,
+    ) = TransferItem(
         id = name,
         name = name,
         direction = TransferDirection.DOWNLOAD,
@@ -42,8 +44,9 @@ class ListingLimitsTest {
         // Exactly the shape a large directory sync leaves behind: the DAO orders by status name, so
         // every COMPLETE row sorts ahead of the RUNNING one. Cutting without sorting first would
         // drop the only row the user is watching, and the only one with a Pause button.
-        val queue = List(MAX_LISTED_ENTRIES + 100) { item("done$it", TransferStatus.COMPLETE) } +
-            item("in-flight", TransferStatus.RUNNING)
+        val queue =
+            List(MAX_LISTED_ENTRIES + 100) { item("done$it", TransferStatus.COMPLETE) } +
+                item("in-flight", TransferStatus.RUNNING)
 
         val visible = transfersForDisplay(queue)
 
@@ -54,13 +57,14 @@ class ListingLimitsTest {
 
     @Test
     fun `every unfinished status outranks completed ones`() {
-        val queue = listOf(
-            item("done", TransferStatus.COMPLETE),
-            item("queued", TransferStatus.QUEUED),
-            item("failed", TransferStatus.FAILED),
-            item("paused", TransferStatus.PAUSED),
-            item("running", TransferStatus.RUNNING),
-        )
+        val queue =
+            listOf(
+                item("done", TransferStatus.COMPLETE),
+                item("queued", TransferStatus.QUEUED),
+                item("failed", TransferStatus.FAILED),
+                item("paused", TransferStatus.PAUSED),
+                item("running", TransferStatus.RUNNING),
+            )
 
         assertThat(transfersForDisplay(queue).map { it.name })
             .isEqualTo(listOf("queued", "failed", "paused", "running", "done"))
@@ -70,12 +74,13 @@ class ListingLimitsTest {
     fun `order within a group is the order it arrived in`() {
         // The DAO sorts by name inside each status, and that ordering has to survive: a stable sort
         // is the whole reason this is sortedBy and not a partition rebuilt in some other order.
-        val queue = listOf(
-            item("a-done", TransferStatus.COMPLETE),
-            item("b-queued", TransferStatus.QUEUED),
-            item("c-done", TransferStatus.COMPLETE),
-            item("d-queued", TransferStatus.QUEUED),
-        )
+        val queue =
+            listOf(
+                item("a-done", TransferStatus.COMPLETE),
+                item("b-queued", TransferStatus.QUEUED),
+                item("c-done", TransferStatus.COMPLETE),
+                item("d-queued", TransferStatus.QUEUED),
+            )
 
         assertThat(transfersForDisplay(queue).map { it.name })
             .isEqualTo(listOf("b-queued", "d-queued", "a-done", "c-done"))

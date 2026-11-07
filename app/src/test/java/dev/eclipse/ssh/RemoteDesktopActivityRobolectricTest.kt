@@ -33,15 +33,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35])
 class RemoteDesktopActivityRobolectricTest {
-
     /** No session in this JVM: the viewer's own no-transport path, reported not thrown. */
     private val noSession: () -> ClientSession? = { null }
 
-    private fun request() = RemoteDesktopRequest.Vnc(
-        hostName = "desktop.example.test",
-        target = RemoteDesktopTarget(port = 5900),
-        sessionProvider = noSession,
-    )
+    private fun request() =
+        RemoteDesktopRequest.Vnc(
+            hostName = "desktop.example.test",
+            target = RemoteDesktopTarget(port = 5900),
+            sessionProvider = noSession,
+        )
 
     private fun launchIntent(token: String?): Intent {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -72,15 +72,16 @@ class RemoteDesktopActivityRobolectricTest {
      */
     @Test
     fun anRdpRequestOpensTheSameWindowAndReportsNoTransport() {
-        val token = RemoteDesktopRequests.put(
-            RemoteDesktopRequest.Rdp(
-                hostName = "desktop.example.test",
-                target = RemoteDesktopTarget(port = 3389),
-                sessionProvider = noSession,
-                credentials = null,
-                credentialsComplete = false,
-            ),
-        )
+        val token =
+            RemoteDesktopRequests.put(
+                RemoteDesktopRequest.Rdp(
+                    hostName = "desktop.example.test",
+                    target = RemoteDesktopTarget(port = 3389),
+                    sessionProvider = noSession,
+                    credentials = null,
+                    credentialsComplete = false,
+                ),
+            )
         ActivityScenario.launch<RemoteDesktopActivity>(launchIntent(token)).use { scenario ->
             assertThat(scenario.state).isEqualTo(Lifecycle.State.RESUMED)
         }

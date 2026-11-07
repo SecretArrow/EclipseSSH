@@ -20,7 +20,6 @@ import dev.eclipse.ssh.data.model.ForwardType
 import dev.eclipse.ssh.ui.forward.ForwardFormActivity
 import dev.eclipse.ssh.ui.forward.ForwardRequest
 import dev.eclipse.ssh.ui.forward.ForwardRequests
-import java.time.Duration
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -29,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The Add-port-forward form, launched for real in its own window.
@@ -52,7 +52,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ForwardFormActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -69,7 +68,10 @@ class ForwardFormActivityRobolectricTest {
         ForwardRequests.takeConfirmed()
     }
 
-    private fun launchIntent(hostId: String?, hostName: String?): Intent {
+    private fun launchIntent(
+        hostId: String?,
+        hostName: String?,
+    ): Intent {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return Intent(context, ForwardFormActivity::class.java).also { intent ->
             hostId?.let { intent.putExtra(ForwardFormActivity.EXTRA_HOST_ID, it) }
@@ -85,7 +87,11 @@ class ForwardFormActivityRobolectricTest {
      * while that read is still in flight, so asserting after a fixed number of frames would be a race
      * even when the frames are pumped.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -96,7 +102,10 @@ class ForwardFormActivityRobolectricTest {
     }
 
     /** Waits for a string to be in the tree at all, visible or not. */
-    private fun awaitText(text: String, describe: () -> String) = pumpUntil(describe = describe) {
+    private fun awaitText(
+        text: String,
+        describe: () -> String,
+    ) = pumpUntil(describe = describe) {
         compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
     }
 
@@ -113,7 +122,10 @@ class ForwardFormActivityRobolectricTest {
      * Each value is exact-matched (and case-sensitive), which is what makes the label safe to use in a
      * form whose own sentences talk about the same things in lower case.
      */
-    private fun typeInto(label: String, value: String) {
+    private fun typeInto(
+        label: String,
+        value: String,
+    ) {
         compose.onNodeWithText(label).performClick()
         compose.onNodeWithText(label).performTextInput(value)
         compose.mainClock.advanceTimeByFrame()
@@ -130,19 +142,20 @@ class ForwardFormActivityRobolectricTest {
      */
     @Test
     fun theFormOpensOnTheHostItWasLaunchedFor() {
-        ActivityScenario.launch<ForwardFormActivity>(
-            launchIntent(hostId = "host-7", hostName = "bastion.example.test"),
-        ).use { scenario ->
-            awaitText("Through bastion.example.test", describe = { "the forward form never composed" })
+        ActivityScenario
+            .launch<ForwardFormActivity>(
+                launchIntent(hostId = "host-7", hostName = "bastion.example.test"),
+            ).use { scenario ->
+                awaitText("Through bastion.example.test", describe = { "the forward form never composed" })
 
-            assertThat(scenario.state).isEqualTo(Lifecycle.State.RESUMED)
-            compose.onNodeWithText("Add port forward").assertIsDisplayed()
-            compose.onNodeWithText("Through bastion.example.test").assertIsDisplayed()
-            // The window is whole rather than a panel: the form's own action is on it, and the button
-            // starts switched off because nothing has been typed into an empty form.
-            compose.onNodeWithContentDescription("Start forward").assertIsNotEnabled()
-            assertThat(ShadowDialog.getShownDialogs()).isEmpty()
-        }
+                assertThat(scenario.state).isEqualTo(Lifecycle.State.RESUMED)
+                compose.onNodeWithText("Add port forward").assertIsDisplayed()
+                compose.onNodeWithText("Through bastion.example.test").assertIsDisplayed()
+                // The window is whole rather than a panel: the form's own action is on it, and the button
+                // starts switched off because nothing has been typed into an empty form.
+                compose.onNodeWithContentDescription("Start forward").assertIsNotEnabled()
+                assertThat(ShadowDialog.getShownDialogs()).isEmpty()
+            }
     }
 
     /**
@@ -218,41 +231,42 @@ class ForwardFormActivityRobolectricTest {
      */
     @Test
     fun aCompleteDynamicForwardHandsBackItsRequestAndCloses() {
-        ActivityScenario.launch<ForwardFormActivity>(
-            launchIntent(hostId = "host-7", hostName = "bastion.example.test"),
-        ).use { scenario ->
-            awaitText("Through bastion.example.test", describe = { "the forward form never composed" })
+        ActivityScenario
+            .launch<ForwardFormActivity>(
+                launchIntent(hostId = "host-7", hostName = "bastion.example.test"),
+            ).use { scenario ->
+                awaitText("Through bastion.example.test", describe = { "the forward form never composed" })
 
-            compose.onNodeWithContentDescription("${ForwardType.DYNAMIC.label} forward").performClick()
-            awaitText("Creates a SOCKS5 proxy on the local port for on-demand tunnelling.", describe = { "the form never switched to a dynamic forward" })
-            typeInto("Local port", "1080")
-            compose.onNodeWithContentDescription("Start forward").performClick()
+                compose.onNodeWithContentDescription("${ForwardType.DYNAMIC.label} forward").performClick()
+                awaitText("Creates a SOCKS5 proxy on the local port for on-demand tunnelling.", describe = { "the form never switched to a dynamic forward" })
+                typeInto("Local port", "1080")
+                compose.onNodeWithContentDescription("Start forward").performClick()
 
-            assertThat(ForwardRequests.takeConfirmed()).isEqualTo(
-                ForwardRequest(
-                    hostId = "host-7",
-                    type = ForwardType.DYNAMIC,
-                    localPort = 1080,
-                    remoteHost = null,
-                    remotePort = null,
-                ),
-            )
-            // The form closes itself once the answer is in the slot, so the workspace underneath is
-            // what the user is left looking at rather than a window they also have to dismiss.
-            //
-            // Asserted on the activity rather than on `scenario.state`, which is the same fact one
-            // looper-hop later: `finish()` is called in the click handler and sets `isFinishing`
-            // there and then, while the state the scenario reports only falls once the destroy it
-            // posts has been run. Waiting for that would be a test of Robolectric's looper - it does
-            // not run on its own here, and the failure it produces is the confusing one, "expected
-            // not to be: RESUMED" about a window that has already been asked to close.
-            var closing = false
-            pumpUntil(describe = { "the form never closed after handing its request back" }) {
-                runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }
-                closing
+                assertThat(ForwardRequests.takeConfirmed()).isEqualTo(
+                    ForwardRequest(
+                        hostId = "host-7",
+                        type = ForwardType.DYNAMIC,
+                        localPort = 1080,
+                        remoteHost = null,
+                        remotePort = null,
+                    ),
+                )
+                // The form closes itself once the answer is in the slot, so the workspace underneath is
+                // what the user is left looking at rather than a window they also have to dismiss.
+                //
+                // Asserted on the activity rather than on `scenario.state`, which is the same fact one
+                // looper-hop later: `finish()` is called in the click handler and sets `isFinishing`
+                // there and then, while the state the scenario reports only falls once the destroy it
+                // posts has been run. Waiting for that would be a test of Robolectric's looper - it does
+                // not run on its own here, and the failure it produces is the confusing one, "expected
+                // not to be: RESUMED" about a window that has already been asked to close.
+                var closing = false
+                pumpUntil(describe = { "the form never closed after handing its request back" }) {
+                    runCatching { scenario.onActivity { activity -> closing = activity.isFinishing } }
+                    closing
+                }
+                assertThat(closing).isTrue()
             }
-            assertThat(closing).isTrue()
-        }
     }
 
     /**
@@ -264,25 +278,26 @@ class ForwardFormActivityRobolectricTest {
      */
     @Test
     fun aCompleteLocalForwardCarriesItsDestination() {
-        ActivityScenario.launch<ForwardFormActivity>(
-            launchIntent(hostId = "host-7", hostName = "bastion.example.test"),
-        ).use { _ ->
-            awaitText("Local port", describe = { "the local port field never composed" })
+        ActivityScenario
+            .launch<ForwardFormActivity>(
+                launchIntent(hostId = "host-7", hostName = "bastion.example.test"),
+            ).use { _ ->
+                awaitText("Local port", describe = { "the local port field never composed" })
 
-            typeInto("Local port", "8080")
-            typeInto("Remote host", "db.internal")
-            typeInto("Remote port", "5432")
-            compose.onNodeWithContentDescription("Start forward").performClick()
+                typeInto("Local port", "8080")
+                typeInto("Remote host", "db.internal")
+                typeInto("Remote port", "5432")
+                compose.onNodeWithContentDescription("Start forward").performClick()
 
-            assertThat(ForwardRequests.takeConfirmed()).isEqualTo(
-                ForwardRequest(
-                    hostId = "host-7",
-                    type = ForwardType.LOCAL,
-                    localPort = 8080,
-                    remoteHost = "db.internal",
-                    remotePort = 5432,
-                ),
-            )
-        }
+                assertThat(ForwardRequests.takeConfirmed()).isEqualTo(
+                    ForwardRequest(
+                        hostId = "host-7",
+                        type = ForwardType.LOCAL,
+                        localPort = 8080,
+                        remoteHost = "db.internal",
+                        remotePort = 5432,
+                    ),
+                )
+            }
     }
 }

@@ -56,6 +56,7 @@ class RuntimeStorageManager(
          */
         val PROOT_TEMP_NAME = Regex("""[\w-]+-(\d+)-[A-Za-z0-9]{6}""")
     }
+
     /** The completed, in-place rootfs. */
     val rootfsDir: File get() = File(rootDir, "rootfs")
 
@@ -93,18 +94,19 @@ class RuntimeStorageManager(
      * write to is the failure proot reports as "Permission denied" long after this point, where
      * naming it is still actionable.
      */
-    fun ensureReady(): Result<Unit> = runCatching {
-        for (dir in listOf(rootDir, tmpDir, downloadsDir)) {
-            ensureDirectory(dir)
+    fun ensureReady(): Result<Unit> =
+        runCatching {
+            for (dir in listOf(rootDir, tmpDir, downloadsDir)) {
+                ensureDirectory(dir)
+            }
+            val probe = File(tmpDir, ".probe-${System.nanoTime()}")
+            try {
+                probe.writeText("probe")
+                if (probe.readText() != "probe") throw IOException("cannot read back a file written to $tmpDir")
+            } finally {
+                probe.delete()
+            }
         }
-        val probe = File(tmpDir, ".probe-${System.nanoTime()}")
-        try {
-            probe.writeText("probe")
-            if (probe.readText() != "probe") throw IOException("cannot read back a file written to $tmpDir")
-        } finally {
-            probe.delete()
-        }
-    }
 
     /**
      * Creates one runtime directory, or proves it already is one.
@@ -176,7 +178,8 @@ class RuntimeStorageManager(
     fun sweepOrphanPartFiles(): Int {
         var swept = 0
         for (dir in listOf(downloadsDir, rootDir)) {
-            dir.listFiles { file -> file.isFile && file.name.endsWith(".part") }
+            dir
+                .listFiles { file -> file.isFile && file.name.endsWith(".part") }
                 ?.forEach { if (it.delete()) swept++ }
         }
         return swept
@@ -224,8 +227,12 @@ class RuntimeStorageManager(
         if (entry.name.startsWith(PROBE_PREFIX)) {
             return System.currentTimeMillis() - entry.lastModified() > PROBE_LITTER_AGE_MS
         }
-        val pid = PROOT_TEMP_NAME.matchEntire(entry.name)
-            ?.groupValues?.get(1)?.toIntOrNull() ?: return false
+        val pid =
+            PROOT_TEMP_NAME
+                .matchEntire(entry.name)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull() ?: return false
         return !pidIsAlive(pid)
     }
 
@@ -245,7 +252,10 @@ class RuntimeStorageManager(
         val pid: Int,
         val bootId: String,
     ) {
-        fun isStale(currentBootId: String?, processAlive: (Int) -> Boolean): Boolean {
+        fun isStale(
+            currentBootId: String?,
+            processAlive: (Int) -> Boolean,
+        ): Boolean {
             if (bootId.isNotEmpty() && currentBootId != null && currentBootId != bootId) return true
             return !processAlive(pid)
         }
@@ -257,7 +267,10 @@ class RuntimeStorageManager(
      * while the UI retries) must run exactly one install. A lock left by a crashed holder is
      * stale by definition and is taken over.
      */
-    fun acquireInstallLock(distroId: String, phase: String): InstallLock {
+    fun acquireInstallLock(
+        distroId: String,
+        phase: String,
+    ): InstallLock {
         rootDir.mkdirs()
         val existing = readInstallLock()
         if (existing != null && !existing.isStale(currentBootId(), ::pidIsAlive)) {
@@ -305,8 +318,7 @@ class RuntimeStorageManager(
     }
 
     /** The boot id of the running system, or null off-device / without `/proc`. */
-    internal fun currentBootId(): String? =
-        runCatching { File("/proc/sys/kernel/random/boot_id").readText().trim() }.getOrNull()
+    internal fun currentBootId(): String? = runCatching { File("/proc/sys/kernel/random/boot_id").readText().trim() }.getOrNull()
 }
 
 /**
@@ -317,5 +329,4 @@ class RuntimeStorageManager(
  * directories. On a system with no `/proc` the answer is "not running", which is the direction that
  * clears litter rather than the one that keeps it.
  */
-private fun pidIsAlive(pid: Int): Boolean =
-    pid > 0 && runCatching { File("/proc/$pid").exists() }.getOrDefault(false)
+private fun pidIsAlive(pid: Int): Boolean = pid > 0 && runCatching { File("/proc/$pid").exists() }.getOrDefault(false)

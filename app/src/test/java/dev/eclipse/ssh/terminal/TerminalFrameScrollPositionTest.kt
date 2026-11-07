@@ -18,7 +18,6 @@ import org.junit.Test
  * that runs on past the top of the scrollback doing nothing.
  */
 class TerminalFrameScrollPositionTest {
-
     @Test
     fun `a frame that has not been scrolled says so and knows its ceiling`() {
         val buffer = session()
@@ -120,11 +119,19 @@ class TerminalFrameScrollPositionTest {
         assertThat(frame.scrollCeiling).isEqualTo(buffer.maxScrollOffset(WINDOW_ROWS))
     }
 
-    private fun session(columns: Int = 80, rows: Int = 60, scrollback: Int = 500): AnsiTerminalBuffer =
-        AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = scrollback)
+    private fun session(
+        columns: Int = 80,
+        rows: Int = 60,
+        scrollback: Int = 500,
+    ): AnsiTerminalBuffer = AnsiTerminalBuffer(columns = columns, rows = rows, scrollbackLimit = scrollback)
 
     /** Long enough to wrap at both the pty's 80 columns and the window's 44, as the reader's lines are. */
-    private fun feedLines(buffer: AnsiTerminalBuffer, from: Int = 0, lines: Int = 40, tail: String = "$ ") {
+    private fun feedLines(
+        buffer: AnsiTerminalBuffer,
+        from: Int = 0,
+        lines: Int = 40,
+        tail: String = "$ ",
+    ) {
         for (index in from until from + lines) {
             buffer.feed("output line $index with some words on it here now plus a tail\r\n")
         }

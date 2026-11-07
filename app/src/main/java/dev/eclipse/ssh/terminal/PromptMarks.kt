@@ -55,11 +55,12 @@ data class PromptMark(
      * facts: `A` then `B` on one line is a prompt *and* an input line, and a shell that re-sends `B`
      * after redrawing its prompt has moved the input start rather than described a second one.
      */
-    fun and(later: PromptMark): PromptMark = PromptMark(
-        kinds = kinds + later.kinds,
-        inputColumn = later.inputColumn ?: inputColumn,
-        exitCode = later.exitCode ?: exitCode,
-    )
+    fun and(later: PromptMark): PromptMark =
+        PromptMark(
+            kinds = kinds + later.kinds,
+            inputColumn = later.inputColumn ?: inputColumn,
+            exitCode = later.exitCode ?: exitCode,
+        )
 }
 
 /**
@@ -70,5 +71,7 @@ data class PromptMark(
  * lines absolutely, so the window's offset comes off here rather than at every call site. A line the
  * frame does not hold is null and not a throw.
  */
-fun promptMarkAt(frame: TerminalFrame, line: Int): PromptMark? =
-    frame.promptMarks.getOrNull(line - frame.firstLine)
+fun promptMarkAt(
+    frame: TerminalFrame,
+    line: Int,
+): PromptMark? = frame.promptMarks.getOrNull(line - frame.firstLine)

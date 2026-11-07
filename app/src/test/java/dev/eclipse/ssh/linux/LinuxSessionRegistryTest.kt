@@ -21,7 +21,6 @@ import org.junit.Test
  * each ending's bookkeeping synchronous for the assertions that follow it.
  */
 class LinuxSessionRegistryTest {
-
     private fun newRegistry(): LinuxSessionRegistry = LinuxSessionRegistry(CoroutineScope(Dispatchers.Unconfined))
 
     @Test
@@ -203,7 +202,10 @@ private class FakeTerminalChannel : TerminalChannel {
 
     override fun write(value: String) = Unit
 
-    override fun resize(columns: Int, rows: Int) = Unit
+    override fun resize(
+        columns: Int,
+        rows: Int,
+    ) = Unit
 
     override fun markDeliberate() = Unit
 

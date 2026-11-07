@@ -16,7 +16,6 @@ import org.junit.Test
  * intent", which is what each null-returning rule here prevents.
  */
 class IndentEngineTest {
-
     private val config = IndentConfig.DEFAULT
 
     @Test

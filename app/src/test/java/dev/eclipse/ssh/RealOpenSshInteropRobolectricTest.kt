@@ -18,12 +18,6 @@ import dev.eclipse.ssh.terminal.TerminalKey
 import dev.eclipse.ssh.terminal.TerminalLayout
 import dev.eclipse.ssh.terminal.TerminalVisualRow
 import dev.eclipse.ssh.terminal.terminalLayout
-import java.io.File
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.time.Duration
-import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -32,6 +26,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.File
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.time.Duration
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The app against a real OpenSSH server, held open long enough for the keep-alive to matter.
@@ -62,7 +62,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class RealOpenSshInteropRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -92,12 +91,19 @@ class RealOpenSshInteropRobolectricTest {
      */
     @After
     fun closeEverySession() {
-        if (viewModel().uiState.value.tabs.isNotEmpty()) {
+        if (viewModel()
+                .uiState.value.tabs
+                .isNotEmpty()
+        ) {
             compose.runOnUiThread { viewModel().disconnectAll() }
             pumpUntil(
                 timeoutMs = 10_000,
                 describe = { "a session was still open after disconnectAll" },
-            ) { viewModel().uiState.value.tabs.isEmpty() }
+            ) {
+                viewModel()
+                    .uiState.value.tabs
+                    .isEmpty()
+            }
         }
         // The tab going away is the app's decision; the socket closing is MINA finishing it. Give the
         // close futures a moment on the looper so the next test's log offset lands after the server has
@@ -137,9 +143,15 @@ class RealOpenSshInteropRobolectricTest {
      */
     private fun leakedSandboxSockets(): Map<Int, Int> {
         val sandbox = sandbox() ?: return emptyMap()
-        val ports = sequenceOf("port", "port-silent", "port-no-shell")
-            .mapNotNull { name -> File(sandbox, name).takeIf(File::isFile)?.readText()?.trim()?.toIntOrNull() }
-            .toSet()
+        val ports =
+            sequenceOf("port", "port-silent", "port-no-shell")
+                .mapNotNull { name ->
+                    File(sandbox, name)
+                        .takeIf(File::isFile)
+                        ?.readText()
+                        ?.trim()
+                        ?.toIntOrNull()
+                }.toSet()
         if (ports.isEmpty()) return emptyMap()
         return runCatching {
             val counts = mutableMapOf<Int, Int>()
@@ -173,21 +185,25 @@ class RealOpenSshInteropRobolectricTest {
         assumeTrue("local sshd sandbox is not listening on $port", listening(port))
 
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "real-openssh",
-            name = "real-openssh",
-            host = LOOPBACK,
-            username = File(sandbox, "user").readText().trim(),
-            port = port,
-            authMethod = AuthMethod.SSH_KEY,
-            connectTimeoutSeconds = 60,
-            keepAliveSeconds = KEEP_ALIVE_SECONDS,
-        )
+        val profile =
+            HostProfile(
+                id = "real-openssh",
+                name = "real-openssh",
+                host = LOOPBACK,
+                username = File(sandbox, "user").readText().trim(),
+                port = port,
+                authMethod = AuthMethod.SSH_KEY,
+                connectTimeoutSeconds = 60,
+                keepAliveSeconds = KEEP_ALIVE_SECONDS,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         val key = File(sandbox, "client_ed25519").readBytes()
         compose.runOnUiThread { viewModel.connect(saved, keyBytes = key) }
 
@@ -281,22 +297,26 @@ class RealOpenSshInteropRobolectricTest {
         assumeTrue("local sshd sandbox is not listening on $port", listening(port))
 
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "real-openssh-server-keepalive",
-            name = "real-openssh-server-keepalive",
-            host = LOOPBACK,
-            username = File(sandbox, "user").readText().trim(),
-            port = port,
-            authMethod = AuthMethod.SSH_KEY,
-            connectTimeoutSeconds = 60,
-            keepAliveSeconds = SILENT_KEEP_ALIVE,
-            autoLoginSftp = false,
-        )
+        val profile =
+            HostProfile(
+                id = "real-openssh-server-keepalive",
+                name = "real-openssh-server-keepalive",
+                host = LOOPBACK,
+                username = File(sandbox, "user").readText().trim(),
+                port = port,
+                authMethod = AuthMethod.SSH_KEY,
+                connectTimeoutSeconds = 60,
+                keepAliveSeconds = SILENT_KEEP_ALIVE,
+                autoLoginSftp = false,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         val key = File(sandbox, "client_ed25519").readBytes()
         compose.runOnUiThread { viewModel.connect(saved, keyBytes = key) }
         pumpUntil(describe = { "the session never connected. " + diagnose(saved.id) }) {
@@ -379,24 +399,28 @@ class RealOpenSshInteropRobolectricTest {
         val logOffset = if (log.isFile) log.length() else 0L
 
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "real-openssh-silent-server",
-            name = "real-openssh-silent-server",
-            host = LOOPBACK,
-            username = File(sandbox, "user").readText().trim(),
-            port = port,
-            authMethod = AuthMethod.SSH_KEY,
-            connectTimeoutSeconds = 60,
-            keepAliveSeconds = KEEP_ALIVE_SECONDS,
-            // Off so the link is genuinely idle: an SFTP session opened at login is a second channel
-            // whose own traffic would reset the idle timer this test is measuring.
-            autoLoginSftp = false,
-        )
+        val profile =
+            HostProfile(
+                id = "real-openssh-silent-server",
+                name = "real-openssh-silent-server",
+                host = LOOPBACK,
+                username = File(sandbox, "user").readText().trim(),
+                port = port,
+                authMethod = AuthMethod.SSH_KEY,
+                connectTimeoutSeconds = 60,
+                keepAliveSeconds = KEEP_ALIVE_SECONDS,
+                // Off so the link is genuinely idle: an SFTP session opened at login is a second channel
+                // whose own traffic would reset the idle timer this test is measuring.
+                autoLoginSftp = false,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         val key = File(sandbox, "client_ed25519").readBytes()
         compose.runOnUiThread { viewModel.connect(saved, keyBytes = key) }
         pumpUntil(describe = { "the session never connected. " + diagnose(saved.id) }) {
@@ -777,25 +801,29 @@ class RealOpenSshInteropRobolectricTest {
         val logOffset = if (log.isFile) log.length() else 0L
 
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "real-openssh-no-shell",
-            name = "real-openssh-no-shell",
-            host = LOOPBACK,
-            username = File(sandbox, "user").readText().trim(),
-            port = port,
-            authMethod = AuthMethod.SSH_KEY,
-            connectTimeoutSeconds = 60,
-            // Left on deliberately. A host with the ladder switched off would pass this test by having
-            // no ladder to mislabel; what has to be true is that a connect-time failure is not answered
-            // with the word for an outage even when the user has asked for outages to be answered.
-            autoReconnect = true,
-            autoLoginSftp = false,
-        )
+        val profile =
+            HostProfile(
+                id = "real-openssh-no-shell",
+                name = "real-openssh-no-shell",
+                host = LOOPBACK,
+                username = File(sandbox, "user").readText().trim(),
+                port = port,
+                authMethod = AuthMethod.SSH_KEY,
+                connectTimeoutSeconds = 60,
+                // Left on deliberately. A host with the ladder switched off would pass this test by having
+                // no ladder to mislabel; what has to be true is that a connect-time failure is not answered
+                // with the word for an outage even when the user has asked for outages to be answered.
+                autoReconnect = true,
+                autoLoginSftp = false,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         val key = File(sandbox, "client_ed25519").readBytes()
         compose.runOnUiThread { viewModel.connect(saved, keyBytes = key) }
 
@@ -842,7 +870,8 @@ class RealOpenSshInteropRobolectricTest {
         assertWithMessage("a first login that failed was reported as a reconnect: $evidence")
             .that(seen)
             .doesNotContain(SessionConnectionState.RECONNECTING)
-        assertWithMessage("the tab did not end at ERROR: $evidence").that(seen.last())
+        assertWithMessage("the tab did not end at ERROR: $evidence")
+            .that(seen.last())
             .isEqualTo(SessionConnectionState.ERROR)
 
         assertWithMessage("no retry said what had failed: $evidence")
@@ -866,12 +895,12 @@ class RealOpenSshInteropRobolectricTest {
             "the ladder did not spend its attempts on the server that kept letting it in " +
                 "(port $port; logins by port ${loginsByPort(log, logOffset)}): $evidence " +
                 diagnose(saved.id),
-        )
-            .that(logins(log, logOffset, port))
+        ).that(logins(log, logOffset, port))
             .isEqualTo(MainViewModel.MAX_CONNECT_ATTEMPTS)
 
         val reason = tabFor(saved.id)?.lastError
-        assertWithMessage("a failed login left the tab with nothing to show for it").that(reason)
+        assertWithMessage("a failed login left the tab with nothing to show for it")
+            .that(reason)
             .isNotEmpty()
         assertWithMessage("the failure called itself a reconnect: $reason")
             .that(reason?.lowercase())
@@ -898,12 +927,13 @@ class RealOpenSshInteropRobolectricTest {
         assertWithMessage(
             "typing at a failed tab dialled the server again " +
                 "(port $port; logins by port ${loginsByPort(log, logOffset)})",
-        )
-            .that(logins(log, logOffset, port))
+        ).that(logins(log, logOffset, port))
             .isEqualTo(MainViewModel.MAX_CONNECT_ATTEMPTS)
-        assertWithMessage("typing at a failed tab changed what it says").that(tabFor(saved.id)?.lastError)
+        assertWithMessage("typing at a failed tab changed what it says")
+            .that(tabFor(saved.id)?.lastError)
             .isEqualTo(reason)
-        assertWithMessage("typing at a failed tab moved it out of ERROR").that(tabFor(saved.id)?.state)
+        assertWithMessage("typing at a failed tab moved it out of ERROR")
+            .that(tabFor(saved.id)?.state)
             .isEqualTo(SessionConnectionState.ERROR)
     }
 
@@ -944,14 +974,15 @@ class RealOpenSshInteropRobolectricTest {
         assumeTrue("local sshd sandbox is not listening on $port", listening(port))
 
         val local = freePort()
-        val saved = logInWithAShell(
-            id = "real-openssh-forward",
-            sandbox = sandbox!!,
-            port = port,
-            // Straight back to the server that is carrying it, so the only thing that can answer on the
-            // local port is the far end of the tunnel.
-            savedForwards = "L:$local:$LOOPBACK:$port",
-        )
+        val saved =
+            logInWithAShell(
+                id = "real-openssh-forward",
+                sandbox = sandbox!!,
+                port = port,
+                // Straight back to the server that is carrying it, so the only thing that can answer on the
+                // local port is the far end of the tunnel.
+                savedForwards = "L:$local:$LOOPBACK:$port",
+            )
         pumpUntil(describe = { "the saved forward never came up. " + diagnose(saved.id) }) {
             tabFor(saved.id)?.forwardsOpen == 1
         }
@@ -965,15 +996,16 @@ class RealOpenSshInteropRobolectricTest {
         // the session's state - and any failure this test would rather report than hang on - travels on.
         val throughTheTunnel = AtomicReference<String?>(null)
         val tunnelFailure = AtomicReference<Throwable?>(null)
-        val reader = Thread {
-            runCatching {
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress(LOOPBACK, local), TUNNEL_TIMEOUT_MS.toInt())
-                    socket.soTimeout = TUNNEL_TIMEOUT_MS.toInt()
-                    throughTheTunnel.set(socket.getInputStream().bufferedReader().readLine())
-                }
-            }.onFailure(tunnelFailure::set)
-        }
+        val reader =
+            Thread {
+                runCatching {
+                    Socket().use { socket ->
+                        socket.connect(InetSocketAddress(LOOPBACK, local), TUNNEL_TIMEOUT_MS.toInt())
+                        socket.soTimeout = TUNNEL_TIMEOUT_MS.toInt()
+                        throughTheTunnel.set(socket.getInputStream().bufferedReader().readLine())
+                    }
+                }.onFailure(tunnelFailure::set)
+            }
         reader.start()
         pumpUntil(describe = { "nothing came back through the tunnel. " + diagnose(saved.id) }) {
             throughTheTunnel.get() != null || tunnelFailure.get() != null
@@ -1004,12 +1036,13 @@ class RealOpenSshInteropRobolectricTest {
 
         ServerSocket().use { taken ->
             taken.bind(InetSocketAddress(LOOPBACK, 0))
-            val saved = logInWithAShell(
-                id = "real-openssh-forward-busy",
-                sandbox = sandbox!!,
-                port = port,
-                savedForwards = "L:${taken.localPort}:$LOOPBACK:$port",
-            )
+            val saved =
+                logInWithAShell(
+                    id = "real-openssh-forward-busy",
+                    sandbox = sandbox!!,
+                    port = port,
+                    savedForwards = "L:${taken.localPort}:$LOOPBACK:$port",
+                )
             pumpUntil(describe = { "a forward that could not bind never said so. " + diagnose(saved.id) }) {
                 tabFor(saved.id)?.forwardError != null
             }
@@ -1022,7 +1055,8 @@ class RealOpenSshInteropRobolectricTest {
             assertWithMessage("a bind failure was written onto the session's own status line")
                 .that(tab?.lastError)
                 .isNull()
-            assertWithMessage("the report did not say which rule failed").that(tab?.forwardError)
+            assertWithMessage("the report did not say which rule failed")
+                .that(tab?.forwardError)
                 .contains("localhost:${taken.localPort}")
 
             // And the shell is not merely labelled connected.
@@ -1043,7 +1077,10 @@ class RealOpenSshInteropRobolectricTest {
      * matters is that no direction disagrees with the setting, and naming the offenders is what makes a
      * failure here diagnosable rather than a bare `false`.
      */
-    private fun aLoginNegotiatesCompression(id: String, compression: Boolean) {
+    private fun aLoginNegotiatesCompression(
+        id: String,
+        compression: Boolean,
+    ) {
         val sandbox = sandbox()
         assumeTrue("no local sshd sandbox: run tools/local-sshd.sh start", sandbox != null)
         val port = File(sandbox, "port").readText().trim().toInt()
@@ -1071,17 +1108,20 @@ class RealOpenSshInteropRobolectricTest {
         // port, which nothing else can be using while this session holds it open. The raw-lines
         // assertion this replaces failed exactly that way in CI: a foreign login with `none`
         // negotiated landed inside the window and read as "this session compressed nothing".
-        val kexLines = appendedLog(log, logOffset).lineSequence()
-            .filter { it.contains("kex:") && it.contains("compression: ") }
-            .toList()
+        val kexLines =
+            appendedLog(log, logOffset)
+                .lineSequence()
+                .filter { it.contains("kex:") && it.contains("compression: ") }
+                .toList()
         val windowLogins = loginsByPort(log, logOffset)
         val window = "logins in this window: $windowLogins; kex lines:\n${kexLines.joinToString("\n")}"
         val store = injected(viewModel(), "sessionStore", SshSessionStore::class.java)
         val sessionKey = tabFor(saved.id)?.id
         val session = sessionKey?.let(store::liveSession)
-        val localPort = runCatching {
-            (session?.ioSession?.localAddress as? InetSocketAddress)?.port
-        }.getOrNull()
+        val localPort =
+            runCatching {
+                (session?.ioSession?.localAddress as? InetSocketAddress)?.port
+            }.getOrNull()
         assertWithMessage("this session has no live socket the log could name. $window")
             .that(localPort)
             .isNotNull()
@@ -1145,24 +1185,28 @@ class RealOpenSshInteropRobolectricTest {
         val logOffset = if (log.isFile) log.length() else 0L
 
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = id,
-            name = id,
-            host = LOOPBACK,
-            username = File(sandbox, "user").readText().trim(),
-            port = port,
-            authMethod = AuthMethod.SSH_KEY,
-            connectTimeoutSeconds = 60,
-            keepAliveSeconds = keepAliveSeconds,
-            keepAliveEnabled = keepAliveEnabled,
-            compression = compression,
-            autoLoginSftp = false,
-        )
+        val profile =
+            HostProfile(
+                id = id,
+                name = id,
+                host = LOOPBACK,
+                username = File(sandbox, "user").readText().trim(),
+                port = port,
+                authMethod = AuthMethod.SSH_KEY,
+                connectTimeoutSeconds = 60,
+                keepAliveSeconds = keepAliveSeconds,
+                keepAliveEnabled = keepAliveEnabled,
+                compression = compression,
+                autoLoginSftp = false,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         val key = File(sandbox, "client_ed25519").readBytes()
         compose.runOnUiThread { viewModel.connect(saved, keyBytes = key) }
         pumpUntil(describe = { "the session never connected. " + diagnose(saved.id) }) {
@@ -1246,6 +1290,7 @@ class RealOpenSshInteropRobolectricTest {
      * inside a sampling gap presents as CONNECTED at every sample the test takes, but the server has
      * authenticated twice and says so.
      */
+
     /**
      * How many times the server on [port] accepted a key from this client since [offset].
      *
@@ -1265,7 +1310,11 @@ class RealOpenSshInteropRobolectricTest {
      * `Accepted publickey ... from <ip> port <src>` line. The client port is the join key, and it is
      * unique for as long as the connection exists - which is longer than the two lines are apart.
      */
-    private fun logins(log: File, offset: Long, port: Int): Int = loginsByPort(log, offset)[port] ?: 0
+    private fun logins(
+        log: File,
+        offset: Long,
+        port: Int,
+    ): Int = loginsByPort(log, offset)[port] ?: 0
 
     /**
      * The compression sshd negotiated per connection since [offset], keyed by the client port that
@@ -1278,7 +1327,10 @@ class RealOpenSshInteropRobolectricTest {
      * [loginsByPort] uses. The compression assertions read their connection's block, so a foreign
      * login landing inside the window changes nothing about this session's verdict.
      */
-    private fun compressionByClientPort(log: File, offset: Long): Map<Int, List<String>> {
+    private fun compressionByClientPort(
+        log: File,
+        offset: Long,
+    ): Map<Int, List<String>> {
         val negotiated = mutableMapOf<Int, MutableList<String>>()
         var clientPort = -1
         appendedLog(log, offset).lineSequence().forEach { line ->
@@ -1303,7 +1355,10 @@ class RealOpenSshInteropRobolectricTest {
      * see opened, so a port cannot be put to it. Counted rather than dropped, because a number nobody
      * can account for is exactly what sent the last such failure round CI twice.
      */
-    private fun loginsByPort(log: File, offset: Long): Map<Int, Int> {
+    private fun loginsByPort(
+        log: File,
+        offset: Long,
+    ): Map<Int, Int> {
         val arrivedOn = mutableMapOf<String, Int>()
         val counts = mutableMapOf<Int, Int>()
         appendedLog(log, offset).lineSequence().forEach { line ->
@@ -1327,13 +1382,19 @@ class RealOpenSshInteropRobolectricTest {
      * with every other test that has used this sandbox - a count from the whole file would include
      * their heartbeats and could only ever be too generous.
      */
-    private fun clientProbes(log: File, offset: Long): Int =
+    private fun clientProbes(
+        log: File,
+        offset: Long,
+    ): Int =
         appendedLog(log, offset).lineSequence().count {
             it.contains(KEEPALIVE_REQUEST_NAME) && it.contains("global_request")
         }
 
     /** Whatever the server has written since [offset], as text. Empty when there is no log at all. */
-    private fun appendedLog(log: File, offset: Long): String {
+    private fun appendedLog(
+        log: File,
+        offset: Long,
+    ): String {
         if (!log.isFile) return ""
         return log.inputStream().use { stream ->
             stream.skipNBytes(offset)
@@ -1341,30 +1402,42 @@ class RealOpenSshInteropRobolectricTest {
         }
     }
 
-    private fun viewModel(): MainViewModel =
-        ViewModelProvider(compose.activity)[MainViewModel::class.java]
+    private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     /** Reads one of the view model's injected singletons. See `ConnectionMatrixRobolectricTest`. */
-    private fun <T> injected(viewModel: MainViewModel, name: String, type: Class<T>): T =
+    private fun <T> injected(
+        viewModel: MainViewModel,
+        name: String,
+        type: Class<T>,
+    ): T =
         type.cast(
-            MainViewModel::class.java.getDeclaredField(name).apply { isAccessible = true }.get(viewModel),
+            MainViewModel::class.java
+                .getDeclaredField(name)
+                .apply { isAccessible = true }
+                .get(viewModel),
         )!!
 
-    private fun tabFor(hostId: String) = viewModel().uiState.value.tabs.firstOrNull { it.hostId == hostId }
+    private fun tabFor(hostId: String) =
+        viewModel()
+            .uiState.value.tabs
+            .firstOrNull { it.hostId == hostId }
 
     private fun drawn(hostId: String): String =
-        viewModel().frames.value[hostId]?.lines
+        viewModel()
+            .frames.value[hostId]
+            ?.lines
             ?.joinToString(separator = "\n") { line -> line.joinToString(separator = "") { it.value.toString() } }
             .orEmpty()
 
-    private fun diagnose(hostId: String): String = buildString {
-        val viewModel = viewModel()
-        append("tabs=").append(viewModel.uiState.value.tabs)
-        append(" status=").append(viewModel.statusMessage.value)
-        append(" challenge=").append(viewModel.uiState.value.hostKeyChallenge)
-        append("\ntrace:\n").append(trace(hostId))
-        append("\nframe:\n").append(drawn(hostId))
-    }
+    private fun diagnose(hostId: String): String =
+        buildString {
+            val viewModel = viewModel()
+            append("tabs=").append(viewModel.uiState.value.tabs)
+            append(" status=").append(viewModel.statusMessage.value)
+            append(" challenge=").append(viewModel.uiState.value.hostKeyChallenge)
+            append("\ntrace:\n").append(trace(hostId))
+            append("\nframe:\n").append(drawn(hostId))
+        }
 
     /**
      * This host's own lines from the app's diagnostic ring.
@@ -1378,7 +1451,8 @@ class RealOpenSshInteropRobolectricTest {
     private fun trace(hostId: String): String {
         val viewModel = viewModel()
         val label = viewModel.uiState.value.diagnosticsLabels[hostId] ?: return "(no session label yet)"
-        return viewModel.exportDiagnostics()
+        return viewModel
+            .exportDiagnostics()
             .lineSequence()
             .filter { line -> " $label." in line }
             .joinToString("\n")
@@ -1405,26 +1479,30 @@ class RealOpenSshInteropRobolectricTest {
         savedForwards: String = "",
     ): HostProfile {
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = id,
-            name = id,
-            host = LOOPBACK,
-            username = File(sandbox, "user").readText().trim(),
-            port = port,
-            authMethod = AuthMethod.SSH_KEY,
-            connectTimeoutSeconds = 60,
-            keepAliveSeconds = KEEP_ALIVE_SECONDS,
-            compression = compression,
-            savedForwards = savedForwards,
-            // Off, so the only channel on this session is the one the terminal is on: an SFTP channel
-            // opening underneath a full-screen program is a second thing to explain in a failure.
-            autoLoginSftp = false,
-        )
+        val profile =
+            HostProfile(
+                id = id,
+                name = id,
+                host = LOOPBACK,
+                username = File(sandbox, "user").readText().trim(),
+                port = port,
+                authMethod = AuthMethod.SSH_KEY,
+                connectTimeoutSeconds = 60,
+                keepAliveSeconds = KEEP_ALIVE_SECONDS,
+                compression = compression,
+                savedForwards = savedForwards,
+                // Off, so the only channel on this session is the one the terminal is on: an SFTP channel
+                // opening underneath a full-screen program is a second thing to explain in a failure.
+                autoLoginSftp = false,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         val key = File(sandbox, "client_ed25519").readBytes()
         compose.runOnUiThread { viewModel.connect(saved, keyBytes = key) }
         pumpUntil(describe = { "the session never connected. " + diagnose(saved.id) }) {
@@ -1484,10 +1562,11 @@ class RealOpenSshInteropRobolectricTest {
         ) {
             val frame = frame(hostId)
             val widest = visualRows(frame, frame.columns).maxOfOrNull { it.trimEnd().length } ?: 0
-            val complete = drawn(hostId).contains(paints) &&
-                frame.alternateScreen == alternateScreen &&
-                (frame.alternateScreen || frame.positionalScreen) &&
-                widest > NARROW_COLUMNS
+            val complete =
+                drawn(hostId).contains(paints) &&
+                    frame.alternateScreen == alternateScreen &&
+                    (frame.alternateScreen || frame.positionalScreen) &&
+                    widest > NARROW_COLUMNS
             if (complete) painted = frame
             complete
         }
@@ -1568,7 +1647,11 @@ class RealOpenSshInteropRobolectricTest {
      * what stops the rest from being vacuous - a layout that wrapped nothing at all would keep every token
      * whole and would also be the bug this feature exists to fix.
      */
-    private fun assertWholeOnOneVisualRow(hostId: String, token: String, whole: List<String> = listOf(token)) {
+    private fun assertWholeOnOneVisualRow(
+        hostId: String,
+        token: String,
+        whole: List<String> = listOf(token),
+    ) {
         val painted = frame(hostId)
         val printed = painted.lines.indices.firstOrNull { gridText(painted, it).contains(token) }
         checkNotNull(printed) { "the server's own copy of $token left the screen. " + diagnose(hostId) }
@@ -1580,7 +1663,12 @@ class RealOpenSshInteropRobolectricTest {
                     rows.joinToString(separator = "\n") { "|$it|" },
             ).that(rows.filter { it.contains(piece) }).isNotEmpty()
         }
-        assertThat(layout.rows.groupBy { it.line }.values.filter { it.size > 1 }).isNotEmpty()
+        assertThat(
+            layout.rows
+                .groupBy { it.line }
+                .values
+                .filter { it.size > 1 },
+        ).isNotEmpty()
     }
 
     /**
@@ -1593,26 +1681,34 @@ class RealOpenSshInteropRobolectricTest {
      * question here is whether the display *breaks* a token, not whether that token is on screen this
      * frame.
      */
-    private fun layoutOf(frame: TerminalFrame, width: Int): TerminalLayout =
-        terminalLayout(frame, width = width, maxRows = Int.MAX_VALUE)
+    private fun layoutOf(
+        frame: TerminalFrame,
+        width: Int,
+    ): TerminalLayout = terminalLayout(frame, width = width, maxRows = Int.MAX_VALUE)
 
     /** The frame as the view would lay it out at [width] columns, one string per drawn row. */
-    private fun visualRows(frame: TerminalFrame, width: Int): List<String> =
-        layoutOf(frame, width).rows.map { textOf(frame, it) }
+    private fun visualRows(
+        frame: TerminalFrame,
+        width: Int,
+    ): List<String> = layoutOf(frame, width).rows.map { textOf(frame, it) }
 
     /** The characters [row] paints, which is the substring of its line the view would draw. */
-    private fun textOf(frame: TerminalFrame, row: TerminalVisualRow): String {
+    private fun textOf(
+        frame: TerminalFrame,
+        row: TerminalVisualRow,
+    ): String {
         val line = frame.lines[row.line]
         val to = row.to.coerceAtMost(line.size)
         return if (row.from >= to) "" else line.subList(row.from, to).joinToString("") { it.value.toString() }
     }
 
     /** Line [index] of [frame] as one string, trailing blanks and all. */
-    private fun gridText(frame: TerminalFrame, index: Int): String =
-        frame.lines[index].joinToString(separator = "") { it.value.toString() }
+    private fun gridText(
+        frame: TerminalFrame,
+        index: Int,
+    ): String = frame.lines[index].joinToString(separator = "") { it.value.toString() }
 
-    private fun frame(hostId: String): TerminalFrame =
-        viewModel().frames.value[hostId] ?: TerminalFrame.EMPTY
+    private fun frame(hostId: String): TerminalFrame = viewModel().frames.value[hostId] ?: TerminalFrame.EMPTY
 
     /**
      * The absolute path of [program] on this machine, or null when the image does not have it.
@@ -1622,7 +1718,10 @@ class RealOpenSshInteropRobolectricTest {
      * which binary runs or make the test fail for a reason that has nothing to do with the app.
      */
     private fun onPath(program: String): String? =
-        System.getenv("PATH").orEmpty().split(File.pathSeparatorChar)
+        System
+            .getenv("PATH")
+            .orEmpty()
+            .split(File.pathSeparatorChar)
             .map { File(it, program) }
             .firstOrNull { it.canExecute() }
             ?.absolutePath
@@ -1637,7 +1736,11 @@ class RealOpenSshInteropRobolectricTest {
         }
     }
 
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         sampleStates()
         while (System.nanoTime() < deadline && !condition()) {
@@ -1892,9 +1995,10 @@ class RealOpenSshInteropRobolectricTest {
             return null
         }
 
-        fun listening(port: Int): Boolean = runCatching {
-            Socket().use { it.connect(InetSocketAddress(LOOPBACK, port), 2_000) }
-        }.isSuccess
+        fun listening(port: Int): Boolean =
+            runCatching {
+                Socket().use { it.connect(InetSocketAddress(LOOPBACK, port), 2_000) }
+            }.isSuccess
 
         /**
          * A loopback port nothing is listening on, for a saved forward to claim.
@@ -1904,9 +2008,10 @@ class RealOpenSshInteropRobolectricTest {
          * between releasing this one and the app binding it is a fraction of a second on a loopback
          * interface nothing else in this sandbox is competing for.
          */
-        fun freePort(): Int = ServerSocket().use { socket ->
-            socket.bind(InetSocketAddress(LOOPBACK, 0))
-            socket.localPort
-        }
+        fun freePort(): Int =
+            ServerSocket().use { socket ->
+                socket.bind(InetSocketAddress(LOOPBACK, 0))
+                socket.localPort
+            }
     }
 }

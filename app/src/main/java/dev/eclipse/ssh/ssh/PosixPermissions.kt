@@ -16,8 +16,7 @@ internal const val PERMISSION_BITS = 0x1FF
  * Padded, because a mode is spoken as three digits. Unpadded, `0o044` printed as "44", which reads as
  * a truncated number rather than a permission set, and 0 printed as "0".
  */
-internal fun formatPermissions(mode: Int): String =
-    (mode and PERMISSION_BITS).toString(8).padStart(3, '0')
+internal fun formatPermissions(mode: Int): String = (mode and PERMISSION_BITS).toString(8).padStart(3, '0')
 
 /**
  * Renders the permission bits of [mode] the way `ls -l` does, e.g. `rw-r--r--`.
@@ -26,14 +25,15 @@ internal fun formatPermissions(mode: Int): String =
  * written out beside them by hand. A hand-written label is how [PERMISSION_PRESETS] came to promise
  * one thing and do another for as long as it did — see the note there.
  */
-internal fun symbolicPermissions(mode: Int): String = buildString {
-    for (shift in 6 downTo 0 step 3) {
-        val triple = (mode shr shift) and 0b111
-        append(if (triple and 0b100 != 0) 'r' else '-')
-        append(if (triple and 0b010 != 0) 'w' else '-')
-        append(if (triple and 0b001 != 0) 'x' else '-')
+internal fun symbolicPermissions(mode: Int): String =
+    buildString {
+        for (shift in 6 downTo 0 step 3) {
+            val triple = (mode shr shift) and 0b111
+            append(if (triple and 0b100 != 0) 'r' else '-')
+            append(if (triple and 0b010 != 0) 'w' else '-')
+            append(if (triple and 0b001 != 0) 'x' else '-')
+        }
     }
-}
 
 /**
  * Returns [mode] if it is a permission bitfield, and throws if it is one of the three-digit decimal
@@ -61,7 +61,9 @@ internal fun requirePermissionBits(mode: Int): Int {
  * Only [mode] is given. Both names are computed from it, so the row a user taps and the value the
  * server receives cannot disagree.
  */
-internal class PermissionPreset(val mode: Int) {
+internal class PermissionPreset(
+    val mode: Int,
+) {
     val octal: String = formatPermissions(mode)
     val label: String = "$octal · ${symbolicPermissions(mode)}"
 }
@@ -83,10 +85,11 @@ internal class PermissionPreset(val mode: Int) {
  * `ls -l` prints them — and [PermissionPreset] derives the "644" in the label from the bits, so a
  * typo here shows up in the picker and in [PosixPermissionsTest] rather than on someone's server.
  */
-internal val PERMISSION_PRESETS: List<PermissionPreset> = listOf(
-    PermissionPreset(0b110_100_100), // 644
-    PermissionPreset(0b111_101_101), // 755
-    PermissionPreset(0b111_000_000), // 700
-    PermissionPreset(0b110_000_000), // 600
-    PermissionPreset(0b111_111_111), // 777
-)
+internal val PERMISSION_PRESETS: List<PermissionPreset> =
+    listOf(
+        PermissionPreset(0b110_100_100), // 644
+        PermissionPreset(0b111_101_101), // 755
+        PermissionPreset(0b111_000_000), // 700
+        PermissionPreset(0b110_000_000), // 600
+        PermissionPreset(0b111_111_111), // 777
+    )

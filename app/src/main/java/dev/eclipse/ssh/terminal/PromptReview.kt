@@ -26,7 +26,10 @@ package dev.eclipse.ssh.terminal
  * cursor is neither. [line] may be anywhere, including past the end of [marks], which is what makes
  * "is there anything above the top of this window" answerable without special-casing it.
  */
-fun previousPrompt(marks: List<PromptMark?>, line: Int): Int? {
+fun previousPrompt(
+    marks: List<PromptMark?>,
+    line: Int,
+): Int? {
     for (index in minOf(line, marks.size) - 1 downTo 0) {
         if (marks[index].isPrompt()) return index
     }
@@ -34,7 +37,10 @@ fun previousPrompt(marks: List<PromptMark?>, line: Int): Int? {
 }
 
 /** The nearest prompt strictly after [line], or null when the session has none below it. */
-fun nextPrompt(marks: List<PromptMark?>, line: Int): Int? {
+fun nextPrompt(
+    marks: List<PromptMark?>,
+    line: Int,
+): Int? {
     for (index in (line + 1).coerceAtLeast(0) until marks.size) {
         if (marks[index].isPrompt()) return index
     }
@@ -63,7 +69,10 @@ fun nextPrompt(marks: List<PromptMark?>, line: Int): Int? {
  * [line] past the end of [marks] is answered as the last line is, because the question a reader asks is
  * always about the text it is looking at, and a window can sit below the last mark the shell has made.
  */
-fun commandEndLine(marks: List<PromptMark?>, line: Int): Int? {
+fun commandEndLine(
+    marks: List<PromptMark?>,
+    line: Int,
+): Int? {
     if (marks.isEmpty()) return null
     val start = line.coerceIn(0, marks.lastIndex)
     val limit = (nextPrompt(marks, start) ?: marks.lastIndex) + 1
@@ -80,8 +89,10 @@ fun commandEndLine(marks: List<PromptMark?>, line: Int): Int? {
  * and the shell did not say how, which a reader has to be able to tell apart from a shell that said
  * nothing at all.
  */
-fun commandEndAt(marks: List<PromptMark?>, line: Int): PromptMark? =
-    commandEndLine(marks, line)?.let { marks[it] }
+fun commandEndAt(
+    marks: List<PromptMark?>,
+    line: Int,
+): PromptMark? = commandEndLine(marks, line)?.let { marks[it] }
 
 /**
  * The scroll offset that brings absolute [line] into a [rows]-row window whose bottom edge is [anchor],
@@ -97,7 +108,10 @@ fun commandEndAt(marks: List<PromptMark?>, line: Int): PromptMark? =
  * its own reference; and the buffer clamps whatever offset it is given, so a line near the top of the
  * scrollback lands wherever there is room rather than being pushed off the screen to reach the top.
  */
-fun offsetToShowLine(anchor: Int, line: Int, rows: Int): Int =
-    (anchor - line - (rows - 1).coerceAtLeast(0)).coerceAtLeast(0)
+fun offsetToShowLine(
+    anchor: Int,
+    line: Int,
+    rows: Int,
+): Int = (anchor - line - (rows - 1).coerceAtLeast(0)).coerceAtLeast(0)
 
 private fun PromptMark?.isPrompt(): Boolean = this != null && PromptMarkKind.PROMPT in kinds

@@ -1,5 +1,7 @@
 package dev.eclipse.ssh.ssh
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.eclipse.ssh.data.model.AUTH_TIMEOUT_RANGE
 import dev.eclipse.ssh.data.model.AuthMethod
 import dev.eclipse.ssh.data.model.CONNECT_TIMEOUT_RANGE
@@ -15,27 +17,10 @@ import dev.eclipse.ssh.data.model.TERMINAL_COLUMNS_RANGE
 import dev.eclipse.ssh.data.model.TERMINAL_ROWS_RANGE
 import dev.eclipse.ssh.data.model.isForcedTerminalSize
 import dev.eclipse.ssh.data.settings.SettingsRepository
-import java.io.Closeable
-import java.io.IOException
-import java.net.InetSocketAddress
-import java.net.SocketTimeoutException
-import java.security.KeyPair
-import java.security.MessageDigest
-import java.security.PublicKey
-import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
-import java.time.Duration
-import java.util.EnumSet
-import java.util.concurrent.TimeUnit
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
@@ -47,264 +32,288 @@ import org.apache.sshd.agent.local.LocalAgentFactory
 import org.apache.sshd.client.ClientBuilder
 import org.apache.sshd.client.ClientFactoryManager
 import org.apache.sshd.client.SshClient
-import org.apache.sshd.client.config.hosts.HostConfigEntry
-import org.apache.sshd.common.AttributeRepository
-import org.apache.sshd.common.FactoryManager
-import org.apache.sshd.common.SshConstants
-import org.apache.sshd.common.SshException
-import org.apache.sshd.common.PropertyResolver
-import org.apache.sshd.common.channel.ChannelFactory
-import org.apache.sshd.common.session.ConnectionService
-import org.apache.sshd.common.session.Session
-import org.apache.sshd.common.util.net.SshdSocketAddress
-import org.apache.sshd.common.NamedFactory
-import org.apache.sshd.common.NamedResource
-import org.apache.sshd.common.OptionalFeature
 import org.apache.sshd.client.auth.keyboard.UserInteraction
-import org.apache.sshd.common.cipher.BuiltinCiphers
-import org.apache.sshd.common.cipher.Cipher
-import org.apache.sshd.common.compression.BuiltinCompressions
-import org.apache.sshd.common.compression.Compression
-import org.apache.sshd.common.io.IoSession
-import org.apache.sshd.core.CoreModuleProperties
-import org.apache.sshd.common.kex.BuiltinDHFactories
-import org.apache.sshd.common.kex.KeyExchangeFactory
-import org.apache.sshd.common.mac.BuiltinMacs
-import org.apache.sshd.common.mac.Mac
-import org.apache.sshd.common.session.helpers.CurrentService
-import org.apache.sshd.server.forward.AcceptAllForwardingFilter
-import org.apache.sshd.common.signature.BuiltinSignatures
-import org.apache.sshd.common.signature.Signature
+import org.apache.sshd.client.config.hosts.HostConfigEntry
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.client.session.ClientSession.ClientSessionEvent
 import org.apache.sshd.client.session.ClientSessionImpl
 import org.apache.sshd.client.session.SessionFactory
+import org.apache.sshd.common.AttributeRepository
+import org.apache.sshd.common.FactoryManager
+import org.apache.sshd.common.NamedFactory
+import org.apache.sshd.common.NamedResource
+import org.apache.sshd.common.OptionalFeature
+import org.apache.sshd.common.PropertyResolver
+import org.apache.sshd.common.SshConstants
+import org.apache.sshd.common.SshException
+import org.apache.sshd.common.channel.ChannelFactory
+import org.apache.sshd.common.cipher.BuiltinCiphers
+import org.apache.sshd.common.cipher.Cipher
+import org.apache.sshd.common.compression.BuiltinCompressions
+import org.apache.sshd.common.compression.Compression
+import org.apache.sshd.common.io.IoSession
+import org.apache.sshd.common.kex.BuiltinDHFactories
+import org.apache.sshd.common.kex.KeyExchangeFactory
+import org.apache.sshd.common.mac.BuiltinMacs
+import org.apache.sshd.common.mac.Mac
+import org.apache.sshd.common.session.ConnectionService
+import org.apache.sshd.common.session.Session
+import org.apache.sshd.common.session.helpers.CurrentService
+import org.apache.sshd.common.signature.BuiltinSignatures
+import org.apache.sshd.common.signature.Signature
+import org.apache.sshd.common.util.net.SshdSocketAddress
+import org.apache.sshd.core.CoreModuleProperties
+import org.apache.sshd.server.forward.AcceptAllForwardingFilter
 import org.apache.sshd.sftp.client.SftpClient
 import org.apache.sshd.sftp.client.SftpClientFactory
+import java.io.Closeable
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.SocketTimeoutException
+import java.security.KeyPair
+import java.security.MessageDigest
+import java.security.PublicKey
+import java.time.Duration
+import java.util.Base64
+import java.util.EnumSet
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
 
 @Singleton
-class SshConnectionManager @Inject constructor(
-    @ApplicationContext context: Context,
-    private val settingsRepository: SettingsRepository,
-    // Defaulted so the plain (context, settings) construction every non-forwarding test uses still
-    // compiles; Hilt ignores Kotlin defaults and injects the bound StoredKeyVaultSource in the app.
-    private val agentKeySource: VaultKeySource = VaultKeySource.NONE,
-) : Closeable {
-    private val knownHosts = KnownHostsStore(context)
-    /**
-     * The host keys nobody has trusted yet, for whoever is in a position to ask the user about them.
-     *
-     * `replay = 1` is load-bearing, and its absence was a way to make a host permanently
-     * unconnectable. The emission below happens on Apache MINA's I/O thread, from inside the verifier,
-     * and the verifier's answer - `false` - is what fails the handshake; the app then reports "Server
-     * key did not validate". With no replay, a `tryEmit` is discarded outright if nothing is collecting
-     * at that instant and returns false once a collector is even slightly behind, and the result is
-     * thrown away here because an I/O thread has nowhere to report it. Every one of those paths ends
-     * the same way: the connection fails saying the key is untrusted, *no dialog is ever shown*, and
-     * because trust is the only thing that would change the outcome, every later attempt fails
-     * identically for as long as the process lives. Keeping the last challenge means a collector that
-     * subscribes late, or was busy, still learns which key it was being asked about.
-     *
-     * The replay cache is cleared through [challengeHandled] once the user has answered, so a stale
-     * question cannot be put to a collector that arrives afterwards.
-     */
-    private val _hostKeyChallenges = MutableSharedFlow<HostKeyChallenge>(replay = 1, extraBufferCapacity = 4)
-    val hostKeyChallenges: SharedFlow<HostKeyChallenge> = _hostKeyChallenges
-    private val client: SshClient = ProxyAwareClient.setUpDefault().apply {
-        // Unknown keys and changed keys are rejected until the user explicitly
-        // trusts the displayed SHA-256 fingerprint.
-        serverKeyVerifier = KnownHostsVerifier(
-            store = knownHosts,
-            tunnelledTarget = ::tunnelledTargetFor,
-        ) { challenge -> _hostKeyChallenges.tryEmit(challenge) }
-        // Every session this client creates is a [LivenessClientSession], which is the only way the
-        // host's own keep-alive interval can reach the heartbeat at all: see [armHeartbeat].
-        sessionFactory = LivenessSessionFactory(this)
-        // The client's role in a remote (-R) forward: the *server* accepts on the remote port and
-        // opens a "forwarded-tcpip" channel back at us, which lands in TcpipServerChannel.doInit
-        // demanding forwardingFilter.canConnect(...). The builder's default is
-        // RejectAllForwardingFilter, so every such channel is refused with
-        // SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, the server closes the accepted socket, and the
-        // rule shows RUNNING while carrying no traffic at all. Local (-L) and dynamic (-D) rules
-        // never consult this filter on the client, so only -R is affected. We already gate rule
-        // creation and binding ourselves; MINA's blanket default adds nothing but breakage here.
-        forwardingFilter = AcceptAllForwardingFilter.INSTANCE
-        // The agent-forwarding half of the same story. Setting an agent factory is what makes
-        // SshClient.checkConfig() register the auth-agent channel factories, so the *client* can
-        // accept an `auth-agent@openssh.com` channel opened back at it; the factory itself is
-        // session-aware (see ForwardingAwareAgentFactory) and answers null for every session that
-        // was not dialled with forwarding on - which is also what keeps the side effect MINA
-        // otherwise has (offering agent identities during publickey auth for *every* session) off
-        // the hosts that never asked for it.
-        agentFactory = ForwardingAwareAgentFactory()
-        // The fallback for a session that reaches construction without a liveness attribute, and the
-        // value the client-level resolver hands to any session that asks. [connect] keeps it in step
-        // with the global setting.
-        armHeartbeat(this, DEFAULT_KEEP_ALIVE_SECONDS)
-        // Nagle off. This is the difference between a terminal that feels connected and one that does
-        // not, and Apache MINA leaves it on: `CoreModuleProperties.TCP_NODELAY` defaults to false, so
-        // every keystroke this app sent was a small segment held by the kernel until the previous
-        // one was acknowledged. Paired with the peer's delayed ACK that is the classic ~40 ms of
-        // interactive lag, worst exactly where it is most visible - single characters typed into a
-        // shell, and the cursor-key traffic of `vim` and `htop`. Every SSH client sets this; MINA
-        // simply does not do it for you.
-        CoreModuleProperties.TCP_NODELAY.set(this, true)
-        // TCP-level keepalive as a backstop under the SSH heartbeat below. The heartbeat notices a
-        // peer that is still answering TCP but has stopped answering SSH; this notices a socket whose
-        // other end has gone away entirely, including the case where no SSH heartbeat is due for
-        // minutes. MINA defaults this to false as well.
-        CoreModuleProperties.SOCKET_KEEPALIVE.set(this, true)
-    }
+class SshConnectionManager
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        private val settingsRepository: SettingsRepository,
+        // Defaulted so the plain (context, settings) construction every non-forwarding test uses still
+        // compiles; Hilt ignores Kotlin defaults and injects the bound StoredKeyVaultSource in the app.
+        private val agentKeySource: VaultKeySource = VaultKeySource.NONE,
+    ) : Closeable {
+        private val knownHosts = KnownHostsStore(context)
 
-    @Volatile private var started = false
+        /**
+         * The host keys nobody has trusted yet, for whoever is in a position to ask the user about them.
+         *
+         * `replay = 1` is load-bearing, and its absence was a way to make a host permanently
+         * unconnectable. The emission below happens on Apache MINA's I/O thread, from inside the verifier,
+         * and the verifier's answer - `false` - is what fails the handshake; the app then reports "Server
+         * key did not validate". With no replay, a `tryEmit` is discarded outright if nothing is collecting
+         * at that instant and returns false once a collector is even slightly behind, and the result is
+         * thrown away here because an I/O thread has nowhere to report it. Every one of those paths ends
+         * the same way: the connection fails saying the key is untrusted, *no dialog is ever shown*, and
+         * because trust is the only thing that would change the outcome, every later attempt fails
+         * identically for as long as the process lives. Keeping the last challenge means a collector that
+         * subscribes late, or was busy, still learns which key it was being asked about.
+         *
+         * The replay cache is cleared through [challengeHandled] once the user has answered, so a stale
+         * question cannot be put to a collector that arrives afterwards.
+         */
+        private val _hostKeyChallenges = MutableSharedFlow<HostKeyChallenge>(replay = 1, extraBufferCapacity = 4)
+        val hostKeyChallenges: SharedFlow<HostKeyChallenge> = _hostKeyChallenges
+        private val client: SshClient =
+            ProxyAwareClient.setUpDefault().apply {
+                // Unknown keys and changed keys are rejected until the user explicitly
+                // trusts the displayed SHA-256 fingerprint.
+                serverKeyVerifier =
+                    KnownHostsVerifier(
+                        store = knownHosts,
+                        tunnelledTarget = ::tunnelledTargetFor,
+                    ) { challenge -> _hostKeyChallenges.tryEmit(challenge) }
+                // Every session this client creates is a [LivenessClientSession], which is the only way the
+                // host's own keep-alive interval can reach the heartbeat at all: see [armHeartbeat].
+                sessionFactory = LivenessSessionFactory(this)
+                // The client's role in a remote (-R) forward: the *server* accepts on the remote port and
+                // opens a "forwarded-tcpip" channel back at us, which lands in TcpipServerChannel.doInit
+                // demanding forwardingFilter.canConnect(...). The builder's default is
+                // RejectAllForwardingFilter, so every such channel is refused with
+                // SSH_OPEN_ADMINISTRATIVELY_PROHIBITED, the server closes the accepted socket, and the
+                // rule shows RUNNING while carrying no traffic at all. Local (-L) and dynamic (-D) rules
+                // never consult this filter on the client, so only -R is affected. We already gate rule
+                // creation and binding ourselves; MINA's blanket default adds nothing but breakage here.
+                forwardingFilter = AcceptAllForwardingFilter.INSTANCE
+                // The agent-forwarding half of the same story. Setting an agent factory is what makes
+                // SshClient.checkConfig() register the auth-agent channel factories, so the *client* can
+                // accept an `auth-agent@openssh.com` channel opened back at it; the factory itself is
+                // session-aware (see ForwardingAwareAgentFactory) and answers null for every session that
+                // was not dialled with forwarding on - which is also what keeps the side effect MINA
+                // otherwise has (offering agent identities during publickey auth for *every* session) off
+                // the hosts that never asked for it.
+                agentFactory = ForwardingAwareAgentFactory()
+                // The fallback for a session that reaches construction without a liveness attribute, and the
+                // value the client-level resolver hands to any session that asks. [connect] keeps it in step
+                // with the global setting.
+                armHeartbeat(this, DEFAULT_KEEP_ALIVE_SECONDS)
+                // Nagle off. This is the difference between a terminal that feels connected and one that does
+                // not, and Apache MINA leaves it on: `CoreModuleProperties.TCP_NODELAY` defaults to false, so
+                // every keystroke this app sent was a small segment held by the kernel until the previous
+                // one was acknowledged. Paired with the peer's delayed ACK that is the classic ~40 ms of
+                // interactive lag, worst exactly where it is most visible - single characters typed into a
+                // shell, and the cursor-key traffic of `vim` and `htop`. Every SSH client sets this; MINA
+                // simply does not do it for you.
+                CoreModuleProperties.TCP_NODELAY.set(this, true)
+                // TCP-level keepalive as a backstop under the SSH heartbeat below. The heartbeat notices a
+                // peer that is still answering TCP but has stopped answering SSH; this notices a socket whose
+                // other end has gone away entirely, including the case where no SSH heartbeat is due for
+                // minutes. MINA defaults this to false as well.
+                CoreModuleProperties.SOCKET_KEEPALIVE.set(this, true)
+            }
 
-    /**
-     * The algorithms offered when legacy compatibility is off, and the ones the switch adds.
-     *
-     * Both sets are computed once, here, rather than recomputed later: once legacy mode has been
-     * applied the live lists on [client] are no longer the ones it started with, so there would be
-     * nothing left to derive "off" from.
-     *
-     * Apache MINA SSHD's own defaults are more permissive than OpenSSH's, and taking them verbatim
-     * meant this app negotiated deprecated cryptography with *every* server whatever the setting said:
-     * `MINA 2.19`'s default cipher list still contains `aes128/192/256-cbc` (OpenSSH stopped offering
-     * CBC by default in 6.7) and its default signature list still contains SHA-1 `ssh-rsa` (OpenSSH
-     * disabled that in 8.8). Those are exactly the two things the legacy switch existed to add, so
-     * with the switch off the app was no safer, and with it on the switch barely did anything.
-     *
-     * So the modern sets are MINA's minus those, and the legacy sets put them back — appended, never
-     * prepended, because in SSH the client's order is the preference order and a server that supports
-     * something better must still get it.
-     *
-     * `hmac-sha1` deliberately stays in the modern set: OpenSSH 9.x still enables it by default, HMAC
-     * does not inherit SHA-1's collision problem, and dropping it would strand aes-ctr-only appliances
-     * for no real gain. Its genuinely broken relatives — truncated SHA-1 and both MD5 forms — are in
-     * the legacy set instead.
-     *
-     * The key exchange half is not a hardening but a missing feature: the switch is described in
-     * Settings as "Compatibility with older SSH servers (CBC, dh-group1)" and never added a single key
-     * exchange algorithm, so the one server generation it named by name — `diffie-hellman-group1-sha1`
-     * — could not be reached with it on. MINA's defaults stop at group14-*sha256*, matching OpenSSH,
-     * so the SHA-1 groups belong here.
-     */
-    private val legacyCiphers = listOf(
-        BuiltinCiphers.aes256cbc,
-        BuiltinCiphers.aes192cbc,
-        BuiltinCiphers.aes128cbc,
-        BuiltinCiphers.tripledescbc,
-        BuiltinCiphers.blowfishcbc,
-    )
-    private val legacyMacs = listOf(BuiltinMacs.hmacsha196, BuiltinMacs.hmacmd5, BuiltinMacs.hmacmd596)
-    private val legacySignatures = listOf(BuiltinSignatures.rsa)
-    private val legacyKeyExchanges = listOf(
-        BuiltinDHFactories.dhgex,
-        BuiltinDHFactories.dhg14,
-        BuiltinDHFactories.dhg1,
-    )
+        @Volatile private var started = false
 
-    private val modernCipherFactories = client.cipherFactories.without(legacyCiphers)
-    private val modernMacFactories = client.macFactories.without(legacyMacs)
-    private val modernSignatureFactories = client.signatureFactories.without(legacySignatures)
-    private val modernKeyExchangeFactories = client.keyExchangeFactories.without(legacyKeyExchanges)
+        /**
+         * The algorithms offered when legacy compatibility is off, and the ones the switch adds.
+         *
+         * Both sets are computed once, here, rather than recomputed later: once legacy mode has been
+         * applied the live lists on [client] are no longer the ones it started with, so there would be
+         * nothing left to derive "off" from.
+         *
+         * Apache MINA SSHD's own defaults are more permissive than OpenSSH's, and taking them verbatim
+         * meant this app negotiated deprecated cryptography with *every* server whatever the setting said:
+         * `MINA 2.19`'s default cipher list still contains `aes128/192/256-cbc` (OpenSSH stopped offering
+         * CBC by default in 6.7) and its default signature list still contains SHA-1 `ssh-rsa` (OpenSSH
+         * disabled that in 8.8). Those are exactly the two things the legacy switch existed to add, so
+         * with the switch off the app was no safer, and with it on the switch barely did anything.
+         *
+         * So the modern sets are MINA's minus those, and the legacy sets put them back — appended, never
+         * prepended, because in SSH the client's order is the preference order and a server that supports
+         * something better must still get it.
+         *
+         * `hmac-sha1` deliberately stays in the modern set: OpenSSH 9.x still enables it by default, HMAC
+         * does not inherit SHA-1's collision problem, and dropping it would strand aes-ctr-only appliances
+         * for no real gain. Its genuinely broken relatives — truncated SHA-1 and both MD5 forms — are in
+         * the legacy set instead.
+         *
+         * The key exchange half is not a hardening but a missing feature: the switch is described in
+         * Settings as "Compatibility with older SSH servers (CBC, dh-group1)" and never added a single key
+         * exchange algorithm, so the one server generation it named by name — `diffie-hellman-group1-sha1`
+         * — could not be reached with it on. MINA's defaults stop at group14-*sha256*, matching OpenSSH,
+         * so the SHA-1 groups belong here.
+         */
+        private val legacyCiphers =
+            listOf(
+                BuiltinCiphers.aes256cbc,
+                BuiltinCiphers.aes192cbc,
+                BuiltinCiphers.aes128cbc,
+                BuiltinCiphers.tripledescbc,
+                BuiltinCiphers.blowfishcbc,
+            )
+        private val legacyMacs = listOf(BuiltinMacs.hmacsha196, BuiltinMacs.hmacmd5, BuiltinMacs.hmacmd596)
+        private val legacySignatures = listOf(BuiltinSignatures.rsa)
+        private val legacyKeyExchanges =
+            listOf(
+                BuiltinDHFactories.dhgex,
+                BuiltinDHFactories.dhg14,
+                BuiltinDHFactories.dhg1,
+            )
 
-    /**
-     * The legacy key exchanges as SSHD factories, filtered by [OptionalFeature.isSupported] because
-     * whether a JCE provider will do 1024-bit Diffie-Hellman at all is a property of the device.
-     * Silently dropping an unsupported one is right: the alternative is a switch that throws.
-     */
-    private val legacyKeyExchangeFactories: List<KeyExchangeFactory> =
-        legacyKeyExchanges.filter { it.isSupported }.map { ClientBuilder.DH2KEX.apply(it) }
+        private val modernCipherFactories = client.cipherFactories.without(legacyCiphers)
+        private val modernMacFactories = client.macFactories.without(legacyMacs)
+        private val modernSignatureFactories = client.signatureFactories.without(legacySignatures)
+        private val modernKeyExchangeFactories = client.keyExchangeFactories.without(legacyKeyExchanges)
 
-    /** Null until the legacy setting has been applied at least once, then the value that was applied. */
-    @Volatile private var legacyApplied: Boolean? = null
+        /**
+         * The legacy key exchanges as SSHD factories, filtered by [OptionalFeature.isSupported] because
+         * whether a JCE provider will do 1024-bit Diffie-Hellman at all is a property of the device.
+         * Silently dropping an unsupported one is right: the alternative is a switch that throws.
+         */
+        private val legacyKeyExchangeFactories: List<KeyExchangeFactory> =
+            legacyKeyExchanges.filter { it.isSupported }.map { ClientBuilder.DH2KEX.apply(it) }
 
-    /**
-     * The jump-host attempts currently in flight, so a host key that arrives down a tunnel can be
-     * pinned against the host it belongs to.
-     *
-     * Needed because of what Apache MINA does for `ProxyJump`, which is visible in
-     * `SshClient.doConnect`: it connects to the jump host, opens a *local* port forward to the real
-     * target, and then dials the target through `127.0.0.1:<ephemeral port>`. The session that reaches
-     * the target therefore reports a loopback connect address with a port the operating system picked
-     * moments earlier, and that is all the verifier can see. Keying known-hosts on it had two
-     * consequences, both bad: trust never stuck, because the port is different on every connection, so
-     * the user was asked to confirm the fingerprint of a jump-host target every single time and each
-     * answer left another meaningless `127.0.0.1:41xxx` row behind; and an entry written for one
-     * ephemeral port could later be *matched* by an unrelated host whose forward happened to reuse it,
-     * which is host-key confusion - the app would accept the wrong server's key without a word, and
-     * the "this key has changed" warning would not fire, which is the one thing pinning exists to do.
-     *
-     * Keyed by username and required to be unambiguous: two concurrent jump attempts by the same user
-     * to different hosts cannot be told apart from here, and in that case the verifier keeps its old
-     * address-based behaviour rather than guessing. Entries live only for the duration of the connect,
-     * and direct and proxied connections never add one, so for them nothing about verification changes.
-     */
-    private val tunnelledTargets = CopyOnWriteArrayList<TunnelledTarget>()
+        /** Null until the legacy setting has been applied at least once, then the value that was applied. */
+        @Volatile private var legacyApplied: Boolean? = null
 
-    private fun tunnelledTargetFor(username: String?): TunnelledTarget? {
-        if (username == null) return null
-        return tunnelledTargets
-            .filter { it.username == username }
-            .distinctBy { it.host to it.port }
-            .singleOrNull()
-    }
+        /**
+         * The jump-host attempts currently in flight, so a host key that arrives down a tunnel can be
+         * pinned against the host it belongs to.
+         *
+         * Needed because of what Apache MINA does for `ProxyJump`, which is visible in
+         * `SshClient.doConnect`: it connects to the jump host, opens a *local* port forward to the real
+         * target, and then dials the target through `127.0.0.1:<ephemeral port>`. The session that reaches
+         * the target therefore reports a loopback connect address with a port the operating system picked
+         * moments earlier, and that is all the verifier can see. Keying known-hosts on it had two
+         * consequences, both bad: trust never stuck, because the port is different on every connection, so
+         * the user was asked to confirm the fingerprint of a jump-host target every single time and each
+         * answer left another meaningless `127.0.0.1:41xxx` row behind; and an entry written for one
+         * ephemeral port could later be *matched* by an unrelated host whose forward happened to reuse it,
+         * which is host-key confusion - the app would accept the wrong server's key without a word, and
+         * the "this key has changed" warning would not fire, which is the one thing pinning exists to do.
+         *
+         * Keyed by username and required to be unambiguous: two concurrent jump attempts by the same user
+         * to different hosts cannot be told apart from here, and in that case the verifier keeps its old
+         * address-based behaviour rather than guessing. Entries live only for the duration of the connect,
+         * and direct and proxied connections never add one, so for them nothing about verification changes.
+         */
+        private val tunnelledTargets = CopyOnWriteArrayList<TunnelledTarget>()
 
-    /**
-     * Dials [profile] and returns an authenticated session, reporting each phase as it is entered.
-     *
-     * [onPhase] exists because the two halves of connecting fail for different reasons, take different
-     * lengths of time, and call for different things to be said to the user - and from outside this
-     * function they were indistinguishable. A host that answers its socket immediately and then spends
-     * fifteen seconds in a PAM stack, an LDAP lookup or a hardware token prompt spent all of it under
-     * one word, "Connecting…", which is the shape of a hang. It is called from this coroutine, at most
-     * once per phase, in order; the caller is expected to do nothing slow in it.
-     */
-    suspend fun connect(
-        profile: HostProfile,
-        password: String? = null,
-        keyPair: KeyPair? = null,
-        onPhase: (SshConnectPhase) -> Unit = {},
-    ): ClientSession {
-        // The dialled session needs an owner on the cancellation path, the way bindOnIo owns a
-        // tracker: once the dial has produced a ClientSession, a cancellation landing anywhere in the
-        // uncancellable tail below (handshake, auth - none of them suspend) is observed only when
-        // withContext reaches its boundary, and withContext answers a cancelled caller by discarding
-        // the block's result and throwing CancellationException. A discarded session is the leak this
-        // file names at its close: authenticated, heartbeating at its configured interval, in no
-        // store, so neither closeTab nor disconnectAll can reach it. openAuthenticatedSession hands
-        // its session here the instant the dial returns, so the catch closes exactly that one.
-        var produced: ClientSession? = null
-        try {
-            return openAuthenticatedSession(profile, password, keyPair, onPhase) { produced = it }
-        } catch (cancelled: CancellationException) {
-            produced?.let { runCatching { it.close(false) } }
-            throw cancelled
+        private fun tunnelledTargetFor(username: String?): TunnelledTarget? {
+            if (username == null) return null
+            return tunnelledTargets
+                .filter { it.username == username }
+                .distinctBy { it.host to it.port }
+                .singleOrNull()
         }
-    }
 
-    private suspend fun openAuthenticatedSession(
-        profile: HostProfile,
-        password: String?,
-        keyPair: KeyPair?,
-        onPhase: (SshConnectPhase) -> Unit,
-        onProduced: (ClientSession) -> Unit,
-    ): ClientSession = withContext(Dispatchers.IO) {
-        onPhase(SshConnectPhase.HANDSHAKE)
-        ensureStarted()
-        val globalLegacy = applyLegacyAlgorithmsIfEnabled()
-        // applyLegacyAlgorithmsIfEnabled reads settings.first() inside a runCatching that would
-        // swallow a cancellation; the three ensureActive()s in this function turn a connect the user
-        // cancelled while suspended into the stop they asked for, rather than a dial that proceeds and
-        // then has its authenticated session discarded. The blocking tail has no suspension point, so
-        // these three plus the owner in connect() are the whole of the cancellation contract here.
-        ensureActive()
-        // Clamped rather than trusted: the profile can also arrive from an imported vault backup or a
-        // parsed ssh_config, neither of which the Add Host validation ever saw. A zero would make
-        // `verify` time out instantly and look like an unreachable server.
-        val timeout = profile.connectTimeoutSeconds
-            .coerceIn(CONNECT_TIMEOUT_RANGE.first, CONNECT_TIMEOUT_RANGE.last)
-            .toLong()
+        /**
+         * Dials [profile] and returns an authenticated session, reporting each phase as it is entered.
+         *
+         * [onPhase] exists because the two halves of connecting fail for different reasons, take different
+         * lengths of time, and call for different things to be said to the user - and from outside this
+         * function they were indistinguishable. A host that answers its socket immediately and then spends
+         * fifteen seconds in a PAM stack, an LDAP lookup or a hardware token prompt spent all of it under
+         * one word, "Connecting…", which is the shape of a hang. It is called from this coroutine, at most
+         * once per phase, in order; the caller is expected to do nothing slow in it.
+         */
+        suspend fun connect(
+            profile: HostProfile,
+            password: String? = null,
+            keyPair: KeyPair? = null,
+            onPhase: (SshConnectPhase) -> Unit = {},
+        ): ClientSession {
+            // The dialled session needs an owner on the cancellation path, the way bindOnIo owns a
+            // tracker: once the dial has produced a ClientSession, a cancellation landing anywhere in the
+            // uncancellable tail below (handshake, auth - none of them suspend) is observed only when
+            // withContext reaches its boundary, and withContext answers a cancelled caller by discarding
+            // the block's result and throwing CancellationException. A discarded session is the leak this
+            // file names at its close: authenticated, heartbeating at its configured interval, in no
+            // store, so neither closeTab nor disconnectAll can reach it. openAuthenticatedSession hands
+            // its session here the instant the dial returns, so the catch closes exactly that one.
+            var produced: ClientSession? = null
+            try {
+                return openAuthenticatedSession(profile, password, keyPair, onPhase) { produced = it }
+            } catch (cancelled: CancellationException) {
+                produced?.let { runCatching { it.close(false) } }
+                throw cancelled
+            }
+        }
+
+        private suspend fun openAuthenticatedSession(
+            profile: HostProfile,
+            password: String?,
+            keyPair: KeyPair?,
+            onPhase: (SshConnectPhase) -> Unit,
+            onProduced: (ClientSession) -> Unit,
+        ): ClientSession =
+            withContext(Dispatchers.IO) {
+                onPhase(SshConnectPhase.HANDSHAKE)
+                ensureStarted()
+                val globalLegacy = applyLegacyAlgorithmsIfEnabled()
+                // applyLegacyAlgorithmsIfEnabled reads settings.first() inside a runCatching that would
+                // swallow a cancellation; the three ensureActive()s in this function turn a connect the user
+                // cancelled while suspended into the stop they asked for, rather than a dial that proceeds and
+                // then has its authenticated session discarded. The blocking tail has no suspension point, so
+                // these three plus the owner in connect() are the whole of the cancellation contract here.
+                ensureActive()
+                // Clamped rather than trusted: the profile can also arrive from an imported vault backup or a
+                // parsed ssh_config, neither of which the Add Host validation ever saw. A zero would make
+                // `verify` time out instantly and look like an unreachable server.
+                val timeout =
+                    profile.connectTimeoutSeconds
+                        .coerceIn(CONNECT_TIMEOUT_RANGE.first, CONNECT_TIMEOUT_RANGE.last)
+                        .toLong()
         /*
          * The jump host this connection will actually use, or null.
          *
@@ -313,26 +322,29 @@ class SshConnectionManager @Inject constructor(
          * proxy: `when` picks the first matching branch, and the jump string is ignored - so the
          * registry must ignore it too, or it would hold an entry for a tunnel that was never opened.
          */
-        val jumpHost = profile.proxyJump
-            ?.takeIf(String::isNotBlank)
-            ?.takeIf { profile.proxyType != ProxyType.SOCKS5 && profile.proxyType != ProxyType.HTTP_CONNECT }
-        // Registered before the dial and dropped the moment the handshake is over, because the only
-        // code that reads it is the verifier and the verifier only runs in between: see
-        // [tunnelledTargets].
-        val tunnelled = jumpHost
-            ?.let { TunnelledTarget(profile.username, profile.host, profile.port) }
-            ?.also(tunnelledTargets::add)
+                val jumpHost =
+                    profile.proxyJump
+                        ?.takeIf(String::isNotBlank)
+                        ?.takeIf { profile.proxyType != ProxyType.SOCKS5 && profile.proxyType != ProxyType.HTTP_CONNECT }
+                // Registered before the dial and dropped the moment the handshake is over, because the only
+                // code that reads it is the verifier and the verifier only runs in between: see
+                // [tunnelledTargets].
+                val tunnelled =
+                    jumpHost
+                        ?.let { TunnelledTarget(profile.username, profile.host, profile.port) }
+                        ?.also(tunnelledTargets::add)
         /*
          * Resolved before the dial, because the heartbeat cannot be configured after it.
          *
          * A host's own interval wins over the global one when it sets one: a host behind an aggressive
          * NAT needs a shorter heartbeat than the default, and one on a metered link a longer one.
          */
-        val globalKeepAlive = runCatching { settingsRepository.settings.first().keepAliveSeconds }
-            .getOrDefault(DEFAULT_KEEP_ALIVE_SECONDS)
-            .coerceIn(KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last)
-        ensureActive()
-        val keepAlive = resolveKeepAliveSeconds(profile, globalKeepAlive)
+                val globalKeepAlive =
+                    runCatching { settingsRepository.settings.first().keepAliveSeconds }
+                        .getOrDefault(DEFAULT_KEEP_ALIVE_SECONDS)
+                        .coerceIn(KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last)
+                ensureActive()
+                val keepAlive = resolveKeepAliveSeconds(profile, globalKeepAlive)
         /*
          * Everything the session has to be told before it finishes being built.
          *
@@ -340,26 +352,29 @@ class SshConnectionManager @Inject constructor(
          * `connect` holds a [ClientSession] the heartbeat, the authentication method list and the
          * algorithm proposal are already fixed. See [LivenessClientSession].
          */
-        val tuning = SessionTuning(
-            keepAliveSeconds = keepAlive,
-            serverAliveCountMax = profile.serverAliveCountMax
-                .coerceIn(SERVER_ALIVE_COUNT_RANGE.first, SERVER_ALIVE_COUNT_RANGE.last),
-            compression = profile.compression,
-            preferredAuths = preferredAuths(profile),
-            hostKeyPolicy = profile.hostKeyPolicy,
-            algorithms = algorithmsOverrideFor(profile, globalLegacy),
-        )
-        // Separate from the connect budget on purpose: a server can answer its socket in a millisecond
-        // and then spend a minute in a PAM stack or waiting for a hardware token. See
-        // [HostProfile.authTimeoutSeconds].
-        val authTimeout = profile.authTimeoutSeconds
-            .coerceIn(AUTH_TIMEOUT_RANGE.first, AUTH_TIMEOUT_RANGE.last)
-            .toLong()
-        // Keeps the client-level fallback tracking the user's global preference rather than a
-        // constant, for the one session that is built without a socket to carry the attribute: the
-        // far end of a jump-host tunnel. Two connects can interleave here, and it does not matter -
-        // every value written is a valid interval and it is only ever a fallback.
-        armHeartbeat(client, globalKeepAlive)
+                val tuning =
+                    SessionTuning(
+                        keepAliveSeconds = keepAlive,
+                        serverAliveCountMax =
+                            profile.serverAliveCountMax
+                                .coerceIn(SERVER_ALIVE_COUNT_RANGE.first, SERVER_ALIVE_COUNT_RANGE.last),
+                        compression = profile.compression,
+                        preferredAuths = preferredAuths(profile),
+                        hostKeyPolicy = profile.hostKeyPolicy,
+                        algorithms = algorithmsOverrideFor(profile, globalLegacy),
+                    )
+                // Separate from the connect budget on purpose: a server can answer its socket in a millisecond
+                // and then spend a minute in a PAM stack or waiting for a hardware token. See
+                // [HostProfile.authTimeoutSeconds].
+                val authTimeout =
+                    profile.authTimeoutSeconds
+                        .coerceIn(AUTH_TIMEOUT_RANGE.first, AUTH_TIMEOUT_RANGE.last)
+                        .toLong()
+                // Keeps the client-level fallback tracking the user's global preference rather than a
+                // constant, for the one session that is built without a socket to carry the attribute: the
+                // far end of a jump-host tunnel. Two connects can interleave here, and it does not matter -
+                // every value written is a valid interval and it is only ever a fallback.
+                armHeartbeat(client, globalKeepAlive)
         /*
          * The identities this session's agent will serve, resolved before the dial for the reason on
          * [StoreBackedAgent]: once the session exists, every agent call runs on MINA's I/O threads,
@@ -369,12 +384,13 @@ class SshConnectionManager @Inject constructor(
          * empty agent rather than failing a login the credentials were only decorating: forwarding is
          * an opt-in feature of the session, never a dependency of it.
          */
-        val agentIdentities = if (profile.agentForwarding) {
-            runCatching { agentKeySource.loadIdentities() }.getOrDefault(emptyList())
-        } else {
-            emptyList()
-        }
-        ensureActive()
+                val agentIdentities =
+                    if (profile.agentForwarding) {
+                        runCatching { agentKeySource.loadIdentities() }.getOrDefault(emptyList())
+                    } else {
+                        emptyList()
+                    }
+                ensureActive()
         /*
          * The connection context, which is how per-host configuration reaches session construction.
          *
@@ -383,531 +399,577 @@ class SshConnectionManager @Inject constructor(
          * armed. The proxy configurations travel the same way and are read by [ProxyAwareConnector],
          * and the agent identities are read by [ForwardingAwareAgentFactory].
          */
-        val context = AttributeRepository.ofAttributesMap(
-            buildMap<AttributeRepository.AttributeKey<*>, Any> {
-                put(TUNING_KEY, tuning)
-                if (agentIdentities.isNotEmpty()) put(AGENT_IDENTITIES_KEY, agentIdentities)
-                when (profile.proxyType) {
-                    ProxyType.SOCKS5 -> put(SocksProxyConfig.KEY, socksProxyConfig(profile, timeout))
-                    ProxyType.HTTP_CONNECT -> put(HttpProxyConfig.KEY, httpProxyConfig(profile, timeout))
-                    else -> Unit
+                val context =
+                    AttributeRepository.ofAttributesMap(
+                        buildMap<AttributeRepository.AttributeKey<*>, Any> {
+                            put(TUNING_KEY, tuning)
+                            if (agentIdentities.isNotEmpty()) put(AGENT_IDENTITIES_KEY, agentIdentities)
+                            when (profile.proxyType) {
+                                ProxyType.SOCKS5 -> put(SocksProxyConfig.KEY, socksProxyConfig(profile, timeout))
+                                ProxyType.HTTP_CONNECT -> put(HttpProxyConfig.KEY, httpProxyConfig(profile, timeout))
+                                else -> Unit
+                            }
+                        },
+                    )
+                val session =
+                    try {
+                        when {
+                            jumpHost != null -> {
+                                val entry = HostConfigEntry(profile.host, profile.host, profile.port, profile.username, jumpHost)
+                                client.connect(entry, context, null)
+                            }
+                            else -> client.connect(profile.username, profile.host, profile.port, context, null)
+                        }.verify(timeout, TimeUnit.SECONDS)
+                            .session
+                        // No manual cancel on a failed verify, and this is deliberate: since sshd 2.13 a
+                        // `verify` with no CancelOption behaves as if CANCEL_ON_TIMEOUT and
+                        // CANCEL_ON_INTERRUPT were passed - on expiry it cancels the future itself, and the
+                        // client's connect listeners close the session and the socket under it. A cancel
+                        // added here would be cancelling a future the library has already cancelled.
+                    } catch (error: Throwable) {
+                        // A failed dial must still drop the registry entry; the library has already closed the
+                        // socket under the cancelled verify (see above). The successful-dial path deliberately
+                        // keeps the entry until the handshake below has read it - that is the whole point.
+                        tunnelled?.let(tunnelledTargets::remove)
+                        throw error
+                    }
+                // The session now exists and is live; hand it to connect() so a cancellation observed in the
+                // uncancellable tail below closes it at the withContext boundary instead of leaking it.
+                onProduced(session)
+                try {
+                    awaitHandshake(session, timeout)
+                    // The transport is up and the key exchange is done; everything from here is the server
+                    // deciding whether to let this user in.
+                    onPhase(SshConnectPhase.AUTHENTICATE)
+                    password?.takeIf(String::isNotEmpty)?.let { secret ->
+                        session.addPasswordIdentity(secret)
+                        session.setUserInteraction(
+                            object : UserInteraction {
+                                override fun isInteractionAllowed(session: ClientSession): Boolean = true
+
+                                override fun welcome(
+                                    session: ClientSession,
+                                    banner: String,
+                                    lang: String,
+                                ) = Unit
+
+                                override fun interactive(
+                                    session: ClientSession,
+                                    name: String,
+                                    instruction: String,
+                                    lang: String,
+                                    prompt: Array<String>,
+                                    echo: BooleanArray,
+                                ): Array<String> = Array(prompt.size) { secret }
+
+                                override fun getUpdatedPassword(
+                                    session: ClientSession,
+                                    prompt: String,
+                                    lang: String,
+                                ): String = secret
+                            },
+                        )
+                    }
+                    keyPair?.let(session::addPublicKeyIdentity)
+                    // The heartbeat itself was armed at construction (see [armHeartbeat]); this is only its
+                    // backstop, and it is the one liveness property MINA will still read after the fact.
+                    configureIdleTimeout(session, keepAlive, tuning.serverAliveCountMax)
+                    // MINA's own authentication clock, which it checks against `authStart` on every idle sweep
+                    // and which is otherwise a flat 30 seconds however long the user allowed. Set alongside the
+                    // `verify` budget rather than instead of it: this one ends the *session* from MINA's side,
+                    // the other ends the *wait* on this side, and a wait that outlives the session reports a
+                    // closed transport instead of a timeout.
+                    CoreModuleProperties.AUTH_TIMEOUT.set(session, Duration.ofSeconds(authTimeout))
+                    session.auth().verify(authTimeout, TimeUnit.SECONDS)
+                    session
+                } catch (error: Throwable) {
+                    // The handshake, auth or pre-auth setup failed: close the socket so retries (the app
+                    // tries up to 3 times) do not accumulate half-open sessions.
+                    runCatching { session.close(false) }
+                    throw error
+                } finally {
+                    // The tunnelled-target entry is dropped here, not in the dial's catch above, because its
+                    // only reader - the known-hosts verifier - runs inside awaitHandshake, which is after
+                    // MINA's ConnectFuture resolves on the bare socket. Kept registered until it has read it.
+                    tunnelled?.let(tunnelledTargets::remove)
                 }
-            },
-        )
-        val session = try {
-            when {
-                jumpHost != null -> {
-                    val entry = HostConfigEntry(profile.host, profile.host, profile.port, profile.username, jumpHost)
-                    client.connect(entry, context, null)
-                }
-                else -> client.connect(profile.username, profile.host, profile.port, context, null)
-            }.verify(timeout, TimeUnit.SECONDS)
-                .session
-            // No manual cancel on a failed verify, and this is deliberate: since sshd 2.13 a
-            // `verify` with no CancelOption behaves as if CANCEL_ON_TIMEOUT and
-            // CANCEL_ON_INTERRUPT were passed - on expiry it cancels the future itself, and the
-            // client's connect listeners close the session and the socket under it. A cancel
-            // added here would be cancelling a future the library has already cancelled.
-        } catch (error: Throwable) {
-            // A failed dial must still drop the registry entry; the library has already closed the
-            // socket under the cancelled verify (see above). The successful-dial path deliberately
-            // keeps the entry until the handshake below has read it - that is the whole point.
-            tunnelled?.let(tunnelledTargets::remove)
-            throw error
-        }
-        // The session now exists and is live; hand it to connect() so a cancellation observed in the
-        // uncancellable tail below closes it at the withContext boundary instead of leaking it.
-        onProduced(session)
-        try {
-            awaitHandshake(session, timeout)
-            // The transport is up and the key exchange is done; everything from here is the server
-            // deciding whether to let this user in.
-            onPhase(SshConnectPhase.AUTHENTICATE)
-            password?.takeIf(String::isNotEmpty)?.let { secret ->
-                session.addPasswordIdentity(secret)
-                session.setUserInteraction(object : UserInteraction {
-                    override fun isInteractionAllowed(session: ClientSession): Boolean = true
-                    override fun welcome(session: ClientSession, banner: String, lang: String) = Unit
-                    override fun interactive(session: ClientSession, name: String, instruction: String, lang: String, prompt: Array<String>, echo: BooleanArray): Array<String> = Array(prompt.size) { secret }
-                    override fun getUpdatedPassword(session: ClientSession, prompt: String, lang: String): String = secret
-                })
             }
-            keyPair?.let(session::addPublicKeyIdentity)
-            // The heartbeat itself was armed at construction (see [armHeartbeat]); this is only its
-            // backstop, and it is the one liveness property MINA will still read after the fact.
-            configureIdleTimeout(session, keepAlive, tuning.serverAliveCountMax)
-            // MINA's own authentication clock, which it checks against `authStart` on every idle sweep
-            // and which is otherwise a flat 30 seconds however long the user allowed. Set alongside the
-            // `verify` budget rather than instead of it: this one ends the *session* from MINA's side,
-            // the other ends the *wait* on this side, and a wait that outlives the session reports a
-            // closed transport instead of a timeout.
-            CoreModuleProperties.AUTH_TIMEOUT.set(session, Duration.ofSeconds(authTimeout))
-            session.auth().verify(authTimeout, TimeUnit.SECONDS)
-            session
-        } catch (error: Throwable) {
-            // The handshake, auth or pre-auth setup failed: close the socket so retries (the app
-            // tries up to 3 times) do not accumulate half-open sessions.
-            runCatching { session.close(false) }
-            throw error
-        } finally {
-            // The tunnelled-target entry is dropped here, not in the dial's catch above, because its
-            // only reader - the known-hosts verifier - runs inside awaitHandshake, which is after
-            // MINA's ConnectFuture resolves on the bare socket. Kept registered until it has read it.
-            tunnelled?.let(tunnelledTargets::remove)
-        }
-    }
-
-    /**
-     * Waits up to [timeoutSeconds] for [session] to finish its SSH handshake.
-     *
-     * MINA's connect future resolves as soon as the *socket* is up, not when the handshake is done. Without
-     * this wait, a server that accepts the connection and then says nothing - a port held open by a
-     * firewall, a load balancer in front of a dead backend, a box being rebooted - is charged to the
-     * authentication budget, which exists for something else entirely: the server thinking about
-     * credentials it has already been sent, in a PAM stack or against a hardware token. The user would be
-     * told the connection timed out after a number they configured for a later phase, and the phase
-     * reported would be `AUTHENTICATE` on a server that never asked for a password.
-     *
-     * [ClientSessionEvent.WAIT_AUTH] is MINA's own name for the boundary between the two budgets: its
-     * session state adds it once the key exchange is `DONE` and no authentication has been attempted yet.
-     * [ClientSessionEvent.AUTHED] is accepted for the same reason - it can only mean the handshake is
-     * further along than this frame needs.
-     *
-     * [ClientSessionEvent.CLOSED] is waited for but deliberately not thrown on. A handshake that fails for
-     * a real reason - no key exchange in common, no cipher in common, a host key the verifier refused -
-     * closes the session carrying that reason, and the `auth()` call that follows reports it verbatim. A
-     * message invented here would replace a precise diagnostic with a vague one.
-     */
-    private fun awaitHandshake(session: ClientSession, timeoutSeconds: Long) {
-        val settled = EnumSet.of(
-            ClientSessionEvent.WAIT_AUTH,
-            ClientSessionEvent.AUTHED,
-            ClientSessionEvent.CLOSED,
-        )
-        // Returns as soon as the session's state has any of these in common with `settled`, and on expiry
-        // returns whatever the state is plus TIMEOUT - so "none of the three" is exactly "it expired",
-        // stated in terms of what was waited for rather than in terms of MINA's expiry marker.
-        val state = session.waitFor(settled, Duration.ofSeconds(timeoutSeconds))
-        // Phrased the way MINA phrases its own expiries, because this is the same kind of answer and the
-        // milliseconds are what a user compares against the number they typed.
-        if (state.none { it in settled }) {
-            throw SshException(
-                "Failed to complete the SSH handshake within specified timeout: ${timeoutSeconds * 1_000} msec",
-            )
-        }
-    }
-
-    /**
-     * Opens an interactive shell on [session], sized [columns]x[rows] when the caller knows the size.
-     *
-     * The caller normally does know it: a session being reconnected is replacing a pty whose geometry
-     * the user's screen already decided. Passing it here rather than resizing afterwards is what makes
-     * a reconnected `htop` come back at the size it left.
-     *
-     * Also where [HostProfile.environment] and [HostProfile.startupCommand] are applied, and
-     * deliberately the *only* place. Both mean "on a shell this app just created", and this function is
-     * called from exactly the three sites that create one - a first dial, a reconnect, and adopting a
-     * live session that has no shell yet - so "fresh shells only" is a property of where the code is
-     * rather than a flag a caller could forget to pass. A session the app adopts *with* a running shell
-     * never reaches here, which is correct: its environment was fixed when it was created and its
-     * startup command has already run.
-     */
-    suspend fun openTerminal(
-        session: ClientSession,
-        columns: Int? = null,
-        rows: Int? = null,
-        profile: HostProfile? = null,
-    ): TerminalChannel = withContext(Dispatchers.IO) {
-        val pty = ptyRequestFor(profile, columns, rows)
-        val channel = SshTerminalChannel(session.createShellChannel())
-        channel.open(
-            columns = pty.columns ?: channel.ptyColumns,
-            rows = pty.rows ?: channel.ptyRows,
-            usePty = pty.enabled,
-            terminalType = pty.terminalType,
-            environment = parseEnvironment(profile?.environment),
-            // Per-session because the request is made on the channel: it is what tells the far end
-            // it may open an agent channel back, and a session that never asked is a session whose
-            // administrator never gets the invitation. SFTP channels never carry it - forwarding is
-            // a property of the interactive shell the user typed into, not of every channel the
-            // session happens to open.
-            agentForwarding = profile?.agentForwarding == true,
-        )
-        // After the channel is open, because there is nowhere to write before it. A startup command is
-        // typed into the shell exactly as if the user had typed it - see [startupCommandBytes] for why
-        // that, and not an SSH `exec` - so it goes down the same path as a keystroke and its output
-        // appears in the transcript above the first prompt, which is what makes a failing one visible.
-        startupCommandBytes(profile?.startupCommand)?.let { channel.writeBytes(it) }
-        channel
-    }
-
-    /**
-     * Asks [session] whether it is still there, and waits [timeoutSeconds] for the answer.
-     *
-     * This is what a network migration needs and what a heartbeat cannot give it. Switching from Wi-Fi
-     * to mobile data invalidates the socket's source address, so the TCP connection is dead - but
-     * nothing says so: no FIN arrives, no error is raised, `isOpen` stays true, and the app's own
-     * heartbeat only concludes anything after [CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX]
-     * consecutive unanswered keepalives, which at the default interval is a minute and a half. For that
-     * minute and a half the terminal looks connected and silently swallows every keystroke, which is
-     * the single most-reported symptom of "SSH keeps disconnecting" in this app.
-     *
-     * The probe is OpenSSH's own `keepalive@openssh.com` global request, and the reply that matters is
-     * *any* reply:
-     *
-     *  - a `SSH_MSG_REQUEST_SUCCESS` returns the payload buffer;
-     *  - a `SSH_MSG_REQUEST_FAILURE` - what OpenSSH actually sends, since it implements no such global
-     *    request - makes MINA return `null`, which is still proof the far end is listening;
-     *  - a timeout or an I/O error is the only negative answer.
-     *
-     * So a server that says "no" counts as alive, and only silence counts as dead. That asymmetry is
-     * deliberate: the cost of a false positive is a session the app kills while it was working, which
-     * is the bug this exists to fix rather than a fix for it.
-     */
-    suspend fun probeLiveness(
-        session: ClientSession,
-        timeoutSeconds: Long = LIVENESS_PROBE_SECONDS,
-    ): Boolean = withContext(Dispatchers.IO) {
-        if (!session.isOpen) return@withContext false
-        try {
-            val request = KEEPALIVE_REQUEST
-            // The shape AbstractSession.request expects: the command byte, the request name, and a
-            // want-reply flag it re-reads out of the buffer to decide whether to wait for anything.
-            // Four bytes for the string's length prefix and one for the boolean; the hint only sizes
-            // the initial allocation, so being a byte out costs a grow, not correctness.
-            val buffer = session.createBuffer(SshConstants.SSH_MSG_GLOBAL_REQUEST, request.length + Integer.BYTES + 1)
-            buffer.putString(request)
-            buffer.putBoolean(true)
-            session.request(request, buffer, Duration.ofSeconds(timeoutSeconds))
-            true
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            // SocketTimeoutException (no reply in time) and InterruptedIOException are both IOExceptions,
-            // and all of them mean the same thing here: nothing came back. The catch is wider than
-            // that on purpose, because the probe runs against a transport that may be tearing itself
-            // down at the same moment - MINA raises its own runtime exceptions from a session or a
-            // channel that closed under the request - and every one of those means the same thing an
-            // unanswered timeout does: no reply arrived. The asymmetry the KDoc promises is preserved:
-            // *any* reply is counted above, so widening the negative side cannot kill a session that
-            // answered. Cancellation is rethrown first; it is not an answer about the session.
-            false
-        }
-    }
-
-    /**
-     * Opens an SFTP channel on [session], hands it to [block], and closes it - all on [Dispatchers.IO].
-     *
-     * The only correct way to run a bounded piece of SFTP work, and it exists because the obvious
-     * spelling of it is wrong in a way that costs the user their session. `openSftp(session).use { }`
-     * looks safe: every call inside it suspends into [Dispatchers.IO] and comes back. But `use`
-     * closes the client in a `finally` on the *caller's* dispatcher, and the callers here are
-     * `viewModelScope` coroutines, which dispatch on `Main.immediate`. Closing an SFTP client tears
-     * down a channel, which writes to the socket - so the close, and only the close, ran on the UI
-     * thread.
-     *
-     * What that produced was not a caught exception. Android's BlockGuard raises
-     * [android.os.NetworkOnMainThreadException] from inside MINA's write path, which marks the
-     * transport broken before the throw ever reaches our `runCatching` - so a session that had just
-     * finished authenticating and opened a shell was reported as `TransportFailed`, the tab said
-     * "Connection lost: NetworkOnMainThreadException", and the reconnect ladder answered an app-side
-     * threading mistake by climbing it, five rungs, waiting half a minute at the top. Every shell
-     * open ran the auto-SFTP login, so every session died about two seconds after it came up.
-     *
-     * One `withContext` around the whole lifetime is the fix: the open, the work and the close all
-     * happen on the same IO thread, and no call site can reintroduce the gap by forgetting a
-     * dispatcher.
-     */
-    suspend fun <T> withSftp(session: ClientSession, block: suspend (SftpClient) -> T): T =
-        withContext(Dispatchers.IO) { openSftp(session).use { sftp -> block(sftp) } }
-
-    /**
-     * Opens an SFTP channel, leaving its lifetime to the caller.
-     *
-     * For the file-transfer paths only, which hand the client to [TransferCoordinator] to be closed
-     * when the transfer ends - a `use { }` here would close the channel before the transfer that was
-     * handed it ever ran. **The caller owns closing it, and must not do so on the main thread**: see
-     * [withSftp] for what that costs. `TransferCoordinator` closes it inside its own
-     * [Dispatchers.IO] scope, which is why those call sites are safe.
-     *
-     * Anything with a bounded scope wants [withSftp] instead.
-     */
-    suspend fun openSftp(session: ClientSession): SftpClient {
-        // A channel that finished opening is never dropped. `createSftpClient` performs blocking
-        // I/O *and* starts the channel, and a caller cancelled while it runs gets its
-        // CancellationException from `withContext` with the result discarded on the way - a live
-        // SFTP channel left attached to the session, holding an open handle and a server-side
-        // channel slot until the whole session ends, one per cancelled transfer, until the server
-        // starts refusing channels altogether. Same shape as [PortForwardingManager.bindOnIo]:
-        // the var is written inside the block, before cancellation can land on the result, so the
-        // catch closes what was claimed. The close runs on IO under NonCancellable - this catch
-        // is already on the cancelled path, and an SFTP close writes to the socket, which the
-        // main thread must not do (see [withSftp] for what that costs).
-        var opened: SftpClient? = null
-        try {
-            return withContext(Dispatchers.IO) {
-                SftpClientFactory.instance().createSftpClient(session).also { opened = it }
-            }
-        } catch (cancelled: CancellationException) {
-            opened?.let {
-                withContext(NonCancellable + Dispatchers.IO) { runCatching(it::close) }
-            }
-            throw cancelled
-        }
-    }
-
-    /**
-     * Runs one command and answers its trimmed output.
-     *
-     * Bounded, because the callers are status queries (`hostname`, `uptime`, `free`, `df`) whose
-     * answers are worth exactly one screen refresh: a server that accepts the channel and never
-     * replies - wedged under load, or a transport that died without an error reaching this side -
-     * parks the stat producer forever otherwise. The bound returns the producer to the UI as
-     * "Unavailable" instead.
-     *
-     * The bound is MINA's own, not a coroutine timeout around a blocking call. `withTimeout`
-     * cannot deliver its cancellation into a thread blocked in a socket read: since kotlinx.coroutines
-     * 1.4, `withContext` waits for its block to finish even when the caller is cancelled, so a
-     * `withTimeout { withContext(Dispatchers.IO) { ... } }` spelling of this leaves the IO thread
-     * reading from the wedged transport for as long as the transport cares to stay silent - days,
-     * in the field, and a leaked thread per stat query. `executeRemoteCommand(command, Duration)`
-     * instead bounds both the channel open and the wait for the command's result inside MINA, and
-     * returns - or throws - within the budget on any server, however wedged. What stays true of
-     * the old spelling: a caller cancelled mid-wait does not return early; it returns when the
-     * bounded call does, which is at most `timeoutMs` later.
-     *
-     * The timeout is translated out of [SocketTimeoutException] before it leaves, because the
-     * message contract - "did not answer" - is what the failure copy and the tests speak, and
-     * because MINA's own message names the mechanics rather than the symptom. [IOException] keeps
-     * it on the ordinary failure path, out of the callers' cancellation branches.
-     *
-     * @param timeoutMs the budget; overridable so a test can make it seconds rather than the
-     *   production default.
-     */
-    suspend fun runCommand(
-        session: ClientSession,
-        command: String,
-        timeoutMs: Long = REMOTE_COMMAND_TIMEOUT_MS,
-    ): String =
-        withContext(Dispatchers.IO) {
-            try {
-                session.executeRemoteCommand(command, Duration.ofMillis(timeoutMs)).trim()
-            } catch (timedOut: SocketTimeoutException) {
-                throw IOException("The server did not answer '$command' within ${timeoutMs / 1000}s", timedOut)
-            }
-        }
-
-    /** Trusts this fingerprint for the profile's host. False when it could not be persisted. */
-    fun trustHost(profile: HostProfile, fingerprint: String): Boolean =
-        knownHosts.save(profile.host, profile.port, fingerprint)
-
-    /** Trusts the key the user has just accepted. False when it could not be persisted. */
-    fun trustHost(challenge: HostKeyChallenge): Boolean =
-        knownHosts.save(challenge.host, challenge.port, challenge.fingerprint)
-
-    /**
-     * Forgets the challenge held for a late collector, once the user has accepted or rejected it.
-     *
-     * The counterpart to the replay cache described on [_hostKeyChallenges]: without this, the answered
-     * question would be re-asked of the next collector to subscribe - a fresh view model after the last
-     * one was cleared, for instance - and a host-key dialog would appear for a key that had already
-     * been dealt with.
-     */
-    fun challengeHandled() {
-        _hostKeyChallenges.resetReplayCache()
-    }
-
-    fun knownHosts(): Map<String, String> = knownHosts.all()
-
-    fun removeKnownHost(host: String, port: Int) = knownHosts.remove(host, port)
-
-    fun clearKnownHosts() = knownHosts.clear()
-
-    fun importKnownHosts(map: Map<String, String>) = knownHosts.putAll(map)
-
-    fun fingerprint(publicKey: PublicKey): String = KnownHostsVerifier.fingerprint(publicKey)
-
-    /**
-     * Brings the client's algorithm set in line with the legacy-compatibility setting, in both
-     * directions.
-     *
-     * The one-way version of this was a way to weaken the app permanently by accident. It applied the
-     * extra algorithms the first time the setting was seen enabled and then latched, so a user who
-     * switched legacy mode on to reach one elderly server and switched it straight back off carried the
-     * weakened set into *every* later connection until the process was killed — and nothing in the UI
-     * suggested that, because the switch showed the setting as off. Assigning the modern lists back is
-     * what makes turning it off mean something before the next launch.
-     *
-     * `client` is a `@Singleton`, so this is process-wide state and the window matters: the check is
-     * recorded in [legacyApplied] so an unchanged setting costs one volatile read per connect rather
-     * than rebuilding four lists, and it runs immediately before the connect rather than from a
-     * settings observer, so no session can be opened with the previous set still installed.
-     */
-    private suspend fun applyLegacyAlgorithmsIfEnabled(): Boolean {
-        val legacy = runCatching { settingsRepository.settings.first().legacyAlgorithms }.getOrDefault(false)
-        if (legacyApplied == legacy) return legacy
-        synchronized(this) {
-            if (legacyApplied == legacy) return legacy
-            if (legacy) {
-                client.cipherFactories = modernCipherFactories + legacyCiphers.supported()
-                client.macFactories = modernMacFactories + legacyMacs.supported()
-                client.signatureFactories = modernSignatureFactories + legacySignatures.supported()
-                client.keyExchangeFactories = modernKeyExchangeFactories + legacyKeyExchangeFactories
-            } else {
-                client.cipherFactories = modernCipherFactories.toList()
-                client.macFactories = modernMacFactories.toList()
-                client.signatureFactories = modernSignatureFactories.toList()
-                client.keyExchangeFactories = modernKeyExchangeFactories.toList()
-            }
-            legacyApplied = legacy
-        }
-        return legacy
-    }
-
-    /**
-     * The four algorithm lists to install on one session, or null to leave it on the client's.
-     *
-     * Two independent per-host settings land here, in that order: the legacy-compatibility switch,
-     * which is a whole-proposal answer, and then the four explicit lists, each of which replaces one
-     * role outright. So a host can say "allow the old CBC ciphers" and *also* "but propose exactly
-     * these two key exchanges", and the second is not undone by the first.
-     *
-     * Null when the host has nothing to say - the legacy switch agreeing with the global one, or
-     * inheriting it, and no explicit list - which keeps the common case on exactly the path it was on
-     * before, lists included.
-     *
-     * A host with something to say gets *session*-level lists rather than a second write to the
-     * client's, because the client is a singleton shared by every connection: two hosts dialled at once
-     * with different answers would otherwise each get whichever set was installed last, and neither
-     * would be reproducible.
-     */
-    private fun algorithmsOverrideFor(profile: HostProfile, global: Boolean): SessionAlgorithms? {
-        val baseline = baselineAlgorithms(profile.legacyAlgorithms, global)
-        val ciphers = cipherFactoriesFor(profile.ciphers)
-        val macs = macFactoriesFor(profile.macs)
-        val signatures = signatureFactoriesFor(profile.hostKeyAlgorithms)
-        val keyExchange = keyExchangeFactoriesFor(profile.kexAlgorithms)
-        if (baseline == null && ciphers == null && macs == null && signatures == null && keyExchange == null) {
-            return null
-        }
-        // Read from the client, not from `modern*`: those were captured from the library's defaults at
-        // construction, whereas the client's current lists are what this session would otherwise
-        // propose - which is what an explicit list has to be laid over when the legacy switch is
-        // inherited rather than overridden.
-        val base = baseline ?: SessionAlgorithms(
-            ciphers = client.cipherFactories.toList(),
-            macs = client.macFactories.toList(),
-            signatures = client.signatureFactories.toList(),
-            keyExchange = client.keyExchangeFactories.toList(),
-        )
-        return SessionAlgorithms(
-            ciphers = ciphers ?: base.ciphers,
-            macs = macs ?: base.macs,
-            signatures = signatures ?: base.signatures,
-            keyExchange = keyExchange ?: base.keyExchange,
-        )
-    }
-
-    /**
-     * The whole proposal the legacy switch asks for, or null when this host has no opinion on it.
-     *
-     * Split out from [algorithmsOverrideFor] so that "does the legacy switch differ from the global
-     * one" stays one readable question, and so the explicit lists have something to be layered over.
-     */
-    private fun baselineAlgorithms(hostPreference: Boolean?, global: Boolean): SessionAlgorithms? {
-        if (hostPreference == null || hostPreference == global) return null
-        return if (hostPreference) {
-            SessionAlgorithms(
-                ciphers = modernCipherFactories + legacyCiphers.supported(),
-                macs = modernMacFactories + legacyMacs.supported(),
-                signatures = modernSignatureFactories + legacySignatures.supported(),
-                keyExchange = modernKeyExchangeFactories + legacyKeyExchangeFactories,
-            )
-        } else {
-            SessionAlgorithms(
-                ciphers = modernCipherFactories.toList(),
-                macs = modernMacFactories.toList(),
-                signatures = modernSignatureFactories.toList(),
-                keyExchange = modernKeyExchangeFactories.toList(),
-            )
-        }
-    }
-
-    /**
-     * The same list without anything named in [unwanted], compared by algorithm name because the
-     * default lists hold SSHD's own factory objects and the legacy lists hold `Builtin*` enum entries.
-     */
-    private fun <T : NamedResource> List<T>.without(unwanted: List<NamedResource>): List<T> {
-        val names = unwanted.mapTo(mutableSetOf()) { it.name }
-        return filterNot { it.name in names }
-    }
-
-    /**
-     * Drops anything this device's JCE providers cannot actually do — Blowfish and 3DES are the usual
-     * absentees. An unsupported factory left in the list would be advertised in the KEX proposal and
-     * then fail to instantiate if the server picked it, which is a worse outcome than not offering it.
-     */
-    private fun <T> List<T>.supported(): List<T> where T : OptionalFeature = filter { it.isSupported }
-
-    /**
-     * Sets the idle timeout that backs up the heartbeat armed in [armHeartbeat].
-     *
-     * MINA's default idle timeout is exactly ten minutes and [KEEP_ALIVE_RANGE] allows a keep-alive of
-     * exactly ten minutes. Those two race, and the user who lost is the one who deliberately chose the
-     * longest interval to save battery on a metered link: their idle session was dropped by the
-     * client's own timer at almost the moment the heartbeat that would have kept it alive was due.
-     * Anchoring it to three heartbeat intervals plus a minute keeps a real backstop - the session
-     * still goes away if the heartbeat itself stops running - while making it impossible for the
-     * backstop to fire before the heartbeat does.
-     *
-     * Unlike the heartbeat properties this one can be set on a live session, because MINA re-reads it
-     * on every idle check rather than caching it in a field at construction.
-     *
-     * With the keep-alive switched off it is switched off with it - [idleTimeoutSeconds] returns zero,
-     * which MINA's `checkIdleTimeout` treats as "no idle timeout" because it only acts on a positive
-     * duration. That coupling is the whole point: a backstop for a heartbeat that is not running is not
-     * a backstop, it is a timer that ends healthy idle sessions a couple of minutes after login, and it
-     * would fire on exactly the host whose owner asked for less traffic, not more.
-     */
-    private fun configureIdleTimeout(session: ClientSession, keepAliveSeconds: Int, serverAliveCountMax: Int) {
-        CoreModuleProperties.IDLE_TIMEOUT.set(
-            session,
-            Duration.ofSeconds(idleTimeoutSeconds(keepAliveSeconds, serverAliveCountMax)),
-        )
-    }
-
-    private fun ensureStarted() {
-        if (!started) synchronized(this) {
-            if (!started) {
-                client.start()
-                started = true
-            }
-        }
-    }
-
-    override fun close() {
-        synchronized(this) {
-            if (started) {
-                client.stop()
-                started = false
-            }
-        }
-    }
-
-    private companion object {
-
-        /** Keep-alive interval used when neither the host nor the settings have an opinion. */
-        const val DEFAULT_KEEP_ALIVE_SECONDS = 30
 
         /**
-         * The budget for one [runCommand] status query. Generous rather than tight — these run
-         * against the host's own binaries, and a box slow enough to miss it is reporting
-         * "Unavailable" for a refresh the user asked for, not losing anything - while an unbounded
-         * wait would hold the producer forever on a server that never answers at all.
+         * Waits up to [timeoutSeconds] for [session] to finish its SSH handshake.
+         *
+         * MINA's connect future resolves as soon as the *socket* is up, not when the handshake is done. Without
+         * this wait, a server that accepts the connection and then says nothing - a port held open by a
+         * firewall, a load balancer in front of a dead backend, a box being rebooted - is charged to the
+         * authentication budget, which exists for something else entirely: the server thinking about
+         * credentials it has already been sent, in a PAM stack or against a hardware token. The user would be
+         * told the connection timed out after a number they configured for a later phase, and the phase
+         * reported would be `AUTHENTICATE` on a server that never asked for a password.
+         *
+         * [ClientSessionEvent.WAIT_AUTH] is MINA's own name for the boundary between the two budgets: its
+         * session state adds it once the key exchange is `DONE` and no authentication has been attempted yet.
+         * [ClientSessionEvent.AUTHED] is accepted for the same reason - it can only mean the handshake is
+         * further along than this frame needs.
+         *
+         * [ClientSessionEvent.CLOSED] is waited for but deliberately not thrown on. A handshake that fails for
+         * a real reason - no key exchange in common, no cipher in common, a host key the verifier refused -
+         * closes the session carrying that reason, and the `auth()` call that follows reports it verbatim. A
+         * message invented here would replace a precise diagnostic with a vague one.
          */
-        const val REMOTE_COMMAND_TIMEOUT_MS = 30_000L
+        private fun awaitHandshake(
+            session: ClientSession,
+            timeoutSeconds: Long,
+        ) {
+            val settled =
+                EnumSet.of(
+                    ClientSessionEvent.WAIT_AUTH,
+                    ClientSessionEvent.AUTHED,
+                    ClientSessionEvent.CLOSED,
+                )
+            // Returns as soon as the session's state has any of these in common with `settled`, and on expiry
+            // returns whatever the state is plus TIMEOUT - so "none of the three" is exactly "it expired",
+            // stated in terms of what was waited for rather than in terms of MINA's expiry marker.
+            val state = session.waitFor(settled, Duration.ofSeconds(timeoutSeconds))
+            // Phrased the way MINA phrases its own expiries, because this is the same kind of answer and the
+            // milliseconds are what a user compares against the number they typed.
+            if (state.none { it in settled }) {
+                throw SshException(
+                    "Failed to complete the SSH handshake within specified timeout: ${timeoutSeconds * 1_000} msec",
+                )
+            }
+        }
+
+        /**
+         * Opens an interactive shell on [session], sized [columns]x[rows] when the caller knows the size.
+         *
+         * The caller normally does know it: a session being reconnected is replacing a pty whose geometry
+         * the user's screen already decided. Passing it here rather than resizing afterwards is what makes
+         * a reconnected `htop` come back at the size it left.
+         *
+         * Also where [HostProfile.environment] and [HostProfile.startupCommand] are applied, and
+         * deliberately the *only* place. Both mean "on a shell this app just created", and this function is
+         * called from exactly the three sites that create one - a first dial, a reconnect, and adopting a
+         * live session that has no shell yet - so "fresh shells only" is a property of where the code is
+         * rather than a flag a caller could forget to pass. A session the app adopts *with* a running shell
+         * never reaches here, which is correct: its environment was fixed when it was created and its
+         * startup command has already run.
+         */
+        suspend fun openTerminal(
+            session: ClientSession,
+            columns: Int? = null,
+            rows: Int? = null,
+            profile: HostProfile? = null,
+        ): TerminalChannel =
+            withContext(Dispatchers.IO) {
+                val pty = ptyRequestFor(profile, columns, rows)
+                val channel = SshTerminalChannel(session.createShellChannel())
+                channel.open(
+                    columns = pty.columns ?: channel.ptyColumns,
+                    rows = pty.rows ?: channel.ptyRows,
+                    usePty = pty.enabled,
+                    terminalType = pty.terminalType,
+                    environment = parseEnvironment(profile?.environment),
+                    // Per-session because the request is made on the channel: it is what tells the far end
+                    // it may open an agent channel back, and a session that never asked is a session whose
+                    // administrator never gets the invitation. SFTP channels never carry it - forwarding is
+                    // a property of the interactive shell the user typed into, not of every channel the
+                    // session happens to open.
+                    agentForwarding = profile?.agentForwarding == true,
+                )
+                // After the channel is open, because there is nowhere to write before it. A startup command is
+                // typed into the shell exactly as if the user had typed it - see [startupCommandBytes] for why
+                // that, and not an SSH `exec` - so it goes down the same path as a keystroke and its output
+                // appears in the transcript above the first prompt, which is what makes a failing one visible.
+                startupCommandBytes(profile?.startupCommand)?.let { channel.writeBytes(it) }
+                channel
+            }
+
+        /**
+         * Asks [session] whether it is still there, and waits [timeoutSeconds] for the answer.
+         *
+         * This is what a network migration needs and what a heartbeat cannot give it. Switching from Wi-Fi
+         * to mobile data invalidates the socket's source address, so the TCP connection is dead - but
+         * nothing says so: no FIN arrives, no error is raised, `isOpen` stays true, and the app's own
+         * heartbeat only concludes anything after [CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX]
+         * consecutive unanswered keepalives, which at the default interval is a minute and a half. For that
+         * minute and a half the terminal looks connected and silently swallows every keystroke, which is
+         * the single most-reported symptom of "SSH keeps disconnecting" in this app.
+         *
+         * The probe is OpenSSH's own `keepalive@openssh.com` global request, and the reply that matters is
+         * *any* reply:
+         *
+         *  - a `SSH_MSG_REQUEST_SUCCESS` returns the payload buffer;
+         *  - a `SSH_MSG_REQUEST_FAILURE` - what OpenSSH actually sends, since it implements no such global
+         *    request - makes MINA return `null`, which is still proof the far end is listening;
+         *  - a timeout or an I/O error is the only negative answer.
+         *
+         * So a server that says "no" counts as alive, and only silence counts as dead. That asymmetry is
+         * deliberate: the cost of a false positive is a session the app kills while it was working, which
+         * is the bug this exists to fix rather than a fix for it.
+         */
+        suspend fun probeLiveness(
+            session: ClientSession,
+            timeoutSeconds: Long = LIVENESS_PROBE_SECONDS,
+        ): Boolean =
+            withContext(Dispatchers.IO) {
+                if (!session.isOpen) return@withContext false
+                try {
+                    val request = KEEPALIVE_REQUEST
+                    // The shape AbstractSession.request expects: the command byte, the request name, and a
+                    // want-reply flag it re-reads out of the buffer to decide whether to wait for anything.
+                    // Four bytes for the string's length prefix and one for the boolean; the hint only sizes
+                    // the initial allocation, so being a byte out costs a grow, not correctness.
+                    val buffer = session.createBuffer(SshConstants.SSH_MSG_GLOBAL_REQUEST, request.length + Integer.BYTES + 1)
+                    buffer.putString(request)
+                    buffer.putBoolean(true)
+                    session.request(request, buffer, Duration.ofSeconds(timeoutSeconds))
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    // SocketTimeoutException (no reply in time) and InterruptedIOException are both IOExceptions,
+                    // and all of them mean the same thing here: nothing came back. The catch is wider than
+                    // that on purpose, because the probe runs against a transport that may be tearing itself
+                    // down at the same moment - MINA raises its own runtime exceptions from a session or a
+                    // channel that closed under the request - and every one of those means the same thing an
+                    // unanswered timeout does: no reply arrived. The asymmetry the KDoc promises is preserved:
+                    // *any* reply is counted above, so widening the negative side cannot kill a session that
+                    // answered. Cancellation is rethrown first; it is not an answer about the session.
+                    false
+                }
+            }
+
+        /**
+         * Opens an SFTP channel on [session], hands it to [block], and closes it - all on [Dispatchers.IO].
+         *
+         * The only correct way to run a bounded piece of SFTP work, and it exists because the obvious
+         * spelling of it is wrong in a way that costs the user their session. `openSftp(session).use { }`
+         * looks safe: every call inside it suspends into [Dispatchers.IO] and comes back. But `use`
+         * closes the client in a `finally` on the *caller's* dispatcher, and the callers here are
+         * `viewModelScope` coroutines, which dispatch on `Main.immediate`. Closing an SFTP client tears
+         * down a channel, which writes to the socket - so the close, and only the close, ran on the UI
+         * thread.
+         *
+         * What that produced was not a caught exception. Android's BlockGuard raises
+         * [android.os.NetworkOnMainThreadException] from inside MINA's write path, which marks the
+         * transport broken before the throw ever reaches our `runCatching` - so a session that had just
+         * finished authenticating and opened a shell was reported as `TransportFailed`, the tab said
+         * "Connection lost: NetworkOnMainThreadException", and the reconnect ladder answered an app-side
+         * threading mistake by climbing it, five rungs, waiting half a minute at the top. Every shell
+         * open ran the auto-SFTP login, so every session died about two seconds after it came up.
+         *
+         * One `withContext` around the whole lifetime is the fix: the open, the work and the close all
+         * happen on the same IO thread, and no call site can reintroduce the gap by forgetting a
+         * dispatcher.
+         */
+        suspend fun <T> withSftp(
+            session: ClientSession,
+            block: suspend (SftpClient) -> T,
+        ): T = withContext(Dispatchers.IO) { openSftp(session).use { sftp -> block(sftp) } }
+
+        /**
+         * Opens an SFTP channel, leaving its lifetime to the caller.
+         *
+         * For the file-transfer paths only, which hand the client to [TransferCoordinator] to be closed
+         * when the transfer ends - a `use { }` here would close the channel before the transfer that was
+         * handed it ever ran. **The caller owns closing it, and must not do so on the main thread**: see
+         * [withSftp] for what that costs. `TransferCoordinator` closes it inside its own
+         * [Dispatchers.IO] scope, which is why those call sites are safe.
+         *
+         * Anything with a bounded scope wants [withSftp] instead.
+         */
+        suspend fun openSftp(session: ClientSession): SftpClient {
+            // A channel that finished opening is never dropped. `createSftpClient` performs blocking
+            // I/O *and* starts the channel, and a caller cancelled while it runs gets its
+            // CancellationException from `withContext` with the result discarded on the way - a live
+            // SFTP channel left attached to the session, holding an open handle and a server-side
+            // channel slot until the whole session ends, one per cancelled transfer, until the server
+            // starts refusing channels altogether. Same shape as [PortForwardingManager.bindOnIo]:
+            // the var is written inside the block, before cancellation can land on the result, so the
+            // catch closes what was claimed. The close runs on IO under NonCancellable - this catch
+            // is already on the cancelled path, and an SFTP close writes to the socket, which the
+            // main thread must not do (see [withSftp] for what that costs).
+            var opened: SftpClient? = null
+            try {
+                return withContext(Dispatchers.IO) {
+                    SftpClientFactory.instance().createSftpClient(session).also { opened = it }
+                }
+            } catch (cancelled: CancellationException) {
+                opened?.let {
+                    withContext(NonCancellable + Dispatchers.IO) { runCatching(it::close) }
+                }
+                throw cancelled
+            }
+        }
+
+        /**
+         * Runs one command and answers its trimmed output.
+         *
+         * Bounded, because the callers are status queries (`hostname`, `uptime`, `free`, `df`) whose
+         * answers are worth exactly one screen refresh: a server that accepts the channel and never
+         * replies - wedged under load, or a transport that died without an error reaching this side -
+         * parks the stat producer forever otherwise. The bound returns the producer to the UI as
+         * "Unavailable" instead.
+         *
+         * The bound is MINA's own, not a coroutine timeout around a blocking call. `withTimeout`
+         * cannot deliver its cancellation into a thread blocked in a socket read: since kotlinx.coroutines
+         * 1.4, `withContext` waits for its block to finish even when the caller is cancelled, so a
+         * `withTimeout { withContext(Dispatchers.IO) { ... } }` spelling of this leaves the IO thread
+         * reading from the wedged transport for as long as the transport cares to stay silent - days,
+         * in the field, and a leaked thread per stat query. `executeRemoteCommand(command, Duration)`
+         * instead bounds both the channel open and the wait for the command's result inside MINA, and
+         * returns - or throws - within the budget on any server, however wedged. What stays true of
+         * the old spelling: a caller cancelled mid-wait does not return early; it returns when the
+         * bounded call does, which is at most `timeoutMs` later.
+         *
+         * The timeout is translated out of [SocketTimeoutException] before it leaves, because the
+         * message contract - "did not answer" - is what the failure copy and the tests speak, and
+         * because MINA's own message names the mechanics rather than the symptom. [IOException] keeps
+         * it on the ordinary failure path, out of the callers' cancellation branches.
+         *
+         * @param timeoutMs the budget; overridable so a test can make it seconds rather than the
+         *   production default.
+         */
+        suspend fun runCommand(
+            session: ClientSession,
+            command: String,
+            timeoutMs: Long = REMOTE_COMMAND_TIMEOUT_MS,
+        ): String =
+            withContext(Dispatchers.IO) {
+                try {
+                    session.executeRemoteCommand(command, Duration.ofMillis(timeoutMs)).trim()
+                } catch (timedOut: SocketTimeoutException) {
+                    throw IOException("The server did not answer '$command' within ${timeoutMs / 1000}s", timedOut)
+                }
+            }
+
+        /** Trusts this fingerprint for the profile's host. False when it could not be persisted. */
+        fun trustHost(
+            profile: HostProfile,
+            fingerprint: String,
+        ): Boolean = knownHosts.save(profile.host, profile.port, fingerprint)
+
+        /** Trusts the key the user has just accepted. False when it could not be persisted. */
+        fun trustHost(challenge: HostKeyChallenge): Boolean = knownHosts.save(challenge.host, challenge.port, challenge.fingerprint)
+
+        /**
+         * Forgets the challenge held for a late collector, once the user has accepted or rejected it.
+         *
+         * The counterpart to the replay cache described on [_hostKeyChallenges]: without this, the answered
+         * question would be re-asked of the next collector to subscribe - a fresh view model after the last
+         * one was cleared, for instance - and a host-key dialog would appear for a key that had already
+         * been dealt with.
+         */
+        fun challengeHandled() {
+            _hostKeyChallenges.resetReplayCache()
+        }
+
+        fun knownHosts(): Map<String, String> = knownHosts.all()
+
+        fun removeKnownHost(
+            host: String,
+            port: Int,
+        ) = knownHosts.remove(host, port)
+
+        fun clearKnownHosts() = knownHosts.clear()
+
+        fun importKnownHosts(map: Map<String, String>) = knownHosts.putAll(map)
+
+        fun fingerprint(publicKey: PublicKey): String = KnownHostsVerifier.fingerprint(publicKey)
+
+        /**
+         * Brings the client's algorithm set in line with the legacy-compatibility setting, in both
+         * directions.
+         *
+         * The one-way version of this was a way to weaken the app permanently by accident. It applied the
+         * extra algorithms the first time the setting was seen enabled and then latched, so a user who
+         * switched legacy mode on to reach one elderly server and switched it straight back off carried the
+         * weakened set into *every* later connection until the process was killed — and nothing in the UI
+         * suggested that, because the switch showed the setting as off. Assigning the modern lists back is
+         * what makes turning it off mean something before the next launch.
+         *
+         * `client` is a `@Singleton`, so this is process-wide state and the window matters: the check is
+         * recorded in [legacyApplied] so an unchanged setting costs one volatile read per connect rather
+         * than rebuilding four lists, and it runs immediately before the connect rather than from a
+         * settings observer, so no session can be opened with the previous set still installed.
+         */
+        private suspend fun applyLegacyAlgorithmsIfEnabled(): Boolean {
+            val legacy = runCatching { settingsRepository.settings.first().legacyAlgorithms }.getOrDefault(false)
+            if (legacyApplied == legacy) return legacy
+            synchronized(this) {
+                if (legacyApplied == legacy) return legacy
+                if (legacy) {
+                    client.cipherFactories = modernCipherFactories + legacyCiphers.supported()
+                    client.macFactories = modernMacFactories + legacyMacs.supported()
+                    client.signatureFactories = modernSignatureFactories + legacySignatures.supported()
+                    client.keyExchangeFactories = modernKeyExchangeFactories + legacyKeyExchangeFactories
+                } else {
+                    client.cipherFactories = modernCipherFactories.toList()
+                    client.macFactories = modernMacFactories.toList()
+                    client.signatureFactories = modernSignatureFactories.toList()
+                    client.keyExchangeFactories = modernKeyExchangeFactories.toList()
+                }
+                legacyApplied = legacy
+            }
+            return legacy
+        }
+
+        /**
+         * The four algorithm lists to install on one session, or null to leave it on the client's.
+         *
+         * Two independent per-host settings land here, in that order: the legacy-compatibility switch,
+         * which is a whole-proposal answer, and then the four explicit lists, each of which replaces one
+         * role outright. So a host can say "allow the old CBC ciphers" and *also* "but propose exactly
+         * these two key exchanges", and the second is not undone by the first.
+         *
+         * Null when the host has nothing to say - the legacy switch agreeing with the global one, or
+         * inheriting it, and no explicit list - which keeps the common case on exactly the path it was on
+         * before, lists included.
+         *
+         * A host with something to say gets *session*-level lists rather than a second write to the
+         * client's, because the client is a singleton shared by every connection: two hosts dialled at once
+         * with different answers would otherwise each get whichever set was installed last, and neither
+         * would be reproducible.
+         */
+        private fun algorithmsOverrideFor(
+            profile: HostProfile,
+            global: Boolean,
+        ): SessionAlgorithms? {
+            val baseline = baselineAlgorithms(profile.legacyAlgorithms, global)
+            val ciphers = cipherFactoriesFor(profile.ciphers)
+            val macs = macFactoriesFor(profile.macs)
+            val signatures = signatureFactoriesFor(profile.hostKeyAlgorithms)
+            val keyExchange = keyExchangeFactoriesFor(profile.kexAlgorithms)
+            if (baseline == null && ciphers == null && macs == null && signatures == null && keyExchange == null) {
+                return null
+            }
+            // Read from the client, not from `modern*`: those were captured from the library's defaults at
+            // construction, whereas the client's current lists are what this session would otherwise
+            // propose - which is what an explicit list has to be laid over when the legacy switch is
+            // inherited rather than overridden.
+            val base =
+                baseline ?: SessionAlgorithms(
+                    ciphers = client.cipherFactories.toList(),
+                    macs = client.macFactories.toList(),
+                    signatures = client.signatureFactories.toList(),
+                    keyExchange = client.keyExchangeFactories.toList(),
+                )
+            return SessionAlgorithms(
+                ciphers = ciphers ?: base.ciphers,
+                macs = macs ?: base.macs,
+                signatures = signatures ?: base.signatures,
+                keyExchange = keyExchange ?: base.keyExchange,
+            )
+        }
+
+        /**
+         * The whole proposal the legacy switch asks for, or null when this host has no opinion on it.
+         *
+         * Split out from [algorithmsOverrideFor] so that "does the legacy switch differ from the global
+         * one" stays one readable question, and so the explicit lists have something to be layered over.
+         */
+        private fun baselineAlgorithms(
+            hostPreference: Boolean?,
+            global: Boolean,
+        ): SessionAlgorithms? {
+            if (hostPreference == null || hostPreference == global) return null
+            return if (hostPreference) {
+                SessionAlgorithms(
+                    ciphers = modernCipherFactories + legacyCiphers.supported(),
+                    macs = modernMacFactories + legacyMacs.supported(),
+                    signatures = modernSignatureFactories + legacySignatures.supported(),
+                    keyExchange = modernKeyExchangeFactories + legacyKeyExchangeFactories,
+                )
+            } else {
+                SessionAlgorithms(
+                    ciphers = modernCipherFactories.toList(),
+                    macs = modernMacFactories.toList(),
+                    signatures = modernSignatureFactories.toList(),
+                    keyExchange = modernKeyExchangeFactories.toList(),
+                )
+            }
+        }
+
+        /**
+         * The same list without anything named in [unwanted], compared by algorithm name because the
+         * default lists hold SSHD's own factory objects and the legacy lists hold `Builtin*` enum entries.
+         */
+        private fun <T : NamedResource> List<T>.without(unwanted: List<NamedResource>): List<T> {
+            val names = unwanted.mapTo(mutableSetOf()) { it.name }
+            return filterNot { it.name in names }
+        }
+
+        /**
+         * Drops anything this device's JCE providers cannot actually do — Blowfish and 3DES are the usual
+         * absentees. An unsupported factory left in the list would be advertised in the KEX proposal and
+         * then fail to instantiate if the server picked it, which is a worse outcome than not offering it.
+         */
+        private fun <T> List<T>.supported(): List<T> where T : OptionalFeature = filter { it.isSupported }
+
+        /**
+         * Sets the idle timeout that backs up the heartbeat armed in [armHeartbeat].
+         *
+         * MINA's default idle timeout is exactly ten minutes and [KEEP_ALIVE_RANGE] allows a keep-alive of
+         * exactly ten minutes. Those two race, and the user who lost is the one who deliberately chose the
+         * longest interval to save battery on a metered link: their idle session was dropped by the
+         * client's own timer at almost the moment the heartbeat that would have kept it alive was due.
+         * Anchoring it to three heartbeat intervals plus a minute keeps a real backstop - the session
+         * still goes away if the heartbeat itself stops running - while making it impossible for the
+         * backstop to fire before the heartbeat does.
+         *
+         * Unlike the heartbeat properties this one can be set on a live session, because MINA re-reads it
+         * on every idle check rather than caching it in a field at construction.
+         *
+         * With the keep-alive switched off it is switched off with it - [idleTimeoutSeconds] returns zero,
+         * which MINA's `checkIdleTimeout` treats as "no idle timeout" because it only acts on a positive
+         * duration. That coupling is the whole point: a backstop for a heartbeat that is not running is not
+         * a backstop, it is a timer that ends healthy idle sessions a couple of minutes after login, and it
+         * would fire on exactly the host whose owner asked for less traffic, not more.
+         */
+        private fun configureIdleTimeout(
+            session: ClientSession,
+            keepAliveSeconds: Int,
+            serverAliveCountMax: Int,
+        ) {
+            CoreModuleProperties.IDLE_TIMEOUT.set(
+                session,
+                Duration.ofSeconds(idleTimeoutSeconds(keepAliveSeconds, serverAliveCountMax)),
+            )
+        }
+
+        private fun ensureStarted() {
+            if (!started) {
+                synchronized(this) {
+                    if (!started) {
+                        client.start()
+                        started = true
+                    }
+                }
+            }
+        }
+
+        override fun close() {
+            synchronized(this) {
+                if (started) {
+                    client.stop()
+                    started = false
+                }
+            }
+        }
+
+        private companion object {
+            /** Keep-alive interval used when neither the host nor the settings have an opinion. */
+            const val DEFAULT_KEEP_ALIVE_SECONDS = 30
+
+            /**
+             * The budget for one [runCommand] status query. Generous rather than tight — these run
+             * against the host's own binaries, and a box slow enough to miss it is reporting
+             * "Unavailable" for a refresh the user asked for, not losing anything - while an unbounded
+             * wait would hold the producer forever on a server that never answers at all.
+             */
+            const val REMOTE_COMMAND_TIMEOUT_MS = 30_000L
+        }
     }
-}
 
 /** Slack between the last heartbeat that could arrive and the idle timeout firing. */
 private const val IDLE_TIMEOUT_MARGIN_SECONDS = 60L
@@ -928,7 +990,10 @@ private const val IDLE_TIMEOUT_MARGIN_SECONDS = 60L
  * @throws IllegalArgumentException with the message the user is shown, when the route is incomplete.
  *   Reachable despite the Add Host validation: a profile can also arrive from an imported backup.
  */
-internal fun socksProxyConfig(profile: HostProfile, timeoutSeconds: Long): SocksProxyConfig {
+internal fun socksProxyConfig(
+    profile: HostProfile,
+    timeoutSeconds: Long,
+): SocksProxyConfig {
     val host = profile.socksHost?.trim().orEmpty()
     require(host.isNotEmpty() && profile.socksPort in PORT_RANGE) {
         "SOCKS5 proxy host and port are not configured"
@@ -943,7 +1008,10 @@ internal fun socksProxyConfig(profile: HostProfile, timeoutSeconds: Long): Socks
 }
 
 /** The HTTP CONNECT leg of a proxied connection. See [socksProxyConfig]. */
-internal fun httpProxyConfig(profile: HostProfile, timeoutSeconds: Long): HttpProxyConfig {
+internal fun httpProxyConfig(
+    profile: HostProfile,
+    timeoutSeconds: Long,
+): HttpProxyConfig {
     val host = profile.socksHost?.trim().orEmpty()
     require(host.isNotEmpty() && profile.socksPort in PORT_RANGE) {
         "HTTP CONNECT proxy host and port are not configured"
@@ -972,16 +1040,26 @@ internal fun httpProxyConfig(profile: HostProfile, timeoutSeconds: Long): HttpPr
  * written when a person taps "trust" or "forget", and the alternative is telling them a security
  * decision has been stored before it has.
  */
-internal class KnownHostsStore(context: Context) {
+internal class KnownHostsStore(
+    context: Context,
+) {
     private val preferences = context.getSharedPreferences("known_hosts", Context.MODE_PRIVATE)
-    private val fingerprints = ConcurrentHashMap<String, String>().apply {
-        preferences.all.forEach { (key, value) -> if (value is String) put(key, value) }
-    }
+    private val fingerprints =
+        ConcurrentHashMap<String, String>().apply {
+            preferences.all.forEach { (key, value) -> if (value is String) put(key, value) }
+        }
 
-    fun get(host: String, port: Int): String? = fingerprints["$host:$port"]
+    fun get(
+        host: String,
+        port: Int,
+    ): String? = fingerprints["$host:$port"]
 
     /** Trusts [fingerprint] for this host. False when it was not written to disk. */
-    fun save(host: String, port: Int, fingerprint: String): Boolean {
+    fun save(
+        host: String,
+        port: Int,
+        fingerprint: String,
+    ): Boolean {
         val key = "$host:$port"
         fingerprints[key] = fingerprint
         return commit { putString(key, fingerprint) }
@@ -990,7 +1068,10 @@ internal class KnownHostsStore(context: Context) {
     fun all(): Map<String, String> = fingerprints.toMap()
 
     /** Revokes this host's stored key. False when the revocation did not reach disk. */
-    fun remove(host: String, port: Int): Boolean {
+    fun remove(
+        host: String,
+        port: Int,
+    ): Boolean {
         val key = "$host:$port"
         fingerprints.remove(key)
         return commit { this.remove(key) }
@@ -1016,12 +1097,15 @@ internal class KnownHostsStore(context: Context) {
      * caller is already being told the write failed - taking the process down as well would turn a
      * disk problem into a crash in the middle of a connection.
      */
-    private fun commit(edits: android.content.SharedPreferences.Editor.() -> Unit): Boolean =
-        runCatching { preferences.edit().apply(edits).commit() }.getOrDefault(false)
+    private fun commit(edits: android.content.SharedPreferences.Editor.() -> Unit): Boolean = runCatching { preferences.edit().apply(edits).commit() }.getOrDefault(false)
 }
 
 /** The host a jump-host connection is for, for as long as that connection is being made. */
-internal class TunnelledTarget(val username: String, val host: String, val port: Int)
+internal class TunnelledTarget(
+    val username: String,
+    val host: String,
+    val port: Int,
+)
 
 /** What to do with a host key the store has not already accepted. */
 internal enum class HostKeyDecision { PIN, ASK, REFUSE }
@@ -1034,16 +1118,24 @@ internal enum class HostKeyDecision { PIN, ASK, REFUSE }
  * means exactly that: the first use. Silently accepting the second, different key would turn pinning
  * into decoration and hide the one event it exists to catch.
  */
-internal fun hostKeyDecision(policy: HostKeyPolicy, keyChanged: Boolean): HostKeyDecision = when {
-    // Refuses either way: a strict host connects to a pinned key or it does not connect.
-    policy == HostKeyPolicy.STRICT -> HostKeyDecision.REFUSE
-    keyChanged -> HostKeyDecision.ASK
-    policy == HostKeyPolicy.ACCEPT_NEW -> HostKeyDecision.PIN
-    else -> HostKeyDecision.ASK
-}
+internal fun hostKeyDecision(
+    policy: HostKeyPolicy,
+    keyChanged: Boolean,
+): HostKeyDecision =
+    when {
+        // Refuses either way: a strict host connects to a pinned key or it does not connect.
+        policy == HostKeyPolicy.STRICT -> HostKeyDecision.REFUSE
+        keyChanged -> HostKeyDecision.ASK
+        policy == HostKeyPolicy.ACCEPT_NEW -> HostKeyDecision.PIN
+        else -> HostKeyDecision.ASK
+    }
 
 /** A host and port the verifier can name, and whether that host is this device. */
-internal class SocketIdentity(val host: String, val port: Int, val isLoopback: Boolean)
+internal class SocketIdentity(
+    val host: String,
+    val port: Int,
+    val isLoopback: Boolean,
+)
 
 internal class KnownHostsVerifier(
     private val store: KnownHostsStore,
@@ -1066,11 +1158,12 @@ internal class KnownHostsVerifier(
         // stay correct when connecting through a SOCKS5 or HTTP CONNECT proxy: for those, MINA dials
         // the proxy but records the address the caller asked for, while the socket's peer is the proxy
         // and would key every host behind one proxy to the same entry.
-        val observed = identify(clientSession?.connectAddress)
-            ?: identify(remoteAddress)
-            // An address type that cannot be named cannot be pinned to anything, and accepting a key
-            // that nothing can be compared against later is the one answer that must not be given.
-            ?: return false
+        val observed =
+            identify(clientSession?.connectAddress)
+                ?: identify(remoteAddress)
+                // An address type that cannot be named cannot be pinned to anything, and accepting a key
+                // that nothing can be compared against later is the one answer that must not be given.
+                ?: return false
         val address = intendedIdentity(clientSession, observed)
         val actual = fingerprint(serverKey)
         val expected = store.get(address.host, address.port)
@@ -1107,7 +1200,10 @@ internal class KnownHostsVerifier(
      * indistinguishable from the forward, and pinning it as the target would file the wrong key under
      * the target's name.
      */
-    private fun intendedIdentity(session: ClientSession?, observed: SocketIdentity): SocketIdentity {
+    private fun intendedIdentity(
+        session: ClientSession?,
+        observed: SocketIdentity,
+    ): SocketIdentity {
         if (!observed.isLoopback) return observed
         val target = tunnelledTarget(session?.username) ?: return observed
         if (target.host == observed.host && target.port == observed.port) return observed
@@ -1124,22 +1220,24 @@ internal class KnownHostsVerifier(
          * without asking anybody: a connection that fails saying the key is untrusted while no dialog
          * is ever shown, which is unexplainable from the outside.
          */
-        private fun identify(address: java.net.SocketAddress?): SocketIdentity? = when (address) {
-            is InetSocketAddress -> SocketIdentity(
-                host = address.hostString,
-                port = address.port,
-                isLoopback = address.address?.isLoopbackAddress == true || isLoopbackName(address.hostString),
-            )
-            is SshdSocketAddress -> SocketIdentity(
-                host = address.hostName,
-                port = address.port,
-                isLoopback = isLoopbackName(address.hostName),
-            )
-            else -> null
-        }
+        private fun identify(address: java.net.SocketAddress?): SocketIdentity? =
+            when (address) {
+                is InetSocketAddress ->
+                    SocketIdentity(
+                        host = address.hostString,
+                        port = address.port,
+                        isLoopback = address.address?.isLoopbackAddress == true || isLoopbackName(address.hostString),
+                    )
+                is SshdSocketAddress ->
+                    SocketIdentity(
+                        host = address.hostName,
+                        port = address.port,
+                        isLoopback = isLoopbackName(address.hostName),
+                    )
+                else -> null
+            }
 
-        private fun isLoopbackName(host: String): Boolean =
-            host == "localhost" || host == "::1" || host.startsWith("127.")
+        private fun isLoopbackName(host: String): Boolean = host == "localhost" || host == "::1" || host.startsWith("127.")
 
         fun fingerprint(publicKey: PublicKey): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
@@ -1244,11 +1342,12 @@ internal fun agentFor(context: AttributeRepository?): StoreBackedAgent? {
  * (the agent itself is stateless, so the copies cost nothing).
  */
 private class ForwardingAwareAgentFactory : SshAgentFactory {
+    override fun getChannelForwardingFactories(manager: FactoryManager): List<ChannelFactory> = LocalAgentFactory.DEFAULT_FORWARDING_CHANNELS
 
-    override fun getChannelForwardingFactories(manager: FactoryManager): List<ChannelFactory> =
-        LocalAgentFactory.DEFAULT_FORWARDING_CHANNELS
-
-    override fun createClient(session: Session, manager: FactoryManager): SshAgent? {
+    override fun createClient(
+        session: Session,
+        manager: FactoryManager,
+    ): SshAgent? {
         // Read off the IoSession rather than the session's own accessor, for the same reason
         // [sessionTuning] does: the repository reaches the socket before the session is built, and
         // publickey auth can start in between.
@@ -1266,7 +1365,10 @@ private class ForwardingAwareAgentFactory : SshAgentFactory {
  * [HostProfile.keepAliveSeconds] is the host's own interval and a null there means "inherit", so
  * [globalSeconds] - the value from Settings - is the fallback rather than a constant.
  */
-internal fun resolveKeepAliveSeconds(profile: HostProfile, globalSeconds: Int): Int {
+internal fun resolveKeepAliveSeconds(
+    profile: HostProfile,
+    globalSeconds: Int,
+): Int {
     if (!profile.keepAliveEnabled) return 0
     val requested = profile.keepAliveSeconds ?: globalSeconds
     return requested.coerceIn(KEEP_ALIVE_RANGE.first, KEEP_ALIVE_RANGE.last)
@@ -1286,7 +1388,10 @@ internal fun resolveKeepAliveSeconds(profile: HostProfile, globalSeconds: Int): 
  * after login, on exactly the host whose owner asked for *less* traffic. MINA reads a non-positive
  * duration as "no idle timeout", so zero switches the timer off rather than setting it to instant.
  */
-internal fun idleTimeoutSeconds(keepAliveSeconds: Int, serverAliveCountMax: Int): Long {
+internal fun idleTimeoutSeconds(
+    keepAliveSeconds: Int,
+    serverAliveCountMax: Int,
+): Long {
     if (keepAliveSeconds <= 0) return 0L
     val misses = serverAliveCountMax.coerceAtLeast(1).toLong()
     return keepAliveSeconds.toLong() * misses + IDLE_TIMEOUT_MARGIN_SECONDS
@@ -1328,11 +1433,21 @@ internal class PtyRequest(
     val rows: Int?,
 )
 
-internal fun ptyRequestFor(profile: HostProfile?, measuredColumns: Int?, measuredRows: Int?): PtyRequest {
-    val forcedColumns = profile?.terminalColumns?.takeIf { it.isForcedTerminalSize() }
-        ?.coerceIn(TERMINAL_COLUMNS_RANGE.first, TERMINAL_COLUMNS_RANGE.last)
-    val forcedRows = profile?.terminalRows?.takeIf { it.isForcedTerminalSize() }
-        ?.coerceIn(TERMINAL_ROWS_RANGE.first, TERMINAL_ROWS_RANGE.last)
+internal fun ptyRequestFor(
+    profile: HostProfile?,
+    measuredColumns: Int?,
+    measuredRows: Int?,
+): PtyRequest {
+    val forcedColumns =
+        profile
+            ?.terminalColumns
+            ?.takeIf { it.isForcedTerminalSize() }
+            ?.coerceIn(TERMINAL_COLUMNS_RANGE.first, TERMINAL_COLUMNS_RANGE.last)
+    val forcedRows =
+        profile
+            ?.terminalRows
+            ?.takeIf { it.isForcedTerminalSize() }
+            ?.coerceIn(TERMINAL_ROWS_RANGE.first, TERMINAL_ROWS_RANGE.last)
     return PtyRequest(
         enabled = profile?.usePty ?: true,
         terminalType = profile?.terminalType?.takeIf(String::isNotBlank) ?: DEFAULT_TERMINAL_TYPE,
@@ -1376,11 +1491,12 @@ internal fun parseEnvironment(text: String?): Map<String, String> {
 }
 
 /** The POSIX shape for an environment variable name, which is also the shape the protocol field allows. */
-private fun String.isEnvironmentName(): Boolean = isNotEmpty() &&
-    length <= MAX_ENVIRONMENT_NAME_LENGTH &&
-    first().let { it.isLetter() || it == '_' } &&
-    all { it.isLetterOrDigit() || it == '_' } &&
-    all { it.code < 128 }
+private fun String.isEnvironmentName(): Boolean =
+    isNotEmpty() &&
+        length <= MAX_ENVIRONMENT_NAME_LENGTH &&
+        first().let { it.isLetter() || it == '_' } &&
+        all { it.isLetterOrDigit() || it == '_' } &&
+        all { it.code < 128 }
 
 /**
  * One layer of matching quotes removed, so `TZ="Europe/London"` sends what it looks like it sends.
@@ -1389,11 +1505,12 @@ private fun String.isEnvironmentName(): Boolean = isNotEmpty() &&
  * spaces in it and not a shell grammar - there is no shell involved in a channel request, and pretending
  * otherwise would make `PS1='\u@\h '` mean something different here than it does in a file.
  */
-private fun String.unquoted(): String = when {
-    length >= 2 && startsWith('"') && endsWith('"') -> substring(1, length - 1)
-    length >= 2 && startsWith('\'') && endsWith('\'') -> substring(1, length - 1)
-    else -> this
-}
+private fun String.unquoted(): String =
+    when {
+        length >= 2 && startsWith('"') && endsWith('"') -> substring(1, length - 1)
+        length >= 2 && startsWith('\'') && endsWith('\'') -> substring(1, length - 1)
+        else -> this
+    }
 
 private const val MAX_ENVIRONMENT_NAME_LENGTH = 64
 
@@ -1436,8 +1553,9 @@ internal fun startupCommandBytes(command: String?): ByteArray? {
 internal fun compressionFactories(enabled: Boolean): List<NamedFactory<Compression>> {
     val none = listOf(BuiltinCompressions.none)
     if (!enabled) return none
-    val preferred = listOf(BuiltinCompressions.delayedZlib, BuiltinCompressions.zlib)
-        .filter(BuiltinCompressions::isSupported)
+    val preferred =
+        listOf(BuiltinCompressions.delayedZlib, BuiltinCompressions.zlib)
+            .filter(BuiltinCompressions::isSupported)
     return preferred + none
 }
 
@@ -1504,7 +1622,10 @@ private fun armHeartbeat(
  * and compression lists take effect: written any later they read back exactly as set and change
  * nothing, because the proposal has already gone out.
  */
-private fun applySessionTuning(session: ClientSession, tuning: SessionTuning) {
+private fun applySessionTuning(
+    session: ClientSession,
+    tuning: SessionTuning,
+) {
     armHeartbeat(session, tuning.keepAliveSeconds, tuning.serverAliveCountMax)
     CoreModuleProperties.PREFERRED_AUTHS.set(session, tuning.preferredAuths)
     session.compressionFactories = compressionFactories(tuning.compression)
@@ -1549,7 +1670,6 @@ private class LivenessClientSession(
     manager: ClientFactoryManager,
     ioSession: IoSession,
 ) : ClientSessionImpl(manager, ioSession) {
-
     override fun initializeCurrentService(): CurrentService {
         // Runs from the superclass constructor, so nothing declared by this class is initialised yet -
         // hence the attribute lookup rather than a constructor parameter.
@@ -1560,7 +1680,8 @@ private class LivenessClientSession(
 }
 
 /** Makes [LivenessClientSession] the session every connection gets. */
-private class LivenessSessionFactory(client: ClientFactoryManager) : SessionFactory(client) {
-    override fun doCreateSession(ioSession: IoSession): ClientSessionImpl =
-        LivenessClientSession(getClient(), ioSession)
+private class LivenessSessionFactory(
+    client: ClientFactoryManager,
+) : SessionFactory(client) {
+    override fun doCreateSession(ioSession: IoSession): ClientSessionImpl = LivenessClientSession(getClient(), ioSession)
 }

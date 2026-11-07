@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import dev.eclipse.ssh.data.model.AppSettings
 import dev.eclipse.ssh.data.settings.SettingsRepository
-import javax.inject.Inject
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Every settings destination Activity: a window whose whole content is one [SettingsDestination].
@@ -50,7 +50,6 @@ import kotlinx.coroutines.launch
  * change is as cheap as it is - see [SettingsDestination].
  */
 abstract class SettingsDestinationActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     /**
@@ -71,7 +70,10 @@ abstract class SettingsDestinationActivity : ComponentActivity() {
 
     /** The screen's body. Receives the settings snapshot read when the window opened. */
     @Composable
-    protected abstract fun Body(settings: AppSettings, repository: SettingsRepository)
+    protected abstract fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,7 +100,6 @@ abstract class SettingsDestinationActivity : ComponentActivity() {
  * subtitle, the icon, the choices, and the one line that writes the choice down.
  */
 abstract class ChoiceDestinationActivity : SettingsDestinationActivity() {
-
     /** The one line under the bar explaining what the number means. */
     protected abstract val subtitle: String
 
@@ -121,7 +122,10 @@ abstract class ChoiceDestinationActivity : SettingsDestinationActivity() {
      * destination. The block body discards the value, which is what a caller of this method wants:
      * the result of a settings write is not a value anyone here reads.
      */
-    protected abstract suspend fun write(repository: SettingsRepository, value: Int)
+    protected abstract suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    )
 
     /**
      * How this setting is named when its write fails.
@@ -150,7 +154,10 @@ abstract class ChoiceDestinationActivity : SettingsDestinationActivity() {
 
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
-    final override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    final override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         val storedValue = stored(settings)
         // The chosen value is held here rather than re-read from the store: the write below is
         // asynchronous, and a screen that showed the old number for a frame after the tap would read
@@ -211,8 +218,15 @@ class KeepAliveActivity : ChoiceDestinationActivity() {
     override val subtitle = "Seconds between SSH keep-alive signals"
     override val icon = Icons.Default.Wifi
     override val options = listOf(15, 30, 60, 120, 300)
+
     override fun stored(settings: AppSettings) = settings.keepAliveSeconds
-    override suspend fun write(repository: SettingsRepository, value: Int) { repository.setKeepAliveSeconds(value) }
+
+    override suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    ) {
+        repository.setKeepAliveSeconds(value)
+    }
 }
 
 /** Clipboard auto-clear: how long a copied secret is allowed to sit in the system clipboard. */
@@ -223,8 +237,15 @@ class ClipboardClearActivity : ChoiceDestinationActivity() {
     override val subtitle = "Clear copied secrets after (0 = never)"
     override val icon = Icons.Default.Security
     override val options = listOf(0, 15, 30, 60, 120)
+
     override fun stored(settings: AppSettings) = settings.clearClipboardAfterSeconds
-    override suspend fun write(repository: SettingsRepository, value: Int) { repository.setClipboardSeconds(value) }
+
+    override suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    ) {
+        repository.setClipboardSeconds(value)
+    }
 
     // The offered list stops at 120 s. Nothing in the app writes more than that, but a value set by
     // an older build could still be in the store, and a screen with no chip selected would read as
@@ -240,8 +261,15 @@ class ReconnectDelayActivity : ChoiceDestinationActivity() {
     override val subtitle = "Wait before the first reconnect attempt; each further attempt doubles it"
     override val icon = Icons.Default.Refresh
     override val options = SettingsRepository.RECONNECT_BASE_CHOICES
+
     override fun stored(settings: AppSettings) = settings.reconnectBaseSeconds
-    override suspend fun write(repository: SettingsRepository, value: Int) { repository.setReconnectBaseSeconds(value) }
+
+    override suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    ) {
+        repository.setReconnectBaseSeconds(value)
+    }
 }
 
 /** Auto-lock vault: how long the app may sit in the background before the PIN is asked for again. */
@@ -252,8 +280,16 @@ class VaultAutoLockActivity : ChoiceDestinationActivity() {
     override val subtitle = "Starts counting when you leave the app; the vault re-locks when you come back"
     override val icon = Icons.Default.Lock
     override val options = SettingsRepository.VAULT_AUTO_LOCK_CHOICES
+
     override fun stored(settings: AppSettings) = settings.vaultAutoLockMinutes
-    override suspend fun write(repository: SettingsRepository, value: Int) { repository.setVaultAutoLockMinutes(value) }
+
+    override suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    ) {
+        repository.setVaultAutoLockMinutes(value)
+    }
+
     override fun optionLabel(option: Int) = if (option == 0) "Never" else "$option min"
 }
 
@@ -265,8 +301,16 @@ class TerminalWidthActivity : ChoiceDestinationActivity() {
     override val subtitle = "The narrowest the server is told it has; drag the grid sideways for the rest"
     override val icon = Icons.Default.Terminal
     override val options = SettingsRepository.TERMINAL_MIN_COLUMN_CHOICES
+
     override fun stored(settings: AppSettings) = settings.terminalMinColumns
-    override suspend fun write(repository: SettingsRepository, value: Int) { repository.setTerminalMinColumns(value) }
+
+    override suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    ) {
+        repository.setTerminalMinColumns(value)
+    }
+
     override fun optionLabel(option: Int) = if (option == 0) "Fit screen" else "$option cols"
 }
 
@@ -287,7 +331,15 @@ class TerminalHeightActivity : ChoiceDestinationActivity() {
     override val subtitle = "At least this many rows; the screen shows what fits and scrolls the rest"
     override val icon = Icons.Default.Terminal
     override val options = SettingsRepository.TERMINAL_ROW_CHOICES
+
     override fun stored(settings: AppSettings) = settings.terminalRows
-    override suspend fun write(repository: SettingsRepository, value: Int) { repository.setTerminalRows(value) }
+
+    override suspend fun write(
+        repository: SettingsRepository,
+        value: Int,
+    ) {
+        repository.setTerminalRows(value)
+    }
+
     override fun optionLabel(option: Int) = if (option == 0) "Fit screen" else "$option rows"
 }

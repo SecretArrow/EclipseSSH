@@ -70,19 +70,22 @@ private const val KEY_BAR_WRITE = "the shortcut bar layout"
  */
 @AndroidEntryPoint
 class ShortcutBarActivity : SettingsDestinationActivity() {
-
     override val screenTitle = "Shortcut bar"
 
     @Composable
-    override fun Body(settings: AppSettings, repository: SettingsRepository) {
+    override fun Body(
+        settings: AppSettings,
+        repository: SettingsRepository,
+    ) {
         // Decoded from the snapshot the shell hands over, and keyed on the blob it came from: the
         // first composition of any destination runs against `AppSettings()`'s defaults, before the
         // store has answered, so both this decode and the editor's copy below have to adopt the real
         // value when it arrives a frame later. See [rememberShortcutBarEditorState] for why the blob
         // is the right key rather than the decoded prefs.
-        val initial = remember(settings.terminalKeyBarJson) {
-            KeyBarPrefsCodec.decode(settings.terminalKeyBarJson)
-        }
+        val initial =
+            remember(settings.terminalKeyBarJson) {
+                KeyBarPrefsCodec.decode(settings.terminalKeyBarJson)
+            }
         val editor = rememberShortcutBarEditorState(initial, sourceKey = settings.terminalKeyBarJson)
         val scope = rememberCoroutineScope()
         val report = LocalSettingsReport.current
@@ -206,7 +209,10 @@ class ShortcutBarActivity : SettingsDestinationActivity() {
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { confirmingDiscard = false; activity?.finish() }) {
+                    TextButton(onClick = {
+                        confirmingDiscard = false
+                        activity?.finish()
+                    }) {
                         Text("Discard", color = MaterialTheme.colorScheme.error)
                     }
                 },

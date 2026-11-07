@@ -13,7 +13,6 @@ import org.junit.Test
  * "a plain install is byte-for-byte the install it always was" a fact rather than a hope.
  */
 class OptionalPackagesTest {
-
     @Test
     fun `nothing ticked resolves to nothing at all`() {
         val none = emptySet<OptionalPackage>()

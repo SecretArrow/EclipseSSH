@@ -1,17 +1,16 @@
 package dev.eclipse.ssh.linux
 
 import android.util.Log
-import dev.eclipse.ssh.ssh.TerminalChannel
-import java.io.File
-import java.io.IOException
-import java.io.RandomAccessFile
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
+import java.util.concurrent.CopyOnWriteArrayList
 
 /** The exit code and captured output of one completed proot command. */
 data class ProotCommandResult(
@@ -191,7 +190,12 @@ class ProotRuntime(
      * holding every terminal it can, not about the userspace, and one a scripted command must not
      * report as a package step failing for its own reasons.
      */
-    private fun spawn(argv: List<String>, env: List<String>, rows: Int, columns: Int): PtyProcess {
+    private fun spawn(
+        argv: List<String>,
+        env: List<String>,
+        rows: Int,
+        columns: Int,
+    ): PtyProcess {
         requireNativeRuntime()
         return try {
             spawner.spawn(argv, env, spawnCwd.absolutePath, rows, columns)
@@ -220,8 +224,7 @@ class ProotRuntime(
      * scripted command is, and the name is kept because the two are read for different reasons:
      * this is the argv the terminal gets, and that is the argv the setup pipeline gets.
      */
-    fun sessionArgv(initialCommand: String? = null): List<String> =
-        commandArgv(initialCommand)
+    fun sessionArgv(initialCommand: String? = null): List<String> = commandArgv(initialCommand)
 
     /**
      * The argument vector for one proot run: `-0` first, then the bindings, then the shell.
@@ -238,16 +241,22 @@ class ProotRuntime(
      * over SSH.
      */
     fun commandArgv(initialCommand: String? = null): List<String> {
-        val argv = mutableListOf(
-            prootBinary,
-            "--rootfs=${rootfsDir.absolutePath}",
-            "-0",
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-w", homePath,
-            "/bin/bash", "--login",
-        )
+        val argv =
+            mutableListOf(
+                prootBinary,
+                "--rootfs=${rootfsDir.absolutePath}",
+                "-0",
+                "-b",
+                "/dev",
+                "-b",
+                "/proc",
+                "-b",
+                "/sys",
+                "-w",
+                homePath,
+                "/bin/bash",
+                "--login",
+            )
         // A command overrides the interactive shell: `bash --login -c '…'`. The setup pipeline and
         // the health probe use this; an interactive session does not.
         if (initialCommand != null) {
@@ -261,24 +270,25 @@ class ProotRuntime(
      * Android environment inside Ubuntu is a set of lies (`HOME` pointing at the outer filesDir,
      * `PATH` full of Android tooling), and env vars cross the execve boundary untouched by proot.
      */
-    fun baseEnv(): List<String> = listOf(
-        // Non-negotiable: without PROOT_LOADER proot extracts its embedded loader into
-        // PROOT_TMP_DIR — under filesDir, not executable — and every start dies with EACCES.
-        "PROOT_LOADER=$prootLoader",
-        "PROOT_TMP_DIR=${tmpDir.absolutePath}",
-        // Where the proot fork logs blocked syscalls it cannot downgrade (its built-in default
-        // is the fork's own app's cache — unwritable here, which silently disabled the
-        // diagnostic; see linux/proot-patches/0002). One line per event, append-only, small.
-        "PROOT_SIGSYS_LOG=${sigsysLogFile.absolutePath}",
-        // Ubuntu-conventional values, not Android's. HOME is pinned here rather than left to the
-        // login shell: the session is fake root, whose /etc/passwd home is /root, and the app's
-        // whole file model — the workspace, the editor, SFTP — lives under /home/ubuntu. A shell
-        // that started in /root would be standing nowhere near the user's files.
-        "HOME=$homePath",
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "TERM=xterm-256color",
-        "LANG=C.UTF-8",
-    )
+    fun baseEnv(): List<String> =
+        listOf(
+            // Non-negotiable: without PROOT_LOADER proot extracts its embedded loader into
+            // PROOT_TMP_DIR — under filesDir, not executable — and every start dies with EACCES.
+            "PROOT_LOADER=$prootLoader",
+            "PROOT_TMP_DIR=${tmpDir.absolutePath}",
+            // Where the proot fork logs blocked syscalls it cannot downgrade (its built-in default
+            // is the fork's own app's cache — unwritable here, which silently disabled the
+            // diagnostic; see linux/proot-patches/0002). One line per event, append-only, small.
+            "PROOT_SIGSYS_LOG=${sigsysLogFile.absolutePath}",
+            // Ubuntu-conventional values, not Android's. HOME is pinned here rather than left to the
+            // login shell: the session is fake root, whose /etc/passwd home is /root, and the app's
+            // whole file model — the workspace, the editor, SFTP — lives under /home/ubuntu. A shell
+            // that started in /root would be standing nowhere near the user's files.
+            "HOME=$homePath",
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "TERM=xterm-256color",
+            "LANG=C.UTF-8",
+        )
 
     /** The outer directory a spawned child starts in: the userspace root, which always exists. */
     val spawnCwd: File get() = rootDir
@@ -295,7 +305,10 @@ class ProotRuntime(
      * The caller owns the returned [PtyProcess] — in production it goes straight into
      * [LocalTerminalChannel], which takes sole ownership of the fd pair.
      */
-    fun spawnSession(rows: Int, columns: Int): PtyProcess {
+    fun spawnSession(
+        rows: Int,
+        columns: Int,
+    ): PtyProcess {
         storage.requireReady()
         return spawn(sessionArgv(), baseEnv(), rows, columns)
     }
@@ -344,63 +357,65 @@ class ProotRuntime(
         env: List<String> = baseEnv(),
         timeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS,
         onOutput: ((ByteArray) -> Unit)? = null,
-    ): ProotCommandResult? = withContext(Dispatchers.IO) {
-        storage.requireReady()
-        // The tail of argv is the command itself for scripted runs (`… bash --login -c getent …`)
-        // and the shell path for sessions — either way, the one token that names what this spawn is.
-        val command = (argv.lastOrNull() ?: "proot").take(COMMAND_LOG_CHARS)
-        val startedAt = System.currentTimeMillis()
-        Log.i(UserspaceDiagnostics.TAG, "proot command started: $command")
-        val process = spawn(argv, env, rows = 24, columns = 80)
-        liveScripted += process
-        // The reader is deliberately NOT a child of this scope. It parks in a blocking JNI
-        // read that no cancellation can reach, and structured concurrency would make this
-        // whole call wait for it before returning - the exact wedge the drain budget below
-        // exists to bound. Detached, the timeout path can abandon it and return; the close()
-        // is what ends the read in every case the pty itself can cooperate with.
-        val reader = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            .async { readToCompletion(process, onOutput) }
-        try {
-            val output = withTimeoutOrNull(timeoutMs) { reader.await() }
-            if (output == null) {
-                // Timed out: the reader is still parked in a blocking read no cancellation can
-                // reach. Closing the pty is what unblocks it (master hangup) and SIGHUPs the
-                // child. The reader's read then errors — the expected face of a torn-down pty,
-                // which readToCompletion treats as end-of-stream.
-                runCatching { process.close() }
-                val drained = withTimeoutOrNull(readerDrainTimeoutMs) { reader.await() }
-                if (drained == null) {
-                    Log.w(
+    ): ProotCommandResult? =
+        withContext(Dispatchers.IO) {
+            storage.requireReady()
+            // The tail of argv is the command itself for scripted runs (`… bash --login -c getent …`)
+            // and the shell path for sessions — either way, the one token that names what this spawn is.
+            val command = (argv.lastOrNull() ?: "proot").take(COMMAND_LOG_CHARS)
+            val startedAt = System.currentTimeMillis()
+            Log.i(UserspaceDiagnostics.TAG, "proot command started: $command")
+            val process = spawn(argv, env, rows = 24, columns = 80)
+            liveScripted += process
+            // The reader is deliberately NOT a child of this scope. It parks in a blocking JNI
+            // read that no cancellation can reach, and structured concurrency would make this
+            // whole call wait for it before returning - the exact wedge the drain budget below
+            // exists to bound. Detached, the timeout path can abandon it and return; the close()
+            // is what ends the read in every case the pty itself can cooperate with.
+            val reader =
+                CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                    .async { readToCompletion(process, onOutput) }
+            try {
+                val output = withTimeoutOrNull(timeoutMs) { reader.await() }
+                if (output == null) {
+                    // Timed out: the reader is still parked in a blocking read no cancellation can
+                    // reach. Closing the pty is what unblocks it (master hangup) and SIGHUPs the
+                    // child. The reader's read then errors — the expected face of a torn-down pty,
+                    // which readToCompletion treats as end-of-stream.
+                    runCatching { process.close() }
+                    val drained = withTimeoutOrNull(readerDrainTimeoutMs) { reader.await() }
+                    if (drained == null) {
+                        Log.w(
+                            UserspaceDiagnostics.TAG,
+                            "proot command abandoned: $command did not wake " +
+                                "${readerDrainTimeoutMs / 1000}s after its ${timeoutMs / 1000}s timeout close",
+                        )
+                        // Cancelled, not left quietly half-alive: if the read ever does return,
+                        // the job ends instead of idling, and debug tooling shows it as cancelled.
+                        reader.cancel()
+                    }
+                    Log.w(UserspaceDiagnostics.TAG, "proot command timed out after ${timeoutMs / 1000}s: $command")
+                    null
+                } else {
+                    // After end-of-stream the child has exited; the reap is quick and race-free by
+                    // design (see linuxpty.c: awaitExit waits on a child that has already terminated).
+                    val exitCode = process.awaitExit()
+                    Log.i(
                         UserspaceDiagnostics.TAG,
-                        "proot command abandoned: $command did not wake " +
-                            "${readerDrainTimeoutMs / 1000}s after its ${timeoutMs / 1000}s timeout close",
+                        "proot command finished: exit=$exitCode" +
+                            " dur=${(System.currentTimeMillis() - startedAt) / 1000}s: $command",
                     )
-                    // Cancelled, not left quietly half-alive: if the read ever does return,
-                    // the job ends instead of idling, and debug tooling shows it as cancelled.
-                    reader.cancel()
+                    ProotCommandResult(exitCode, output)
                 }
-                Log.w(UserspaceDiagnostics.TAG, "proot command timed out after ${timeoutMs / 1000}s: $command")
-                null
-            } else {
-                // After end-of-stream the child has exited; the reap is quick and race-free by
-                // design (see linuxpty.c: awaitExit waits on a child that has already terminated).
-                val exitCode = process.awaitExit()
-                Log.i(
-                    UserspaceDiagnostics.TAG,
-                    "proot command finished: exit=$exitCode" +
-                        " dur=${(System.currentTimeMillis() - startedAt) / 1000}s: $command",
-                )
-                ProotCommandResult(exitCode, output)
+            } catch (t: Throwable) {
+                // Cancellation and reader failure both land here: either way the child is SIGHUPed
+                // rather than left holding a pty slot.
+                runCatching { process.close() }
+                throw t
+            } finally {
+                liveScripted -= process
             }
-        } catch (t: Throwable) {
-            // Cancellation and reader failure both land here: either way the child is SIGHUPed
-            // rather than left holding a pty slot.
-            runCatching { process.close() }
-            throw t
-        } finally {
-            liveScripted -= process
         }
-    }
 
     /**
      * Reads one child's output to end-of-stream and returns it as one buffer. A read that throws

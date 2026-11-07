@@ -25,10 +25,11 @@ fun backoffWindowMs(
     attempt: Int,
     maxBackoffMs: Long = MAX_BACKOFF_MS,
 ): Long {
-    val clampedBase = baseSeconds.coerceIn(
-        SettingsRepository.MIN_RECONNECT_BASE_SECONDS,
-        SettingsRepository.MAX_RECONNECT_BASE_SECONDS,
-    )
+    val clampedBase =
+        baseSeconds.coerceIn(
+            SettingsRepository.MIN_RECONNECT_BASE_SECONDS,
+            SettingsRepository.MAX_RECONNECT_BASE_SECONDS,
+        )
     // Clamp the attempt before subtracting: `Int.MIN_VALUE - 1` wraps to Int.MAX_VALUE,
     // which would survive coerceIn and jump straight to the maximum exponent.
     val exponent = (attempt.coerceAtLeast(1) - 1).coerceAtMost(MAX_EXPONENT)
@@ -36,7 +37,6 @@ fun backoffWindowMs(
 }
 
 private const val MAX_EXPONENT = 5
-
 
 /**
  * Waits out one reconnect window, or gives up waiting the moment [wake] signals.
@@ -54,7 +54,10 @@ private const val MAX_EXPONENT = 5
  * @param windowMs the full wait; zero or less means do not wait at all.
  * @param wake conflated, so a signal raised while a connection attempt was in flight is not lost.
  */
-internal suspend fun awaitReconnectWindow(windowMs: Long, wake: ReceiveChannel<Unit>): Boolean {
+internal suspend fun awaitReconnectWindow(
+    windowMs: Long,
+    wake: ReceiveChannel<Unit>,
+): Boolean {
     if (windowMs <= 0) return false
     var woken = false
     withTimeoutOrNull(windowMs) {
@@ -82,26 +85,29 @@ internal class ReconnectPolicy(
      * The first reconnect wait in seconds, resolving [HostProfile.reconnectBackoffSeconds]'s
      * inherit sentinel against the app-wide delay from Settings.
      */
-    fun backoffSeconds(globalSeconds: Int): Int =
-        if (hostBackoffSeconds == INHERIT_RECONNECT_BACKOFF) globalSeconds else hostBackoffSeconds
+    fun backoffSeconds(globalSeconds: Int): Int = if (hostBackoffSeconds == INHERIT_RECONNECT_BACKOFF) globalSeconds else hostBackoffSeconds
 
     companion object {
         /** For a session no profile was seen for - a background restore, or an adopted session. */
-        val DEFAULT = ReconnectPolicy(
-            enabled = true,
-            maxAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
-            hostBackoffSeconds = INHERIT_RECONNECT_BACKOFF,
-        )
+        val DEFAULT =
+            ReconnectPolicy(
+                enabled = true,
+                maxAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
+                hostBackoffSeconds = INHERIT_RECONNECT_BACKOFF,
+            )
     }
 }
 
 /** [profile]'s reconnect rules, clamped to the ranges the form accepts. */
-internal fun reconnectPolicyOf(profile: HostProfile): ReconnectPolicy = ReconnectPolicy(
-    enabled = profile.autoReconnect,
-    maxAttempts = profile.maxReconnectAttempts
-        .coerceIn(MAX_RECONNECT_ATTEMPTS_RANGE.first, MAX_RECONNECT_ATTEMPTS_RANGE.last),
-    hostBackoffSeconds = profile.reconnectBackoffSeconds
-        .takeIf { it != INHERIT_RECONNECT_BACKOFF }
-        ?.coerceIn(RECONNECT_BACKOFF_RANGE.first, RECONNECT_BACKOFF_RANGE.last)
-        ?: INHERIT_RECONNECT_BACKOFF,
-)
+internal fun reconnectPolicyOf(profile: HostProfile): ReconnectPolicy =
+    ReconnectPolicy(
+        enabled = profile.autoReconnect,
+        maxAttempts =
+            profile.maxReconnectAttempts
+                .coerceIn(MAX_RECONNECT_ATTEMPTS_RANGE.first, MAX_RECONNECT_ATTEMPTS_RANGE.last),
+        hostBackoffSeconds =
+            profile.reconnectBackoffSeconds
+                .takeIf { it != INHERIT_RECONNECT_BACKOFF }
+                ?.coerceIn(RECONNECT_BACKOFF_RANGE.first, RECONNECT_BACKOFF_RANGE.last)
+                ?: INHERIT_RECONNECT_BACKOFF,
+    )

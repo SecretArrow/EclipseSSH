@@ -24,7 +24,6 @@ package dev.eclipse.ssh.archive
  * Implementations must be safe to call from any coroutine and must not buffer the whole file.
  */
 interface ArchiveByteSource {
-
     /** Total size of the archive in bytes, as the source's own stat reports it. */
     val size: Long
 
@@ -48,7 +47,10 @@ interface ArchiveByteSource {
      * [ArchiveCorruptException]: a ZIP central directory that claims to extend past the end of
      * the file is a corrupt archive, not a normal short read.
      */
-    suspend fun readAt(offset: Long, length: Int): ByteArray
+    suspend fun readAt(
+        offset: Long,
+        length: Int,
+    ): ByteArray
 
     /** Repositions the sequential cursor. Never called by the TAR reader; kept for symmetry. */
     suspend fun seek(offset: Long)
@@ -74,7 +76,9 @@ interface ArchiveByteSource {
  * this one exists so every parser's tests run against plain bytes, and so the extract path can
  * be exercised without a network.
  */
-class ByteArrayByteSource(private val bytes: ByteArray) : ArchiveByteSource {
+class ByteArrayByteSource(
+    private val bytes: ByteArray,
+) : ArchiveByteSource {
     override val size: Long = bytes.size.toLong()
     private var cursor = 0L
 
@@ -85,7 +89,10 @@ class ByteArrayByteSource(private val bytes: ByteArray) : ArchiveByteSource {
         return bytes.copyOfRange(from.toInt(), to.toInt())
     }
 
-    override suspend fun readAt(offset: Long, length: Int): ByteArray {
+    override suspend fun readAt(
+        offset: Long,
+        length: Int,
+    ): ByteArray {
         if (offset >= bytes.size) return ByteArray(0)
         if (offset < 0 || length < 0) throw ArchiveCorruptException("Negative range $offset+$length")
         val end = (offset + length).coerceAtMost(bytes.size.toLong())

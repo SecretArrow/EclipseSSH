@@ -23,9 +23,10 @@ import androidx.compose.ui.text.input.KeyboardType
  * keyboard may offer non-ASCII candidates. The terminal takes UTF-8 on every other path, and a
  * candidate the user does not pick is never sent - the field is a diffed sink, not the line.
  */
-internal val TERMINAL_KEYBOARD_OPTIONS = KeyboardOptions(
-    capitalization = KeyboardCapitalization.None,
-    autoCorrectEnabled = false,
-    keyboardType = KeyboardType.PasswordVisible,
-    imeAction = ImeAction.None,
-)
+internal val TERMINAL_KEYBOARD_OPTIONS =
+    KeyboardOptions(
+        capitalization = KeyboardCapitalization.None,
+        autoCorrectEnabled = false,
+        keyboardType = KeyboardType.PasswordVisible,
+        imeAction = ImeAction.None,
+    )

@@ -15,13 +15,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dev.eclipse.ssh.data.HostRepository
 import dev.eclipse.ssh.data.RoomHostRepository
+import dev.eclipse.ssh.data.RoomTransferRepository
 import dev.eclipse.ssh.data.TransferDao
 import dev.eclipse.ssh.data.TransferRepository
-import dev.eclipse.ssh.data.RoomTransferRepository
+import dev.eclipse.ssh.data.fs.UbuntuRootfsLocator
 import dev.eclipse.ssh.data.local.EclipseDatabase
 import dev.eclipse.ssh.data.local.HostDao
 import dev.eclipse.ssh.data.local.Migrations
-import dev.eclipse.ssh.data.fs.UbuntuRootfsLocator
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.security.SecretCipher
 import dev.eclipse.ssh.security.SecureVault
@@ -58,8 +58,11 @@ object AppModule {
      */
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): EclipseDatabase =
-        Room.databaseBuilder(context, EclipseDatabase::class.java, "eclipse_ssh.db")
+    fun provideDatabase(
+        @ApplicationContext context: Context,
+    ): EclipseDatabase =
+        Room
+            .databaseBuilder(context, EclipseDatabase::class.java, "eclipse_ssh.db")
             .addMigrations(Migrations.MIGRATION_2_3, Migrations.MIGRATION_3_4, Migrations.MIGRATION_4_5, Migrations.MIGRATION_5_6, Migrations.MIGRATION_6_7, Migrations.MIGRATION_7_8, Migrations.MIGRATION_8_9, Migrations.MIGRATION_9_10, Migrations.MIGRATION_10_11, Migrations.MIGRATION_11_12, Migrations.MIGRATION_12_13, Migrations.MIGRATION_13_14, Migrations.MIGRATION_14_15, Migrations.MIGRATION_15_16, Migrations.MIGRATION_16_17, Migrations.MIGRATION_17_18)
             .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()
@@ -69,7 +72,10 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideHostRepository(dao: HostDao, vault: SecureVault): HostRepository = RoomHostRepository(dao, vault)
+    fun provideHostRepository(
+        dao: HostDao,
+        vault: SecureVault,
+    ): HostRepository = RoomHostRepository(dao, vault)
 
     @Provides
     fun provideTransferDao(database: EclipseDatabase): TransferDao = database.transferDao()
@@ -80,8 +86,9 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSettingsRepository(@ApplicationContext context: Context): SettingsRepository =
-        SettingsRepository(context)
+    fun provideSettingsRepository(
+        @ApplicationContext context: Context,
+    ): SettingsRepository = SettingsRepository(context)
 
     /**
      * The SFTP mover, given the settings store it reads the bandwidth cap from.
@@ -93,8 +100,7 @@ object AppModule {
      */
     @Provides
     @Singleton
-    fun provideSftpTransferManager(settings: SettingsRepository): SftpTransferManager =
-        SftpTransferManager(settings)
+    fun provideSftpTransferManager(settings: SettingsRepository): SftpTransferManager = SftpTransferManager(settings)
 
     /**
      * The vault, behind the narrow interface everything that stores a secret depends on. Bound here
@@ -132,7 +138,9 @@ object AppModule {
     @Provides
     @Singleton
     @HostCredentialsDataStore
-    fun provideHostCredentialsDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
+    fun provideHostCredentialsDataStore(
+        @ApplicationContext context: Context,
+    ): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(
             corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
             produceFile = { context.preferencesDataStoreFile("host_credentials") },
@@ -155,6 +163,5 @@ object AppModule {
      */
     @Provides
     @Singleton
-    fun provideUbuntuRootfsLocator(graphProvider: LinuxUserspaceGraphProvider): UbuntuRootfsLocator =
-        UbuntuRootfsLocator { graphProvider.graph?.installer?.rootfsDir }
+    fun provideUbuntuRootfsLocator(graphProvider: LinuxUserspaceGraphProvider): UbuntuRootfsLocator = UbuntuRootfsLocator { graphProvider.graph?.installer?.rootfsDir }
 }

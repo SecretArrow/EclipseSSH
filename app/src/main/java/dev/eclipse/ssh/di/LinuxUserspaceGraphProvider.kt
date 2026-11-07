@@ -9,8 +9,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.eclipse.ssh.linux.AndroidGroupNames
 import dev.eclipse.ssh.linux.LinuxDistro
 import dev.eclipse.ssh.linux.LinuxDistroCatalog
-import dev.eclipse.ssh.linux.LinuxPtySpawner
 import dev.eclipse.ssh.linux.LinuxProcessManager
+import dev.eclipse.ssh.linux.LinuxPtySpawner
 import dev.eclipse.ssh.linux.LinuxUserspaceManager
 import dev.eclipse.ssh.linux.LinuxUserspaceState
 import dev.eclipse.ssh.linux.LinuxWorkspaceManager
@@ -20,12 +20,12 @@ import dev.eclipse.ssh.linux.RootfsTransfer
 import dev.eclipse.ssh.linux.RuntimeStorageManager
 import dev.eclipse.ssh.linux.UbuntuDistributionManager
 import dev.eclipse.ssh.linux.UserspaceDiagnostics
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.util.Properties
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The Linux userspace's whole object graph, built in one place.
@@ -54,11 +54,12 @@ class LinuxUserspaceGraph(
      * default derives one from the same root [runtime] was built over; [buildGraph] passes the one
      * instance the whole graph shares, so nothing about the default reaches the app.
      */
-    val transfer: RootfsTransfer = RootfsTransfer(
-        rootDir = runtime.rootDir,
-        manager = manager,
-        distro = distro,
-    ),
+    val transfer: RootfsTransfer =
+        RootfsTransfer(
+            rootDir = runtime.rootDir,
+            manager = manager,
+            distro = distro,
+        ),
 )
 
 /**
@@ -88,210 +89,217 @@ class LinuxUserspaceGraph(
  * can hold the previous process-lifetime's graph forever.
  */
 @Singleton
-class LinuxUserspaceGraphProvider @Inject constructor(
-    @ApplicationContext private val context: Context,
-) {
-    /**
-     * Where the user's version choice lives. Deliberately outside the userspace root: the root is
-     * what an uninstall deletes, and the choice is a preference about the *next* install, not a
-     * fact about the current one.
-     */
-    private val selectionFile: File = File(context.filesDir, "linux-distro-selection.properties")
-
-    /** Every LTS this device can run, newest first — the install screen's version list. */
-    val versions: List<LinuxDistro> = LinuxDistroCatalog.versionsFor(Build.SUPPORTED_ABIS.toList())
-
-    // Both of the declarations above have to precede this one. Property initializers run in
-    // declaration order, and buildGraph() reads selectionFile and versions; declared below it,
-    // each is still the JVM default — null — while the graph builds, and process start died with
-    // an NPE inside readDistroId before a frame could be drawn. The crash is device-identical;
-    // Robolectric is merely what saw it first, because it builds the real Hilt graph.
-    private val _graph = MutableStateFlow(buildGraph())
-
-    /** The graph to act on right now; null on a device that cannot run a userspace. */
-    val graph: LinuxUserspaceGraph? get() = _graph.value
-
-    /** The graph as a flow, for subscribers that must re-derive when a version choice swaps it. */
-    val graphFlow: StateFlow<LinuxUserspaceGraph?> = _graph
-
-    /**
-     * Chooses the version the Install button downloads. Refused (false) on an unsupported device,
-     * for an id this device cannot run, or while anything is installed or mid-install — see the
-     * class doc for why a swap is legal only from a clean Not Installed.
-     */
-    fun selectDistro(distroId: String): Boolean {
-        val current = _graph.value ?: return false
-        if (current.manager.state.value !is LinuxUserspaceState.NotInstalled) return false
-        val distro = versions.firstOrNull { it.id == distroId } ?: return false
-        writeSelection(distro.id)
-        // A re-selection of the running default still records the choice (it wins over the
-        // default on the next process start); only a genuinely different distro needs a rebuild.
-        if (distro != current.distro) {
-            _graph.value = buildGraph()
-        }
-        return true
-    }
-
-    /**
-     * Puts a prebuilt graph in place of the resolved one. The real build needs
-     * `nativeLibraryDir`, which Robolectric does not provide (a graph under test is always
-     * hand-built around the scripted proot), so the controller's tests inject their graph here
-     * instead of going through a build that can only produce null on the JVM.
-     */
-    @VisibleForTesting
-    internal fun setGraphForTest(graph: LinuxUserspaceGraph?) {
-        _graph.value = graph
-    }
-
-    /**
-     * The graph for the distro resolution says is relevant now, or null where the device cannot
-     * run one.
-     *
-     * The root is `filesDir/linux` and the keep-workspace backup deliberately sits outside it
-     * (see [LinuxUserspaceManager]); `nativeLibraryDir` is the only directory a targetSdk 29+ app
-     * may execve from, which is where the pinned proot binaries ship. The DNS servers are read
-     * from the device's active network when it has any — the fallback is public anycast.
-     */
-    private fun buildGraph(): LinuxUserspaceGraph? {
-        // A context with no native library directory (Robolectric, or an install whose native
-        // code was never extracted) has nowhere the pinned proot could be execve'd from, which is
-        // the same story as an unmapped ABI: this device cannot run a userspace.
-        val nativeLibraryDir = context.applicationInfo.nativeLibraryDir ?: return null
-
-        val rootDir = File(context.filesDir, "linux")
-        // One storage manager for the whole graph: every member — runtime, installer, workspace,
-        // manager — derives its paths from the same instance, so no two of them can ever disagree
-        // about where the rootfs, the tmp directory or the state file lives.
-        val storage = RuntimeStorageManager(rootDir)
-        val distro = resolveDistro(storage.stateFile) ?: return null
-        val runtime = ProotRuntime(
-            rootDir = rootDir,
-            nativeLibraryDir = nativeLibraryDir,
-            spawner = LinuxPtySpawner,
-            storage = storage,
-        )
-        // One ring for the whole install, shared by the two halves that write to it: the rootfs
-        // download and extraction happen before the distribution manager runs at all, and a user
-        // who exports an "Install log" after a failed install needs the half that failed —
-        // whichever half it was — not only the apt phase's.
-        val diagnostics = UserspaceDiagnostics()
-        val installer = RootfsInstaller(rootDir, distro, storage = storage, diagnostics = diagnostics)
-        val distribution = UbuntuDistributionManager(
-            distro = distro,
-            runtime = runtime,
-            appUid = Process.myUid(),
-            // android.os.Process has no myGid() in the modern SDK, so the gid comes from the
-            // syscall wrapper; on Android an app's primary gid is its own uid, which is the
-            // value the runCatching fallback would land on anyway.
-            appGid = runCatching { android.system.Os.getgid() }.getOrDefault(Process.myUid()),
-            // The app's supplementary Android groups, which proot passes through to the session
-            // untouched — the rootfs names them so `groups` and `id` do not report them by number.
-            // A lambda for the same reason the resolvers are one: this is read again on every
-            // start, and a permission granted since the install is one more group to name. An
-            // empty answer names nothing, which is exactly the behaviour without this wiring.
-            //
-            // From /proc/self/status rather than Os.getgroups(), which the SDK does not publish:
-            // android-37.0's android.jar has getuid/geteuid/getgid/getegid and no getgroups.
-            supplementaryGids = { AndroidGroupNames.selfGroups() },
-            // A lambda, not a snapshot: the resolvers are read each time setup writes
-            // /etc/resolv.conf, so a network change between install and repair lands in the file
-            // instead of pinning the DNS of the moment the graph was built.
-            dnsServers = { liveDnsServers(context) },
-            // The same installer instance the graph built above, so the manager's missing-program
-            // restore reads the same pinned tarball this device installed from — and files into
-            // the same diagnostics ring, which is why both take the one `diagnostics` object.
-            installer = installer,
-            diagnostics = diagnostics,
-        )
-        val processes = LinuxProcessManager()
-        val workspace = LinuxWorkspaceManager(runtime, storage)
-        val manager = LinuxUserspaceManager(
-            rootDir = rootDir,
-            distro = distro,
-            runtime = runtime,
-            installer = installer,
-            distribution = distribution,
-            processes = processes,
-            workspace = workspace,
-            storage = storage,
-        )
-        // Built from the same storage and the same diagnostics as everything above it: an import's
-        // events belong in the ring the "Install log" row shows, beside the install's, because the
-        // setup it hands off to writes there too and a failure's cause is usually the one it came
-        // from.
-        val transfer = RootfsTransfer(
-            rootDir = rootDir,
-            manager = manager,
-            distro = distro,
-            diagnostics = diagnostics,
-            storage = storage,
-        )
-        return LinuxUserspaceGraph(
-            distro,
-            runtime,
-            installer,
-            distribution,
-            processes,
-            workspace,
-            manager,
-            transfer,
-        )
-    }
-
-    /** Installed distro, else the user's pick, else the default — as the class doc resolves it. */
-    private fun resolveDistro(stateFile: File): LinuxDistro? {
-        // An id that names no entry this device can run (a catalog change, a moved install) falls
-        // through to the next rung rather than failing the whole graph: the manager's own state
-        // check is the authority on whether anything is actually installed.
-        val installed = readDistroId(stateFile)
-        val selected = readDistroId(selectionFile)
-        return resolveDistro(versions, installed, selected)
-    }
-
-    internal companion object {
+class LinuxUserspaceGraphProvider
+    @Inject
+    constructor(
+        @ApplicationContext private val context: Context,
+    ) {
         /**
-         * The resolution as a pure function of its inputs, because the order is the rule the
-         * whole graph hangs on: an installed distro is what the manager's state check compares
-         * against, so it wins unconditionally; the user's pick beats the default; the default is
-         * the last resort, never an override. Unknown ids — a catalog change, a selection file
-         * edited by hand — fall to the next rung rather than failing the graph.
+         * Where the user's version choice lives. Deliberately outside the userspace root: the root is
+         * what an uninstall deletes, and the choice is a preference about the *next* install, not a
+         * fact about the current one.
          */
-        fun resolveDistro(
-            versions: List<LinuxDistro>,
-            installedDistroId: String?,
-            selectedDistroId: String?,
-        ): LinuxDistro? =
-            versions.firstOrNull { it.id == installedDistroId }
-                ?: versions.firstOrNull { it.id == selectedDistroId }
-                ?: versions.firstOrNull { it.id == LinuxDistroCatalog.DEFAULT_DISTRO_ID }
-                ?: versions.firstOrNull()
-    }
+        private val selectionFile: File = File(context.filesDir, "linux-distro-selection.properties")
 
-    private fun readDistroId(file: File): String? {
-        if (!file.isFile) return null
-        return runCatching {
-            file.inputStream().use { input -> Properties().apply { load(input) }.getProperty("distroId") }
-        }.getOrNull()
-    }
+        /** Every LTS this device can run, newest first — the install screen's version list. */
+        val versions: List<LinuxDistro> = LinuxDistroCatalog.versionsFor(Build.SUPPORTED_ABIS.toList())
 
-    private fun writeSelection(distroId: String) {
-        val props = Properties()
-        props.setProperty("distroId", distroId)
-        selectionFile.outputStream().use { output -> props.store(output, "Eclipse SSH Linux distro selection") }
-    }
+        // Both of the declarations above have to precede this one. Property initializers run in
+        // declaration order, and buildGraph() reads selectionFile and versions; declared below it,
+        // each is still the JVM default — null — while the graph builds, and process start died with
+        // an NPE inside readDistroId before a frame could be drawn. The crash is device-identical;
+        // Robolectric is merely what saw it first, because it builds the real Hilt graph.
+        private val _graph = MutableStateFlow(buildGraph())
 
-    /**
-     * The device's current resolvers, read from the active network's link properties — the same
-     * servers the OS itself uses, which is what a rootfs cut off from Android's resolver needs.
-     * Falls back to the distribution manager's public anycast defaults when there is no network
-     * or the platform reports none.
-     */
-    private fun liveDnsServers(context: Context): List<String> {
-        val managers = runCatching {
-            context.getSystemService(ConnectivityManager::class.java)
-        }.getOrNull() ?: return UbuntuDistributionManager.DEFAULT_DNS_SERVERS
-        val linkProperties = managers.activeNetwork?.let { managers.getLinkProperties(it) }
-        val servers = linkProperties?.dnsServers?.mapNotNull { it.hostAddress }.orEmpty()
-        return servers.ifEmpty { UbuntuDistributionManager.DEFAULT_DNS_SERVERS }
+        /** The graph to act on right now; null on a device that cannot run a userspace. */
+        val graph: LinuxUserspaceGraph? get() = _graph.value
+
+        /** The graph as a flow, for subscribers that must re-derive when a version choice swaps it. */
+        val graphFlow: StateFlow<LinuxUserspaceGraph?> = _graph
+
+        /**
+         * Chooses the version the Install button downloads. Refused (false) on an unsupported device,
+         * for an id this device cannot run, or while anything is installed or mid-install — see the
+         * class doc for why a swap is legal only from a clean Not Installed.
+         */
+        fun selectDistro(distroId: String): Boolean {
+            val current = _graph.value ?: return false
+            if (current.manager.state.value !is LinuxUserspaceState.NotInstalled) return false
+            val distro = versions.firstOrNull { it.id == distroId } ?: return false
+            writeSelection(distro.id)
+            // A re-selection of the running default still records the choice (it wins over the
+            // default on the next process start); only a genuinely different distro needs a rebuild.
+            if (distro != current.distro) {
+                _graph.value = buildGraph()
+            }
+            return true
+        }
+
+        /**
+         * Puts a prebuilt graph in place of the resolved one. The real build needs
+         * `nativeLibraryDir`, which Robolectric does not provide (a graph under test is always
+         * hand-built around the scripted proot), so the controller's tests inject their graph here
+         * instead of going through a build that can only produce null on the JVM.
+         */
+        @VisibleForTesting
+        internal fun setGraphForTest(graph: LinuxUserspaceGraph?) {
+            _graph.value = graph
+        }
+
+        /**
+         * The graph for the distro resolution says is relevant now, or null where the device cannot
+         * run one.
+         *
+         * The root is `filesDir/linux` and the keep-workspace backup deliberately sits outside it
+         * (see [LinuxUserspaceManager]); `nativeLibraryDir` is the only directory a targetSdk 29+ app
+         * may execve from, which is where the pinned proot binaries ship. The DNS servers are read
+         * from the device's active network when it has any — the fallback is public anycast.
+         */
+        private fun buildGraph(): LinuxUserspaceGraph? {
+            // A context with no native library directory (Robolectric, or an install whose native
+            // code was never extracted) has nowhere the pinned proot could be execve'd from, which is
+            // the same story as an unmapped ABI: this device cannot run a userspace.
+            val nativeLibraryDir = context.applicationInfo.nativeLibraryDir ?: return null
+
+            val rootDir = File(context.filesDir, "linux")
+            // One storage manager for the whole graph: every member — runtime, installer, workspace,
+            // manager — derives its paths from the same instance, so no two of them can ever disagree
+            // about where the rootfs, the tmp directory or the state file lives.
+            val storage = RuntimeStorageManager(rootDir)
+            val distro = resolveDistro(storage.stateFile) ?: return null
+            val runtime =
+                ProotRuntime(
+                    rootDir = rootDir,
+                    nativeLibraryDir = nativeLibraryDir,
+                    spawner = LinuxPtySpawner,
+                    storage = storage,
+                )
+            // One ring for the whole install, shared by the two halves that write to it: the rootfs
+            // download and extraction happen before the distribution manager runs at all, and a user
+            // who exports an "Install log" after a failed install needs the half that failed —
+            // whichever half it was — not only the apt phase's.
+            val diagnostics = UserspaceDiagnostics()
+            val installer = RootfsInstaller(rootDir, distro, storage = storage, diagnostics = diagnostics)
+            val distribution =
+                UbuntuDistributionManager(
+                    distro = distro,
+                    runtime = runtime,
+                    appUid = Process.myUid(),
+                    // android.os.Process has no myGid() in the modern SDK, so the gid comes from the
+                    // syscall wrapper; on Android an app's primary gid is its own uid, which is the
+                    // value the runCatching fallback would land on anyway.
+                    appGid = runCatching { android.system.Os.getgid() }.getOrDefault(Process.myUid()),
+                    // The app's supplementary Android groups, which proot passes through to the session
+                    // untouched — the rootfs names them so `groups` and `id` do not report them by number.
+                    // A lambda for the same reason the resolvers are one: this is read again on every
+                    // start, and a permission granted since the install is one more group to name. An
+                    // empty answer names nothing, which is exactly the behaviour without this wiring.
+                    //
+                    // From /proc/self/status rather than Os.getgroups(), which the SDK does not publish:
+                    // android-37.0's android.jar has getuid/geteuid/getgid/getegid and no getgroups.
+                    supplementaryGids = { AndroidGroupNames.selfGroups() },
+                    // A lambda, not a snapshot: the resolvers are read each time setup writes
+                    // /etc/resolv.conf, so a network change between install and repair lands in the file
+                    // instead of pinning the DNS of the moment the graph was built.
+                    dnsServers = { liveDnsServers(context) },
+                    // The same installer instance the graph built above, so the manager's missing-program
+                    // restore reads the same pinned tarball this device installed from — and files into
+                    // the same diagnostics ring, which is why both take the one `diagnostics` object.
+                    installer = installer,
+                    diagnostics = diagnostics,
+                )
+            val processes = LinuxProcessManager()
+            val workspace = LinuxWorkspaceManager(runtime, storage)
+            val manager =
+                LinuxUserspaceManager(
+                    rootDir = rootDir,
+                    distro = distro,
+                    runtime = runtime,
+                    installer = installer,
+                    distribution = distribution,
+                    processes = processes,
+                    workspace = workspace,
+                    storage = storage,
+                )
+            // Built from the same storage and the same diagnostics as everything above it: an import's
+            // events belong in the ring the "Install log" row shows, beside the install's, because the
+            // setup it hands off to writes there too and a failure's cause is usually the one it came
+            // from.
+            val transfer =
+                RootfsTransfer(
+                    rootDir = rootDir,
+                    manager = manager,
+                    distro = distro,
+                    diagnostics = diagnostics,
+                    storage = storage,
+                )
+            return LinuxUserspaceGraph(
+                distro,
+                runtime,
+                installer,
+                distribution,
+                processes,
+                workspace,
+                manager,
+                transfer,
+            )
+        }
+
+        /** Installed distro, else the user's pick, else the default — as the class doc resolves it. */
+        private fun resolveDistro(stateFile: File): LinuxDistro? {
+            // An id that names no entry this device can run (a catalog change, a moved install) falls
+            // through to the next rung rather than failing the whole graph: the manager's own state
+            // check is the authority on whether anything is actually installed.
+            val installed = readDistroId(stateFile)
+            val selected = readDistroId(selectionFile)
+            return resolveDistro(versions, installed, selected)
+        }
+
+        internal companion object {
+            /**
+             * The resolution as a pure function of its inputs, because the order is the rule the
+             * whole graph hangs on: an installed distro is what the manager's state check compares
+             * against, so it wins unconditionally; the user's pick beats the default; the default is
+             * the last resort, never an override. Unknown ids — a catalog change, a selection file
+             * edited by hand — fall to the next rung rather than failing the graph.
+             */
+            fun resolveDistro(
+                versions: List<LinuxDistro>,
+                installedDistroId: String?,
+                selectedDistroId: String?,
+            ): LinuxDistro? =
+                versions.firstOrNull { it.id == installedDistroId }
+                    ?: versions.firstOrNull { it.id == selectedDistroId }
+                    ?: versions.firstOrNull { it.id == LinuxDistroCatalog.DEFAULT_DISTRO_ID }
+                    ?: versions.firstOrNull()
+        }
+
+        private fun readDistroId(file: File): String? {
+            if (!file.isFile) return null
+            return runCatching {
+                file.inputStream().use { input -> Properties().apply { load(input) }.getProperty("distroId") }
+            }.getOrNull()
+        }
+
+        private fun writeSelection(distroId: String) {
+            val props = Properties()
+            props.setProperty("distroId", distroId)
+            selectionFile.outputStream().use { output -> props.store(output, "Eclipse SSH Linux distro selection") }
+        }
+
+        /**
+         * The device's current resolvers, read from the active network's link properties — the same
+         * servers the OS itself uses, which is what a rootfs cut off from Android's resolver needs.
+         * Falls back to the distribution manager's public anycast defaults when there is no network
+         * or the platform reports none.
+         */
+        private fun liveDnsServers(context: Context): List<String> {
+            val managers =
+                runCatching {
+                    context.getSystemService(ConnectivityManager::class.java)
+                }.getOrNull() ?: return UbuntuDistributionManager.DEFAULT_DNS_SERVERS
+            val linkProperties = managers.activeNetwork?.let { managers.getLinkProperties(it) }
+            val servers = linkProperties?.dnsServers?.mapNotNull { it.hostAddress }.orEmpty()
+            return servers.ifEmpty { UbuntuDistributionManager.DEFAULT_DNS_SERVERS }
+        }
     }
-}

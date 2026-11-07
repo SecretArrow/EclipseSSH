@@ -32,7 +32,6 @@ class ArchiveBrowserState(
     val format: ArchiveReader.Format,
     /** Reads the archive's bytes where they are. Closed exactly once, by [close]. */
     private val source: ArchiveByteSource,
-
     /** The provider the archive was listed from - the watcher stats through it. */
     private val provider: FileSystemProvider,
     /** The archive's provider-opaque path, for the properties sheet and watcher stat. */
@@ -116,30 +115,34 @@ class ArchiveBrowserState(
         scanJob?.cancel()
         watchJob?.cancel()
         state = ArchiveUiState.Loading(null)
-        scanJob = scope.launch {
-            try {
-                val stats = ArchiveValidation(
-                    size = source.size,
-                    modifiedEpochMillis = provider.stat(remotePath)?.modifiedEpochMillis,
-                )
-                val entries = ArchiveReader.list(format, source) { progress ->
-                    state = ArchiveUiState.Loading(progress)
+        scanJob =
+            scope.launch {
+                try {
+                    val stats =
+                        ArchiveValidation(
+                            size = source.size,
+                            modifiedEpochMillis = provider.stat(remotePath)?.modifiedEpochMillis,
+                        )
+                    val entries =
+                        ArchiveReader.list(format, source) { progress ->
+                            state = ArchiveUiState.Loading(progress)
+                        }
+                    if (!isActive) return@launch
+                    state =
+                        ArchiveUiState.Ready(
+                            tree = ArchiveTree(entries),
+                            format = format,
+                            stats = stats,
+                        )
+                    startWatcher(stats)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // Cancelled by the user or by close(): no state change. The loading screen the
+                    // user cancelled from is being torn down with the browser itself.
+                    throw e
+                } catch (e: Throwable) {
+                    state = archiveStateFor(e)
                 }
-                if (!isActive) return@launch
-                state = ArchiveUiState.Ready(
-                    tree = ArchiveTree(entries),
-                    format = format,
-                    stats = stats,
-                )
-                startWatcher(stats)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                // Cancelled by the user or by close(): no state change. The loading screen the
-                // user cancelled from is being torn down with the browser itself.
-                throw e
-            } catch (e: Throwable) {
-                state = archiveStateFor(e)
             }
-        }
     }
 
     /**
@@ -152,24 +155,27 @@ class ArchiveBrowserState(
      */
     private fun startWatcher(baseline: ArchiveValidation) {
         watchJob?.cancel()
-        watchJob = scope.launch {
-            while (isActive) {
-                delay(10_000)
-                if (closed) return@launch
-                val fresh = runCatching { provider.stat(remotePath) }.getOrNull()
-                val differs = fresh == null || baseline.differsFrom(
-                    size = fresh.size,
-                    modifiedEpochMillis = fresh.modifiedEpochMillis,
-                )
-                if (differs) {
-                    val s = state
-                    if (s is ArchiveUiState.Ready && !s.serverChanged) {
-                        state = s.copy(serverChanged = true)
+        watchJob =
+            scope.launch {
+                while (isActive) {
+                    delay(10_000)
+                    if (closed) return@launch
+                    val fresh = runCatching { provider.stat(remotePath) }.getOrNull()
+                    val differs =
+                        fresh == null ||
+                            baseline.differsFrom(
+                                size = fresh.size,
+                                modifiedEpochMillis = fresh.modifiedEpochMillis,
+                            )
+                    if (differs) {
+                        val s = state
+                        if (s is ArchiveUiState.Ready && !s.serverChanged) {
+                            state = s.copy(serverChanged = true)
+                        }
+                        return@launch
                     }
-                    return@launch
                 }
             }
-        }
     }
 }
 

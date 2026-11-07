@@ -8,7 +8,10 @@ package dev.eclipse.ssh.presentation.files
  * descends (the trail the controller keeps for the local SAF provider, whose `content://` URIs cannot
  * be split). The UI hands [path] straight back to the provider when a crumb is tapped.
  */
-data class Crumb(val name: String, val path: String)
+data class Crumb(
+    val name: String,
+    val path: String,
+)
 
 /**
  * Splits a POSIX absolute [path] into crumbs, root first.
@@ -52,7 +55,10 @@ typealias CrumbOrEllipsis = Crumb?
  * collapsed middle is deliberately unreachable in one tap: offering ten faint middle crumbs on a phone
  * is what caused the horizontal overflow this exists to prevent.
  */
-fun ellipsizeCrumbs(crumbs: List<Crumb>, maxVisible: Int = 4): List<CrumbOrEllipsis> {
+fun ellipsizeCrumbs(
+    crumbs: List<Crumb>,
+    maxVisible: Int = 4,
+): List<CrumbOrEllipsis> {
     if (maxVisible < 3 || crumbs.size <= maxVisible) return crumbs
     // Reserve one slot for the root and one for the ellipsis; the rest is tail.
     val keepTail = (maxVisible - 2).coerceAtLeast(1)

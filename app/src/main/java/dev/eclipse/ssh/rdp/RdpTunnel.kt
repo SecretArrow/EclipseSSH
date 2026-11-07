@@ -6,10 +6,6 @@ import com.freerdp.freerdpcore.services.LibFreeRDP
 import dev.eclipse.ssh.data.model.RemoteDesktopTarget
 import dev.eclipse.ssh.ssh.ForwardingHandle
 import dev.eclipse.ssh.ssh.PortForwardingManager
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.concurrent.thread
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +17,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.apache.sshd.client.session.ClientSession
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 
 /**
  * The states of one RDP viewing session, in the order they happen.
@@ -42,20 +42,34 @@ sealed interface RdpTunnelState {
     data object AwaitingCredentials : RdpTunnelState
 
     /** Session live; [RdpTunnel.frames] begins delivering as updates arrive. */
-    data class Connected(val width: Int, val height: Int) : RdpTunnelState
+    data class Connected(
+        val width: Int,
+        val height: Int,
+    ) : RdpTunnelState
 
     /** The session ended against the user's will; [reason] is one line for the screen. */
-    data class Failed(val reason: String) : RdpTunnelState
+    data class Failed(
+        val reason: String,
+    ) : RdpTunnelState
 
     /** The session ended because the viewer left it. */
     data object Closed : RdpTunnelState
 }
 
 /** One delivered frame: the bitmap to draw, its size, and a counter that grows with every frame. */
-data class RdpFrame(val bitmap: Bitmap, val width: Int, val height: Int, val sequence: Long)
+data class RdpFrame(
+    val bitmap: Bitmap,
+    val width: Int,
+    val height: Int,
+    val sequence: Long,
+)
 
 /** The user's answer to an NLA challenge, as typed into the viewer's credentials form. */
-private data class RdpCredentials(val username: String?, val domain: String?, val password: String?)
+private data class RdpCredentials(
+    val username: String?,
+    val domain: String?,
+    val password: String?,
+)
 
 /**
  * One RDP viewing session over an SSH connection: an ad-hoc local forward this tunnel owns,
@@ -99,8 +113,9 @@ private data class RdpCredentials(val username: String?, val domain: String?, va
  * allocation per update at whatever rate the server pushes, and a torn frame is invisible
  * while a GC pause mid-desktop is not.
  */
-class RdpTunnel(private val forwarding: PortForwardingManager) {
-
+class RdpTunnel(
+    private val forwarding: PortForwardingManager,
+) {
     private val _state = MutableStateFlow<RdpTunnelState>(RdpTunnelState.Idle)
     val state: StateFlow<RdpTunnelState> = _state
 
@@ -127,6 +142,7 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
 
     /** Last desktop size OnSettingsChanged reported; the source of Connected's dimensions. */
     @Volatile private var desktopWidth = 0
+
     @Volatile private var desktopHeight = 0
 
     /**
@@ -180,9 +196,10 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
         _state.value = RdpTunnelState.Connecting
         thread(name = "rdp-tunnel") {
             try {
-                val handle = runBlocking {
-                    forwarding.startLocal(session, LOOPBACK, 0, target.host, target.port)
-                }
+                val handle =
+                    runBlocking {
+                        forwarding.startLocal(session, LOOPBACK, 0, target.host, target.port)
+                    }
                 synchronized(lifecycleLock) { forward = handle }
                 // A stop()/abandon()/failure during the slow startLocal above would have torn nothing
                 // down - there was nothing published to find - so claim and free what we just set.
@@ -201,10 +218,15 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
                 // the only route to the desktop is the SSH transport the viewer rode in on.
                 check(
                     LibFreeRDP.setConnectionInfo(
-                        instance, LOOPBACK, handle.boundPort,
-                        username.orEmpty(), domain.orEmpty(), password.orEmpty(),
-                        width, height,
-                    )
+                        instance,
+                        LOOPBACK,
+                        handle.boundPort,
+                        username.orEmpty(),
+                        domain.orEmpty(),
+                        password.orEmpty(),
+                        width,
+                        height,
+                    ),
                 ) { "FreeRDP rejected the connection arguments" }
                 // Blocks until the session is over - success is reported by OnConnectionSuccess
                 // while we are still in here, so a return with no callback behind it is itself
@@ -224,7 +246,11 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
     }
 
     /** Supplies the credentials the user typed into the viewer's form, if anyone is waiting for them. */
-    fun submitCredentials(username: String?, domain: String?, password: String?) {
+    fun submitCredentials(
+        username: String?,
+        domain: String?,
+        password: String?,
+    ) {
         credentialsRequest.getAndSet(null)?.complete(RdpCredentials(username, domain, password))
     }
 
@@ -249,9 +275,10 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
         // A challenge nobody answers must not park its thread forever: that thread is FreeRDP's,
         // lent for the challenge, and a viewer closed without answering would otherwise leak it
         // for the life of the process. The timeout returns null, which fails the session below.
-        val answer = runBlocking {
-            withTimeoutOrNull(TimeUnit.SECONDS.toMillis(CREDENTIALS_WAIT_SECONDS)) { deferred.await() }
-        }
+        val answer =
+            runBlocking {
+                withTimeoutOrNull(TimeUnit.SECONDS.toMillis(CREDENTIALS_WAIT_SECONDS)) { deferred.await() }
+            }
         credentialsRequest.compareAndSet(deferred, null)
         // Same guard on the way out: release() completes a parked challenge with null, and the
         // answer the user typed in the instant before the viewer closed is not one to act on.
@@ -272,149 +299,198 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
     // not use yet are overridden as explicit no-ops rather than left to a stub class.
     // ---------------------------------------------------------------------------------------------
 
-    private val eventListener = object : LibFreeRDP.EventListener {
-        override fun OnPreConnect(instance: Long) {
-            // The negotiation has begun; Connecting already says everything this can.
-        }
+    private val eventListener =
+        object : LibFreeRDP.EventListener {
+            override fun OnPreConnect(instance: Long) {
+                // The negotiation has begun; Connecting already says everything this can.
+            }
 
-        override fun OnConnectionSuccess(instance: Long) {
-            if (finished.get()) return
-            // OnSettingsChanged can land on either side of this callback, so the dimensions it
-            // carries may still be 0 here; the first OnSettingsChanged to arrive afterwards
-            // re-publishes Connected with the real ones. Publishing now rather than waiting is
-            // what lets the viewer drop its spinner the moment the desktop is live.
-            _state.value = RdpTunnelState.Connected(desktopWidth, desktopHeight)
-        }
+            override fun OnConnectionSuccess(instance: Long) {
+                if (finished.get()) return
+                // OnSettingsChanged can land on either side of this callback, so the dimensions it
+                // carries may still be 0 here; the first OnSettingsChanged to arrive afterwards
+                // re-publishes Connected with the real ones. Publishing now rather than waiting is
+                // what lets the viewer drop its spinner the moment the desktop is live.
+                _state.value = RdpTunnelState.Connected(desktopWidth, desktopHeight)
+            }
 
-        override fun OnConnectionFailure(instance: Long) {
-            failSession(instance)
-        }
+            override fun OnConnectionFailure(instance: Long) {
+                failSession(instance)
+            }
 
-        override fun OnDisconnecting(instance: Long) {
-            // The engine tears itself down next; nothing to release before OnDisconnected.
-        }
+            override fun OnDisconnecting(instance: Long) {
+                // The engine tears itself down next; nothing to release before OnDisconnected.
+            }
 
-        override fun OnDisconnected(instance: Long) {
-            // A disconnect nobody asked for - the server hung up, or the SSH transport under
-            // the forward died. A deliberate stop() has already set finished, which is what
-            // keeps this from overwriting the Closed it wrote.
-            failSession(instance)
-        }
-    }
-
-    private val uiEventListener = object : LibFreeRDP.UIEventListener {
-        override fun OnSettingsChanged(width: Int, height: Int, bpp: Int) {
-            desktopWidth = width
-            desktopHeight = height
-            ensureBitmap(width, height)
-            val state = _state.value
-            // Correcting a Connected published before the dimensions were known - see
-            // OnConnectionSuccess. Anything earlier stays as it is; success publishes from
-            // these fields when it arrives.
-            if (state is RdpTunnelState.Connected && (state.width != width || state.height != height)) {
-                _state.value = RdpTunnelState.Connected(width, height)
+            override fun OnDisconnected(instance: Long) {
+                // A disconnect nobody asked for - the server hung up, or the SSH transport under
+                // the forward died. A deliberate stop() has already set finished, which is what
+                // keeps this from overwriting the Closed it wrote.
+                failSession(instance)
             }
         }
 
-        override fun OnAuthenticate(
-            username: StringBuilder,
-            domain: StringBuilder,
-            password: StringBuilder,
-        ): Boolean = answerAuthenticate(username, domain, password)
+    private val uiEventListener =
+        object : LibFreeRDP.UIEventListener {
+            override fun OnSettingsChanged(
+                width: Int,
+                height: Int,
+                bpp: Int,
+            ) {
+                desktopWidth = width
+                desktopHeight = height
+                ensureBitmap(width, height)
+                val state = _state.value
+                // Correcting a Connected published before the dimensions were known - see
+                // OnConnectionSuccess. Anything earlier stays as it is; success publishes from
+                // these fields when it arrives.
+                if (state is RdpTunnelState.Connected && (state.width != width || state.height != height)) {
+                    _state.value = RdpTunnelState.Connected(width, height)
+                }
+            }
 
-        override fun OnGatewayAuthenticate(
-            username: StringBuilder,
-            domain: StringBuilder,
-            password: StringBuilder,
-        ): Boolean = false // No RD Gateway in a tunneled session; the tunnel is the gateway.
+            override fun OnAuthenticate(
+                username: StringBuilder,
+                domain: StringBuilder,
+                password: StringBuilder,
+            ): Boolean = answerAuthenticate(username, domain, password)
 
-        override fun OnVerifyCertificateEx(
-            host: String,
-            port: Long,
-            commonName: String,
-            subject: String,
-            issuer: String,
-            fingerprint: String,
-            flags: Long,
-        ): Int {
-            // Accept unconditionally: the endpoint identity is the SSH host key that anchored
-            // the tunnel, and setConnectionInfo already passes /cert:ignore, so this is a
-            // belt-and-braces 1 in case the engine still asks.
-            return 1
+            override fun OnGatewayAuthenticate(
+                username: StringBuilder,
+                domain: StringBuilder,
+                password: StringBuilder,
+            ): Boolean = false // No RD Gateway in a tunneled session; the tunnel is the gateway.
+
+            override fun OnVerifyCertificateEx(
+                host: String,
+                port: Long,
+                commonName: String,
+                subject: String,
+                issuer: String,
+                fingerprint: String,
+                flags: Long,
+            ): Int {
+                // Accept unconditionally: the endpoint identity is the SSH host key that anchored
+                // the tunnel, and setConnectionInfo already passes /cert:ignore, so this is a
+                // belt-and-braces 1 in case the engine still asks.
+                return 1
+            }
+
+            override fun OnVerifyChangedCertificateEx(
+                host: String,
+                port: Long,
+                commonName: String,
+                subject: String,
+                issuer: String,
+                fingerprint: String,
+                oldSubject: String,
+                oldIssuer: String,
+                oldFingerprint: String,
+                flags: Long,
+            ): Int {
+                // As above - the server's certificate is not the trust anchor here.
+                return 1
+            }
+
+            override fun OnExperimentalFeature(feature: Int): Boolean = true
+
+            override fun OnGraphicsUpdate(
+                x: Int,
+                y: Int,
+                width: Int,
+                height: Int,
+            ) {
+                val instance = inst
+                if (instance == 0L) return
+                val bitmap = frameBitmap ?: return
+                // The blit runs on the native side, into our bitmap: updateGraphics is what makes
+                // the dirty rect visible at all - skipping it would publish stale pixels.
+                LibFreeRDP.updateGraphics(instance, bitmap, x, y, width, height)
+                sequence += 1
+                _frames.value = RdpFrame(bitmap, bitmap.width, bitmap.height, sequence)
+            }
+
+            override fun OnGraphicsResize(
+                width: Int,
+                height: Int,
+                bpp: Int,
+            ) {
+                desktopWidth = width
+                desktopHeight = height
+                // Nothing to re-blit: the next update repaints the new desktop in full. Publishing
+                // the resized (blank) bitmap anyway is what tells the viewer to re-lay out before
+                // that repaint arrives.
+                val bitmap = ensureBitmap(width, height)
+                sequence += 1
+                _frames.value = RdpFrame(bitmap, width, height, sequence)
+            }
+
+            // Clipboard and remote-app events. The clipboard text half is the viewer's clipboard
+            // sync: setConnectionInfo negotiates /clipboard, and the engine announces the server's
+            // cuts here - published, not acted on, because what the phone does with its clipboard
+            // is the viewer's policy, not the engine's. The image half and the remote-app events
+            // remain no-ops: a full-desktop session over a phone-sized screen has no use for either,
+            // and dropping them here is cheaper than a stub listener class that would have to grow
+            // the same no-ops.
+            override fun OnRemoteClipboardChanged(data: String) {
+                _remoteClipboard.value = data
+            }
+
+            override fun OnRemoteClipboardImageChanged(data: ByteArray) {}
+
+            override fun OnPointerSet(
+                pixels: IntArray,
+                width: Int,
+                height: Int,
+                hotX: Int,
+                hotY: Int,
+            ) {
+                // The viewer draws the platform cursor, as the VNC one does with its local
+                // pointer; remote cursor shapes would arrive a round trip late.
+            }
+
+            override fun OnPointerSetNull() {}
+
+            override fun OnPointerSetDefault() {}
+
+            override fun OnRailWindowUpdate(
+                windowId: Long,
+                width: Int,
+                height: Int,
+                pixels: IntArray,
+            ) {}
+
+            override fun OnRailWindowMove(
+                windowId: Long,
+                x: Int,
+                y: Int,
+                w: Int,
+                h: Int,
+            ) {}
+
+            override fun OnRailWindowHide(windowId: Long) {}
+
+            override fun OnRailWindowDestroy(windowId: Long) {}
+
+            override fun OnRailSessionEnd() {}
+
+            override fun OnRailMonitoredDesktop(
+                windowIds: LongArray,
+                activeWindowId: Long,
+            ) {}
         }
-
-        override fun OnVerifyChangedCertificateEx(
-            host: String,
-            port: Long,
-            commonName: String,
-            subject: String,
-            issuer: String,
-            fingerprint: String,
-            oldSubject: String,
-            oldIssuer: String,
-            oldFingerprint: String,
-            flags: Long,
-        ): Int {
-            // As above - the server's certificate is not the trust anchor here.
-            return 1
-        }
-
-        override fun OnExperimentalFeature(feature: Int): Boolean = true
-
-        override fun OnGraphicsUpdate(x: Int, y: Int, width: Int, height: Int) {
-            val instance = inst
-            if (instance == 0L) return
-            val bitmap = frameBitmap ?: return
-            // The blit runs on the native side, into our bitmap: updateGraphics is what makes
-            // the dirty rect visible at all - skipping it would publish stale pixels.
-            LibFreeRDP.updateGraphics(instance, bitmap, x, y, width, height)
-            sequence += 1
-            _frames.value = RdpFrame(bitmap, bitmap.width, bitmap.height, sequence)
-        }
-
-        override fun OnGraphicsResize(width: Int, height: Int, bpp: Int) {
-            desktopWidth = width
-            desktopHeight = height
-            // Nothing to re-blit: the next update repaints the new desktop in full. Publishing
-            // the resized (blank) bitmap anyway is what tells the viewer to re-lay out before
-            // that repaint arrives.
-            val bitmap = ensureBitmap(width, height)
-            sequence += 1
-            _frames.value = RdpFrame(bitmap, width, height, sequence)
-        }
-
-        // Clipboard and remote-app events. The clipboard text half is the viewer's clipboard
-        // sync: setConnectionInfo negotiates /clipboard, and the engine announces the server's
-        // cuts here - published, not acted on, because what the phone does with its clipboard
-        // is the viewer's policy, not the engine's. The image half and the remote-app events
-        // remain no-ops: a full-desktop session over a phone-sized screen has no use for either,
-        // and dropping them here is cheaper than a stub listener class that would have to grow
-        // the same no-ops.
-        override fun OnRemoteClipboardChanged(data: String) {
-            _remoteClipboard.value = data
-        }
-        override fun OnRemoteClipboardImageChanged(data: ByteArray) {}
-        override fun OnPointerSet(pixels: IntArray, width: Int, height: Int, hotX: Int, hotY: Int) {
-            // The viewer draws the platform cursor, as the VNC one does with its local
-            // pointer; remote cursor shapes would arrive a round trip late.
-        }
-        override fun OnPointerSetNull() {}
-        override fun OnPointerSetDefault() {}
-        override fun OnRailWindowUpdate(windowId: Long, width: Int, height: Int, pixels: IntArray) {}
-        override fun OnRailWindowMove(windowId: Long, x: Int, y: Int, w: Int, h: Int) {}
-        override fun OnRailWindowHide(windowId: Long) {}
-        override fun OnRailWindowDestroy(windowId: Long) {}
-        override fun OnRailSessionEnd() {}
-        override fun OnRailMonitoredDesktop(windowIds: LongArray, activeWindowId: Long) {}
-    }
 
     /**
      * The one bitmap, allocated at the desktop's size and reallocated only when that size
      * actually changes - the same reuse rule the VNC engine applies to its ImageBuffer copy.
      */
-    private fun ensureBitmap(width: Int, height: Int): Bitmap =
+    private fun ensureBitmap(
+        width: Int,
+        height: Int,
+    ): Bitmap =
         frameBitmap?.takeIf { it.width == width && it.height == height }
-            ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            ?: Bitmap
+                .createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 .also { frameBitmap = it }
 
     /**
@@ -425,11 +501,12 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
      */
     private fun failSession(instance: Long) {
         if (finished.getAndSet(true)) return
-        val reason = if (instance != 0L) {
-            LibFreeRDP.getLastErrorString(instance).takeIf { it.isNotBlank() } ?: "connection failed"
-        } else {
-            "connection failed"
-        }
+        val reason =
+            if (instance != 0L) {
+                LibFreeRDP.getLastErrorString(instance).takeIf { it.isNotBlank() } ?: "connection failed"
+            } else {
+                "connection failed"
+            }
         _state.value = RdpTunnelState.Failed(reason)
         release()
     }
@@ -508,10 +585,14 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
 
     /** Where the pointer was last left; RDP wants a position with every event, presses included. */
     @Volatile private var lastMouseX = 0
+
     @Volatile private var lastMouseY = 0
 
     /** Moves the remote pointer to ([x], [y]) in desktop coordinates. */
-    fun moveMouse(x: Int, y: Int) {
+    fun moveMouse(
+        x: Int,
+        y: Int,
+    ) {
         val instance = inst
         if (instance == 0L) return
         lastMouseX = x
@@ -520,19 +601,23 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
     }
 
     /** Presses or releases remote mouse button [button] (1 left, 2 middle, 3 right). */
-    fun mouseButton(button: Int, pressed: Boolean) {
+    fun mouseButton(
+        button: Int,
+        pressed: Boolean,
+    ) {
         val instance = inst
         if (instance == 0L) return
         // The wire's button numbers and the viewer's are not the same numbers: RDP's flag for
         // button 2 is the RIGHT button and button 3 is MIDDLE (freerdp's own input.h says so),
         // where the viewer's convention - inherited from the VNC engine - is 1/2/3 =
         // left/middle/right. Remapped here so the middle one stays the middle one.
-        val buttonFlag = when (button) {
-            1 -> PTR_FLAGS_BUTTON1
-            2 -> PTR_FLAGS_BUTTON3
-            3 -> PTR_FLAGS_BUTTON2
-            else -> return
-        }
+        val buttonFlag =
+            when (button) {
+                1 -> PTR_FLAGS_BUTTON1
+                2 -> PTR_FLAGS_BUTTON3
+                3 -> PTR_FLAGS_BUTTON2
+                else -> return
+            }
         // The position is remembered rather than passed in because the wire format wants one
         // with a press too - sending (0, 0) there would teleport the cursor to the corner on
         // every tap.
@@ -548,9 +633,10 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
         // flag, the direction bit for down, and the rotation count - one notch is 0x78, the
         // hundredths-of-a-notch unit the format shares with WM_MOUSEWHEEL. No PTR_FLAGS_DOWN:
         // that bit belongs to button presses and is not part of a wheel event.
-        val flags = PTR_FLAGS_WHEEL or
-            (if (up) 0 else PTR_FLAGS_WHEEL_NEGATIVE) or
-            WHEEL_ROTATION_ONE_NOTCH
+        val flags =
+            PTR_FLAGS_WHEEL or
+                (if (up) 0 else PTR_FLAGS_WHEEL_NEGATIVE) or
+                WHEEL_ROTATION_ONE_NOTCH
         LibFreeRDP.sendCursorEvent(instance, lastMouseX, lastMouseY, flags)
     }
 
@@ -585,7 +671,10 @@ class RdpTunnel(private val forwarding: PortForwardingManager) {
      * setConnectionInfo enables. A server that cannot resize ignores it, which is why the
      * viewer treats OnGraphicsResize, not this request, as the truth about the new size.
      */
-    fun requestResolution(width: Int, height: Int) {
+    fun requestResolution(
+        width: Int,
+        height: Int,
+    ) {
         val instance = inst
         if (instance == 0L) return
         LibFreeRDP.sendMonitorLayout(instance, width, height)

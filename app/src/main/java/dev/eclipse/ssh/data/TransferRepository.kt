@@ -58,76 +58,103 @@ interface TransferDao {
 
 interface TransferRepository {
     val transfers: Flow<List<TransferItem>>
+
     suspend fun save(item: TransferItem)
+
     suspend fun seedIfEmpty()
+
     suspend fun clearCompleted()
+
     suspend fun delete(id: String)
 }
 
-class RoomTransferRepository(private val dao: TransferDao) : TransferRepository {
+class RoomTransferRepository(
+    private val dao: TransferDao,
+) : TransferRepository {
     override val transfers = dao.observeAll().map { rows -> rows.map(TransferEntity::toDomain) }
+
     override suspend fun save(item: TransferItem) = dao.upsert(item.toEntity())
+
     override suspend fun clearCompleted() = dao.clearCompleted()
+
     override suspend fun delete(id: String) = dao.delete(id)
 
     override suspend fun seedIfEmpty() {
         if (dao.count() == 0) {
             save(
                 TransferItem(
-                    id = "demo-download", name = "release-bundle.tar.gz", direction = TransferDirection.DOWNLOAD,
-                    hostName = "Production edge", progress = 0.72f, status = TransferStatus.RUNNING, sizeLabel = "1.8 GB",
-                    hostId = "eclipse-demo", remotePath = "/srv/releases/release-bundle.tar.gz", transferredBytes = 1_296_000_000L, totalBytes = 1_800_000_000L,
+                    id = "demo-download",
+                    name = "release-bundle.tar.gz",
+                    direction = TransferDirection.DOWNLOAD,
+                    hostName = "Production edge",
+                    progress = 0.72f,
+                    status = TransferStatus.RUNNING,
+                    sizeLabel = "1.8 GB",
+                    hostId = "eclipse-demo",
+                    remotePath = "/srv/releases/release-bundle.tar.gz",
+                    transferredBytes = 1_296_000_000L,
+                    totalBytes = 1_800_000_000L,
                 ),
             )
             save(
                 TransferItem(
-                    id = "demo-upload", name = "deploy.sh", direction = TransferDirection.UPLOAD,
-                    hostName = "Staging cluster", progress = 1f, status = TransferStatus.COMPLETE, sizeLabel = "24 KB",
-                    hostId = "eclipse-staging", remotePath = "/home/ubuntu/deploy.sh", transferredBytes = 24_576L, totalBytes = 24_576L,
+                    id = "demo-upload",
+                    name = "deploy.sh",
+                    direction = TransferDirection.UPLOAD,
+                    hostName = "Staging cluster",
+                    progress = 1f,
+                    status = TransferStatus.COMPLETE,
+                    sizeLabel = "24 KB",
+                    hostId = "eclipse-staging",
+                    remotePath = "/home/ubuntu/deploy.sh",
+                    transferredBytes = 24_576L,
+                    totalBytes = 24_576L,
                 ),
             )
         }
     }
 }
 
-internal fun TransferEntity.toDomain() = TransferItem(
-    id = id,
-    name = name,
-    direction = TransferDirection.entries.firstOrNull { it.name == direction } ?: TransferDirection.DOWNLOAD,
-    hostName = hostName,
-    progress = progress,
-    status = TransferStatus.entries.firstOrNull { it.name == status } ?: TransferStatus.QUEUED,
-    sizeLabel = sizeLabel,
-    hostId = hostId,
-    remotePath = remotePath,
-    localUri = localUri,
-    sourceHostId = sourceHostId,
-    destPath = destPath,
-    transferredBytes = transferredBytes,
-    totalBytes = totalBytes,
-    retryCount = retryCount,
-    scheduledAt = scheduledAt,
-    repeatMinutes = repeatMinutes,
-    errorMessage = errorMessage,
-)
+internal fun TransferEntity.toDomain() =
+    TransferItem(
+        id = id,
+        name = name,
+        direction = TransferDirection.entries.firstOrNull { it.name == direction } ?: TransferDirection.DOWNLOAD,
+        hostName = hostName,
+        progress = progress,
+        status = TransferStatus.entries.firstOrNull { it.name == status } ?: TransferStatus.QUEUED,
+        sizeLabel = sizeLabel,
+        hostId = hostId,
+        remotePath = remotePath,
+        localUri = localUri,
+        sourceHostId = sourceHostId,
+        destPath = destPath,
+        transferredBytes = transferredBytes,
+        totalBytes = totalBytes,
+        retryCount = retryCount,
+        scheduledAt = scheduledAt,
+        repeatMinutes = repeatMinutes,
+        errorMessage = errorMessage,
+    )
 
-internal fun TransferItem.toEntity() = TransferEntity(
-    id = id,
-    name = name,
-    direction = direction.name,
-    hostName = hostName,
-    progress = progress,
-    status = status.name,
-    sizeLabel = sizeLabel,
-    hostId = hostId,
-    remotePath = remotePath,
-    localUri = localUri,
-    sourceHostId = sourceHostId,
-    destPath = destPath,
-    transferredBytes = transferredBytes,
-    totalBytes = totalBytes,
-    retryCount = retryCount,
-    scheduledAt = scheduledAt,
-    repeatMinutes = repeatMinutes,
-    errorMessage = errorMessage,
-)
+internal fun TransferItem.toEntity() =
+    TransferEntity(
+        id = id,
+        name = name,
+        direction = direction.name,
+        hostName = hostName,
+        progress = progress,
+        status = status.name,
+        sizeLabel = sizeLabel,
+        hostId = hostId,
+        remotePath = remotePath,
+        localUri = localUri,
+        sourceHostId = sourceHostId,
+        destPath = destPath,
+        transferredBytes = transferredBytes,
+        totalBytes = totalBytes,
+        retryCount = retryCount,
+        scheduledAt = scheduledAt,
+        repeatMinutes = repeatMinutes,
+        errorMessage = errorMessage,
+    )

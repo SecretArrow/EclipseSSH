@@ -44,7 +44,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ExportProfilesActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<ExportProfilesActivity>()
 
@@ -82,7 +81,8 @@ class ExportProfilesActivityRobolectricTest {
 
         assertWithMessage("an empty profile list is not explained")
             .that(
-                compose.onAllNodesWithText("There is nothing to export yet", substring = true)
+                compose
+                    .onAllNodesWithText("There is nothing to export yet", substring = true)
                     .fetchSemanticsNodes(),
             ).isNotEmpty()
     }
@@ -95,9 +95,10 @@ class ExportProfilesActivityRobolectricTest {
     fun theScreenSaysWhatTheFileCarries() {
         compose.waitForIdle()
 
-        compose.onNodeWithText(
-            "Passwords, private keys and passphrases travel with the profiles you pick",
-        ).assertIsDisplayed()
+        compose
+            .onNodeWithText(
+                "Passwords, private keys and passphrases travel with the profiles you pick",
+            ).assertIsDisplayed()
     }
 
     /**
@@ -112,7 +113,8 @@ class ExportProfilesActivityRobolectricTest {
         compose.waitForIdle()
 
         assertWithMessage("the window offers nowhere to type a passphrase")
-            .that(compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes()).isNotEmpty()
+            .that(compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes())
+            .isNotEmpty()
     }
 
     /** The paste affordance is offered, and named for a screen reader. */

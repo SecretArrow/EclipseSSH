@@ -21,7 +21,10 @@ enum class KeyBarLayoutMode { SINGLE, DOUBLE, CUSTOM }
  * the padding sets how much finger room a cap *looks* like it has, the minimum height is the
  * accessibility floor that keeps a one-character label tappable.
  */
-enum class KeyBarSize(val verticalPaddingDp: Int, val minHeightDp: Int) {
+enum class KeyBarSize(
+    val verticalPaddingDp: Int,
+    val minHeightDp: Int,
+) {
     COMPACT(6, 20),
     NORMAL(10, 24),
     LARGE(14, 30),
@@ -135,13 +138,15 @@ object KeyBarCatalog {
 
     fun defaultLabel(key: TerminalKey): String = KEY_LABELS[key] ?: key.name
 
-    fun defaultLabel(cap: KeyBarCap): String = when (cap.kind) {
-        KeyBarCapKind.LATCH -> cap.id
-        KeyBarCapKind.KEY -> cap.id.let { name ->
-            TerminalKey.entries.firstOrNull { it.name == name }?.let(::defaultLabel) ?: name
+    fun defaultLabel(cap: KeyBarCap): String =
+        when (cap.kind) {
+            KeyBarCapKind.LATCH -> cap.id
+            KeyBarCapKind.KEY ->
+                cap.id.let { name ->
+                    TerminalKey.entries.firstOrNull { it.name == name }?.let(::defaultLabel) ?: name
+                }
+            KeyBarCapKind.TEXT -> cap.text.orEmpty()
         }
-        KeyBarCapKind.TEXT -> cap.text.orEmpty()
-    }
 
     /**
      * Every cap the app itself can offer — the three latches and every key in [TerminalKey] — with
@@ -173,59 +178,74 @@ object KeyBarCatalog {
  */
 object KeyBarPresets {
     /** The minimum: quit, complete, run, erase. */
-    fun basic(): KeyBarPrefs = KeyBarPrefs(
-        mode = KeyBarLayoutMode.SINGLE,
-        caps = caps(
-            latches = listOf("CTRL", "ALT"),
-            keys = listOf(TerminalKey.ESCAPE, TerminalKey.TAB, TerminalKey.ENTER, TerminalKey.BACKSPACE),
-        ),
-    )
+    fun basic(): KeyBarPrefs =
+        KeyBarPrefs(
+            mode = KeyBarLayoutMode.SINGLE,
+            caps =
+                caps(
+                    latches = listOf("CTRL", "ALT"),
+                    keys = listOf(TerminalKey.ESCAPE, TerminalKey.TAB, TerminalKey.ENTER, TerminalKey.BACKSPACE),
+                ),
+        )
 
     /** Modal programs: the navigation cluster. */
-    fun terminal(): KeyBarPrefs = KeyBarPrefs(
-        mode = KeyBarLayoutMode.SINGLE,
-        caps = caps(
-            latches = listOf("CTRL", "ALT"),
-            keys = listOf(
-                TerminalKey.ESCAPE, TerminalKey.TAB,
-                TerminalKey.ARROW_LEFT, TerminalKey.ARROW_DOWN, TerminalKey.ARROW_UP, TerminalKey.ARROW_RIGHT,
-                TerminalKey.HOME, TerminalKey.END,
-            ),
-        ),
-    )
+    fun terminal(): KeyBarPrefs =
+        KeyBarPrefs(
+            mode = KeyBarLayoutMode.SINGLE,
+            caps =
+                caps(
+                    latches = listOf("CTRL", "ALT"),
+                    keys =
+                        listOf(
+                            TerminalKey.ESCAPE,
+                            TerminalKey.TAB,
+                            TerminalKey.ARROW_LEFT,
+                            TerminalKey.ARROW_DOWN,
+                            TerminalKey.ARROW_UP,
+                            TerminalKey.ARROW_RIGHT,
+                            TerminalKey.HOME,
+                            TerminalKey.END,
+                        ),
+                ),
+        )
 
     /** The shell's punctuation, as custom text caps. */
-    fun developer(): KeyBarPrefs = KeyBarPrefs(
-        mode = KeyBarLayoutMode.SINGLE,
-        caps = caps(
-            latches = listOf("CTRL", "ALT"),
-            keys = listOf(TerminalKey.ESCAPE, TerminalKey.TAB),
-            texts = listOf("/", "\\", "|", "~", "_", "-", "=", "+"),
-        ),
-    )
+    fun developer(): KeyBarPrefs =
+        KeyBarPrefs(
+            mode = KeyBarLayoutMode.SINGLE,
+            caps =
+                caps(
+                    latches = listOf("CTRL", "ALT"),
+                    keys = listOf(TerminalKey.ESCAPE, TerminalKey.TAB),
+                    texts = listOf("/", "\\", "|", "~", "_", "-", "=", "+"),
+                ),
+        )
 
     /** The function row, split onto two rows so F7 is one thumb-reach, not one scroll, away. */
-    fun functionKeys(): KeyBarPrefs = KeyBarPrefs(
-        mode = KeyBarLayoutMode.DOUBLE,
-        caps = caps(keys = TerminalKey.entries.filter { it.name.startsWith("F") }),
-    )
+    fun functionKeys(): KeyBarPrefs =
+        KeyBarPrefs(
+            mode = KeyBarLayoutMode.DOUBLE,
+            caps = caps(keys = TerminalKey.entries.filter { it.name.startsWith("F") }),
+        )
 
     /** Everything the app can name, nothing hidden. */
-    fun full(): KeyBarPrefs = KeyBarPrefs(
-        mode = KeyBarLayoutMode.DOUBLE,
-        caps = caps(latches = KeyBarCatalog.LATCHES, keys = TerminalKey.entries.toList()),
-    )
+    fun full(): KeyBarPrefs =
+        KeyBarPrefs(
+            mode = KeyBarLayoutMode.DOUBLE,
+            caps = caps(latches = KeyBarCatalog.LATCHES, keys = TerminalKey.entries.toList()),
+        )
 
     private fun caps(
         latches: List<String> = emptyList(),
         keys: List<TerminalKey> = emptyList(),
         texts: List<String> = emptyList(),
-    ): List<KeyBarCap> = buildList {
-        var order = 0
-        latches.forEach { add(KeyBarCap(it, KeyBarCapKind.LATCH, order = order++)) }
-        keys.forEach { add(KeyBarCap(it.name, KeyBarCapKind.KEY, order = order++)) }
-        texts.forEach { add(KeyBarCap("c${size + 1}", KeyBarCapKind.TEXT, order = order++, text = it)) }
-    }
+    ): List<KeyBarCap> =
+        buildList {
+            var order = 0
+            latches.forEach { add(KeyBarCap(it, KeyBarCapKind.LATCH, order = order++)) }
+            keys.forEach { add(KeyBarCap(it.name, KeyBarCapKind.KEY, order = order++)) }
+            texts.forEach { add(KeyBarCap("c${size + 1}", KeyBarCapKind.TEXT, order = order++, text = it)) }
+        }
 }
 
 /**
@@ -238,7 +258,6 @@ object KeyBarPresets {
  * format evolvable: a cap this version has never heard of has no correct rendering here.
  */
 object KeyBarPrefsCodec {
-
     /**
      * The most rows CUSTOM mode will draw. The bar trades terminal height for keys, and past six
      * rows there is no terminal left on a phone — the cap also bounds what a corrupt blob can ask
@@ -261,49 +280,58 @@ object KeyBarPrefsCodec {
     /** What one cap may be labelled. `BACKSPACE` fits; a sentence does not. */
     const val MAX_LABEL_LENGTH = 8
 
-    fun decode(json: String): KeyBarPrefs = try {
-        val root = JSONObject(json)
-        val mode = root.optString("mode")
-            .let { name -> KeyBarLayoutMode.entries.firstOrNull { it.name == name } }
-            ?: KeyBarLayoutMode.SINGLE
-        val size = root.optString("size")
-            .let { name -> KeyBarSize.entries.firstOrNull { it.name == name } }
-            ?: KeyBarSize.NORMAL
-        val rows = root.optInt("rows", 1).coerceIn(1, MAX_ROWS)
-        val caps = decodeCaps(root.optJSONArray("caps"))
-        // An empty caps list is not a bar somebody chose - it is a blob that lost its payload - so
-        // it falls back to the defaults rather than rendering an empty strip above the keyboard.
-        KeyBarPrefs(
-            mode = mode,
-            size = size,
-            rows = if (mode == KeyBarLayoutMode.CUSTOM) rows else 1,
-            caps = if (caps.isEmpty()) KeyBarCatalog.DEFAULT_CAPS else caps,
-        )
-    } catch (error: JSONException) {
-        // Not an object, or not parseable at all: the defaults, wholesale.
-        KeyBarPrefs()
-    }
+    fun decode(json: String): KeyBarPrefs =
+        try {
+            val root = JSONObject(json)
+            val mode =
+                root
+                    .optString("mode")
+                    .let { name -> KeyBarLayoutMode.entries.firstOrNull { it.name == name } }
+                    ?: KeyBarLayoutMode.SINGLE
+            val size =
+                root
+                    .optString("size")
+                    .let { name -> KeyBarSize.entries.firstOrNull { it.name == name } }
+                    ?: KeyBarSize.NORMAL
+            val rows = root.optInt("rows", 1).coerceIn(1, MAX_ROWS)
+            val caps = decodeCaps(root.optJSONArray("caps"))
+            // An empty caps list is not a bar somebody chose - it is a blob that lost its payload - so
+            // it falls back to the defaults rather than rendering an empty strip above the keyboard.
+            KeyBarPrefs(
+                mode = mode,
+                size = size,
+                rows = if (mode == KeyBarLayoutMode.CUSTOM) rows else 1,
+                caps = if (caps.isEmpty()) KeyBarCatalog.DEFAULT_CAPS else caps,
+            )
+        } catch (error: JSONException) {
+            // Not an object, or not parseable at all: the defaults, wholesale.
+            KeyBarPrefs()
+        }
 
-    fun encode(prefs: KeyBarPrefs): String = JSONObject()
-        .put("mode", prefs.mode.name)
-        .put("size", prefs.size.name)
-        .put("rows", if (prefs.mode == KeyBarLayoutMode.CUSTOM) prefs.rows.coerceIn(1, MAX_ROWS) else 1)
-        .put("caps", JSONArray().apply {
-            prefs.caps.take(MAX_CAPS).forEach { cap ->
-                put(JSONObject()
-                    .put("id", cap.id)
-                    .put("kind", cap.kind.name)
-                    .put("row", cap.row.coerceIn(0, MAX_ROWS - 1))
-                    .put("order", cap.order)
-                    .put("visible", cap.visible)
-                    // Only written when they carry information: a null label is "use the default",
-                    // and a null text is "not a text cap", so their absence round-trips as null.
-                    .apply { cap.label?.let { put("label", it) } }
-                    .apply { if (cap.kind == KeyBarCapKind.TEXT) put("text", cap.text.orEmpty()) }
-                )
-            }
-        })
-        .toString()
+    fun encode(prefs: KeyBarPrefs): String =
+        JSONObject()
+            .put("mode", prefs.mode.name)
+            .put("size", prefs.size.name)
+            .put("rows", if (prefs.mode == KeyBarLayoutMode.CUSTOM) prefs.rows.coerceIn(1, MAX_ROWS) else 1)
+            .put(
+                "caps",
+                JSONArray().apply {
+                    prefs.caps.take(MAX_CAPS).forEach { cap ->
+                        put(
+                            JSONObject()
+                                .put("id", cap.id)
+                                .put("kind", cap.kind.name)
+                                .put("row", cap.row.coerceIn(0, MAX_ROWS - 1))
+                                .put("order", cap.order)
+                                .put("visible", cap.visible)
+                                // Only written when they carry information: a null label is "use the default",
+                                // and a null text is "not a text cap", so their absence round-trips as null.
+                                .apply { cap.label?.let { put("label", it) } }
+                                .apply { if (cap.kind == KeyBarCapKind.TEXT) put("text", cap.text.orEmpty()) },
+                        )
+                    }
+                },
+            ).toString()
 
     /**
      * Reads the caps array. Every rule here is a way a blob can be wrong: an entry that is not an
@@ -321,19 +349,26 @@ object KeyBarPrefsCodec {
             val entry = array.optJSONObject(index) ?: continue
             val id = entry.optString("id").trim().take(64)
             if (id.isEmpty() || !seen.add(id)) continue
-            val kind = entry.optString("kind")
-                .let { name -> KeyBarCapKind.entries.firstOrNull { it.name == name } } ?: continue
-            val cap = when (kind) {
-                KeyBarCapKind.LATCH ->
-                    if (id in KeyBarCatalog.LATCHES) KeyBarCap(id, kind) else null
-                KeyBarCapKind.KEY ->
-                    if (TerminalKey.entries.any { it.name == id }) KeyBarCap(id, kind) else null
-                KeyBarCapKind.TEXT -> {
-                    val text = entry.optString("text").trim().take(MAX_TEXT_LENGTH)
-                    if (text.isEmpty() || customs >= MAX_CUSTOM_CAPS) null
-                    else { customs++; KeyBarCap(id, kind, text = text) }
-                }
-            } ?: continue
+            val kind =
+                entry
+                    .optString("kind")
+                    .let { name -> KeyBarCapKind.entries.firstOrNull { it.name == name } } ?: continue
+            val cap =
+                when (kind) {
+                    KeyBarCapKind.LATCH ->
+                        if (id in KeyBarCatalog.LATCHES) KeyBarCap(id, kind) else null
+                    KeyBarCapKind.KEY ->
+                        if (TerminalKey.entries.any { it.name == id }) KeyBarCap(id, kind) else null
+                    KeyBarCapKind.TEXT -> {
+                        val text = entry.optString("text").trim().take(MAX_TEXT_LENGTH)
+                        if (text.isEmpty() || customs >= MAX_CUSTOM_CAPS) {
+                            null
+                        } else {
+                            customs++
+                            KeyBarCap(id, kind, text = text)
+                        }
+                    }
+                } ?: continue
             val label = entry.optString("label").trim().take(MAX_LABEL_LENGTH)
             out.add(
                 cap.copy(
@@ -341,7 +376,7 @@ object KeyBarPrefsCodec {
                     order = entry.optInt("order", 0).coerceIn(0, 999),
                     visible = entry.optBoolean("visible", true),
                     label = label.ifEmpty { null },
-                )
+                ),
             )
         }
         return out

@@ -13,7 +13,6 @@ import org.junit.Test
  * own file. These tests exist so the round trip is checked rather than assumed.
  */
 class PosixPermissionsTest {
-
     @Test
     fun `a mode renders as three octal digits`() {
         assertThat(formatPermissions(0b110_100_100)).isEqualTo("644")
@@ -65,13 +64,14 @@ class PosixPermissionsTest {
 
     @Test
     fun `the preset labels spell out the permissions they set`() {
-        assertThat(PERMISSION_PRESETS.map { it.label }).containsExactly(
-            "644 · rw-r--r--",
-            "755 · rwxr-xr-x",
-            "700 · rwx------",
-            "600 · rw-------",
-            "777 · rwxrwxrwx",
-        ).inOrder()
+        assertThat(PERMISSION_PRESETS.map { it.label })
+            .containsExactly(
+                "644 · rw-r--r--",
+                "755 · rwxr-xr-x",
+                "700 · rwx------",
+                "600 · rw-------",
+                "777 · rwxrwxrwx",
+            ).inOrder()
     }
 
     @Test

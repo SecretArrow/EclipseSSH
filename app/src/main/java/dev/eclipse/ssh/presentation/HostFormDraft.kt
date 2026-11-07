@@ -1,5 +1,6 @@
 package dev.eclipse.ssh.presentation
 
+import dev.eclipse.ssh.data.credentials.StoredCredentials
 import dev.eclipse.ssh.data.model.CONNECT_TIMEOUT_RANGE
 import dev.eclipse.ssh.data.model.DEFAULT_CONNECT_TIMEOUT_SECONDS
 import dev.eclipse.ssh.data.model.DEFAULT_SOCKS_PORT
@@ -8,7 +9,6 @@ import dev.eclipse.ssh.data.model.HOST_KEY_FINGERPRINT_PATTERN
 import dev.eclipse.ssh.data.model.KEEP_ALIVE_RANGE
 import dev.eclipse.ssh.data.model.PORT_RANGE
 import dev.eclipse.ssh.data.model.ProxyType
-import dev.eclipse.ssh.data.credentials.StoredCredentials
 import dev.eclipse.ssh.feature.wakeonlan.parseMac
 import dev.eclipse.ssh.ssh.SshKeyProbe
 
@@ -106,9 +106,10 @@ internal data class HostFormDraft(
      * Matching the app's own output means a pin can be copied straight out of the host-key prompt
      * and pasted back in, which is the only workflow that makes pinning usable at all.
      */
-    val fingerprintValid: Boolean = fingerprint.isBlank() ||
-        FINGERPRINT_PATTERN.matches(fingerprint.trim()) ||
-        fingerprint.trim() == storedFingerprint?.trim()
+    val fingerprintValid: Boolean =
+        fingerprint.isBlank() ||
+            FINGERPRINT_PATTERN.matches(fingerprint.trim()) ||
+            fingerprint.trim() == storedFingerprint?.trim()
 
     /** Blank is valid — it means no Wake-on-LAN. Anything typed has to parse as a MAC. */
     val wakeOnLanMacValid: Boolean = wakeOnLanMac.isBlank() || parseMac(wakeOnLanMac) != null
@@ -123,12 +124,13 @@ internal data class HostFormDraft(
      * would connect straight to the target instead — quietly bypassing the very hop the user chose
      * the route for. Refusing to save is the only honest outcome.
      */
-    val routeValid: Boolean = when {
-        proxyType == ProxyType.PROXY_JUMP -> proxyJump.isNotBlank()
-        proxyNeedsRoute ->
-            socksHost.isNotBlank() && socksPortNumber != null && socksPortNumber in PORT_RANGE
-        else -> true
-    }
+    val routeValid: Boolean =
+        when {
+            proxyType == ProxyType.PROXY_JUMP -> proxyJump.isNotBlank()
+            proxyNeedsRoute ->
+                socksHost.isNotBlank() && socksPortNumber != null && socksPortNumber in PORT_RANGE
+            else -> true
+        }
 
     /** A hostname and a username are the two things the app cannot invent a default for. */
     val identityValid: Boolean = host.isNotBlank() && username.isNotBlank()
@@ -162,8 +164,15 @@ internal data class HostFormDraft(
 
     val credentialsValid: Boolean = keyReadable && passphraseValid
 
-    val canSave: Boolean = identityValid && portValid && timeoutValid && keepAliveValid &&
-        fingerprintValid && routeValid && credentialsValid && wakeOnLanMacValid
+    val canSave: Boolean =
+        identityValid &&
+            portValid &&
+            timeoutValid &&
+            keepAliveValid &&
+            fingerprintValid &&
+            routeValid &&
+            credentialsValid &&
+            wakeOnLanMacValid
 
     /** Only flag a bad port once there is something to be wrong about; an empty field is mid-typing. */
     val showPortError: Boolean = port.isNotBlank() && !portValid

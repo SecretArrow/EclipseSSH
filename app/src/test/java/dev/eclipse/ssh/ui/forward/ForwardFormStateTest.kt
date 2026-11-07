@@ -19,7 +19,6 @@ import org.junit.Test
  * never "is this port a number" but "is this *set* of fields a request that can be opened".
  */
 class ForwardFormStateTest {
-
     private val hostId = "host-1"
 
     @Test
@@ -32,12 +31,13 @@ class ForwardFormStateTest {
 
     @Test
     fun `a local forward needs a listener, a destination and a port`() {
-        val complete = ForwardFormState(
-            type = ForwardType.LOCAL,
-            localPort = "8080",
-            remoteHost = "db.internal",
-            remotePort = "5432",
-        )
+        val complete =
+            ForwardFormState(
+                type = ForwardType.LOCAL,
+                localPort = "8080",
+                remoteHost = "db.internal",
+                remotePort = "5432",
+            )
 
         assertThat(complete.valid).isTrue()
         assertThat(complete.requestFor(hostId)).isEqualTo(
@@ -55,12 +55,13 @@ class ForwardFormStateTest {
     fun `a local forward without a destination port is refused, not defaulted`() {
         // The dialog defaulted this to the local port, which silently opened a tunnel to the phone's
         // own 8080 on a host the user had named. Refusing it is the whole point of the change.
-        val missingPort = ForwardFormState(
-            type = ForwardType.LOCAL,
-            localPort = "8080",
-            remoteHost = "db.internal",
-            remotePort = "",
-        )
+        val missingPort =
+            ForwardFormState(
+                type = ForwardType.LOCAL,
+                localPort = "8080",
+                remoteHost = "db.internal",
+                remotePort = "",
+            )
 
         assertThat(missingPort.valid).isFalse()
         assertThat(missingPort.remotePortError).isNotNull()
@@ -69,12 +70,13 @@ class ForwardFormStateTest {
 
     @Test
     fun `a local forward without a destination host is refused, not loopback`() {
-        val missingHost = ForwardFormState(
-            type = ForwardType.LOCAL,
-            localPort = "8080",
-            remoteHost = "",
-            remotePort = "5432",
-        )
+        val missingHost =
+            ForwardFormState(
+                type = ForwardType.LOCAL,
+                localPort = "8080",
+                remoteHost = "",
+                remotePort = "5432",
+            )
 
         assertThat(missingHost.valid).isFalse()
         assertThat(missingHost.remoteHostError).isNotNull()
@@ -85,12 +87,13 @@ class ForwardFormStateTest {
         // Shape only: what a name resolves to is the server's business, but a name that would be
         // re-parsed into a different rule on the way back is this form's. The saved-rules sheet uses
         // the same predicate, so the same mistake is refused in the same words wherever it is made.
-        val spaced = ForwardFormState(
-            type = ForwardType.LOCAL,
-            localPort = "8080",
-            remoteHost = "db internal",
-            remotePort = "5432",
-        )
+        val spaced =
+            ForwardFormState(
+                type = ForwardType.LOCAL,
+                localPort = "8080",
+                remoteHost = "db internal",
+                remotePort = "5432",
+            )
 
         assertThat(spaced.valid).isFalse()
         assertThat(spaced.remoteHostError).isNotNull()
@@ -101,10 +104,11 @@ class ForwardFormStateTest {
         // 70000 is a number, which is all the dialog ever asked of it. It reaches the server, the
         // server refuses it, and the failure the user reads is about a socket rather than a port.
         listOf("0", "70000", "-1", "80a").forEach { value ->
-            val state = ForwardFormState(
-                type = ForwardType.DYNAMIC,
-                localPort = value,
-            )
+            val state =
+                ForwardFormState(
+                    type = ForwardType.DYNAMIC,
+                    localPort = value,
+                )
             assertThat(state.valid).isFalse()
             assertThat(state.localPortError).isNotNull()
         }
@@ -132,11 +136,12 @@ class ForwardFormStateTest {
         // server listens on the bind port and is connected to the *local* destination. Both are
         // required — the dialog defaulted the bind port to the local port, which opened the server's
         // port on the phone's number.
-        val remote = ForwardFormState(
-            type = ForwardType.REMOTE,
-            localPort = "3000",
-            remotePort = "9000",
-        )
+        val remote =
+            ForwardFormState(
+                type = ForwardType.REMOTE,
+                localPort = "3000",
+                remotePort = "9000",
+            )
 
         assertThat(remote.valid).isTrue()
         assertThat(remote.requestFor(hostId)).isEqualTo(
@@ -198,14 +203,14 @@ class ForwardFormStateTest {
  * a message about a socket rather than about what the user did.
  */
 class ForwardRequestsTest {
-
-    private val request = ForwardRequest(
-        hostId = "host-1",
-        type = ForwardType.DYNAMIC,
-        localPort = 1080,
-        remoteHost = null,
-        remotePort = null,
-    )
+    private val request =
+        ForwardRequest(
+            hostId = "host-1",
+            type = ForwardType.DYNAMIC,
+            localPort = 1080,
+            remoteHost = null,
+            remotePort = null,
+        )
 
     @Test
     fun `an answer is taken once and then gone`() {

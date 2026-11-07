@@ -43,7 +43,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class UbuntuActivityRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<UbuntuActivity>()
 
@@ -64,7 +63,8 @@ class UbuntuActivityRobolectricTest {
     private fun AndroidComposeTestRule<*, *>.assertTitled(title: String) {
         val named = onAllNodesWithText(title)
         assertWithMessage("the window does not name itself twice: \"$title\"")
-            .that(named.fetchSemanticsNodes().size).isAtLeast(2)
+            .that(named.fetchSemanticsNodes().size)
+            .isAtLeast(2)
         repeat(named.fetchSemanticsNodes().size) { named[it].assertIsDisplayed() }
     }
 
@@ -120,7 +120,8 @@ class UbuntuActivityRobolectricTest {
         listOf("Install", "Uninstall", "Start", "Stop", "Restart", "Repair", "Verify", "View")
             .forEach { label ->
                 assertWithMessage("the window offers \"$label\" on a device that cannot run it")
-                    .that(compose.onAllNodesWithText(label).fetchSemanticsNodes()).isEmpty()
+                    .that(compose.onAllNodesWithText(label).fetchSemanticsNodes())
+                    .isEmpty()
             }
     }
 

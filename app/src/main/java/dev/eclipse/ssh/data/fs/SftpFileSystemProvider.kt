@@ -8,12 +8,10 @@ import dev.eclipse.ssh.ssh.SshSessionStore
 import dev.eclipse.ssh.ssh.formatPermissions
 import dev.eclipse.ssh.ssh.isPlainEntryName
 import dev.eclipse.ssh.ssh.joinRemote
+import org.apache.sshd.sftp.client.SftpClient
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.apache.sshd.sftp.client.SftpClient
 
 /**
  * One host's SFTP tree, reached through the SSH session the app already holds.
@@ -41,7 +39,6 @@ class SftpFileSystemProvider(
     private val connectionManager: SshConnectionManager,
     private val directoryService: SftpDirectoryService,
 ) : FileSystemProvider {
-
     override val providerId: String = "sftp:$hostId"
 
     /** SFTP carries the full POSIX mode; the UI offers the permission editor for this provider. */
@@ -57,16 +54,17 @@ class SftpFileSystemProvider(
      * host's primary session, not one per terminal, and the provider cannot know which of the host's
      * session keys is holding it.
      */
-    private fun session() = sessionStore.primarySession(hostId)
-        ?: throw IllegalStateException("$hostName is not connected")
+    private fun session() =
+        sessionStore.primarySession(hostId)
+            ?: throw IllegalStateException("$hostName is not connected")
 
-    private suspend fun <T> channel(block: suspend (SftpClient) -> T): T =
-        connectionManager.withSftp(session(), block)
+    private suspend fun <T> channel(block: suspend (SftpClient) -> T): T = connectionManager.withSftp(session(), block)
 
     /** The account's real home directory, canonicalised by the server rather than guessed. */
-    override suspend fun homePath(): String? = channel { sftp ->
-        directoryService.homeDirectory(sftp, username)
-    }
+    override suspend fun homePath(): String? =
+        channel { sftp ->
+            directoryService.homeDirectory(sftp, username)
+        }
 
     /**
      * The directory above [path]. Pure arithmetic on a POSIX absolute path; relative paths and the
@@ -80,86 +78,112 @@ class SftpFileSystemProvider(
         return if (cut == 0) "/" else trimmed.substring(0, cut)
     }
 
-    override suspend fun list(path: String): List<FsEntry> = channel { sftp ->
-        sftp.readDir(path).filter { isPlainEntryName(it.filename) }.map { entry ->
-            val attributes = entry.attributes
-            FsEntry(
-                name = entry.filename,
-                path = joinRemote(path, entry.filename),
-                isDirectory = attributes.isDirectory,
-                size = attributes.size.takeIf { !attributes.isDirectory },
-                modifiedEpochMillis = attributes.modifyTime?.toMillis(),
-                permissions = formatPermissions(attributes.permissions),
-                mimeType = null,
-            )
-        }.sortedWith(compareByDescending<FsEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
+    override suspend fun list(path: String): List<FsEntry> =
+        channel { sftp ->
+            sftp
+                .readDir(path)
+                .filter { isPlainEntryName(it.filename) }
+                .map { entry ->
+                    val attributes = entry.attributes
+                    FsEntry(
+                        name = entry.filename,
+                        path = joinRemote(path, entry.filename),
+                        isDirectory = attributes.isDirectory,
+                        size = attributes.size.takeIf { !attributes.isDirectory },
+                        modifiedEpochMillis = attributes.modifyTime?.toMillis(),
+                        permissions = formatPermissions(attributes.permissions),
+                        mimeType = null,
+                    )
+                }.sortedWith(compareByDescending<FsEntry> { it.isDirectory }.thenBy { it.name.lowercase() })
+        }
+
+    override suspend fun stat(path: String): FsEntry? =
+        channel { sftp ->
+            runCatching { sftp.stat(path) }.getOrNull()?.let { attributes ->
+                val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { path }
+                FsEntry(
+                    name = name,
+                    path = path,
+                    isDirectory = attributes.isDirectory,
+                    size = attributes.size.takeIf { !attributes.isDirectory },
+                    modifiedEpochMillis = attributes.modifyTime?.toMillis(),
+                    permissions = formatPermissions(attributes.permissions),
+                    mimeType = null,
+                )
+            }
+        }
+
+    override suspend fun read(path: String): ByteArray =
+        channel { sftp ->
+            sftp.read(path).use { it.readBytes() }
+        }
+
+    override suspend fun write(
+        path: String,
+        data: ByteArray,
+        onlyIfUnmodifiedSince: Long?,
+    ) = channel { sftp ->
+        if (onlyIfUnmodifiedSince != null) {
+            val current = runCatching { sftp.stat(path).modifyTime?.toMillis() }.getOrNull()
+            if (current != null && current > onlyIfUnmodifiedSince) {
+                throw FsModificationConflictException(path)
+            }
+        }
+        sftp.write(path).use { output -> output.write(data) }
     }
 
-    override suspend fun stat(path: String): FsEntry? = channel { sftp ->
-        runCatching { sftp.stat(path) }.getOrNull()?.let { attributes ->
-            val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { path }
+    override suspend fun createFile(
+        parentPath: String,
+        name: String,
+    ): FsEntry =
+        channel { sftp ->
+            val path = joinRemote(parentPath, name)
+            // Opening for write with the default modes is create-or-truncate, which is the semantics the
+            // contract names: an existing file of this name becomes empty rather than erroring, matching
+            // what a `> file` in the shell would have done.
+            sftp.write(path).use { output -> output.write(ByteArray(0)) }
+            val attributes = sftp.stat(path)
             FsEntry(
                 name = name,
                 path = path,
                 isDirectory = attributes.isDirectory,
-                size = attributes.size.takeIf { !attributes.isDirectory },
+                size = 0L,
                 modifiedEpochMillis = attributes.modifyTime?.toMillis(),
                 permissions = formatPermissions(attributes.permissions),
                 mimeType = null,
             )
         }
-    }
 
-    override suspend fun read(path: String): ByteArray = channel { sftp ->
-        sftp.read(path).use { it.readBytes() }
-    }
-
-    override suspend fun write(path: String, data: ByteArray, onlyIfUnmodifiedSince: Long?) =
-        channel { sftp ->
-            if (onlyIfUnmodifiedSince != null) {
-                val current = runCatching { sftp.stat(path).modifyTime?.toMillis() }.getOrNull()
-                if (current != null && current > onlyIfUnmodifiedSince) {
-                    throw FsModificationConflictException(path)
-                }
-            }
-            sftp.write(path).use { output -> output.write(data) }
-        }
-
-    override suspend fun createFile(parentPath: String, name: String): FsEntry = channel { sftp ->
-        val path = joinRemote(parentPath, name)
-        // Opening for write with the default modes is create-or-truncate, which is the semantics the
-        // contract names: an existing file of this name becomes empty rather than erroring, matching
-        // what a `> file` in the shell would have done.
-        sftp.write(path).use { output -> output.write(ByteArray(0)) }
-        val attributes = sftp.stat(path)
-        FsEntry(
-            name = name,
-            path = path,
-            isDirectory = attributes.isDirectory,
-            size = 0L,
-            modifiedEpochMillis = attributes.modifyTime?.toMillis(),
-            permissions = formatPermissions(attributes.permissions),
-            mimeType = null,
-        )
-    }
-
-    override suspend fun createDirectory(parentPath: String, name: String) = channel { sftp ->
+    override suspend fun createDirectory(
+        parentPath: String,
+        name: String,
+    ) = channel { sftp ->
         sftp.mkdir(joinRemote(parentPath, name))
     }
 
-    override suspend fun rename(path: String, newName: String) = channel { sftp ->
-        val parent = parentPath(path)
-            ?: throw IllegalArgumentException("The root directory cannot be renamed")
+    override suspend fun rename(
+        path: String,
+        newName: String,
+    ) = channel { sftp ->
+        val parent =
+            parentPath(path)
+                ?: throw IllegalArgumentException("The root directory cannot be renamed")
         sftp.rename(path, joinRemote(parent, newName))
     }
 
-    override suspend fun copy(sourcePath: String, targetDirectoryPath: String) = channel { sftp ->
+    override suspend fun copy(
+        sourcePath: String,
+        targetDirectoryPath: String,
+    ) = channel { sftp ->
         // copyEntry walks iteratively with a depth cap, so a deep tree costs a queue entry per
         // folder instead of a stack frame per level.
         directoryService.copy(sftp, sourcePath, joinRemote(targetDirectoryPath, sourcePath.entryName()))
     }
 
-    override suspend fun move(sourcePath: String, targetDirectoryPath: String) = channel { sftp ->
+    override suspend fun move(
+        sourcePath: String,
+        targetDirectoryPath: String,
+    ) = channel { sftp ->
         val currentParent = parentPath(sourcePath)
         if (currentParent == targetDirectoryPath) return@channel
         val target = joinRemote(targetDirectoryPath, sourcePath.entryName())
@@ -173,11 +197,15 @@ class SftpFileSystemProvider(
         }
     }
 
-    override suspend fun delete(path: String) = channel { sftp ->
-        deleteTree(sftp, path)
-    }
+    override suspend fun delete(path: String) =
+        channel { sftp ->
+            deleteTree(sftp, path)
+        }
 
-    override suspend fun setPermissions(path: String, mode: Int) = channel { sftp ->
+    override suspend fun setPermissions(
+        path: String,
+        mode: Int,
+    ) = channel { sftp ->
         directoryService.chmod(sftp, path, mode)
     }
 
@@ -189,7 +217,11 @@ class SftpFileSystemProvider(
      * (it is all the client has), which is exactly what the depth cap is for: a server that reports
      * a directory inside itself cannot turn this walk into a loop.
      */
-    override suspend fun search(root: String, query: String, maxEntries: Int): List<FsEntry> =
+    override suspend fun search(
+        root: String,
+        query: String,
+        maxEntries: Int,
+    ): List<FsEntry> =
         channel { sftp ->
             val results = ArrayList<FsEntry>()
             val pending = ArrayDeque<Pair<String, Int>>()
@@ -231,7 +263,10 @@ class SftpFileSystemProvider(
      * [dev.eclipse.ssh.ssh.SftpDirectoryService] is honoured in spirit here with the same number,
      * so a hostile tree fails with a message rather than exhausting memory.
      */
-    private fun deleteTree(sftp: SftpClient, path: String) {
+    private fun deleteTree(
+        sftp: SftpClient,
+        path: String,
+    ) {
         if (!sftp.stat(path).isDirectory) {
             sftp.remove(path)
             return
@@ -258,7 +293,10 @@ class SftpFileSystemProvider(
     }
 
     /** One directory still to delete, and whether its children have been queued. */
-    private class DeleteNode(val path: String, val depth: Int) {
+    private class DeleteNode(
+        val path: String,
+        val depth: Int,
+    ) {
         var expanded = false
     }
 
@@ -279,34 +317,41 @@ private fun String.entryName(): String = trimEnd('/').substringAfterLast('/')
  * wrong.
  */
 @Singleton
-class SftpProviderFactory @Inject constructor(
-    private val sessionStore: SshSessionStore,
-    private val connectionManager: SshConnectionManager,
-    private val directoryService: SftpDirectoryService,
-) {
-    fun forHost(host: HostProfile): SftpFileSystemProvider = SftpFileSystemProvider(
-        hostId = host.id,
-        hostName = host.name,
-        username = host.username,
-        sessionStore = sessionStore,
-        connectionManager = connectionManager,
-        directoryService = directoryService,
-    )
+class SftpProviderFactory
+    @Inject
+    constructor(
+        private val sessionStore: SshSessionStore,
+        private val connectionManager: SshConnectionManager,
+        private val directoryService: SftpDirectoryService,
+    ) {
+        fun forHost(host: HostProfile): SftpFileSystemProvider =
+            SftpFileSystemProvider(
+                hostId = host.id,
+                hostName = host.name,
+                username = host.username,
+                sessionStore = sessionStore,
+                connectionManager = connectionManager,
+                directoryService = directoryService,
+            )
 
-    /**
-     * The ranged-read view of one remote archive for the View Archive browser.
-     *
-     * Same factory, same reasoning as [forHost]: the byte source is a thin view over the live
-     * session (it re-resolves nothing, but it opens its own channel pair on first read and owns
-     * them until closed), so making one per archive is cheap and stale ones simply close.
-     */
-    fun archiveSource(host: HostProfile, remotePath: String, size: Long): SftpArchiveByteSource =
-        SftpArchiveByteSource(
-            connectionManager = connectionManager,
-            sessionStore = sessionStore,
-            hostId = host.id,
-            hostName = host.name,
-            remotePath = remotePath,
-            size = size,
-        )
-}
+        /**
+         * The ranged-read view of one remote archive for the View Archive browser.
+         *
+         * Same factory, same reasoning as [forHost]: the byte source is a thin view over the live
+         * session (it re-resolves nothing, but it opens its own channel pair on first read and owns
+         * them until closed), so making one per archive is cheap and stale ones simply close.
+         */
+        fun archiveSource(
+            host: HostProfile,
+            remotePath: String,
+            size: Long,
+        ): SftpArchiveByteSource =
+            SftpArchiveByteSource(
+                connectionManager = connectionManager,
+                sessionStore = sessionStore,
+                hostId = host.id,
+                hostName = host.name,
+                remotePath = remotePath,
+                size = size,
+            )
+    }

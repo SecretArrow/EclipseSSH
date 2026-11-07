@@ -21,7 +21,6 @@ import dev.eclipse.ssh.ui.actions.ActionAnswer
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.TransferActionKind
 import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
@@ -30,6 +29,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * What the Transfers tab does with the transfers window, and what the workspace does with its answer.
@@ -56,7 +56,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TransfersActionsRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -76,20 +75,21 @@ class TransfersActionsRobolectricTest {
      */
     @Test
     fun longPressingATransferCardOpensThatTransfersWindow() {
-        val item = TransferItem(
-            id = "row-window",
-            name = "site-backup.tar",
-            direction = TransferDirection.DOWNLOAD,
-            hostName = "Production edge",
-            progress = 1f,
-            status = TransferStatus.COMPLETE,
-            sizeLabel = "2.1 GB",
-            hostId = "eclipse-demo",
-            remotePath = "/srv/backups/site-backup.tar",
-            localUri = "content://downloads/site-backup.tar",
-            transferredBytes = 2_254_856_192,
-            totalBytes = 2_254_856_192,
-        )
+        val item =
+            TransferItem(
+                id = "row-window",
+                name = "site-backup.tar",
+                direction = TransferDirection.DOWNLOAD,
+                hostName = "Production edge",
+                progress = 1f,
+                status = TransferStatus.COMPLETE,
+                sizeLabel = "2.1 GB",
+                hostId = "eclipse-demo",
+                remotePath = "/srv/backups/site-backup.tar",
+                localUri = "content://downloads/site-backup.tar",
+                transferredBytes = 2_254_856_192,
+                totalBytes = 2_254_856_192,
+            )
         inject(item)
         openTransfers(rowName = "site-backup.tar")
         drainStartedActivities()
@@ -108,27 +108,30 @@ class TransfersActionsRobolectricTest {
      */
     @Test
     fun theWindowsAnswerIsActedOnWhenTheWorkspaceComesBack() {
-        val item = TransferItem(
-            id = "answer-cancel",
-            name = "site-backup.tar",
-            direction = TransferDirection.DOWNLOAD,
-            hostName = "Production edge",
-            progress = 1f,
-            status = TransferStatus.COMPLETE,
-            sizeLabel = "2.1 GB",
-            hostId = "eclipse-demo",
-            remotePath = "/srv/backups/site-backup.tar",
-            localUri = "content://downloads/site-backup.tar",
-            transferredBytes = 2_254_856_192,
-            totalBytes = 2_254_856_192,
-        )
+        val item =
+            TransferItem(
+                id = "answer-cancel",
+                name = "site-backup.tar",
+                direction = TransferDirection.DOWNLOAD,
+                hostName = "Production edge",
+                progress = 1f,
+                status = TransferStatus.COMPLETE,
+                sizeLabel = "2.1 GB",
+                hostId = "eclipse-demo",
+                remotePath = "/srv/backups/site-backup.tar",
+                localUri = "content://downloads/site-backup.tar",
+                transferredBytes = 2_254_856_192,
+                totalBytes = 2_254_856_192,
+            )
         inject(item)
 
         ActionRequests.answer(ActionAnswer.TransferAction(item.id, TransferActionKind.CANCEL))
         resumeTheWorkspace()
 
         pumpUntil(describe = { "the answer to remove the transfer was never acted on" }) {
-            viewModel().uiState.value.transfers.none { it.id == item.id }
+            viewModel()
+                .uiState.value.transfers
+                .none { it.id == item.id }
         }
     }
 
@@ -143,20 +146,21 @@ class TransfersActionsRobolectricTest {
      */
     @Test
     fun aFileAnswerOpensTheEditor() {
-        val item = TransferItem(
-            id = "answer-edit",
-            name = "release-notes.md",
-            direction = TransferDirection.DOWNLOAD,
-            hostName = "Production edge",
-            progress = 1f,
-            status = TransferStatus.COMPLETE,
-            sizeLabel = "3 KB",
-            hostId = "eclipse-demo",
-            remotePath = "/srv/releases/release-notes.md",
-            localUri = "content://downloads/release-notes.md",
-            transferredBytes = 3_072,
-            totalBytes = 3_072,
-        )
+        val item =
+            TransferItem(
+                id = "answer-edit",
+                name = "release-notes.md",
+                direction = TransferDirection.DOWNLOAD,
+                hostName = "Production edge",
+                progress = 1f,
+                status = TransferStatus.COMPLETE,
+                sizeLabel = "3 KB",
+                hostId = "eclipse-demo",
+                remotePath = "/srv/releases/release-notes.md",
+                localUri = "content://downloads/release-notes.md",
+                transferredBytes = 3_072,
+                totalBytes = 3_072,
+            )
         inject(item)
         drainStartedActivities()
 
@@ -177,20 +181,21 @@ class TransfersActionsRobolectricTest {
      */
     @Test
     fun theAnswerIsActedOnOnceEvenIfTheWorkspaceResumesTwice() {
-        val item = TransferItem(
-            id = "answer-once",
-            name = "release-notes.md",
-            direction = TransferDirection.DOWNLOAD,
-            hostName = "Production edge",
-            progress = 1f,
-            status = TransferStatus.COMPLETE,
-            sizeLabel = "3 KB",
-            hostId = "eclipse-demo",
-            remotePath = "/srv/releases/release-notes.md",
-            localUri = "content://downloads/release-notes.md",
-            transferredBytes = 3_072,
-            totalBytes = 3_072,
-        )
+        val item =
+            TransferItem(
+                id = "answer-once",
+                name = "release-notes.md",
+                direction = TransferDirection.DOWNLOAD,
+                hostName = "Production edge",
+                progress = 1f,
+                status = TransferStatus.COMPLETE,
+                sizeLabel = "3 KB",
+                hostId = "eclipse-demo",
+                remotePath = "/srv/releases/release-notes.md",
+                localUri = "content://downloads/release-notes.md",
+                transferredBytes = 3_072,
+                totalBytes = 3_072,
+            )
         inject(item)
         drainStartedActivities()
 
@@ -215,9 +220,16 @@ class TransfersActionsRobolectricTest {
     private fun viewModel(): MainViewModel = ViewModelProvider(compose.activity)[MainViewModel::class.java]
 
     /** Reads one of the view model's injected singletons. See `ConnectionMatrixRobolectricTest`. */
-    private fun <T> injected(viewModel: MainViewModel, name: String, type: Class<T>): T =
+    private fun <T> injected(
+        viewModel: MainViewModel,
+        name: String,
+        type: Class<T>,
+    ): T =
         type.cast(
-            MainViewModel::class.java.getDeclaredField(name).apply { isAccessible = true }.get(viewModel),
+            MainViewModel::class.java
+                .getDeclaredField(name)
+                .apply { isAccessible = true }
+                .get(viewModel),
         )!!
 
     /**
@@ -229,7 +241,8 @@ class TransfersActionsRobolectricTest {
         val repository = injected(viewModel, "transferRepository", TransferRepository::class.java)
         runBlocking { repository.save(item) }
         pumpUntil(describe = { "the injected transfer never reached the UI" }) {
-            viewModel.uiState.value.transfers.any { it.id == item.id }
+            viewModel.uiState.value.transfers
+                .any { it.id == item.id }
         }
     }
 
@@ -284,7 +297,11 @@ class TransfersActionsRobolectricTest {
      * The shape the suites that drive live state all share — see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()

@@ -133,7 +133,11 @@ private fun ReviewEntry(
  * app has no business writing to it.
  */
 @Composable
-private fun EmptyReview(foreground: Color, fontSize: Float, modifier: Modifier = Modifier) {
+private fun EmptyReview(
+    foreground: Color,
+    fontSize: Float,
+    modifier: Modifier = Modifier,
+) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
             text = EMPTY_REVIEW,

@@ -27,7 +27,11 @@ import java.io.InputStream
  * rather than sniffing bytes - a wrong guess costs a full restart of a sequential scan.
  */
 enum class TarCompression {
-    NONE, GZIP, BZIP2, XZ;
+    NONE,
+    GZIP,
+    BZIP2,
+    XZ,
+    ;
 
     companion object {
         /** The compression a filename suggests, or null when the name is not a tar at all. */
@@ -67,8 +71,9 @@ enum class TarCompression {
  * @param source the bytes as the network sees them: compressed bytes for a compressed
  * container, plain tar bytes for an uncompressed one.
  */
-class TarArchive(private val source: ArchiveByteSource) {
-
+class TarArchive(
+    private val source: ArchiveByteSource,
+) {
     companion object {
         /** Read chunk for the streaming loop. 64 KB: big enough that per-chunk suspend+parse
          * overhead vanishes, small enough that progress stays live on a slow link. */
@@ -99,40 +104,42 @@ class TarArchive(private val source: ArchiveByteSource) {
     suspend fun listEntries(
         compression: TarCompression,
         onProgress: (ArchiveScanProgress) -> Unit = {},
-    ): List<ArchiveEntry> = withContext(Dispatchers.IO) {
-        // Capacity 2, not conflation: the parser sets the pace, and the source must never run
-        // more than a couple of chunks ahead of it or the scan's memory stops being bounded.
-        val channel = Channel<ByteArray>(capacity = 2)
-        val scan = TarScanState(source.size)
-        val bridge = SourceChannelInputStream(channel, scan, onProgress)
-        coroutineScope {
-            val producer = launch {
-                try {
-                    while (true) {
-                        val chunk = source.read(READ_CHUNK_BYTES)
-                        // The contract: a short read only happens at end of file.
-                        if (chunk.isEmpty()) break
-                        channel.send(chunk)
+    ): List<ArchiveEntry> =
+        withContext(Dispatchers.IO) {
+            // Capacity 2, not conflation: the parser sets the pace, and the source must never run
+            // more than a couple of chunks ahead of it or the scan's memory stops being bounded.
+            val channel = Channel<ByteArray>(capacity = 2)
+            val scan = TarScanState(source.size)
+            val bridge = SourceChannelInputStream(channel, scan, onProgress)
+            coroutineScope {
+                val producer =
+                    launch {
+                        try {
+                            while (true) {
+                                val chunk = source.read(READ_CHUNK_BYTES)
+                                // The contract: a short read only happens at end of file.
+                                if (chunk.isEmpty()) break
+                                channel.send(chunk)
+                            }
+                            channel.close()
+                        } catch (cause: Throwable) {
+                            // Close WITH the cause: the parser is parked in the bridge's runBlocking,
+                            // and the only way it can learn the source died is the cause arriving on
+                            // its next receive. Deliberately not rethrown - a source that fails after
+                            // the parser already saw the end-of-archive marker must not fail a scan
+                            // that had already succeeded.
+                            channel.close(cause)
+                        }
                     }
-                    channel.close()
-                } catch (cause: Throwable) {
-                    // Close WITH the cause: the parser is parked in the bridge's runBlocking,
-                    // and the only way it can learn the source died is the cause arriving on
-                    // its next receive. Deliberately not rethrown - a source that fails after
-                    // the parser already saw the end-of-archive marker must not fail a scan
-                    // that had already succeeded.
-                    channel.close(cause)
+                try {
+                    readEntries(bridge, compression, scan, onProgress)
+                } finally {
+                    // The parse is over, well or badly. Nothing may keep the producer reading
+                    // ahead into a channel nobody will drain anymore.
+                    producer.cancel()
                 }
             }
-            try {
-                readEntries(bridge, compression, scan, onProgress)
-            } finally {
-                // The parse is over, well or badly. Nothing may keep the producer reading
-                // ahead into a channel nobody will drain anymore.
-                producer.cancel()
-            }
         }
-    }
 
     /**
      * The blocking parse loop. Runs on the Dispatchers.IO thread [listEntries] borrowed,
@@ -144,12 +151,13 @@ class TarArchive(private val source: ArchiveByteSource) {
         scan: TarScanState,
         onProgress: (ArchiveScanProgress) -> Unit,
     ): List<ArchiveEntry> {
-        val decompressed: InputStream = when (compression) {
-            TarCompression.NONE -> bridge
-            TarCompression.GZIP -> GzipCompressorInputStream(bridge)
-            TarCompression.BZIP2 -> BZip2CompressorInputStream(bridge)
-            TarCompression.XZ -> XZInputStream(bridge)
-        }
+        val decompressed: InputStream =
+            when (compression) {
+                TarCompression.NONE -> bridge
+                TarCompression.GZIP -> GzipCompressorInputStream(bridge)
+                TarCompression.BZIP2 -> BZip2CompressorInputStream(bridge)
+                TarCompression.XZ -> XZInputStream(bridge)
+            }
         // blockSize == recordSize == 512: the tar record size is fixed by the format, and
         // matching the block to it is what makes the parser never read ahead of the record it
         // is currently on - the property [dataOffset] below is built on.
@@ -173,8 +181,11 @@ class TarArchive(private val source: ArchiveByteSource) {
                 // A compressed stream cannot offer the same honesty: its byte position is
                 // meaningless as a seek target.
                 val dataOffset =
-                    if (compression == TarCompression.NONE && !header.isDirectory) scan.bytesConsumed
-                    else null
+                    if (compression == TarCompression.NONE && !header.isDirectory) {
+                        scan.bytesConsumed
+                    } else {
+                        null
+                    }
                 val normalized = normalizeArchivePath(header.name)
                 if (normalized != null) {
                     if (normalized.split('/').any { it == ".." }) {
@@ -263,24 +274,25 @@ class TarArchive(private val source: ArchiveByteSource) {
         val scan = TarScanState(source.size)
         val bridge = SourceChannelInputStream(channel, scan) { }
         coroutineScope {
-            val producer = launch {
-                try {
-                    while (true) {
-                        val chunk = source.read(READ_CHUNK_BYTES)
-                        // The contract: a short read only happens at end of file.
-                        if (chunk.isEmpty()) break
-                        channel.send(chunk)
+            val producer =
+                launch {
+                    try {
+                        while (true) {
+                            val chunk = source.read(READ_CHUNK_BYTES)
+                            // The contract: a short read only happens at end of file.
+                            if (chunk.isEmpty()) break
+                            channel.send(chunk)
+                        }
+                        channel.close()
+                    } catch (cause: Throwable) {
+                        // Close WITH the cause: the parser may be parked in the bridge's runBlocking,
+                        // and the only way it can learn the source died is the cause arriving on its
+                        // next receive. Deliberately not rethrown - a source that fails after the
+                        // parser already saw the end-of-archive marker must not fail an extract that
+                        // had already written its wanted entries.
+                        channel.close(cause)
                     }
-                    channel.close()
-                } catch (cause: Throwable) {
-                    // Close WITH the cause: the parser may be parked in the bridge's runBlocking,
-                    // and the only way it can learn the source died is the cause arriving on its
-                    // next receive. Deliberately not rethrown - a source that fails after the
-                    // parser already saw the end-of-archive marker must not fail an extract that
-                    // had already written its wanted entries.
-                    channel.close(cause)
                 }
-            }
             try {
                 extractThroughBridge(bridge, compression, scan, wants, destination, onEntry)
             } finally {
@@ -304,12 +316,13 @@ class TarArchive(private val source: ArchiveByteSource) {
         destination: ArchiveExtractor.Destination,
         onEntry: (ArchiveEntry, ArchiveExtractor.Outcome) -> Unit,
     ) {
-        val decompressed: InputStream = when (compression) {
-            TarCompression.NONE -> bridge
-            TarCompression.GZIP -> GzipCompressorInputStream(bridge)
-            TarCompression.BZIP2 -> BZip2CompressorInputStream(bridge)
-            TarCompression.XZ -> XZInputStream(bridge)
-        }
+        val decompressed: InputStream =
+            when (compression) {
+                TarCompression.NONE -> bridge
+                TarCompression.GZIP -> GzipCompressorInputStream(bridge)
+                TarCompression.BZIP2 -> BZip2CompressorInputStream(bridge)
+                TarCompression.XZ -> XZInputStream(bridge)
+            }
         val tar = TarArchiveInputStream(decompressed, 512, 512)
         var currentName: String? = null
         try {
@@ -327,16 +340,17 @@ class TarArchive(private val source: ArchiveByteSource) {
                 }
                 val normalized = normalizeArchivePath(header.name)
                 if (normalized != null && wants(normalized)) {
-                    val entry = ArchiveEntry(
-                        path = normalized,
-                        isDirectory = header.isDirectory,
-                        size = header.size,
-                        compressedSize = null,
-                        modifiedEpochMillis = header.modTime.time,
-                        method = null,
-                        dataOffset = null,
-                        encrypted = false,
-                    )
+                    val entry =
+                        ArchiveEntry(
+                            path = normalized,
+                            isDirectory = header.isDirectory,
+                            size = header.size,
+                            compressedSize = null,
+                            modifiedEpochMillis = header.modTime.time,
+                            method = null,
+                            dataOffset = null,
+                            encrypted = false,
+                        )
                     // The same refusal vocabulary the ZIP path in ArchiveExtractor uses: a
                     // hostile name is refused with an outcome while the honest entries around
                     // it still extract - a hostile archive must not be able to abort the pass.
@@ -346,20 +360,21 @@ class TarArchive(private val source: ArchiveByteSource) {
                     // below must not run after it - re-skipping a consumed payload would land
                     // the walk in the middle of the next entry's header bytes.
                     var payloadConsumed = false
-                    val outcome = if (safe == null) {
-                        ArchiveExtractor.Outcome.Refused(entry.path)
-                    } else if (entry.isDirectory) {
-                        if (runBlocking { destination.ensureFolder(safe) }) {
-                            ArchiveExtractor.Outcome.Extracted(0L)
-                        } else {
+                    val outcome =
+                        if (safe == null) {
+                            ArchiveExtractor.Outcome.Refused(entry.path)
+                        } else if (entry.isDirectory) {
+                            if (runBlocking { destination.ensureFolder(safe) }) {
+                                ArchiveExtractor.Outcome.Extracted(0L)
+                            } else {
+                                ArchiveExtractor.Outcome.DestinationRefused(safe)
+                            }
+                        } else if (!runBlocking { destination.ensureFolder(safe.substringBeforeLast('/', "")) }) {
                             ArchiveExtractor.Outcome.DestinationRefused(safe)
+                        } else {
+                            payloadConsumed = true
+                            copyPayload(tar, entry, safe, destination)
                         }
-                    } else if (!runBlocking { destination.ensureFolder(safe.substringBeforeLast('/', "")) }) {
-                        ArchiveExtractor.Outcome.DestinationRefused(safe)
-                    } else {
-                        payloadConsumed = true
-                        copyPayload(tar, entry, safe, destination)
-                    }
                     onEntry(entry, outcome)
                     if (payloadConsumed) {
                         continue
@@ -404,11 +419,12 @@ class TarArchive(private val source: ArchiveByteSource) {
         safe: String,
         destination: ArchiveExtractor.Destination,
     ): ArchiveExtractor.Outcome {
-        val target = try {
-            runBlocking { destination.openFile(safe) }
-        } catch (failure: Throwable) {
-            return ArchiveExtractor.Outcome.Failed(safe, failure.message ?: "could not be created")
-        } ?: return ArchiveExtractor.Outcome.DestinationRefused(safe)
+        val target =
+            try {
+                runBlocking { destination.openFile(safe) }
+            } catch (failure: Throwable) {
+                return ArchiveExtractor.Outcome.Failed(safe, failure.message ?: "could not be created")
+            } ?: return ArchiveExtractor.Outcome.DestinationRefused(safe)
         val buffer = ByteArray(READ_CHUNK_BYTES)
         var written = 0L
         try {
@@ -448,9 +464,12 @@ class TarArchive(private val source: ArchiveByteSource) {
  * The mutable scan counters the bridge and the parse loop share, so a progress report is a
  * consistent snapshot taken from one thread while the other advances it.
  */
-private class TarScanState(val totalBytes: Long) {
+private class TarScanState(
+    val totalBytes: Long,
+) {
     /** Bytes handed to the parser so far: the source's own (compressed) bytes, not inflated ones. */
     var bytesConsumed = 0L
+
     /** Headers parsed so far, listed or not. */
     var entriesScanned = 0L
 }
@@ -483,7 +502,6 @@ private class SourceChannelInputStream(
     private val scan: TarScanState,
     private val onProgress: (ArchiveScanProgress) -> Unit,
 ) : InputStream() {
-
     private var buffer = ByteArray(0)
     private var position = 0
     private var exhausted = false
@@ -493,7 +511,11 @@ private class SourceChannelInputStream(
         return if (read(one, 0, 1) == -1) -1 else one[0].toInt() and 0xFF
     }
 
-    override fun read(destination: ByteArray, offset: Int, length: Int): Int {
+    override fun read(
+        destination: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
         if (offset < 0 || length < 0 || offset + length > destination.size) {
             throw IndexOutOfBoundsException("read range $offset+$length into ${destination.size}")
         }
@@ -514,12 +536,13 @@ private class SourceChannelInputStream(
      * is how a source error surfaces inside the parser's blocking read.
      */
     private fun fetch(): Boolean {
-        val chunk = try {
-            runBlocking { channel.receive() }
-        } catch (e: ClosedReceiveChannelException) {
-            exhausted = true
-            return false
-        }
+        val chunk =
+            try {
+                runBlocking { channel.receive() }
+            } catch (e: ClosedReceiveChannelException) {
+                exhausted = true
+                return false
+            }
         buffer = chunk
         position = 0
         // Reported per chunk, before these bytes are parsed: the count is everything the

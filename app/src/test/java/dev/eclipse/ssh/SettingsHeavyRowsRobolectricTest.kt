@@ -18,7 +18,6 @@ import dev.eclipse.ssh.ui.settings.DiagnosticsActivity
 import dev.eclipse.ssh.ui.settings.ExportBackupActivity
 import dev.eclipse.ssh.ui.settings.KeyGenActivity
 import dev.eclipse.ssh.ui.settings.ShortcutBarActivity
-import java.time.Duration
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,6 +25,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import java.time.Duration
 
 /**
  * The five heavy Settings rows, and where each one leads.
@@ -51,7 +51,6 @@ import org.robolectric.shadows.ShadowDialog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class SettingsHeavyRowsRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -73,7 +72,11 @@ class SettingsHeavyRowsRobolectricTest {
      * Not `compose.waitUntil`, which reports only "Condition still not satisfied"; `idleFor` rather
      * than `idle` so real `delay`s in the Room and DataStore flows come due.
      */
-    private fun pumpUntil(timeoutMs: Long = 20_000, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = 20_000,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -129,7 +132,10 @@ class SettingsHeavyRowsRobolectricTest {
      * and for these five the body is the whole point, since a capped dialog is what a keypair
      * generator's progress, a shortcut bar's cap list and an install log all could not fit in.
      */
-    private fun assertRowOpens(title: String, destination: Class<out Activity>) {
+    private fun assertRowOpens(
+        title: String,
+        destination: Class<out Activity>,
+    ) {
         openSettings()
 
         // Drain whatever startup queued, so the peek below only ever reports this click's doing —
@@ -144,9 +150,11 @@ class SettingsHeavyRowsRobolectricTest {
         }
         val intent = shadowOf(compose.activity.application).peekNextStartedActivity()
         assertWithMessage("the \"$title\" row did not open ${destination.simpleName}")
-            .that(intent?.component?.className).isEqualTo(destination.name)
+            .that(intent?.component?.className)
+            .isEqualTo(destination.name)
         assertWithMessage("\"$title\" still opened as a dialog over Settings")
-            .that(ShadowDialog.getShownDialogs().size).isEqualTo(dialogsBefore)
+            .that(ShadowDialog.getShownDialogs().size)
+            .isEqualTo(dialogsBefore)
     }
 
     /**
@@ -224,8 +232,10 @@ class SettingsHeavyRowsRobolectricTest {
         compose.onNodeWithText("Ubuntu on this device").performScrollTo().assertIsDisplayed()
         // The subtitle is the unsupported branch's own sentence, so asserting it is asserting that
         // the branch was taken rather than merely that a row exists.
-        compose.onNodeWithText("Not supported on this device's processor")
-            .performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithText("Not supported on this device's processor")
+            .performScrollTo()
+            .assertIsDisplayed()
 
         assertWithMessage(
             "the Ubuntu row offers a control on a device that cannot run a userspace; the " +

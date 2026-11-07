@@ -52,7 +52,6 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ArchiveEntryActionsActivity : ComponentActivity() {
-
     @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +84,6 @@ class ArchiveEntryActionsActivity : ComponentActivity() {
     }
 
     companion object {
-
         /** Whether this entry's bytes can be fetched by range - what Preview and Download need. */
         const val EXTRA_CAN_READ_ENTRY = "dev.eclipse.ssh.archive.CAN_READ_ENTRY"
 
@@ -96,7 +94,11 @@ class ArchiveEntryActionsActivity : ComponentActivity() {
          * from the archive's format (a ranged source) and the entry's kind (a file, not a folder), and
          * both of those live in the browser.
          */
-        fun intent(context: Context, entry: ArchiveEntry, canReadEntry: Boolean): Intent =
+        fun intent(
+            context: Context,
+            entry: ArchiveEntry,
+            canReadEntry: Boolean,
+        ): Intent =
             Intent(context, ArchiveEntryActionsActivity::class.java)
                 .putExtra(ActionRequests.EXTRA_SUBJECT_TOKEN, ActionRequests.put(ActionSubject.ArchiveEntryActions(entry)))
                 .putExtra(EXTRA_CAN_READ_ENTRY, canReadEntry)
@@ -149,7 +151,10 @@ private fun ArchiveEntryActions(
 
 /** One row of the entry window. Not themed as a menu, because the sheet's plain list was right. */
 @Composable
-private fun ArchiveEntryActionRow(label: String, onClick: () -> Unit) {
+private fun ArchiveEntryActionRow(
+    label: String,
+    onClick: () -> Unit,
+) {
     Text(
         label,
         Modifier

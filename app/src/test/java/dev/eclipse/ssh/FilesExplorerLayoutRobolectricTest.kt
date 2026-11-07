@@ -29,13 +29,6 @@ import dev.eclipse.ssh.ui.actions.ActionSubject
 import dev.eclipse.ssh.ui.actions.FileActionKind
 import dev.eclipse.ssh.ui.preview.FilePreviewActivity
 import dev.eclipse.ssh.ui.preview.PreviewRequests
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.nio.file.Path
-import java.time.Duration
-import java.util.Collections
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.server.Environment
 import org.apache.sshd.server.ExitCallback
@@ -55,6 +48,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Duration
+import java.util.Collections
 
 /**
  * The shape of the Files explorer: what is on it before any folder is granted, and how much of the
@@ -78,7 +78,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class FilesExplorerLayoutRobolectricTest {
-
     @get:Rule
     val compose = createAndroidComposeRule<MainActivity>()
 
@@ -95,7 +94,9 @@ class FilesExplorerLayoutRobolectricTest {
         runCatching {
             compose.runOnUiThread { viewModel().disconnectAll() }
             pumpUntil(TEARDOWN_TIMEOUT_MS, { "tabs still open: " + viewModel().uiState.value.tabs }) {
-                viewModel().uiState.value.tabs.isEmpty()
+                viewModel()
+                    .uiState.value.tabs
+                    .isEmpty()
             }
         }
     }
@@ -225,7 +226,8 @@ class FilesExplorerLayoutRobolectricTest {
         val started = awaitStartedActivity("dev.eclipse.ssh.ui.files.FileActionsActivity")
         val subject = ActionRequests.take(started.getStringExtra(ActionRequests.EXTRA_SUBJECT_TOKEN))
         assertWithMessage("the window was opened on an entry other than the one long-pressed")
-            .that((subject as? ActionSubject.FileActions)?.entry?.name).isEqualTo(bulkName(0))
+            .that((subject as? ActionSubject.FileActions)?.entry?.name)
+            .isEqualTo(bulkName(0))
     }
 
     /**
@@ -326,7 +328,8 @@ class FilesExplorerLayoutRobolectricTest {
         val started = awaitStartedActivity("dev.eclipse.ssh.ui.preview.FilePreviewActivity")
         val request = PreviewRequests.takeFile(started.getStringExtra(FilePreviewActivity.EXTRA_REQUEST_TOKEN))
         assertWithMessage("the preview was opened on a file other than the one long-pressed")
-            .that(request?.entry?.name).isEqualTo(bulkName(0))
+            .that(request?.entry?.name)
+            .isEqualTo(bulkName(0))
     }
 
     // ---------------------------------------------------------------- driving the app
@@ -375,10 +378,12 @@ class FilesExplorerLayoutRobolectricTest {
         return checkNotNull(runCatching { shadow.peekNextStartedActivity() }.getOrNull())
     }
 
-    private fun names(): List<String> = viewModel().filesExplorer.state.value.entries.map { it.name }
+    private fun names(): List<String> =
+        viewModel()
+            .filesExplorer.state.value.entries
+            .map { it.name }
 
-    private fun nodes(text: String): Int =
-        compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().size
+    private fun nodes(text: String): Int = compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().size
 
     /**
      * The listing that is on screen: the scrollable holding the seeded rows.
@@ -390,6 +395,7 @@ class FilesExplorerLayoutRobolectricTest {
     private fun listing() = compose.onNode(hasScrollAction() and hasAnyDescendant(hasText(bulkName(0))))
 
     /** [nodes] matches whole text, so the wait does too; the assertion is on display, not on text. */
+
     /**
      * Points the explorer at this suite's host — it opens on the device's own session, so a remote
      * listing is one chip tap away, never automatic.
@@ -435,23 +441,27 @@ class FilesExplorerLayoutRobolectricTest {
     private fun connect(): String {
         compose.waitForIdle()
         val viewModel = viewModel()
-        val profile = HostProfile(
-            id = "files-layout-" + nextHostId++,
-            name = HOST_NAME,
-            host = LOOPBACK,
-            username = USER,
-            port = serverPort,
-            authMethod = AuthMethod.PASSWORD,
-            // Stated rather than defaulted: this suite shares a JVM with every other test, and a
-            // loopback handshake that takes milliseconds alone should not fail on a loaded machine.
-            connectTimeoutSeconds = 60,
-            autoLoginSftp = true,
-        )
+        val profile =
+            HostProfile(
+                id = "files-layout-" + nextHostId++,
+                name = HOST_NAME,
+                host = LOOPBACK,
+                username = USER,
+                port = serverPort,
+                authMethod = AuthMethod.PASSWORD,
+                // Stated rather than defaulted: this suite shares a JVM with every other test, and a
+                // loopback handshake that takes milliseconds alone should not fail on a loaded machine.
+                connectTimeoutSeconds = 60,
+                autoLoginSftp = true,
+            )
         compose.runOnUiThread { viewModel.saveHost(profile) }
         pumpUntil(describe = { "the host was never saved" }) {
-            viewModel.uiState.value.hosts.any { it.id == profile.id }
+            viewModel.uiState.value.hosts
+                .any { it.id == profile.id }
         }
-        val saved = viewModel.uiState.value.hosts.first { it.id == profile.id }
+        val saved =
+            viewModel.uiState.value.hosts
+                .first { it.id == profile.id }
         compose.runOnUiThread { viewModel.connect(saved, password = PASSWORD) }
 
         var accepts = 0
@@ -460,11 +470,15 @@ class FilesExplorerLayoutRobolectricTest {
                 accepts++
                 compose.runOnUiThread { viewModel.acceptHostKey() }
             }
-            viewModel.uiState.value.tabs.firstOrNull { it.hostId == profile.id }?.state ==
+            viewModel.uiState.value.tabs
+                .firstOrNull { it.hostId == profile.id }
+                ?.state ==
                 SessionConnectionState.CONNECTED
         }
         pumpUntil(describe = { "SFTP never became ready: " + diagnose() }) {
-            viewModel.uiState.value.tabs.firstOrNull { it.hostId == profile.id }?.sftpState ==
+            viewModel.uiState.value.tabs
+                .firstOrNull { it.hostId == profile.id }
+                ?.sftpState ==
                 SftpSessionState.READY
         }
         return profile.id
@@ -479,7 +493,11 @@ class FilesExplorerLayoutRobolectricTest {
      * what invalidates the recomposer at all. `idleFor` rather than `idle` because this code is full of
      * real `delay`, and `idle()` leaves the looper's virtual clock where it was.
      */
-    private fun pumpUntil(timeoutMs: Long = SSH_TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = SSH_TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()
@@ -489,13 +507,14 @@ class FilesExplorerLayoutRobolectricTest {
         check(condition()) { "timed out after ${timeoutMs}ms: ${describe()}" }
     }
 
-    private fun diagnose(): String = buildString {
-        val viewModel = viewModel()
-        append("explorer=").append(viewModel.filesExplorer.state.value)
-        append(" tabs=").append(viewModel.uiState.value.tabs)
-        append(" status=").append(viewModel.statusMessage.value)
-        append(" port=").append(serverPort)
-    }
+    private fun diagnose(): String =
+        buildString {
+            val viewModel = viewModel()
+            append("explorer=").append(viewModel.filesExplorer.state.value)
+            append(" tabs=").append(viewModel.uiState.value.tabs)
+            append(" status=").append(viewModel.statusMessage.value)
+            append(" port=").append(serverPort)
+        }
 
     private companion object {
         /**
@@ -571,12 +590,14 @@ class FilesExplorerLayoutRobolectricTest {
         private fun server(root: Path): SshServer =
             SshServer.setUpDefaultServer().apply {
                 port = 0
-                keyPairProvider = SimpleGeneratorHostKeyProvider(
-                    Files.createTempDirectory("files-layout-hostkey").resolve("hostkey.ser"),
-                )
-                passwordAuthenticator = PasswordAuthenticator { user, password, _ ->
-                    user == USER && password == PASSWORD
-                }
+                keyPairProvider =
+                    SimpleGeneratorHostKeyProvider(
+                        Files.createTempDirectory("files-layout-hostkey").resolve("hostkey.ser"),
+                    )
+                passwordAuthenticator =
+                    PasswordAuthenticator { user, password, _ ->
+                        user == USER && password == PASSWORD
+                    }
                 fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
                 subsystemFactories = Collections.singletonList(SftpSubsystemFactory())
                 shellFactory = ShellFactory { QuietShell() }
@@ -597,25 +618,41 @@ class FilesExplorerLayoutRobolectricTest {
         private var exit: ExitCallback? = null
         private var worker: Thread? = null
 
-        override fun setInputStream(input: InputStream) { this.input = input }
-        override fun setOutputStream(output: OutputStream) { this.output = output }
-        override fun setErrorStream(error: OutputStream) = Unit
-        override fun setExitCallback(callback: ExitCallback) { this.exit = callback }
+        override fun setInputStream(input: InputStream) {
+            this.input = input
+        }
 
-        override fun start(channel: ChannelSession, env: Environment) {
+        override fun setOutputStream(output: OutputStream) {
+            this.output = output
+        }
+
+        override fun setErrorStream(error: OutputStream) = Unit
+
+        override fun setExitCallback(callback: ExitCallback) {
+            this.exit = callback
+        }
+
+        override fun start(
+            channel: ChannelSession,
+            env: Environment,
+        ) {
             val source = input ?: return
             val sink = output ?: return
-            worker = Thread {
-                runCatching {
-                    sink.write("eclipse-quiet-shell\r\n$ ".toByteArray())
-                    sink.flush()
-                    while (true) {
-                        val byte = source.read()
-                        if (byte < 0) break
+            worker =
+                Thread {
+                    runCatching {
+                        sink.write("eclipse-quiet-shell\r\n$ ".toByteArray())
+                        sink.flush()
+                        while (true) {
+                            val byte = source.read()
+                            if (byte < 0) break
+                        }
                     }
+                    exit?.onExit(0)
+                }.apply {
+                    isDaemon = true
+                    start()
                 }
-                exit?.onExit(0)
-            }.apply { isDaemon = true; start() }
         }
 
         override fun destroy(channel: ChannelSession) {

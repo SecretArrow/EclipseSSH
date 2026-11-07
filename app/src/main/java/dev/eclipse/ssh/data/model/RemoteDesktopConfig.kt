@@ -33,7 +33,9 @@ data class RemoteDesktopConfig(
 )
 
 /** The protocols the remote-desktop column speaks, one line kind letter each. */
-private enum class RemoteDesktopProtocol(val kindLetter: String) {
+private enum class RemoteDesktopProtocol(
+    val kindLetter: String,
+) {
     VNC("V"),
     RDP("R"),
 }
@@ -77,7 +79,10 @@ fun encodeRemoteDesktop(config: RemoteDesktopConfig): String {
 }
 
 /** One target as its protocol's line, every optional field written only when it is not the default. */
-private fun remoteDesktopLine(protocol: RemoteDesktopProtocol, target: RemoteDesktopTarget): String {
+private fun remoteDesktopLine(
+    protocol: RemoteDesktopProtocol,
+    target: RemoteDesktopTarget,
+): String {
     val marker = if (target.enabled) "" else "#"
     val host = if (target.host == DEFAULT_REMOTE_DESKTOP_HOST) "" else "${target.host}:"
     val flags = if (target.viewOnly) " $REMOTE_DESKTOP_VIEW_ONLY_FLAG" else ""
@@ -95,7 +100,8 @@ private fun remoteDesktopLine(protocol: RemoteDesktopProtocol, target: RemoteDes
 fun decodeRemoteDesktop(text: String): RemoteDesktopConfig {
     var vnc: RemoteDesktopTarget? = null
     var rdp: RemoteDesktopTarget? = null
-    text.lineSequence()
+    text
+        .lineSequence()
         .map(String::trim)
         .filter(String::isNotEmpty)
         .forEach { line ->
@@ -143,12 +149,13 @@ private fun parseRemoteDesktopLine(line: String): ParsedRemoteDesktopLine? {
     val port = portText.toPortOrNull() ?: return null
     return ParsedRemoteDesktopLine(
         protocol = protocol,
-        target = RemoteDesktopTarget(
-            host = host,
-            port = port,
-            enabled = enabled,
-            viewOnly = flagPart == REMOTE_DESKTOP_VIEW_ONLY_FLAG,
-        ),
+        target =
+            RemoteDesktopTarget(
+                host = host,
+                port = port,
+                enabled = enabled,
+                viewOnly = flagPart == REMOTE_DESKTOP_VIEW_ONLY_FLAG,
+            ),
     )
 }
 

@@ -13,7 +13,10 @@ import android.provider.OpenableColumns
  * is almost always longer than the stored counter. Appending remote bytes from the stale
  * offset duplicated a region and silently corrupted every resumed download.
  */
-fun localDocumentLength(context: Context, uri: Uri): Long? {
+fun localDocumentLength(
+    context: Context,
+    uri: Uri,
+): Long? {
     // openFileDescriptor reports the true size for file-backed documents.
     runCatching {
         context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->

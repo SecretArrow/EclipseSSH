@@ -11,16 +11,18 @@ import org.junit.Test
  * timestamps as parameters — see [shouldRelockVault] — and the matrix is tested here directly.
  */
 class VaultAutoLockDecisionTest {
-
     private val backgroundedAt = 1_000_000L
 
-    private fun relockAfter(elapsedMs: Long, autoLockMinutes: Int = 5, lockConfigured: Boolean = true) =
-        shouldRelockVault(
-            autoLockMinutes = autoLockMinutes,
-            lockConfigured = lockConfigured,
-            backgroundedAtMs = backgroundedAt,
-            nowMs = backgroundedAt + elapsedMs,
-        )
+    private fun relockAfter(
+        elapsedMs: Long,
+        autoLockMinutes: Int = 5,
+        lockConfigured: Boolean = true,
+    ) = shouldRelockVault(
+        autoLockMinutes = autoLockMinutes,
+        lockConfigured = lockConfigured,
+        backgroundedAtMs = backgroundedAt,
+        nowMs = backgroundedAt + elapsedMs,
+    )
 
     @Test
     fun `a return below the delay leaves the vault unlocked`() {

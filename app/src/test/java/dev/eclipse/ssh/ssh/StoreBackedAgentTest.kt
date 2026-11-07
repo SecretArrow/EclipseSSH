@@ -17,19 +17,21 @@ import org.junit.Test
  * substitute. What the far end does with the replies is `AgentForwardingEndToEndTest`'s half.
  */
 class StoreBackedAgentTest {
-
     /** One identity per key kind the app can hold, with the comment the vault would give it. */
     private fun fixtureIdentities(): List<AgentIdentity> {
-        val rsa = SshKeyAlgorithm.RSA_2048.generate().let {
-            AgentIdentity(SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName), "id_rsa")
-        }
-        val ecdsa = SshKeyAlgorithm.ECDSA_P256.generate().let {
-            AgentIdentity(SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName), "id_ecdsa")
-        }
-        val ed25519 = AgentIdentity(
-            SshKeyLoader.load(fixture("plain_ed25519"), "id_ed25519"),
-            "id_ed25519",
-        )
+        val rsa =
+            SshKeyAlgorithm.RSA_2048.generate().let {
+                AgentIdentity(SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName), "id_rsa")
+            }
+        val ecdsa =
+            SshKeyAlgorithm.ECDSA_P256.generate().let {
+                AgentIdentity(SshKeyLoader.load(it.privatePem.toByteArray(), it.defaultPrivateName), "id_ecdsa")
+            }
+        val ed25519 =
+            AgentIdentity(
+                SshKeyLoader.load(fixture("plain_ed25519"), "id_ed25519"),
+                "id_ed25519",
+            )
         return listOf(rsa, ecdsa, ed25519)
     }
 
@@ -58,11 +60,12 @@ class StoreBackedAgentTest {
         val data = "the bytes an onward host would ask about".toByteArray()
         // The algorithm names as the wire protocol asks for them: the RSA SHA-2 aliases are what
         // AbstractAgentClient's flags translate to, and OpenSSH servers refuse plain ssh-rsa.
-        val algos = mapOf(
-            "id_rsa" to listOf("ssh-rsa", "rsa-sha2-256", "rsa-sha2-512"),
-            "id_ecdsa" to listOf("ecdsa-sha2-nistp256"),
-            "id_ed25519" to listOf("ssh-ed25519"),
-        )
+        val algos =
+            mapOf(
+                "id_rsa" to listOf("ssh-rsa", "rsa-sha2-256", "rsa-sha2-512"),
+                "id_ecdsa" to listOf("ecdsa-sha2-nistp256"),
+                "id_ed25519" to listOf("ssh-ed25519"),
+            )
 
         val agent = StoreBackedAgent(fixtureIdentities())
         agent.getIdentities().forEach { (publicKey, comment) ->
@@ -86,14 +89,19 @@ class StoreBackedAgentTest {
     @Test
     fun `signing with a key the agent does not hold is refused`() {
         val agent = StoreBackedAgent(fixtureIdentities())
-        val stranger = SshKeyLoader.load(
-            SshKeyAlgorithm.RSA_2048.generate().privatePem.toByteArray(),
-            "a different key",
-        )
+        val stranger =
+            SshKeyLoader.load(
+                SshKeyAlgorithm.RSA_2048
+                    .generate()
+                    .privatePem
+                    .toByteArray(),
+                "a different key",
+            )
 
-        val error = assertThrows(SshException::class.java) {
-            agent.sign(null, stranger.public, "rsa-sha2-256", ByteArray(1))
-        }
+        val error =
+            assertThrows(SshException::class.java) {
+                agent.sign(null, stranger.public, "rsa-sha2-256", ByteArray(1))
+            }
 
         assertThat(error.message).contains("No such identity")
     }
@@ -108,10 +116,14 @@ class StoreBackedAgentTest {
     fun `the remote side cannot add, remove or clear identities`() {
         val agent = StoreBackedAgent(fixtureIdentities())
         val held = agent.getIdentities().first().key
-        val loaded = SshKeyLoader.load(
-            SshKeyAlgorithm.ECDSA_P256.generate().privatePem.toByteArray(),
-            "attacker key",
-        )
+        val loaded =
+            SshKeyLoader.load(
+                SshKeyAlgorithm.ECDSA_P256
+                    .generate()
+                    .privatePem
+                    .toByteArray(),
+                "attacker key",
+            )
 
         assertThrows(SshException::class.java) { agent.addIdentity(loaded, "no") }
         assertThrows(SshException::class.java) { agent.removeIdentity(held) }
@@ -158,16 +170,18 @@ class StoreBackedAgentTest {
         // A context that carries no agent identities: what every ordinary login dials with, and the
         // case where answering "the vault anyway" would offer the user's keys to a host that never
         // asked for forwarding.
-        val plain = AttributeRepository.ofAttributesMap(
-            emptyMap<AttributeRepository.AttributeKey<*>, Any>(),
-        )
+        val plain =
+            AttributeRepository.ofAttributesMap(
+                emptyMap<AttributeRepository.AttributeKey<*>, Any>(),
+            )
         assertThat(agentFor(plain)).isNull()
 
         val forwarding = AttributeRepository.ofAttributesMap(mapOf(AGENT_IDENTITIES_KEY to identities))
         val served = agentFor(forwarding)
         assertThat(served).isNotNull()
         assertThat(served!!.getIdentities().map { it.value })
-            .containsExactly("id_rsa", "id_ecdsa", "id_ed25519").inOrder()
+            .containsExactly("id_rsa", "id_ecdsa", "id_ed25519")
+            .inOrder()
 
         // An empty list is the vault-that-could-not-be-read case, and it is no agent at all rather
         // than an agent that answers every question with "no such identity".

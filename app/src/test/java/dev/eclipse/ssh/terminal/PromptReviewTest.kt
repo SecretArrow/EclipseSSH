@@ -24,21 +24,20 @@ import org.junit.Test
  * ```
  */
 class PromptReviewTest {
-    private fun prompt(vararg column: Int): PromptMark =
-        PromptMark(setOf(PromptMarkKind.PROMPT, PromptMarkKind.INPUT), inputColumn = column.firstOrNull() ?: 13)
+    private fun prompt(vararg column: Int): PromptMark = PromptMark(setOf(PromptMarkKind.PROMPT, PromptMarkKind.INPUT), inputColumn = column.firstOrNull() ?: 13)
 
-    private fun finished(status: Int?): PromptMark =
-        PromptMark(setOf(PromptMarkKind.FINISHED), exitCode = status)
+    private fun finished(status: Int?): PromptMark = PromptMark(setOf(PromptMarkKind.FINISHED), exitCode = status)
 
-    private fun session(): List<PromptMark?> = listOf(
-        prompt(),
-        null,
-        PromptMark(setOf(PromptMarkKind.OUTPUT)),
-        // The boundary row: the first command's end and the second command's prompt, on one line.
-        prompt().and(finished(2)),
-        null,
-        finished(0),
-    )
+    private fun session(): List<PromptMark?> =
+        listOf(
+            prompt(),
+            null,
+            PromptMark(setOf(PromptMarkKind.OUTPUT)),
+            // The boundary row: the first command's end and the second command's prompt, on one line.
+            prompt().and(finished(2)),
+            null,
+            finished(0),
+        )
 
     @Test
     fun `the prompt before a line is the nearest one above it`() {
@@ -110,12 +109,13 @@ class PromptReviewTest {
     @Test
     fun `a command that never reported an end does not borrow the next one's status`() {
         // The first command's `D` never arrived: the shell is still running it, or was killed.
-        val marks = listOf<PromptMark?>(
-            prompt(),
-            PromptMark(setOf(PromptMarkKind.OUTPUT)),
-            prompt(),
-            finished(0),
-        )
+        val marks =
+            listOf<PromptMark?>(
+                prompt(),
+                PromptMark(setOf(PromptMarkKind.OUTPUT)),
+                prompt(),
+                finished(0),
+            )
 
         assertThat(commandEndAt(marks, 1)).isNull()
         // The next command is fine, and is reported on its own row.

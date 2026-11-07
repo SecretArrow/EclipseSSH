@@ -129,10 +129,16 @@ object OpenSshConfigParser {
             // per-host fields, so an imported profile connects the way the user's ssh_config says.
             // Out-of-range values fall back to the default rather than being clamped, because a
             // ConnectTimeout of 0 means "use the system default" in ssh_config, not "give up at once".
-            connectTimeoutSeconds = this["connecttimeout"]?.trim()?.toIntOrNull()
-                ?.takeIf { it in CONNECT_TIMEOUT_RANGE } ?: DEFAULT_CONNECT_TIMEOUT_SECONDS,
-            keepAliveSeconds = this["serveraliveinterval"]?.trim()?.toIntOrNull()
-                ?.takeIf { it in KEEP_ALIVE_RANGE },
+            connectTimeoutSeconds =
+                this["connecttimeout"]
+                    ?.trim()
+                    ?.toIntOrNull()
+                    ?.takeIf { it in CONNECT_TIMEOUT_RANGE } ?: DEFAULT_CONNECT_TIMEOUT_SECONDS,
+            keepAliveSeconds =
+                this["serveraliveinterval"]
+                    ?.trim()
+                    ?.toIntOrNull()
+                    ?.takeIf { it in KEEP_ALIVE_RANGE },
         )
     }
 }
@@ -176,7 +182,10 @@ internal fun importableHostLine(patternLine: String): ImportableHostLine {
  * unresolvable. Any other `%` token, or a trailing `%`, is likewise unresolvable: returning null makes
  * the caller skip the block rather than dial a hostname with a literal `%` in it.
  */
-private fun expandHostName(raw: String, matchedHost: String?): String? {
+private fun expandHostName(
+    raw: String,
+    matchedHost: String?,
+): String? {
     if (!raw.contains('%')) return raw
     val out = StringBuilder(raw.length)
     var i = 0

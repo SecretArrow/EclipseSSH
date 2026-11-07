@@ -23,7 +23,6 @@ import dev.eclipse.ssh.ui.actions.ActionAnswer
 import dev.eclipse.ssh.ui.actions.ActionRequests
 import dev.eclipse.ssh.ui.actions.TransferActionKind
 import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
-import java.time.Duration
 import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Rule
@@ -32,6 +31,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.time.Duration
 
 /**
  * The transfers window, as a window: which rows one transfer's own state can serve, and what happens
@@ -58,7 +58,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = EclipseApp::class, sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class TransferActionsActivityRobolectricTest {
-
     @get:Rule
     val compose = createEmptyComposeRule()
 
@@ -73,20 +72,21 @@ class TransferActionsActivityRobolectricTest {
     }
 
     /** A completed download: the file it produced exists in full, so every file action is servable. */
-    private fun completedDownload(id: String) = TransferItem(
-        id = id,
-        name = "site-backup.tar",
-        direction = TransferDirection.DOWNLOAD,
-        hostName = "Production edge",
-        progress = 1f,
-        status = TransferStatus.COMPLETE,
-        sizeLabel = "2.1 GB",
-        hostId = "eclipse-demo",
-        remotePath = "/srv/backups/site-backup.tar",
-        localUri = "content://downloads/site-backup.tar",
-        transferredBytes = 2_254_856_192,
-        totalBytes = 2_254_856_192,
-    )
+    private fun completedDownload(id: String) =
+        TransferItem(
+            id = id,
+            name = "site-backup.tar",
+            direction = TransferDirection.DOWNLOAD,
+            hostName = "Production edge",
+            progress = 1f,
+            status = TransferStatus.COMPLETE,
+            sizeLabel = "2.1 GB",
+            hostId = "eclipse-demo",
+            remotePath = "/srv/backups/site-backup.tar",
+            localUri = "content://downloads/site-backup.tar",
+            transferredBytes = 2_254_856_192,
+            totalBytes = 2_254_856_192,
+        )
 
     /**
      * A running download: no local file at all, so the only rows are the control its status asks for,
@@ -94,14 +94,15 @@ class TransferActionsActivityRobolectricTest {
      */
     @Test
     fun aRunningTransferIsOfferedTheControlItsStatusAsksForAndNothingItCannotServe() {
-        val item = completedDownload("window-running").copy(
-            name = "release-bundle.tar.gz",
-            status = TransferStatus.RUNNING,
-            progress = 0.1f,
-            localUri = null,
-            remotePath = "/srv/releases/release-bundle.tar.gz",
-            transferredBytes = 0,
-        )
+        val item =
+            completedDownload("window-running").copy(
+                name = "release-bundle.tar.gz",
+                status = TransferStatus.RUNNING,
+                progress = 0.1f,
+                localUri = null,
+                remotePath = "/srv/releases/release-bundle.tar.gz",
+                transferredBytes = 0,
+            )
         seed(item)
 
         launchWindow(item).use {
@@ -144,14 +145,15 @@ class TransferActionsActivityRobolectricTest {
      */
     @Test
     fun aPausedDownloadIsOfferedResumeButNotTheHalfOfTheFileOnDisk() {
-        val item = completedDownload("window-paused").copy(
-            name = "nightly-dump.sql",
-            status = TransferStatus.PAUSED,
-            progress = 0.4f,
-            remotePath = "/db/nightly-dump.sql",
-            transferredBytes = 377_487_360,
-            totalBytes = 943_718_400,
-        )
+        val item =
+            completedDownload("window-paused").copy(
+                name = "nightly-dump.sql",
+                status = TransferStatus.PAUSED,
+                progress = 0.4f,
+                remotePath = "/db/nightly-dump.sql",
+                transferredBytes = 377_487_360,
+                totalBytes = 943_718_400,
+            )
         seed(item)
 
         launchWindow(item).use {
@@ -177,15 +179,16 @@ class TransferActionsActivityRobolectricTest {
      */
     @Test
     fun theHeaderFollowsTheTransferWhileTheWindowIsOpen() {
-        val item = completedDownload("window-live").copy(
-            name = "nightly-dump.sql",
-            status = TransferStatus.RUNNING,
-            progress = 0.4f,
-            remotePath = "/db/nightly-dump.sql",
-            localUri = null,
-            transferredBytes = 377_487_360,
-            totalBytes = 943_718_400,
-        )
+        val item =
+            completedDownload("window-live").copy(
+                name = "nightly-dump.sql",
+                status = TransferStatus.RUNNING,
+                progress = 0.4f,
+                remotePath = "/db/nightly-dump.sql",
+                localUri = null,
+                transferredBytes = 377_487_360,
+                totalBytes = 943_718_400,
+            )
         seed(item)
 
         launchWindow(item).use { scenario ->
@@ -225,11 +228,12 @@ class TransferActionsActivityRobolectricTest {
      */
     @Test
     fun aRowFilesItsAnswerAndClosesTheWindow() {
-        val item = completedDownload("window-answer").copy(
-            name = "release-bundle.tar.gz",
-            status = TransferStatus.RUNNING,
-            localUri = null,
-        )
+        val item =
+            completedDownload("window-answer").copy(
+                name = "release-bundle.tar.gz",
+                status = TransferStatus.RUNNING,
+                localUri = null,
+            )
         seed(item)
 
         launchWindow(item).use { scenario ->
@@ -311,9 +315,11 @@ class TransferActionsActivityRobolectricTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
                 val viewModel = ViewModelProvider(activity)[MainViewModel::class.java]
-                val repository = MainViewModel::class.java.getDeclaredField("transferRepository")
-                    .apply { isAccessible = true }
-                    .get(viewModel) as TransferRepository
+                val repository =
+                    MainViewModel::class.java
+                        .getDeclaredField("transferRepository")
+                        .apply { isAccessible = true }
+                        .get(viewModel) as TransferRepository
                 runBlocking { repository.save(item) }
             }
         }
@@ -364,7 +370,11 @@ class TransferActionsActivityRobolectricTest {
      * The shape the suites that drive live state all share — see
      * `FilesExplorerLayoutRobolectricTest.pumpUntil` for why it is this and not `compose.waitUntil`.
      */
-    private fun pumpUntil(timeoutMs: Long = TIMEOUT_MS, describe: () -> String, condition: () -> Boolean) {
+    private fun pumpUntil(
+        timeoutMs: Long = TIMEOUT_MS,
+        describe: () -> String,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         while (System.nanoTime() < deadline && !condition()) {
             Snapshot.sendApplyNotifications()

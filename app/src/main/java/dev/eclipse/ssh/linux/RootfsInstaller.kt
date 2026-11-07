@@ -1,11 +1,5 @@
 package dev.eclipse.ssh.linux
 
-import java.io.File
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
-import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,6 +8,12 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import java.util.Locale
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -82,7 +82,10 @@ class RootfsInstaller(
      */
     sealed interface Progress {
         /** Downloading; [received] of [total] bytes. */
-        data class Downloading(val received: Long, val total: Long) : Progress
+        data class Downloading(
+            val received: Long,
+            val total: Long,
+        ) : Progress
 
         /** Verifying the tarball's SHA256. */
         data object Verifying : Progress
@@ -162,31 +165,32 @@ class RootfsInstaller(
     suspend fun install(
         onProgress: (Progress) -> Unit = {},
         onExtractionWarnings: (List<String>) -> Unit = {},
-    ): File = withContext(Dispatchers.IO) {
-        val startedAt = System.currentTimeMillis()
-        // Storage first: the download lands under downloads/ and the probe inside ensureReady()
-        // fails here — with a name — rather than as a mid-download EACCES. The sweep then clears
-        // fragments a crashed attempt left pinning the space this one needs.
-        storage.requireReady()
-        storage.sweepOrphanPartFiles()
-        checkFreeSpace()
-        download(onProgress)
-        onProgress(Progress.Verifying)
-        verify()
-        onExtractionWarnings(extract(onProgress))
-        validateStaging()
-        moveIntoPlace()
-        // One event for the phase, at its end: the four below it that matter (the gate, the
-        // download, the extraction, the validation) each recorded their own outcome, so this is
-        // the line that says the whole thing finished and how long it took.
-        diagnostics.record(
-            UserspaceDiagnosticCategory.ROOTFS,
-            "rootfs ready",
-            durationMs = System.currentTimeMillis() - startedAt,
-            detail = "${distro.displayName} ${distro.ubuntuArch}",
-        )
-        rootfsDir
-    }
+    ): File =
+        withContext(Dispatchers.IO) {
+            val startedAt = System.currentTimeMillis()
+            // Storage first: the download lands under downloads/ and the probe inside ensureReady()
+            // fails here — with a name — rather than as a mid-download EACCES. The sweep then clears
+            // fragments a crashed attempt left pinning the space this one needs.
+            storage.requireReady()
+            storage.sweepOrphanPartFiles()
+            checkFreeSpace()
+            download(onProgress)
+            onProgress(Progress.Verifying)
+            verify()
+            onExtractionWarnings(extract(onProgress))
+            validateStaging()
+            moveIntoPlace()
+            // One event for the phase, at its end: the four below it that matter (the gate, the
+            // download, the extraction, the validation) each recorded their own outcome, so this is
+            // the line that says the whole thing finished and how long it took.
+            diagnostics.record(
+                UserspaceDiagnosticCategory.ROOTFS,
+                "rootfs ready",
+                durationMs = System.currentTimeMillis() - startedAt,
+                detail = "${distro.displayName} ${distro.ubuntuArch}",
+            )
+            rootfsDir
+        }
 
     /**
      * The staging tree's examination before it is allowed to become the rootfs: the manifest and
@@ -288,24 +292,25 @@ class RootfsInstaller(
      * entered only when they are directories [LinkOption.NOFOLLOW_LINKS] says they are, and the
      * deletions themselves go through [deleteTreeNoFollow], which treats a link as the entry it is.
      */
-    suspend fun reclaimSpace(): Long = withContext(Dispatchers.IO) {
-        // How much each kind of thing gave back, for the log line: which tree was holding the bytes
-        // is the question a report asks, and the total alone cannot answer it.
-        val freed = linkedMapOf<String, Long>()
-        val startedAt = System.currentTimeMillis()
-        reclaimAptState(freed)
-        emptyDirectory("temporary files", File(rootfsDir, "tmp"), freed)
-        emptyDirectory("temporary files", File(rootfsDir, "var/tmp"), freed)
-        reclaimRotatedLogs(File(rootfsDir, "var/log"), freed)
-        reclaim("download fragments", File(storage.downloadsDir, "${tarballFile.name}.part"), freed)
-        if (rootfsInPlace()) {
-            // The condition is the whole safety of this line: a parked rootfs with nothing in place
-            // is the user's system, mid-swap, and not this function's to delete.
-            reclaim("a previous rootfs", parkedRootfsDir, freed)
+    suspend fun reclaimSpace(): Long =
+        withContext(Dispatchers.IO) {
+            // How much each kind of thing gave back, for the log line: which tree was holding the bytes
+            // is the question a report asks, and the total alone cannot answer it.
+            val freed = linkedMapOf<String, Long>()
+            val startedAt = System.currentTimeMillis()
+            reclaimAptState(freed)
+            emptyDirectory("temporary files", File(rootfsDir, "tmp"), freed)
+            emptyDirectory("temporary files", File(rootfsDir, "var/tmp"), freed)
+            reclaimRotatedLogs(File(rootfsDir, "var/log"), freed)
+            reclaim("download fragments", File(storage.downloadsDir, "${tarballFile.name}.part"), freed)
+            if (rootfsInPlace()) {
+                // The condition is the whole safety of this line: a parked rootfs with nothing in place
+                // is the user's system, mid-swap, and not this function's to delete.
+                reclaim("a previous rootfs", parkedRootfsDir, freed)
+            }
+            val total = recordReclaimed(freed, startedAt, "reclaimed space in the userspace")
+            total
         }
-        val total = recordReclaimed(freed, startedAt, "reclaimed space in the userspace")
-        total
-    }
 
     /**
      * Gives up the apt-owned trees the verdict names, and answers how many bytes that freed.
@@ -329,14 +334,15 @@ class RootfsInstaller(
      * Nothing here descends a symlink, for the reason [reclaimSpace]'s own doc gives at length — the
      * helper functions it shares with that one are where that rule is enforced.
      */
-    suspend fun clearAptState(damage: AptDamage): Long = withContext(Dispatchers.IO) {
-        if (damage == AptDamage.NONE) return@withContext 0L
-        val freed = linkedMapOf<String, Long>()
-        val startedAt = System.currentTimeMillis()
-        reclaimAptIndex(freed)
-        if (damage == AptDamage.INDEX_AND_CACHE) reclaimAptCache(freed)
-        recordReclaimed(freed, startedAt, "cleared apt's own regenerable state")
-    }
+    suspend fun clearAptState(damage: AptDamage): Long =
+        withContext(Dispatchers.IO) {
+            if (damage == AptDamage.NONE) return@withContext 0L
+            val freed = linkedMapOf<String, Long>()
+            val startedAt = System.currentTimeMillis()
+            reclaimAptIndex(freed)
+            if (damage == AptDamage.INDEX_AND_CACHE) reclaimAptCache(freed)
+            recordReclaimed(freed, startedAt, "cleared apt's own regenerable state")
+        }
 
     /**
      * Whether apt's index lists look like something apt cannot read, judged on the host and without
@@ -357,8 +363,10 @@ class RootfsInstaller(
         if (isRealDirectory(partial) && partial.listFiles()?.isNotEmpty() == true) return true
         return lists.listFiles().orEmpty().any { entry ->
             val name = entry.name
-            val isIndex = name.endsWith("_Packages") || name.endsWith("_InRelease") ||
-                name.endsWith("_Release")
+            val isIndex =
+                name.endsWith("_Packages") ||
+                    name.endsWith("_InRelease") ||
+                    name.endsWith("_Release")
             isIndex && entry.isFile && entry.length() == 0L
         }
     }
@@ -391,8 +399,17 @@ class RootfsInstaller(
     }
 
     /** Deletes [target] whole — for a cache apt owns as a unit, and for single files. */
-    private fun reclaim(label: String, target: File, freed: MutableMap<String, Long>) {
-        if (!target.exists() && !java.nio.file.Files.isSymbolicLink(target.toPath())) return
+    private fun reclaim(
+        label: String,
+        target: File,
+        freed: MutableMap<String, Long>,
+    ) {
+        if (!target.exists() &&
+            !java.nio.file.Files
+                .isSymbolicLink(target.toPath())
+        ) {
+            return
+        }
         val bytes = sizeNoFollow(target)
         deleteTreeNoFollow(target)
         if (target.exists()) return
@@ -400,7 +417,11 @@ class RootfsInstaller(
     }
 
     /** Empties [dir] of its contents, keeping the directory itself. */
-    private fun emptyDirectory(label: String, dir: File, freed: MutableMap<String, Long>) {
+    private fun emptyDirectory(
+        label: String,
+        dir: File,
+        freed: MutableMap<String, Long>,
+    ) {
         if (!isRealDirectory(dir)) return
         dir.listFiles()?.forEach { reclaim(label, it, freed) }
     }
@@ -410,14 +431,23 @@ class RootfsInstaller(
      * `/var/log/apt` is where a long install's transcripts live. Two levels, not a walk, for the
      * reason [reclaimSpace]'s own doc gives.
      */
-    private fun reclaimRotatedLogs(dir: File, freed: MutableMap<String, Long>) {
+    private fun reclaimRotatedLogs(
+        dir: File,
+        freed: MutableMap<String, Long>,
+    ) {
         if (!isRealDirectory(dir)) return
         val entries = dir.listFiles().orEmpty().toList()
         val rotated = { file: File -> isRealFile(file) && isRotatedLog(file.name) }
         entries.filter(rotated).forEach { reclaim("rotated logs", it, freed) }
-        entries.filter { isRealDirectory(it) }
-            .flatMap { it.listFiles().orEmpty().filter(rotated).toList() }
-            .forEach { reclaim("rotated logs", it, freed) }
+        entries
+            .filter { isRealDirectory(it) }
+            .flatMap {
+                it
+                    .listFiles()
+                    .orEmpty()
+                    .filter(rotated)
+                    .toList()
+            }.forEach { reclaim("rotated logs", it, freed) }
     }
 
     /**
@@ -425,15 +455,20 @@ class RootfsInstaller(
      * something was taken: a repair that freed nothing is not an event, and the ring it would be
      * written to is read by a person.
      */
-    private fun recordReclaimed(freed: Map<String, Long>, startedAt: Long, event: String): Long {
+    private fun recordReclaimed(
+        freed: Map<String, Long>,
+        startedAt: Long,
+        event: String,
+    ): Long {
         val total = freed.values.sum()
         if (total > 0L) {
             diagnostics.record(
                 UserspaceDiagnosticCategory.STORAGE,
                 event,
                 durationMs = System.currentTimeMillis() - startedAt,
-                detail = "${total / MIB}MB: " +
-                    freed.entries.joinToString(", ") { "${it.key} ${it.value / MIB}MB" },
+                detail =
+                    "${total / MIB}MB: " +
+                        freed.entries.joinToString(", ") { "${it.key} ${it.value / MIB}MB" },
             )
         }
         return total
@@ -481,23 +516,25 @@ class RootfsInstaller(
      *   with something inside it, say, which [File.delete] refuses. Reported rather than forced:
      *   what is in such a directory is not this method's to decide about.
      */
-    suspend fun clearUnusablePackageLocks(): PackageLockSweep = withContext(Dispatchers.IO) {
-        val removed = mutableListOf<String>()
-        val stillThere = mutableListOf<String>()
-        for (name in unusablePackageLocksNow()) {
-            val path = File(rootfsDir, name)
-            if (runCatching { path.delete() }.getOrDefault(false)) removed += name else stillThere += name
+    suspend fun clearUnusablePackageLocks(): PackageLockSweep =
+        withContext(Dispatchers.IO) {
+            val removed = mutableListOf<String>()
+            val stillThere = mutableListOf<String>()
+            for (name in unusablePackageLocksNow()) {
+                val path = File(rootfsDir, name)
+                if (runCatching { path.delete() }.getOrDefault(false)) removed += name else stillThere += name
+            }
+            if (removed.isNotEmpty() || stillThere.isNotEmpty()) {
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.APT,
+                    "package lock paths swept before the repair",
+                    detail =
+                        "removed=[${removed.joinToString(", ")}] " +
+                            "couldNotRemove=[${stillThere.joinToString(", ")}]",
+                )
+            }
+            PackageLockSweep(removed = removed, stillThere = stillThere)
         }
-        if (removed.isNotEmpty() || stillThere.isNotEmpty()) {
-            diagnostics.record(
-                UserspaceDiagnosticCategory.APT,
-                "package lock paths swept before the repair",
-                detail = "removed=[${removed.joinToString(", ")}] " +
-                    "couldNotRemove=[${stillThere.joinToString(", ")}]",
-            )
-        }
-        PackageLockSweep(removed = removed, stillThere = stillThere)
-    }
 
     /**
      * The lock paths apt and dpkg cannot open as they stand — the ones [clearUnusablePackageLocks]
@@ -512,9 +549,10 @@ class RootfsInstaller(
      * older reason: a package operation that is running is not a fault, and this probe cannot tell
      * the user's own `apt` from the app's own.
      */
-    suspend fun unusablePackageLocks(): List<String> = withContext(Dispatchers.IO) {
-        unusablePackageLocksNow()
-    }
+    suspend fun unusablePackageLocks(): List<String> =
+        withContext(Dispatchers.IO) {
+            unusablePackageLocksNow()
+        }
 
     /**
      * The one question both halves above ask, in the rootfs' own terms.
@@ -528,21 +566,26 @@ class RootfsInstaller(
      * cost the case where the target's directory is gone, which is the same amount of evidence
      * pointing the other way. Nothing in this app, or in apt, creates such a link.
      */
-    private fun unusablePackageLocksNow(): List<String> = PACKAGE_LOCK_FILES.filter { name ->
-        val path = File(rootfsDir, name)
-        val resolved = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
-        when {
-            // Out of the userspace: a link with somewhere else as its target.
-            resolved == null -> java.nio.file.Files.isSymbolicLink(path.toPath())
-            // The ordinary case, and the only one that is ever a fault in a file: it is there, and
-            // apt cannot open it.
-            resolved.isFile -> !lockIsOpenable(resolved)
-            // Nothing there is not a fault: apt and dpkg create these files when they need them.
-            !resolved.exists() && !java.nio.file.Files.isSymbolicLink(path.toPath()) -> false
-            // A directory, a fifo, a socket, a link resolving to nothing: not a file apt can lock.
-            else -> true
+    private fun unusablePackageLocksNow(): List<String> =
+        PACKAGE_LOCK_FILES.filter { name ->
+            val path = File(rootfsDir, name)
+            val resolved = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+            when {
+                // Out of the userspace: a link with somewhere else as its target.
+                resolved == null ->
+                    java.nio.file.Files
+                        .isSymbolicLink(path.toPath())
+                // The ordinary case, and the only one that is ever a fault in a file: it is there, and
+                // apt cannot open it.
+                resolved.isFile -> !lockIsOpenable(resolved)
+                // Nothing there is not a fault: apt and dpkg create these files when they need them.
+                !resolved.exists() &&
+                    !java.nio.file.Files
+                        .isSymbolicLink(path.toPath()) -> false
+                // A directory, a fifo, a socket, a link resolving to nothing: not a file apt can lock.
+                else -> true
+            }
         }
-    }
 
     /**
      * Whether [lock] can be opened for reading and writing — the call apt and dpkg make on these
@@ -554,14 +597,16 @@ class RootfsInstaller(
      * measuring. A missing file consequently answers "not openable", and [unusablePackageLocksNow]
      * asks about existence before it asks this.
      */
-    private fun lockIsOpenable(lock: File): Boolean = runCatching {
-        java.nio.channels.FileChannel.open(
-            lock.toPath(),
-            java.nio.file.StandardOpenOption.READ,
-            java.nio.file.StandardOpenOption.WRITE,
-        ).close()
-        true
-    }.getOrDefault(false)
+    private fun lockIsOpenable(lock: File): Boolean =
+        runCatching {
+            java.nio.channels.FileChannel
+                .open(
+                    lock.toPath(),
+                    java.nio.file.StandardOpenOption.READ,
+                    java.nio.file.StandardOpenOption.WRITE,
+                ).close()
+            true
+        }.getOrDefault(false)
 
     /**
      * The bytes [target] occupies without following links — a link counts as its own entry, never
@@ -571,7 +616,11 @@ class RootfsInstaller(
      */
     private fun sizeNoFollow(target: File): Long {
         val path = target.toPath()
-        if (java.nio.file.Files.isSymbolicLink(path)) return 0L
+        if (java.nio.file.Files
+                .isSymbolicLink(path)
+        ) {
+            return 0L
+        }
         return runCatching {
             var total = 0L
             java.nio.file.Files.walkFileTree(
@@ -594,15 +643,16 @@ class RootfsInstaller(
 
     /** Whether [file] is a directory itself, rather than a link to one. */
     private fun isRealDirectory(file: File): Boolean =
-        java.nio.file.Files.isDirectory(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        java.nio.file.Files
+            .isDirectory(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
 
     /** Whether [file] is a regular file itself, rather than a link to one. */
     private fun isRealFile(file: File): Boolean =
-        java.nio.file.Files.isRegularFile(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        java.nio.file.Files
+            .isRegularFile(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
 
     /** Whether [name] is a log a rotation has already closed: the large ones, and the expendable ones. */
-    private fun isRotatedLog(name: String): Boolean =
-        name.endsWith(".gz") || name.endsWith(".1") || name.endsWith(".old")
+    private fun isRotatedLog(name: String): Boolean = name.endsWith(".gz") || name.endsWith(".1") || name.endsWith(".old")
 
     /**
      * The transfer, retried in place.
@@ -643,20 +693,22 @@ class RootfsInstaller(
                 // announced cannot be mistaken for what the pin describes.
                 temp.delete()
                 receivedFinal = 0L
-                val failure = try {
-                    receivedFinal = transferOnce(attempt, temp, job, onProgress)
-                    null
-                } catch (e: PinnedArchiveUnavailable) {
-                    e
-                }
+                val failure =
+                    try {
+                        receivedFinal = transferOnce(attempt, temp, job, onProgress)
+                        null
+                    } catch (e: PinnedArchiveUnavailable) {
+                        e
+                    }
                 if (failure == null) break
                 if (attempt >= attempts || !worthAnotherAttempt(failure)) throw failure
                 val waitMillis = retryWaitsMillis[attempt - 1]
                 diagnostics.record(
                     UserspaceDiagnosticCategory.DOWNLOAD,
                     "download attempt failed; retrying",
-                    detail = "attempt $attempt of $attempts: ${failure.message} - " +
-                        "waiting ${waitMillis / 1000}s",
+                    detail =
+                        "attempt $attempt of $attempts: ${failure.message} - " +
+                            "waiting ${waitMillis / 1000}s",
                 )
                 delay(waitMillis)
             }
@@ -669,8 +721,9 @@ class RootfsInstaller(
                 UserspaceDiagnosticCategory.DOWNLOAD,
                 "tarball downloaded and verified",
                 durationMs = System.currentTimeMillis() - startedAt,
-                detail = "$receivedFinal bytes from ${distro.rootfsTarballUrl}" +
-                    (attempt.takeIf { it > 1 }?.let { " on attempt $it of $attempts" } ?: ""),
+                detail =
+                    "$receivedFinal bytes from ${distro.rootfsTarballUrl}" +
+                        (attempt.takeIf { it > 1 }?.let { " on attempt $it of $attempts" } ?: ""),
             )
             if (!temp.renameTo(tarballFile)) {
                 temp.copyTo(tarballFile, overwrite = true)
@@ -842,17 +895,18 @@ class RootfsInstaller(
      * `RootfsRepairTest` pins what this returns, that it is idempotent, and that the next rung which
      * needs those bytes fetches them again.
      */
-    suspend fun releasePinnedArchive(): Long = withContext(Dispatchers.IO) {
-        if (!pinnedArchiveOnDisk()) return@withContext 0L
-        val bytes = tarballFile.length()
-        tarballFile.delete()
-        diagnostics.record(
-            UserspaceDiagnosticCategory.STORAGE,
-            "pinned archive given up",
-            detail = "freed ${bytes / MIB}MB; the next rung that needs it will download it again",
-        )
-        if (tarballFile.exists()) 0L else bytes
-    }
+    suspend fun releasePinnedArchive(): Long =
+        withContext(Dispatchers.IO) {
+            if (!pinnedArchiveOnDisk()) return@withContext 0L
+            val bytes = tarballFile.length()
+            tarballFile.delete()
+            diagnostics.record(
+                UserspaceDiagnosticCategory.STORAGE,
+                "pinned archive given up",
+                detail = "freed ${bytes / MIB}MB; the next rung that needs it will download it again",
+            )
+            if (tarballFile.exists()) 0L else bytes
+        }
 
     /**
      * Extracts the tarball into staging, then swaps staging into place. A rootfs that exists is
@@ -871,8 +925,8 @@ class RootfsInstaller(
         val extractionWarnings = mutableListOf<String>()
         val budget = extractionBudgetBytes()
         val extractionStartedAt = System.currentTimeMillis()
-        fun fractionRead(): Float? =
-            if (tarballBytes > 0L) (consumed.toFloat() / tarballBytes).coerceIn(0f, 1f) else null
+
+        fun fractionRead(): Float? = if (tarballBytes > 0L) (consumed.toFloat() / tarballBytes).coerceIn(0f, 1f) else null
         openTarStream(tarballFile, DOWNLOAD_BUFFER) { consumed = it }.use { tar ->
             while (true) {
                 val entry = tar.nextTarEntry ?: break
@@ -893,7 +947,12 @@ class RootfsInstaller(
                         // already put something there, the symlink must replace it.
                         target.delete()
                         deleteTreeNoFollow(target)
-                        java.nio.file.Files.createSymbolicLink(target.toPath(), java.nio.file.Path.of(entry.linkName))
+                        java.nio.file.Files
+                            .createSymbolicLink(
+                                target.toPath(),
+                                java.nio.file.Path
+                                    .of(entry.linkName),
+                            )
                     }
                     TarArchiveEntry.LF_LINK -> {
                         target.parentFile?.mkdirs()
@@ -956,12 +1015,13 @@ class RootfsInstaller(
             UserspaceDiagnosticCategory.ROOTFS,
             "rootfs extracted",
             durationMs = System.currentTimeMillis() - extractionStartedAt,
-            detail = "$entries entries, ${written / (1024 * 1024)}MB unpacked, " +
-                "${extractionWarnings.size} warning(s)" +
-                // The warnings themselves, because a skipped forward hardlink is a file that is
-                // genuinely absent from the rootfs: it is the warning most likely to explain a
-                // later apt or dpkg failure, and 200 chars of it is worth more than the count.
-                (extractionWarnings.takeIf { it.isNotEmpty() }?.let { ": " + it.first() } ?: ""),
+            detail =
+                "$entries entries, ${written / (1024 * 1024)}MB unpacked, " +
+                    "${extractionWarnings.size} warning(s)" +
+                    // The warnings themselves, because a skipped forward hardlink is a file that is
+                    // genuinely absent from the rootfs: it is the warning most likely to explain a
+                    // later apt or dpkg failure, and 200 chars of it is worth more than the count.
+                    (extractionWarnings.takeIf { it.isNotEmpty() }?.let { ": " + it.first() } ?: ""),
         )
         return extractionWarnings
     }
@@ -979,10 +1039,14 @@ class RootfsInstaller(
      * nothing standing where a program belongs is worse than the gap, because opening it fails later
      * and elsewhere. The extractor names it instead (see the forward-hardlink warning there).
      */
-    private fun linkFile(target: File, source: File): Boolean {
+    private fun linkFile(
+        target: File,
+        source: File,
+    ): Boolean {
         if (!source.exists()) return false
         return try {
-            java.nio.file.Files.createLink(target.toPath(), source.toPath())
+            java.nio.file.Files
+                .createLink(target.toPath(), source.toPath())
             true
         } catch (e: IOException) {
             val parent = target.parentFile ?: return false
@@ -1060,7 +1124,10 @@ class RootfsInstaller(
      * Resolves [name] inside [root], refusing anything that escapes it — the shared guard in
      * [resolveInsideRoot], whose doc explains why extraction and checking live apart.
      */
-    private fun resolveInside(root: File, name: String): File = resolveInsideRoot(root, name)
+    private fun resolveInside(
+        root: File,
+        name: String,
+    ): File = resolveInsideRoot(root, name)
 
     /**
      * The file a *repair* writes [name] at: every directory along the way expanded inside [root], and
@@ -1091,7 +1158,10 @@ class RootfsInstaller(
      *
      * @throws IOException for those four — the refusals the callers report and skip
      */
-    private fun memberPath(root: File, name: String): File {
+    private fun memberPath(
+        root: File,
+        name: String,
+    ): File {
         val cleaned = name.removePrefix("./").trimEnd('/')
         if (cleaned.startsWith("/")) throw IOException("Archive entry names an absolute path: $name")
         val cut = cleaned.lastIndexOf('/')
@@ -1109,7 +1179,10 @@ class RootfsInstaller(
      * file has the same owner, and `setExecutable(false, false)` on a directory would break
      * traversal.
      */
-    private fun applyMode(target: File, mode: Int) {
+    private fun applyMode(
+        target: File,
+        mode: Int,
+    ) {
         if (target.isDirectory) return
         val executable = (mode and 0b001_001_001) != 0
         target.setExecutable(executable, true)
@@ -1156,79 +1229,81 @@ class RootfsInstaller(
      */
     suspend fun restorePackageDatabase(
         onProgress: (Progress) -> Unit = {},
-    ): PackageDatabaseSource? = withContext(Dispatchers.IO) {
-        val status = resolveInside(rootfsDir, DPKG_STATUS)
-        if (isReadablePackageDatabase(status)) return@withContext null
-        val startedAt = System.currentTimeMillis()
-        parkUnreadablePackageDatabase(status)
+    ): PackageDatabaseSource? =
+        withContext(Dispatchers.IO) {
+            val status = resolveInside(rootfsDir, DPKG_STATUS)
+            if (isReadablePackageDatabase(status)) return@withContext null
+            val startedAt = System.currentTimeMillis()
+            parkUnreadablePackageDatabase(status)
 
-        val previous = resolveInside(rootfsDir, DPKG_STATUS_PREVIOUS)
-        if (isReadablePackageDatabase(previous)) {
-            writePackageDatabaseFrom(previous, status)
-            if (isReadablePackageDatabase(status)) {
-                diagnostics.record(
-                    UserspaceDiagnosticCategory.APT,
-                    "restored the package database from dpkg's own previous copy",
-                    durationMs = System.currentTimeMillis() - startedAt,
-                    detail = "the unreadable file was kept as $DPKG_STATUS.broken",
-                )
-                return@withContext PackageDatabaseSource.PREVIOUS
-            }
-        }
-
-        // Last resort, and the only one that needs anything outside the rootfs: one pass over the
-        // pinned archive for the one member, exactly as the file-level restore makes one.
-        //
-        // Deliberately not a `runCatching`: it would swallow the caller's cancellation along with
-        // everything else — a repair the user has already left would go on climbing the ladder
-        // behind them — and it would throw the *typed* reason away, which is the whole difference
-        // between "the pinned archive is not on this device" (a rung the ladder must not spend a
-        // rebuild on) and "it is here, and the member would not write". The failure is recorded
-        // where it happens and kept as the cause of the one thrown below.
-        var archiveFailure: Throwable? = null
-        val restored = try {
-            ensurePinnedArchive(onProgress)
-            var written = false
-            val warnings = mutableListOf<String>()
-            openTarStream(tarballFile, DOWNLOAD_BUFFER) {}.use { tar ->
-                while (true) {
-                    val entry = tar.nextTarEntry ?: break
-                    if (entry.name.removePrefix("./") != DPKG_STATUS) continue
-                    // Deliberately not [restoreFromPinnedTarball]: that one refuses every preserved
-                    // member, and this member is the exception its own doc describes. The traversal
-                    // guard is not bypassed with it — [resolveInside] above already ran, and the
-                    // member name is a constant, not anything the archive supplies.
-                    written = writeMember(DPKG_STATUS, status, entry, tar, warnings)
-                    break
+            val previous = resolveInside(rootfsDir, DPKG_STATUS_PREVIOUS)
+            if (isReadablePackageDatabase(previous)) {
+                writePackageDatabaseFrom(previous, status)
+                if (isReadablePackageDatabase(status)) {
+                    diagnostics.record(
+                        UserspaceDiagnosticCategory.APT,
+                        "restored the package database from dpkg's own previous copy",
+                        durationMs = System.currentTimeMillis() - startedAt,
+                        detail = "the unreadable file was kept as $DPKG_STATUS.broken",
+                    )
+                    return@withContext PackageDatabaseSource.PREVIOUS
                 }
             }
-            written
-        } catch (c: CancellationException) {
-            throw c
-        } catch (t: Throwable) {
-            archiveFailure = t
-            diagnostics.record(
-                UserspaceDiagnosticCategory.APT,
-                "the package database could not be restored from the pinned archive",
-                durationMs = System.currentTimeMillis() - startedAt,
-                detail = t.message ?: t.javaClass.simpleName,
+
+            // Last resort, and the only one that needs anything outside the rootfs: one pass over the
+            // pinned archive for the one member, exactly as the file-level restore makes one.
+            //
+            // Deliberately not a `runCatching`: it would swallow the caller's cancellation along with
+            // everything else — a repair the user has already left would go on climbing the ladder
+            // behind them — and it would throw the *typed* reason away, which is the whole difference
+            // between "the pinned archive is not on this device" (a rung the ladder must not spend a
+            // rebuild on) and "it is here, and the member would not write". The failure is recorded
+            // where it happens and kept as the cause of the one thrown below.
+            var archiveFailure: Throwable? = null
+            val restored =
+                try {
+                    ensurePinnedArchive(onProgress)
+                    var written = false
+                    val warnings = mutableListOf<String>()
+                    openTarStream(tarballFile, DOWNLOAD_BUFFER) {}.use { tar ->
+                        while (true) {
+                            val entry = tar.nextTarEntry ?: break
+                            if (entry.name.removePrefix("./") != DPKG_STATUS) continue
+                            // Deliberately not [restoreFromPinnedTarball]: that one refuses every preserved
+                            // member, and this member is the exception its own doc describes. The traversal
+                            // guard is not bypassed with it — [resolveInside] above already ran, and the
+                            // member name is a constant, not anything the archive supplies.
+                            written = writeMember(DPKG_STATUS, status, entry, tar, warnings)
+                            break
+                        }
+                    }
+                    written
+                } catch (c: CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    archiveFailure = t
+                    diagnostics.record(
+                        UserspaceDiagnosticCategory.APT,
+                        "the package database could not be restored from the pinned archive",
+                        durationMs = System.currentTimeMillis() - startedAt,
+                        detail = t.message ?: t.javaClass.simpleName,
+                    )
+                    false
+                }
+            if (restored && isReadablePackageDatabase(status)) {
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.APT,
+                    "restored the package database from the pinned archive",
+                    durationMs = System.currentTimeMillis() - startedAt,
+                    detail = "base-system records only; packages installed on top of the base system are no longer tracked",
+                )
+                return@withContext PackageDatabaseSource.ARCHIVE
+            }
+            throw UserspaceFailure.PackageDatabaseUnreadable(
+                detail = "($DPKG_STATUS could not be restored from $DPKG_STATUS_PREVIOUS or from the archive)",
+                cause = archiveFailure,
             )
-            false
         }
-        if (restored && isReadablePackageDatabase(status)) {
-            diagnostics.record(
-                UserspaceDiagnosticCategory.APT,
-                "restored the package database from the pinned archive",
-                durationMs = System.currentTimeMillis() - startedAt,
-                detail = "base-system records only; packages installed on top of the base system are no longer tracked",
-            )
-            return@withContext PackageDatabaseSource.ARCHIVE
-        }
-        throw UserspaceFailure.PackageDatabaseUnreadable(
-            detail = "($DPKG_STATUS could not be restored from $DPKG_STATUS_PREVIOUS or from the archive)",
-            cause = archiveFailure,
-        )
-    }
 
     /**
      * Moves an unreadable package database aside as `status.broken`, if anything is there at all.
@@ -1243,21 +1318,31 @@ class RootfsInstaller(
      */
     private fun parkUnreadablePackageDatabase(status: File) {
         val path = status.toPath()
-        if (!status.exists() && !java.nio.file.Files.isSymbolicLink(path)) return
+        if (!status.exists() &&
+            !java.nio.file.Files
+                .isSymbolicLink(path)
+        ) {
+            return
+        }
         val parked = File(status.parentFile, status.name + ".broken")
         parked.delete()
-        runCatching { java.nio.file.Files.move(path, parked.toPath()) }
-            .onFailure {
-                diagnostics.record(
-                    UserspaceDiagnosticCategory.APT,
-                    "could not keep a copy of the unreadable package database",
-                    detail = it.message ?: it.javaClass.simpleName,
-                )
-            }
+        runCatching {
+            java.nio.file.Files
+                .move(path, parked.toPath())
+        }.onFailure {
+            diagnostics.record(
+                UserspaceDiagnosticCategory.APT,
+                "could not keep a copy of the unreadable package database",
+                detail = it.message ?: it.javaClass.simpleName,
+            )
+        }
     }
 
     /** Replaces [status] with a copy of [source], creating the directory it lives in. */
-    private fun writePackageDatabaseFrom(source: File, status: File) {
+    private fun writePackageDatabaseFrom(
+        source: File,
+        status: File,
+    ) {
         status.parentFile?.mkdirs()
         status.delete()
         runCatching {
@@ -1282,7 +1367,8 @@ class RootfsInstaller(
         if (!isRealFile(file) || file.length() < MIN_DPKG_STATUS_BYTES) return false
         val bytes = runCatching { file.readBytes() }.getOrNull() ?: return false
         if (bytes.isEmpty() || bytes.last() != '\n'.code.toByte()) return false
-        return bytes.decodeToString()
+        return bytes
+            .decodeToString()
             .lineSequence()
             .take(DPKG_STATUS_SCAN_LINES)
             .any { it.startsWith("Package: ") }
@@ -1307,34 +1393,37 @@ class RootfsInstaller(
      * @throws UserspaceFailure.GuestTmpUnwritable when a directory cannot be made writable even after
      *   being recreated, which is the caller's signal that this userspace cannot be repaired in place
      */
-    suspend fun ensureGuestTemp(): List<String> = withContext(Dispatchers.IO) {
-        val repaired = mutableListOf<String>()
-        for (name in GUEST_TEMP_DIRS) {
-            // The unresolved path, deliberately: everything below deletes and recreates, and a name
-            // that resolves out of the rootfs is a name to act on where it stands rather than where
-            // it points. See [unusableGuestTemp] for why the link is checked before the resolution.
-            val path = File(rootfsDir, name)
-            val linked = java.nio.file.Files.isSymbolicLink(path.toPath())
-            val dir = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
-            if (!linked && dir != null && isRealDirectory(dir) && isWritableDirectory(dir)) continue
-            // Recreated rather than adjusted: the archive's modes are the state to return to, and a
-            // directory that is a symlink is exactly the case where writing through would mean
-            // writing somewhere the guest never named.
-            deleteTreeNoFollow(path)
-            path.mkdirs()
-            setStickyWorldWritable(path)
-            if (!isWritableDirectory(path)) throw UserspaceFailure.GuestTmpUnwritable("/$name")
-            repaired += name
+    suspend fun ensureGuestTemp(): List<String> =
+        withContext(Dispatchers.IO) {
+            val repaired = mutableListOf<String>()
+            for (name in GUEST_TEMP_DIRS) {
+                // The unresolved path, deliberately: everything below deletes and recreates, and a name
+                // that resolves out of the rootfs is a name to act on where it stands rather than where
+                // it points. See [unusableGuestTemp] for why the link is checked before the resolution.
+                val path = File(rootfsDir, name)
+                val linked =
+                    java.nio.file.Files
+                        .isSymbolicLink(path.toPath())
+                val dir = runCatching { resolveInside(rootfsDir, name) }.getOrNull()
+                if (!linked && dir != null && isRealDirectory(dir) && isWritableDirectory(dir)) continue
+                // Recreated rather than adjusted: the archive's modes are the state to return to, and a
+                // directory that is a symlink is exactly the case where writing through would mean
+                // writing somewhere the guest never named.
+                deleteTreeNoFollow(path)
+                path.mkdirs()
+                setStickyWorldWritable(path)
+                if (!isWritableDirectory(path)) throw UserspaceFailure.GuestTmpUnwritable("/$name")
+                repaired += name
+            }
+            if (repaired.isNotEmpty()) {
+                diagnostics.record(
+                    UserspaceDiagnosticCategory.ROOTFS,
+                    "recreated the guest's temporary directories",
+                    detail = repaired.joinToString(", "),
+                )
+            }
+            repaired
         }
-        if (repaired.isNotEmpty()) {
-            diagnostics.record(
-                UserspaceDiagnosticCategory.ROOTFS,
-                "recreated the guest's temporary directories",
-                detail = repaired.joinToString(", "),
-            )
-        }
-        repaired
-    }
 
     /**
      * The guest's temporary directories that are not usable as they stand, in [GUEST_TEMP_DIRS]
@@ -1349,39 +1438,46 @@ class RootfsInstaller(
      * directory (missing, a file, or a link, which is not the directory the guest named), or one that
      * cannot be written through.
      */
-    suspend fun unusableGuestTemp(): List<String> = withContext(Dispatchers.IO) {
-        GUEST_TEMP_DIRS.filter { name ->
-            val path = File(rootfsDir, name)
-            // The link is asked about before the path is resolved, and this is the whole reason the
-            // question is asked on the host: canonicalising a directory that is a link to somewhere
-            // else makes it *escape* the rootfs, [resolveInside] refuses it, and an implementation
-            // that treated that refusal as "nothing to report" called a `run` pointing at the
-            // device's own `/data` perfectly healthy — reported, fixed and probed by nothing, while
-            // every write the guest made through it landed outside its userspace.
-            if (java.nio.file.Files.isSymbolicLink(path.toPath())) return@filter true
-            // A path that cannot be resolved inside the rootfs at all is not the directory the guest
-            // named either, so it is reported rather than skipped. Recreating is the cheap direction
-            // to be wrong in: these trees' contents are nobody's (see [ensureGuestTemp]).
-            val dir = runCatching { resolveInside(rootfsDir, name) }.getOrNull() ?: return@filter true
-            !isRealDirectory(dir) || !isWritableDirectory(dir)
+    suspend fun unusableGuestTemp(): List<String> =
+        withContext(Dispatchers.IO) {
+            GUEST_TEMP_DIRS.filter { name ->
+                val path = File(rootfsDir, name)
+                // The link is asked about before the path is resolved, and this is the whole reason the
+                // question is asked on the host: canonicalising a directory that is a link to somewhere
+                // else makes it *escape* the rootfs, [resolveInside] refuses it, and an implementation
+                // that treated that refusal as "nothing to report" called a `run` pointing at the
+                // device's own `/data` perfectly healthy — reported, fixed and probed by nothing, while
+                // every write the guest made through it landed outside its userspace.
+                if (java.nio.file.Files
+                        .isSymbolicLink(path.toPath())
+                ) {
+                    return@filter true
+                }
+                // A path that cannot be resolved inside the rootfs at all is not the directory the guest
+                // named either, so it is reported rather than skipped. Recreating is the cheap direction
+                // to be wrong in: these trees' contents are nobody's (see [ensureGuestTemp]).
+                val dir = runCatching { resolveInside(rootfsDir, name) }.getOrNull() ?: return@filter true
+                !isRealDirectory(dir) || !isWritableDirectory(dir)
+            }
         }
-    }
 
     /** Whether a file can be created and removed inside [dir] — the only honest test of writability. */
-    private fun isWritableDirectory(dir: File): Boolean = runCatching {
-        val probe = File(dir, WRITE_PROBE_NAME)
-        probe.delete()
-        if (!probe.createNewFile()) return@runCatching false
-        probe.delete()
-        true
-    }.getOrDefault(false)
+    private fun isWritableDirectory(dir: File): Boolean =
+        runCatching {
+            val probe = File(dir, WRITE_PROBE_NAME)
+            probe.delete()
+            if (!probe.createNewFile()) return@runCatching false
+            probe.delete()
+            true
+        }.getOrDefault(false)
 
     /** The archive's own modes for `/tmp` and `/run`: world-writable, with the sticky bit. */
     private fun setStickyWorldWritable(dir: File) {
         runCatching {
             java.nio.file.Files.setPosixFilePermissions(
                 dir.toPath(),
-                java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxrwt"),
+                java.nio.file.attribute.PosixFilePermissions
+                    .fromString("rwxrwxrwt"),
             )
         }
     }
@@ -1472,9 +1568,10 @@ class RootfsInstaller(
             UserspaceDiagnosticCategory.ROOTFS,
             "restored from the pinned archive",
             durationMs = System.currentTimeMillis() - startedAt,
-            detail = "${restored.size} of ${memberNames.size} member(s) put back: " +
-                (restored.take(6).joinToString(", ").ifEmpty { "none" }) +
-                (if (skipped > 0) "; $skipped could not be resolved inside the rootfs" else ""),
+            detail =
+                "${restored.size} of ${memberNames.size} member(s) put back: " +
+                    (restored.take(6).joinToString(", ").ifEmpty { "none" }) +
+                    (if (skipped > 0) "; $skipped could not be resolved inside the rootfs" else ""),
         )
         return restored.toList()
     }
@@ -1494,36 +1591,37 @@ class RootfsInstaller(
      */
     suspend fun inspectAgainstPinnedArchive(
         onProgress: (Progress) -> Unit = {},
-    ): RootfsIntegrity = withContext(Dispatchers.IO) {
-        ensurePinnedArchive(onProgress)
-        val paths = RootfsPaths(rootfsDir)
-        val damaged = sortedSetOf<String>()
-        var examined = 0
-        var consumed = 0L
-        val tarballBytes = tarballFile.length()
-        val startedAt = System.currentTimeMillis()
-        openTarStream(tarballFile, DOWNLOAD_BUFFER) { consumed = it }.use { tar ->
-            while (true) {
-                val entry = tar.nextTarEntry ?: break
-                val name = entry.name.removePrefix("./")
-                if (name.isEmpty() || isPreservedMember(name)) continue
-                examined++
-                if (!memberIsPresent(paths, name, entry)) damaged += name
-                if (examined % PROGRESS_EVERY_ENTRIES == 0) {
-                    coroutineContext.ensureActive()
-                    onProgress(Progress.Extracting(examined, fraction = tarballFraction(consumed, tarballBytes)))
+    ): RootfsIntegrity =
+        withContext(Dispatchers.IO) {
+            ensurePinnedArchive(onProgress)
+            val paths = RootfsPaths(rootfsDir)
+            val damaged = sortedSetOf<String>()
+            var examined = 0
+            var consumed = 0L
+            val tarballBytes = tarballFile.length()
+            val startedAt = System.currentTimeMillis()
+            openTarStream(tarballFile, DOWNLOAD_BUFFER) { consumed = it }.use { tar ->
+                while (true) {
+                    val entry = tar.nextTarEntry ?: break
+                    val name = entry.name.removePrefix("./")
+                    if (name.isEmpty() || isPreservedMember(name)) continue
+                    examined++
+                    if (!memberIsPresent(paths, name, entry)) damaged += name
+                    if (examined % PROGRESS_EVERY_ENTRIES == 0) {
+                        coroutineContext.ensureActive()
+                        onProgress(Progress.Extracting(examined, fraction = tarballFraction(consumed, tarballBytes)))
+                    }
                 }
             }
+            val integrity = RootfsIntegrity(examined = examined, damaged = damaged)
+            diagnostics.record(
+                UserspaceDiagnosticCategory.ROOTFS,
+                "rootfs compared with the pinned archive",
+                durationMs = System.currentTimeMillis() - startedAt,
+                detail = integrity.describe(),
+            )
+            integrity
         }
-        val integrity = RootfsIntegrity(examined = examined, damaged = damaged)
-        diagnostics.record(
-            UserspaceDiagnosticCategory.ROOTFS,
-            "rootfs compared with the pinned archive",
-            durationMs = System.currentTimeMillis() - startedAt,
-            detail = integrity.describe(),
-        )
-        integrity
-    }
 
     /**
      * Rewrites the base system from the pinned archive, in place: every member the archive carries is
@@ -1555,57 +1653,59 @@ class RootfsInstaller(
     suspend fun overlayFromPinnedArchive(
         onProgress: (Progress) -> Unit = {},
         onWarning: (String) -> Unit = {},
-    ): Int = withContext(Dispatchers.IO) {
-        ensurePinnedArchive(onProgress)
-        val startedAt = System.currentTimeMillis()
-        var members = 0
-        var replacedDirectories = 0
-        var consumed = 0L
-        val tarballBytes = tarballFile.length()
-        val warnings = mutableListOf<String>()
-        openTarStream(tarballFile, DOWNLOAD_BUFFER) { consumed = it }.use { tar ->
-            while (true) {
-                val entry = tar.nextTarEntry ?: break
-                val name = entry.name.removePrefix("./")
-                if (name.isEmpty() || name == "." || isPreservedMember(name)) continue
-                // A member this rootfs will not let the archive write — a directory on the way to
-                // it is a symlink out of the tree — is skipped and named, never fatal: the same
-                // trade [restoreFromPinnedTarball] makes, and for the same reason. Aborting the pass
-                // over one name wrote *nothing*, which the ladder above reads as "this rung had
-                // nothing to do" and answers by rewriting the whole rootfs — the repair that costs
-                // the user every package they installed. What the overlay did manage is still
-                // verified afterwards by the setup run, so a skip that mattered is not hidden — and
-                // the member goes where its own name says rather than where a link at that name
-                // points, which over a usrmerged rootfs is the difference between rewriting the base
-                // system and destroying it: see [memberPath].
-                val target = runCatching { memberPath(rootfsDir, name) }.getOrNull()
-                if (target == null) {
-                    warnings += "$name was not written: its path does not resolve inside the rootfs"
-                    continue
-                }
-                if (!entry.isDirectory && target.isDirectory) {
-                    deleteTreeNoFollow(target)
-                    replacedDirectories++
-                }
-                if (writeMember(name, target, entry, tar, warnings)) members++
-                if (members % PROGRESS_EVERY_ENTRIES == 0) {
-                    coroutineContext.ensureActive()
-                    onProgress(Progress.Extracting(members, warnings.toList(), tarballFraction(consumed, tarballBytes)))
+    ): Int =
+        withContext(Dispatchers.IO) {
+            ensurePinnedArchive(onProgress)
+            val startedAt = System.currentTimeMillis()
+            var members = 0
+            var replacedDirectories = 0
+            var consumed = 0L
+            val tarballBytes = tarballFile.length()
+            val warnings = mutableListOf<String>()
+            openTarStream(tarballFile, DOWNLOAD_BUFFER) { consumed = it }.use { tar ->
+                while (true) {
+                    val entry = tar.nextTarEntry ?: break
+                    val name = entry.name.removePrefix("./")
+                    if (name.isEmpty() || name == "." || isPreservedMember(name)) continue
+                    // A member this rootfs will not let the archive write — a directory on the way to
+                    // it is a symlink out of the tree — is skipped and named, never fatal: the same
+                    // trade [restoreFromPinnedTarball] makes, and for the same reason. Aborting the pass
+                    // over one name wrote *nothing*, which the ladder above reads as "this rung had
+                    // nothing to do" and answers by rewriting the whole rootfs — the repair that costs
+                    // the user every package they installed. What the overlay did manage is still
+                    // verified afterwards by the setup run, so a skip that mattered is not hidden — and
+                    // the member goes where its own name says rather than where a link at that name
+                    // points, which over a usrmerged rootfs is the difference between rewriting the base
+                    // system and destroying it: see [memberPath].
+                    val target = runCatching { memberPath(rootfsDir, name) }.getOrNull()
+                    if (target == null) {
+                        warnings += "$name was not written: its path does not resolve inside the rootfs"
+                        continue
+                    }
+                    if (!entry.isDirectory && target.isDirectory) {
+                        deleteTreeNoFollow(target)
+                        replacedDirectories++
+                    }
+                    if (writeMember(name, target, entry, tar, warnings)) members++
+                    if (members % PROGRESS_EVERY_ENTRIES == 0) {
+                        coroutineContext.ensureActive()
+                        onProgress(Progress.Extracting(members, warnings.toList(), tarballFraction(consumed, tarballBytes)))
+                    }
                 }
             }
+            onProgress(Progress.Extracting(members, warnings.toList(), 1f))
+            warnings.forEach(onWarning)
+            diagnostics.record(
+                UserspaceDiagnosticCategory.ROOTFS,
+                "base system rewritten from the pinned archive",
+                durationMs = System.currentTimeMillis() - startedAt,
+                detail =
+                    "$members member(s) written" +
+                        (replacedDirectories.takeIf { it > 0 }?.let { ", $it directory/directories replaced" } ?: "") +
+                        (warnings.firstOrNull()?.let { "; $it" } ?: ""),
+            )
+            members
         }
-        onProgress(Progress.Extracting(members, warnings.toList(), 1f))
-        warnings.forEach(onWarning)
-        diagnostics.record(
-            UserspaceDiagnosticCategory.ROOTFS,
-            "base system rewritten from the pinned archive",
-            durationMs = System.currentTimeMillis() - startedAt,
-            detail = "$members member(s) written" +
-                (replacedDirectories.takeIf { it > 0 }?.let { ", $it directory/directories replaced" } ?: "") +
-                (warnings.firstOrNull()?.let { "; $it" } ?: ""),
-        )
-        members
-    }
 
     /**
      * Writes one archive member onto [target], replacing whatever is there — the shared body of the
@@ -1630,67 +1730,73 @@ class RootfsInstaller(
         entry: TarArchiveEntry,
         tar: TarArchiveInputStream,
         warnings: MutableList<String>,
-    ): Boolean = when (entry.linkFlag) {
-        // `mkdirs()` answers false for a directory that already exists, which is the common case in
-        // a repair and not a failure: the member's meaning is "this directory exists", and it does.
-        TarArchiveEntry.LF_DIR -> target.mkdirs() || target.isDirectory
-        TarArchiveEntry.LF_SYMLINK -> {
-            // The guard runs *before* the old member is cleared, and a link it refuses is skipped
-            // rather than thrown: a repair pass is restoring thousands of members, and one archive
-            // entry naming a target outside the rootfs must not abort the other 20,000 — the same
-            // rule the callers apply to the members they resolve. `entry.linkName` is still used
-            // verbatim below, exactly as at extraction: the guard decides whether the link may
-            // exist, not what it says.
-            val linked = runCatching { resolveLinkInsideRoot(rootfsDir, name, entry.linkName) }
-            if (linked.isFailure) {
-                warnings += "$name was not restored: its link target '${entry.linkName}' leaves the userspace"
-                false
-            } else {
-                target.parentFile?.mkdirs()
-                target.delete()
-                deleteTreeNoFollow(target)
-                java.nio.file.Files.createSymbolicLink(target.toPath(), java.nio.file.Path.of(entry.linkName))
-                true
-            }
-        }
-        TarArchiveEntry.LF_LINK -> {
-            target.parentFile?.mkdirs()
-            val source = runCatching { resolveInside(rootfsDir, entry.linkName) }.getOrNull()
-            if (source == null) {
-                warnings += "hard link $name could not be made: ${entry.linkName} does not resolve inside the userspace"
-                false
-            } else {
-                target.delete()
-                deleteTreeNoFollow(target)
-                if (linkFile(target, source)) {
-                    true
-                } else if (source.isFile) {
-                    // The platform refused the link (see [linkFile]): the source's bytes, as one copy.
-                    source.copyTo(target, overwrite = true)
-                    true
-                } else {
-                    warnings += "hard link $name could not be made: ${entry.linkName} is not in the rootfs"
+    ): Boolean =
+        when (entry.linkFlag) {
+            // `mkdirs()` answers false for a directory that already exists, which is the common case in
+            // a repair and not a failure: the member's meaning is "this directory exists", and it does.
+            TarArchiveEntry.LF_DIR -> target.mkdirs() || target.isDirectory
+            TarArchiveEntry.LF_SYMLINK -> {
+                // The guard runs *before* the old member is cleared, and a link it refuses is skipped
+                // rather than thrown: a repair pass is restoring thousands of members, and one archive
+                // entry naming a target outside the rootfs must not abort the other 20,000 — the same
+                // rule the callers apply to the members they resolve. `entry.linkName` is still used
+                // verbatim below, exactly as at extraction: the guard decides whether the link may
+                // exist, not what it says.
+                val linked = runCatching { resolveLinkInsideRoot(rootfsDir, name, entry.linkName) }
+                if (linked.isFailure) {
+                    warnings += "$name was not restored: its link target '${entry.linkName}' leaves the userspace"
                     false
+                } else {
+                    target.parentFile?.mkdirs()
+                    target.delete()
+                    deleteTreeNoFollow(target)
+                    java.nio.file.Files
+                        .createSymbolicLink(
+                            target.toPath(),
+                            java.nio.file.Path
+                                .of(entry.linkName),
+                        )
+                    true
                 }
             }
+            TarArchiveEntry.LF_LINK -> {
+                target.parentFile?.mkdirs()
+                val source = runCatching { resolveInside(rootfsDir, entry.linkName) }.getOrNull()
+                if (source == null) {
+                    warnings += "hard link $name could not be made: ${entry.linkName} does not resolve inside the userspace"
+                    false
+                } else {
+                    target.delete()
+                    deleteTreeNoFollow(target)
+                    if (linkFile(target, source)) {
+                        true
+                    } else if (source.isFile) {
+                        // The platform refused the link (see [linkFile]): the source's bytes, as one copy.
+                        source.copyTo(target, overwrite = true)
+                        true
+                    } else {
+                        warnings += "hard link $name could not be made: ${entry.linkName} is not in the rootfs"
+                        false
+                    }
+                }
+            }
+            TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
+                target.parentFile?.mkdirs()
+                // A *directory* standing where the archive names a file is the one obstruction
+                // `File.delete()` cannot clear — and a repair that stopped there would leave the
+                // member exactly as damaged as it found it. The tree goes, because the archive's own
+                // bytes cannot be written over it any other way; deleteTreeNoFollow treats a link as
+                // the entry it is, so nothing outside [rootfsDir] is ever reached through one.
+                target.delete()
+                deleteTreeNoFollow(target)
+                target.outputStream().use { output -> tar.copyTo(output) }
+                applyMode(target, entry.mode)
+                true
+            }
+            // A device node, a fifo, or a type this archive has no business carrying: nothing is created,
+            // so nothing came back.
+            else -> false
         }
-        TarArchiveEntry.LF_NORMAL, 0.toByte() -> {
-            target.parentFile?.mkdirs()
-            // A *directory* standing where the archive names a file is the one obstruction
-            // `File.delete()` cannot clear — and a repair that stopped there would leave the
-            // member exactly as damaged as it found it. The tree goes, because the archive's own
-            // bytes cannot be written over it any other way; deleteTreeNoFollow treats a link as
-            // the entry it is, so nothing outside [rootfsDir] is ever reached through one.
-            target.delete()
-            deleteTreeNoFollow(target)
-            target.outputStream().use { output -> tar.copyTo(output) }
-            applyMode(target, entry.mode)
-            true
-        }
-        // A device node, a fifo, or a type this archive has no business carrying: nothing is created,
-        // so nothing came back.
-        else -> false
-    }
 
     /**
      * Whether the installed rootfs holds the thing [name] names, as the kind of thing the archive
@@ -1711,7 +1817,11 @@ class RootfsInstaller(
      * either, which is the same verdict for the same reason [UbuntuDistributionManager]'s
      * essential-programs check reaches it.
      */
-    private fun memberIsPresent(paths: RootfsPaths, name: String, entry: TarArchiveEntry): Boolean =
+    private fun memberIsPresent(
+        paths: RootfsPaths,
+        name: String,
+        entry: TarArchiveEntry,
+    ): Boolean =
         runCatching {
             when {
                 entry.isDirectory -> paths.hostPath("/$name").isDirectory
@@ -1720,9 +1830,13 @@ class RootfsInstaller(
                     // elsewhere would break every path through it while still "existing", and the
                     // target has its own entry to answer for.
                     val link = leafInside(paths, name)
-                    java.nio.file.Files.isSymbolicLink(link.toPath()) &&
-                        runCatching { java.nio.file.Files.readSymbolicLink(link.toPath()).toString() }
-                            .getOrNull() == entry.linkName
+                    java.nio.file.Files
+                        .isSymbolicLink(link.toPath()) &&
+                        runCatching {
+                            java.nio.file.Files
+                                .readSymbolicLink(link.toPath())
+                                .toString()
+                        }.getOrNull() == entry.linkName
                 }
                 // A hard link is present when its source is: the extraction may have spelled it as a
                 // symlink (see linkFile), which hostPath follows, and a dangling one is damage here
@@ -1743,7 +1857,10 @@ class RootfsInstaller(
      * everywhere else, so `sbin/ldconfig` is asked about as the file behind the `/sbin` link, which
      * is the file the guest reaches.
      */
-    private fun leafInside(paths: RootfsPaths, name: String): File {
+    private fun leafInside(
+        paths: RootfsPaths,
+        name: String,
+    ): File {
         val cut = name.lastIndexOf('/')
         if (cut < 0) return File(paths.hostPath("/"), name)
         return File(paths.hostPath("/" + name.substring(0, cut)), name.substring(cut + 1))
@@ -1766,14 +1883,18 @@ class RootfsInstaller(
      * The preserved trees are invisible to [inspectAgainstPinnedArchive] as well as to the overlay,
      * so what a repair reports and what it fixes are the same set of names.
      */
-    private fun isPreservedMember(name: String): Boolean =
-        PRESERVED_MEMBERS.any { name == it || name.startsWith("$it/") }
+    private fun isPreservedMember(name: String): Boolean = PRESERVED_MEMBERS.any { name == it || name.startsWith("$it/") }
 
     /** The fraction of the tarball read, or null when the platform will not report its length. */
-    private fun tarballFraction(consumed: Long, total: Long): Float? =
-        if (total > 0L) (consumed.toFloat() / total).coerceIn(0f, 1f) else null
+    private fun tarballFraction(
+        consumed: Long,
+        total: Long,
+    ): Float? = if (total > 0L) (consumed.toFloat() / total).coerceIn(0f, 1f) else null
 
-    private fun verifyFileSha256(file: File, expected: String): Boolean {
+    private fun verifyFileSha256(
+        file: File,
+        expected: String,
+    ): Boolean {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
             val buffer = ByteArray(DOWNLOAD_BUFFER)
@@ -1807,23 +1928,24 @@ class RootfsInstaller(
          * the reasoning lives. Names are archive-relative and without a leading `/`, the way the
          * tarball spells them.
          */
-        private val PRESERVED_MEMBERS = listOf(
-            // The user's own: their projects, their keys, their history.
-            "home",
-            "root",
-            // The record of what is installed, and the state the package tools keep beside it.
-            "var/lib/dpkg",
-            "var/lib/apt",
-            "var/cache",
-            // State the guest is writing to while a repair runs.
-            "var/log",
-            "var/tmp",
-            "tmp",
-            "run",
-            // A regenerated host key would invalidate every known_hosts entry pointing at this
-            // userspace, which is data loss outside the rootfs.
-            "etc/ssh",
-        )
+        private val PRESERVED_MEMBERS =
+            listOf(
+                // The user's own: their projects, their keys, their history.
+                "home",
+                "root",
+                // The record of what is installed, and the state the package tools keep beside it.
+                "var/lib/dpkg",
+                "var/lib/apt",
+                "var/cache",
+                // State the guest is writing to while a repair runs.
+                "var/log",
+                "var/tmp",
+                "tmp",
+                "run",
+                // A regenerated host key would invalidate every known_hosts entry pointing at this
+                // userspace, which is data loss outside the rootfs.
+                "etc/ssh",
+            )
 
         /**
          * The package database, and dpkg's own previous generation of it. Archive-relative, like
@@ -1861,12 +1983,13 @@ class RootfsInstaller(
          * removes its lock file when it exits. Their presence is therefore not the question — see
          * [clearUnusablePackageLocks] for what is, and for what reading it as damage cost.
          */
-        private val PACKAGE_LOCK_FILES = listOf(
-            "var/lib/dpkg/lock",
-            "var/lib/dpkg/lock-frontend",
-            "var/lib/apt/lists/lock",
-            "var/cache/apt/archives/lock",
-        )
+        private val PACKAGE_LOCK_FILES =
+            listOf(
+                "var/lib/dpkg/lock",
+                "var/lib/dpkg/lock-frontend",
+                "var/lib/apt/lists/lock",
+                "var/cache/apt/archives/lock",
+            )
 
         /**
          * The guest's own temporary trees, which the archive ships and no *other* repair writes —
@@ -1982,14 +2105,15 @@ enum class AptDamage {
          * strings apt prints, and a phrase that stops matching costs a repair nothing worse than the
          * rebuild path it would have taken anyway.
          */
-        private val INDEX_PHRASES = listOf(
-            "unable to parse package file",
-            "problem with mergelist",
-            "encountered a section with no package",
-            "the package lists or status file could not be parsed",
-            "hash sum mismatch",
-            "size mismatch",
-        )
+        private val INDEX_PHRASES =
+            listOf(
+                "unable to parse package file",
+                "problem with mergelist",
+                "encountered a section with no package",
+                "the package lists or status file could not be parsed",
+                "hash sum mismatch",
+                "size mismatch",
+            )
 
         /**
          * The subset that also blames the downloaded bytes: a mismatch is reported for an index and
@@ -2091,12 +2215,20 @@ fun interface HttpDownloader {
      * Downloads [url] into [target], reporting each [onChunk] with the bytes received so far and
      * the total when the server names one (0 when it does not).
      */
-    fun download(url: String, target: File, onChunk: (received: Long, total: Long) -> Unit)
+    fun download(
+        url: String,
+        target: File,
+        onChunk: (received: Long, total: Long) -> Unit,
+    )
 }
 
 /** The production downloader, on `HttpsURLConnection`. */
 class UrlConnectionDownloader : HttpDownloader {
-    override fun download(url: String, target: File, onChunk: (received: Long, total: Long) -> Unit) {
+    override fun download(
+        url: String,
+        target: File,
+        onChunk: (received: Long, total: Long) -> Unit,
+    ) {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 30_000
         connection.readTimeout = 60_000

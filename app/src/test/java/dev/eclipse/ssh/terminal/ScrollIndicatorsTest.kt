@@ -14,7 +14,6 @@ import org.junit.Test
  * "behind" anything.
  */
 class ScrollIndicatorsTest {
-
     // The key row: which edges have a cap the user cannot see, given how far the row is scrolled.
 
     @Test
@@ -130,7 +129,12 @@ class ScrollIndicatorsTest {
         assertThat(frame.linesBelow()).isEqualTo(1)
     }
 
-    private fun frame(firstLine: Int, visibleLines: Int, totalLines: Int, liveEnd: Int = totalLines) = TerminalFrame(
+    private fun frame(
+        firstLine: Int,
+        visibleLines: Int,
+        totalLines: Int,
+        liveEnd: Int = totalLines,
+    ) = TerminalFrame(
         lines = List(visibleLines) { emptyList() },
         firstLine = firstLine,
         totalLines = totalLines,
