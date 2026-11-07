@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -2397,7 +2398,7 @@ class UrlConnectionDownloader : HttpDownloader {
                 }
             val append = code == HttpURLConnection.HTTP_PARTIAL && resumeFrom > 0
             connection.inputStream.use { input ->
-                target.outputStream(append).use { output ->
+                FileOutputStream(target, append).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var received = resumeFrom
                     while (true) {

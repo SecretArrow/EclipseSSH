@@ -338,6 +338,21 @@ class LinuxUserspaceController
         /** Starts the userspace: verifies health, then holds it open for terminal sessions. */
         fun start() = act("Start") { it.start() }
 
+        /**
+         * Parks the running install's download at the next chunk boundary — a flag flip, not an
+         * operation, so it bypasses [act]'s queue: it must reach the transfer while that transfer
+         * is blocking the very queue a second [act] would join. The install screen's Resume pairs
+         * with it.
+         */
+        fun pauseInstall() {
+            graphProvider.graph?.manager?.pauseInstall()
+        }
+
+        /** Releases [pauseInstall]; the download continues from the fragment on disk. */
+        fun resumeInstall() {
+            graphProvider.graph?.manager?.resumeInstall()
+        }
+
         /** Stops the userspace, closing every live terminal session it holds. */
         fun stop() = act("Stop") { it.stop() }
 
