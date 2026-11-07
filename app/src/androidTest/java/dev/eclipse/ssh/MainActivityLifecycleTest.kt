@@ -61,7 +61,12 @@ class MainActivityLifecycleTest {
      * still fails. This waits for the state under test; it does not excuse its absence.
      */
     private fun awaitTextDisplayed(text: String) {
-        compose.waitUntil(timeoutMillis = 10_000) {
+        // 30s: the CI emulator's first frame after a cold launch can take longer than the 10s this
+        // used to allow (a starved guest renders at seconds per frame - see the note above), and on
+        // API 28/30 the authentication prompt reliably needed more than 10s to reach the screen.
+        // The bound still exists and the assertion still runs afterwards, so a prompt that never
+        // appears still fails; it just gets a CI-realistic window to appear in.
+        compose.waitUntil(timeoutMillis = 30_000) {
             compose.onAllNodesWithText(text).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
         }
         compose.onNodeWithText(text).assertIsDisplayed()

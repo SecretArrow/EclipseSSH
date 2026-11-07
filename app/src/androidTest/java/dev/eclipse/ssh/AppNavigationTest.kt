@@ -183,7 +183,11 @@ class AppNavigationTest {
                 .fetchSemanticsNodes(atLeastOneRootRequired = false)
                 .isNotEmpty()
         }
-        compose.onNodeWithContentDescription("Paste password from clipboard").assertIsDisplayed()
+        // On the API 28/30 emulators the add-host form is taller than the window and the paste
+        // button sits below the fold - the node exists (the wait above proved it) but off-screen,
+        // and assertIsDisplayed would fail on the scroll position rather than on the affordance.
+        // Bring it into view first, exactly like the Cancel click below does.
+        compose.onNodeWithContentDescription("Paste password from clipboard").performScrollTo().assertIsDisplayed()
 
         compose.onNode(hasText("Cancel") and hasClickAction()).performScrollTo().performClick()
         compose.waitForIdle()
