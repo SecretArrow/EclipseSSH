@@ -125,7 +125,37 @@ jobs:
           # The APKs are already built by the pre-build step above, so this
           # invocation only installs them and runs the tests - no native
           # build competing with the running emulator.
-          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue
+          #
+          # UbuntuE2eVerificationTest is excluded: it is gated by
+          # `-e ubuntuE2e true` (an instrumentation arg) because it expects
+          # the deep-verification Ubuntu rootfs the separate
+          # android-ubuntu-e2e pipeline installs through the UI driver
+          # first. Without that arg AGP 8.x reports the AssumptionViolatedException
+          # raised in @Before as a *failure* instead of a skip, which
+          # is what turned all 16 of its methods red on run 42366128825
+          # (API 35). The CI matrix never has that rootfs, so the test
+          # simply does not belong here.
+          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
+      # Retry once: hosted runners fall back to TCG software emulation
+      # when KVM is unavailable, and on those runs Compose idles past the
+      # 10-second test timeout ("No compose hierarchies found",
+      # "IdlingResourceTimeoutException") and the golden-render tests hit
+      # swiftshader color-buffer corruption ("bad color buffer handle",
+      # "expected to be true"). Re-booting a fresh emulator and re-running
+      # is the standard remedy; if it fails twice it is a real regression.
+      - name: Boot the emulator and run the connected tests (retry)
+        id: retry
+        if: failure()
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          force-avd-creation: true
+          emulator-boot-timeout: 1500
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:
