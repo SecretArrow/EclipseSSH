@@ -232,10 +232,16 @@ class PhaseResult:
 
 class E2eDriver:
     def __init__(self, adb, package, test_package, out_dir, mode, install_timeout_min,
-                 keep_data=False, verbose=False):
+                 keep_data=False, verbose=False, launch_activity=".MainActivity"):
         self.adb = adb
         self.package = package
         self.test_package = test_package
+        # The launch component's activity half. The manifest names MainActivity
+        # relative to the NAMESPACE, not the applicationId, so a debug build -
+        # applicationId dev.eclipse.ssh.debug - still launches
+        # dev.eclipse.ssh.debug/dev.eclipse.ssh.MainActivity. am start resolves
+        # ".MainActivity" against the APPLICATIONID, which does not exist.
+        self.launch_activity = launch_activity
         self.out = out_dir
         self.mode = mode
         self.install_timeout_min = install_timeout_min
@@ -482,7 +488,7 @@ class E2eDriver:
     # ------------------------------------------------------------ app navigation
 
     def launch(self):
-        ok, out = self.adb.am_start(self.package, ".MainActivity")
+        ok, out = self.adb.am_start(self.package, self.launch_activity)
         if not ok:
             raise RuntimeError("the app did not launch: %s" % out[:300])
         time.sleep(4)
@@ -2031,6 +2037,10 @@ def _parse_suite(stdout_text):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--package", default="dev.eclipse.ssh")
+    parser.add_argument("--activity", default=".MainActivity",
+                        help="launch component's activity half; the manifest names "
+                             "it relative to the namespace, so a suffixed "
+                             "applicationId needs the explicit class here")
     parser.add_argument("--test-package", default="dev.eclipse.ssh.test")
     parser.add_argument("--out", default="out")
     parser.add_argument("--mode", choices=("SMOKE", "STANDARD", "FULL"), default="STANDARD")
@@ -2048,7 +2058,8 @@ def main():
         return 2
 
     driver = E2eDriver(adb, args.package, args.test_package, args.out,
-                       args.mode, args.install_timeout, keep_data=args.keep_data)
+                       args.mode, args.install_timeout, keep_data=args.keep_data,
+                       launch_activity=args.activity)
     return driver.run()
 
 
