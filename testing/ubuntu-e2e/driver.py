@@ -816,7 +816,22 @@ class E2eDriver:
         for el in elements:
             if el is node or el.attrs.get("selected") != "true":
                 continue
-            if not self._in_region(region, el):
+            # Reaches into the container's band, rather than having its leading
+            # edge inside it: a landscape NavigationBarItem is tall enough that
+            # its top sits above the band cutoff while the item is wholly part
+            # of the bar, and the leading-edge test read that item as out of the
+            # bar - three taps that HAD switched the tab were reported as never
+            # taking. Reaching in is enough here because this loop's own tests
+            # (must contain this label's box, must not contain the others')
+            # already reject the tall nodes that are not the item.
+            r = el.rect
+            if not r:
+                continue
+            _, edge = region
+            if region[0] == "bar":
+                if r[3] < edge:
+                    continue
+            elif r[0] > edge:
                 continue
             container = el.rect
             if not container or not _contains(container, box):
