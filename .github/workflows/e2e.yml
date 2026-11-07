@@ -101,6 +101,14 @@ jobs:
             "build-tools;${BUILD_TOOLS}" \
             "ndk;29.0.13113456" \
             "system-images;android-${{ matrix.api-level }};${{ matrix.target }};${{ matrix.arch }}" > /dev/null
+      - name: Pre-build the debug + test APKs (before the emulator boots)
+        # Building the APKs (incl. the 12-minute freerdp/openssl native
+        # build) here, with no emulator consuming RAM, avoids the guest
+        # freezing mid-test on slow TCG runners (run 42361822914: the
+        # emulator's adb shell went ShellCommandUnresponsiveException and
+        # the device was reported as 'Unknown API Level' / skipped while
+        # the native build was still running inside the test step).
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
       - name: Boot the emulator and run the connected tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -114,6 +122,9 @@ jobs:
           emulator-boot-timeout: 1500
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
+          # The APKs are already built by the pre-build step above, so this
+          # invocation only installs them and runs the tests - no native
+          # build competing with the running emulator.
           script: ./gradlew connectedDebugAndroidTest --no-daemon --continue
       - uses: actions/upload-artifact@v4
         if: always()
