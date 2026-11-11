@@ -1,12 +1,16 @@
 package dev.eclipse.ssh.background
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import androidx.work.Configuration
-import androidx.work.ExistingWorkPolicy
+import androidx.work.ListenableWorker
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.WorkerFactory
+import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.test.core.app.ApplicationProvider
@@ -26,6 +30,10 @@ import org.robolectric.annotation.Config
  * REPLACE because a boot that follows an update must not sit behind a stale job left in the
  * queue by the previous version of the receiver, which is the exact scenario
  * ACTION_MY_PACKAGE_REPLACED exists for.
+ *
+ * The worker the factory builds returns success immediately on the synchronous executor, so
+ * a fired job ends SUCCEEDED; the counts below therefore count every record WorkManager
+ * holds for the unique name, which is the durable fact of "the receiver enqueued".
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -35,20 +43,36 @@ class BootRestoreReceiverTest {
 
     @Before
     fun setUp() {
+        val factory =
+            object : WorkerFactory() {
+                override fun createWorker(
+                    appContext: Context,
+                    workerClassName: String,
+                    workerParameters: WorkerParameters,
+                ): ListenableWorker {
+                    // A worker that does nothing and succeeds: this suite is about what the
+                    // receiver enqueues, not what the worker then does (that is
+                    // RetryTransferWorkerTest's ground).
+                    return object : androidx.work.CoroutineWorker(appContext, workerParameters) {
+                        override suspend fun doWork(): Result = Result.success()
+                    }
+                }
+            }
         WorkManagerTestInitHelper.initializeTestWorkManager(
             context,
-            Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
+            Configuration.Builder()
+                .setExecutor(SynchronousExecutor())
+                .setWorkerFactory(factory)
+                .build(),
         )
         receiver = BootRestoreReceiver()
     }
 
-    /** The live queue state for the unique name the receiver writes, SUCCEEDED excluded -
-     * a finished job stays in WorkManager's own bookkeeping and would count forever. */
-    private fun liveRestoreJobs(): List<WorkInfo> =
+    /** Every record WorkManager holds for the restore unique name, finished ones included. */
+    private fun restoreRecords(): List<WorkInfo> =
         WorkManager.getInstance(context)
             .getWorkInfosForUniqueWork(RESTORE_WORK_NAME)
             .get()
-            .filter { it.state != WorkInfo.State.SUCCEEDED && it.state != WorkInfo.State.FAILED }
 
     private fun enqueueStaleRestoreJob() {
         // What the previous app version's receiver would have left in the queue: a job under
@@ -64,25 +88,25 @@ class BootRestoreReceiverTest {
     fun `a boot completed enqueues the restore job`() {
         receiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
 
-        assertThat(liveRestoreJobs()).hasSize(1)
+        assertThat(restoreRecords()).isNotEmpty()
     }
 
     @Test
     fun `a package replacement enqueues the restore job`() {
         receiver.onReceive(context, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
 
-        assertThat(liveRestoreJobs()).hasSize(1)
+        assertThat(restoreRecords()).isNotEmpty()
     }
 
     @Test
     fun `unrelated broadcasts enqueue nothing`() {
-        val before = liveRestoreJobs().size
+        val before = restoreRecords().size
 
         receiver.onReceive(context, Intent(Intent.ACTION_POWER_CONNECTED))
         receiver.onReceive(context, Intent(Intent.ACTION_TIME_CHANGED))
         receiver.onReceive(context, Intent("dev.eclipse.ssh.SOMETHING_ELSE"))
 
-        assertThat(liveRestoreJobs()).hasSize(before)
+        assertThat(restoreRecords()).hasSize(before)
     }
 
     @Test
@@ -91,8 +115,8 @@ class BootRestoreReceiverTest {
 
         receiver.onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
 
-        // REPLACE, not KEEP: the queue must hold the receiver's job, not the stale one.
-        assertThat(liveRestoreJobs()).hasSize(1)
+        // REPLACE, not KEEP: one record for the unique name, the receiver's job.
+        assertThat(restoreRecords()).hasSize(1)
     }
 
     private companion object {
