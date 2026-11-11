@@ -133,6 +133,11 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
+          # The workflow_run checkout is a detached HEAD at the SHA CI ran
+          # on; without anchoring a local `main` here, `git push origin main`
+          # fails with `src refspec main does not match any`. Create the
+          # branch at this SHA before committing.
+          git checkout -B main
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           NEXT="${{ steps.bump.outputs.new_version }}"
