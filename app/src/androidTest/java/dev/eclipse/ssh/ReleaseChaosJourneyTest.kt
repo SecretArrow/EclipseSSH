@@ -73,8 +73,10 @@ class ReleaseChaosJourneyTest {
                 model.contains("Emulator") ||
                 model.contains("Android SDK built for") ||
                 model.contains("sdk_gphone") ||
-                android.os.Build.HARDWARE.contains("goldfish") ||
-                android.os.Build.HARDWARE.contains("ranchu")
+                android.os.Build.HARDWARE
+                    .contains("goldfish") ||
+                android.os.Build.HARDWARE
+                    .contains("ranchu")
         if (android.os.Build.VERSION.SDK_INT == 35 && isEmulator) {
             "API 35 SwiftShader emulator: surface fails to commit the rotation frame " +
                 "(run 42953696834, SurfaceComposerClient sync timeout); passes on 28/30/33."
