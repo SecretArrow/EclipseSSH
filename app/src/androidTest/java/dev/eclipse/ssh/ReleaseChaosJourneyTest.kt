@@ -60,14 +60,21 @@ class ReleaseChaosJourneyTest {
      * the generic fingerprint, or the SDK's own model name.
      */
     private val skipReason: String? by lazy {
+        val model = android.os.Build.MODEL
+        val fingerprint = android.os.Build.FINGERPRINT
+        // The Google APIs emulator image names its model "sdk_gphone64_x86_64" (the API 35
+        // Actions runner, confirmed by the overlay paths in run 42958134466's logcat); the
+        // AOSP image uses "sdk_gphone" / "Android SDK built for x86". ro.kernel.qemu covers
+        // every image but the build property is the cheaper read that already works.
         val isEmulator =
             (System.getProperty("ro.kernel.qemu") == "1") ||
-                android.os.Build.FINGERPRINT
-                    .contains("generic") ||
-                android.os.Build.MODEL
-                    .contains("Emulator") ||
-                android.os.Build.MODEL
-                    .contains("Android SDK built for")
+                fingerprint.contains("generic") ||
+                fingerprint.contains("emulator") ||
+                model.contains("Emulator") ||
+                model.contains("Android SDK built for") ||
+                model.contains("sdk_gphone") ||
+                android.os.Build.HARDWARE.contains("goldfish") ||
+                android.os.Build.HARDWARE.contains("ranchu")
         if (android.os.Build.VERSION.SDK_INT == 35 && isEmulator) {
             "API 35 SwiftShader emulator: surface fails to commit the rotation frame " +
                 "(run 42953696834, SurfaceComposerClient sync timeout); passes on 28/30/33."
