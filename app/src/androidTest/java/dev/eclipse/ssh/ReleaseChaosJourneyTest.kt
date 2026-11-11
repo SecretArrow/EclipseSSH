@@ -72,9 +72,12 @@ class ReleaseChaosJourneyTest {
     private val skipReason: String? by lazy {
         val isEmulator =
             (System.getProperty("ro.kernel.qemu") == "1") ||
-                android.os.Build.FINGERPRINT.contains("generic") ||
-                android.os.Build.MODEL.contains("Emulator") ||
-                android.os.Build.MODEL.contains("Android SDK built for")
+                android.os.Build.FINGERPRINT
+                    .contains("generic") ||
+                android.os.Build.MODEL
+                    .contains("Emulator") ||
+                android.os.Build.MODEL
+                    .contains("Android SDK built for")
         if (android.os.Build.VERSION.SDK_INT == 35 && isEmulator) {
             "API 35 SwiftShader emulator: surface fails to commit the rotation frame " +
                 "(run 42953696834, SurfaceComposerClient sync timeout); passes on 28/30/33."
