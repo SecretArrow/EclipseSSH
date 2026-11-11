@@ -1,32 +1,38 @@
 # Auto-release: every push to main that turns CI green ships a new release.
 #
 # The flow:
-#   1. This workflow fires on the workflow_run event for `ci.yml` completing
-#      successfully on branch `main` (not on PRs, not on tags).
+#   1. This workflow fires on the workflow_run event for `CI` completing
+#      successfully on branch `main` (not on PRs, not on tags, not on
+#      cancelled runs).
 #   2. It bumps the patch version in app/build.gradle.kts, the
 #      TERMINAL_IDENTITY constant, and AUDIT-REPORT.md - the three places
 #      release.yml's v1.23.6 build proved need to stay in sync, or Android
 #      refuses the install as a downgrade and the terminal handshake
 #      advertises the wrong version.
-#   3. It commits the bump, tags it `v<new>`, and pushes the tag.
-#   4. The existing `release.yml` (trigger: `push` to `v*` tags) takes over:
+#   3. It commits the bump, pushes it to main, creates the `v<x>` tag, and
+#      pushes the tag.
+#   4. It dispatches release.yml via its `workflow_dispatch` trigger (input
+#      `tag`), passing the tag it just created. release.yml takes over:
 #      restores the keystore from the RELEASE_* secrets, verifies it is the
 #      canonical release key, builds the per-ABI splits + universal AAB,
 #      signs them, verifies every signature, and publishes the GitHub
-#      Release with SHA256SUMS.txt attached.
+#      Release with SHA256SUMS.txt attached (using GITHUB_TOKEN, not a PAT
+#      that can expire).
 #
-# Reusing release.yml rather than duplicating its build keeps a single
-# source of truth for signing - the v1.5.0 incident in AUDIT-REPORT.md §56
-# shipped the wrong key precisely because there was more than one.
+# No GH_PAT dependency anywhere: pushes use GITHUB_TOKEN (contents:write),
+# and the dispatch is a direct API call that GITHUB_TOKEN can make. The
+# one limitation of GITHUB_TOKEN - that its pushes do not trigger other
+# workflows - does not apply, because we dispatch release.yml explicitly
+# rather than relying on the tag-push trigger.
 #
 # Skip conditions (the job no-ops rather than releases):
 #   - The CI run was not on branch `main` (PR runs, tag runs, forks).
-#   - The CI run did not conclude `success` (it was cancelled or failed).
-#   - The commit that landed was itself this workflow's version bump -
-#     otherwise each release re-triggers the next one in an infinite loop.
-#     The bump commit's subject starts with `[auto-release]`.
-#   - The HEAD commit already carries a tag (a manual release, or this
-#     same flow already ran for this commit).
+#   - The CI run did not conclude `success` (cancelled or failed).
+#   - The HEAD commit is itself this workflow's version bump - otherwise
+#     each release re-triggers the next in an infinite loop. The bump
+#     commit's subject starts with `[auto-release]`.
+#   - The HEAD commit already carries a tag (manual release, or this same
+#     flow already ran for this commit).
 name: Auto-release
 
 on:
@@ -41,15 +47,16 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   cut-release:
     name: Cut patch release for the green main commit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # The workflow_run event fires for every CI completion, including PRs and
-    # cancelled runs; the gate below narrows it to a green run on main. The
-    # `if` lives on the job rather than the trigger so workflow_dispatch
+    # The workflow_run event fires for every CI completion, including PRs
+    # and cancelled runs; the gate below narrows it to a green run on main.
+    # The `if` lives on the job rather than the trigger so workflow_dispatch
     # (manual) still works.
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -59,11 +66,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # For workflow_run, checkout the SHA that CI just ran on; for
-          # workflow_dispatch, checkout the input sha or default to main.
           ref: ${{ github.event.inputs.sha || github.event.workflow_run.head_sha || 'main' }}
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          # GITHUB_TOKEN - contents:write above grants the push the commit
+          # bump and the tag need. No PAT required.
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Skip if this commit is already a version bump or already tagged
         id: gate
@@ -78,8 +85,6 @@ jobs:
               exit 0
               ;;
           esac
-          # Already tagged? A manual release tag on this exact commit means
-          # the existing release.yml has run or will run; do not double-tag.
           if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
             echo "HEAD already carries a tag ($(git describe --tags --exact-match HEAD)) - stopping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -92,9 +97,7 @@ jobs:
         id: bump
         run: |
           set -euo pipefail
-          # Read the current versionName from app/build.gradle.kts. The line
-          # is `        versionName = "1.23.6"` - capture the dotted triple
-          # in the quotes.
+          # versionName line is `        versionName = "1.23.6"`.
           CURRENT=$(grep -E '^\s*versionName = "[0-9]+\.[0-9]+\.[0-9]+"' app/build.gradle.kts | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
           if [ -z "$CURRENT" ]; then
             echo "Could not read versionName from app/build.gradle.kts" >&2
@@ -106,9 +109,6 @@ jobs:
           NEXT_PATCH=$((PATCH + 1))
           NEXT="${MAJOR}.${MINOR}.${NEXT_PATCH}"
           echo "Bumping $CURRENT -> $NEXT"
-          # Bump versionCode + versionName in app/build.gradle.kts.
-          # versionCode is the integer directly above versionName; bump it
-          # by one alongside, never reset it.
           CURRENT_CODE=$(grep -E '^\s*versionCode = [0-9]+' app/build.gradle.kts | head -1 | sed -E 's/.*([0-9]+).*/\1/')
           NEXT_CODE=$((CURRENT_CODE + 1))
           sed -i -E "s/^(\s*versionCode = )[0-9]+/\1${NEXT_CODE}/" app/build.gradle.kts
@@ -120,10 +120,9 @@ jobs:
           # AUDIT-REPORT.md records the version line a reader greps for.
           sed -i -E "s/versionCode ${CURRENT_CODE} \/ versionName ${CURRENT}/versionCode ${NEXT_CODE} \/ versionName ${NEXT}/" AUDIT-REPORT.md
           echo "new_version=${NEXT}" >> "$GITHUB_OUTPUT"
-          echo "new_version_code=${NEXT_CODE}" >> "$GITHUB_OUTPUT"
           git diff --stat
 
-      - name: Commit bump and push tag
+      - name: Commit bump, push commit and tag
         if: steps.gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
@@ -134,12 +133,30 @@ jobs:
           git commit -m "[auto-release] v${NEXT}
 
           Cut automatically by auto-release.yml after CI on main concluded
-          success. The tag push below triggers release.yml, which builds,
-          signs (RELEASE_* secrets, canonical keystore verified), and
-          publishes the per-ABI APK splits + universal AAB + SHA256SUMS.txt."
+          success. The dispatch below runs release.yml, which builds, signs
+          (RELEASE_* secrets, canonical keystore verified), and publishes
+          the per-ABI APK splits + universal AAB + SHA256SUMS.txt."
+          git push origin main
           git tag -a "v${NEXT}" -m "v${NEXT}"
           git push origin "v${NEXT}"
-          echo "Pushed tag v${NEXT}; release.yml will take over from here."
+          echo "Pushed tag v${NEXT}."
+
+      - name: Dispatch release.yml
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT: ${{ steps.bump.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          # Dispatch release.yml with the tag we just pushed. GITHUB_TOKEN
+          # can dispatch workflows (actions:write above) - the one thing it
+          # cannot do is trigger workflows via its own pushes, which is why
+          # we dispatch explicitly rather than relying on the tag-push trigger.
+          gh api -X POST \
+            "/repos/${{ github.repository }}/actions/workflows/release.yml/dispatches" \
+            -f ref="v${NEXT}" \
+            -F "inputs[tag]=v${NEXT}"
+          echo "Dispatched release.yml for tag v${NEXT}."
 
       - name: Report skip
         if: steps.gate.outputs.skip == 'true'

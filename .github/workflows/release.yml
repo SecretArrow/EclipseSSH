@@ -205,7 +205,17 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          token: ${{ secrets.GH_PAT }}
+          # GITHUB_TOKEN (not GH_PAT): the publish step needs contents:write
+          # to create the release and upload its assets, and that is exactly
+          # what the workflow's top-level `permissions: contents: write`
+          # grants the default GITHUB_TOKEN. GH_PAT was used before, but a
+          # PAT can expire between releases (v1.23.7's publish failed with
+          # `Bad credentials` four days after v1.23.6 succeeded on the same
+          # secret); the default token cannot, so it is the right choice
+          # for any step that does not itself need to trigger another
+          # workflow. The auto-release.yml workflow, which pushes a tag to
+          # start this one, is the one place that still needs a PAT.
+          token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
