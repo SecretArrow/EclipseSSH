@@ -71,7 +71,8 @@ class BootRestoreReceiverTest {
 
     /** Every record WorkManager holds for the restore unique name, finished ones included. */
     private fun restoreRecords(): List<WorkInfo> =
-        WorkManager.getInstance(context)
+        WorkManager
+            .getInstance(context)
             .getWorkInfosForUniqueWork(RESTORE_WORK_NAME)
             .get()
 

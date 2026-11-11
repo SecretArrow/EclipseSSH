@@ -60,7 +60,10 @@ class RetryTransferWorkerTest {
         repository = FakeTransferRepository()
     }
 
-    private fun scheduledTransfer(id: String, hostId: String): TransferItem =
+    private fun scheduledTransfer(
+        id: String,
+        hostId: String,
+    ): TransferItem =
         TransferItem(
             id = id,
             name = "backup.tar",
@@ -73,7 +76,10 @@ class RetryTransferWorkerTest {
             scheduledAt = 1234L,
         )
 
-    private fun worker(attempt: Int, data: Data = Data.EMPTY): RetryTransferWorker {
+    private fun worker(
+        attempt: Int,
+        data: Data = Data.EMPTY,
+    ): RetryTransferWorker {
         val factory =
             object : WorkerFactory() {
                 override fun createWorker(
@@ -90,41 +96,45 @@ class RetryTransferWorkerTest {
     }
 
     @Test
-    fun `a scheduled transfer whose host is not active asks to retry`() = runBlocking {
-        repository.emit(listOf(scheduledTransfer(id = "t1", hostId = "host-a")))
+    fun `a scheduled transfer whose host is not active asks to retry`() =
+        runBlocking {
+            repository.emit(listOf(scheduledTransfer(id = "t1", hostId = "host-a")))
 
-        val result = worker(0, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
+            val result = worker(0, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
 
-        assertThat(result).isEqualTo(ListenableWorker.Result.retry())
-    }
-
-    @Test
-    fun `a scheduled transfer whose host is active succeeds`() = runBlocking {
-        repository.emit(listOf(scheduledTransfer(id = "t1", hostId = "host-a")))
-        registry.register("host-a", null)
-
-        val result = worker(0, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
-
-        assertThat(result).isEqualTo(ListenableWorker.Result.success())
-    }
+            assertThat(result).isEqualTo(ListenableWorker.Result.retry())
+        }
 
     @Test
-    fun `the fifth failure gives up instead of retrying`() = runBlocking {
-        repository.failAlways()
+    fun `a scheduled transfer whose host is active succeeds`() =
+        runBlocking {
+            repository.emit(listOf(scheduledTransfer(id = "t1", hostId = "host-a")))
+            registry.register("host-a", null)
 
-        val result = worker(5, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
+            val result = worker(0, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
 
-        assertThat(result).isEqualTo(ListenableWorker.Result.failure())
-    }
+            assertThat(result).isEqualTo(ListenableWorker.Result.success())
+        }
 
     @Test
-    fun `before the fifth failure the worker still retries`() = runBlocking {
-        repository.failAlways()
+    fun `the fifth failure gives up instead of retrying`() =
+        runBlocking {
+            repository.failAlways()
 
-        val result = worker(4, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
+            val result = worker(5, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
 
-        assertThat(result).isEqualTo(ListenableWorker.Result.retry())
-    }
+            assertThat(result).isEqualTo(ListenableWorker.Result.failure())
+        }
+
+    @Test
+    fun `before the fifth failure the worker still retries`() =
+        runBlocking {
+            repository.failAlways()
+
+            val result = worker(4, workDataOf(TransferScheduler.KEY_TRANSFER_ID to "t1")).doWork()
+
+            assertThat(result).isEqualTo(ListenableWorker.Result.retry())
+        }
 }
 
 /**
