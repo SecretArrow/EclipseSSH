@@ -1,12 +1,10 @@
 package dev.eclipse.ssh.background
 
-import android.app.Application
 import android.content.Context
-import androidx.work.Configuration
+import androidx.work.Data
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
-import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.google.common.truth.Truth.assertThat
@@ -75,7 +73,7 @@ class RetryTransferWorkerTest {
             scheduledAt = 1234L,
         )
 
-    private fun worker(attempt: Int, data: androidx.work.Data = androidx.work.Data.EMPTY): RetryTransferWorker {
+    private fun worker(attempt: Int, data: Data = Data.EMPTY): RetryTransferWorker {
         val factory =
             object : WorkerFactory() {
                 override fun createWorker(
