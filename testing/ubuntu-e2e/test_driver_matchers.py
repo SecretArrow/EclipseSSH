@@ -506,7 +506,12 @@ class OpenSettingsRecovery(unittest.TestCase):
 
     def setUp(self):
         self.driver = driver.E2eDriver.__new__(driver.E2eDriver)
+        # __new__ skips __init__, so the attributes launch() reads have to be set
+        # here by hand: package and the activity half of the launch component.
+        # launch_activity was missed when d881141 introduced it, and nothing ran
+        # this suite between then and now to catch the AttributeError.
         self.driver.package = "dev.eclipse.ssh"
+        self.driver.launch_activity = ".MainActivity"
         self.adb = _LauncherThenAppAdb()
         self.driver.adb = self.adb
         self._sleep = driver.time.sleep
@@ -549,7 +554,10 @@ class OpenSettingsTabSwitch(unittest.TestCase):
 
     def setUp(self):
         self.driver = driver.E2eDriver.__new__(driver.E2eDriver)
+        # See OpenSettingsRecovery.setUp: __new__ skips __init__, so launch()'s
+        # inputs are set here rather than inherited.
         self.driver.package = "dev.eclipse.ssh"
+        self.driver.launch_activity = ".MainActivity"
         self.driver.lines = []
         self.driver.log = self.driver.lines.append
         self.adb = _LauncherThenAppAdb()
@@ -739,6 +747,10 @@ class DismissIme(unittest.TestCase):
 
     def setUp(self):
         self.driver = driver.E2eDriver.__new__(driver.E2eDriver)
+        # dismiss_ime relaunches the app when a lying dump leaves it, so the
+        # launch inputs are part of this fixture too (see
+        # OpenSettingsRecovery.setUp).
+        self.driver.launch_activity = ".MainActivity"
         self._sleep = driver.time.sleep
         driver.time.sleep = lambda *_: None
 

@@ -63,18 +63,29 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      # The gating half of the matrix. API 33/35 run in instrumentation-newer
-      # below: on the swiftshader emulators those guests never reach RESUMED
-      # when the real MainActivity launches ("No compose hierarchies found",
-      # deterministic across runs 42366128825 and 42373828497), while tests
-      # that compose their own content pass on the same emulator - an
-      # emulator-graphics incompatibility to debug separately, not a gate.
+      # All four API levels gate. API 33/35 used to run non-gating because
+      # "tests that launch the real MainActivity never reach RESUMED on the
+      # swiftshader emulators" - that diagnosis was wrong. The logcat of run
+      # 42939683291 shows what actually happened: MainActivity reached RESUMED
+      # and 200ms later the system Displayed GrantPermissionsActivity, because
+      # the app asks for POST_NOTIFICATIONS on first launch and that permission
+      # only exists as a runtime permission from API 33. The dialog parked the
+      # activity at STARTED and 19 Compose tests failed in a cascade
+      # ("No compose hierarchies found", "Activity never becomes requested
+      # state RESUMED"). The script step below installs the APK and pre-grants
+      # the permission before the tests, which removes the dialog entirely.
       matrix:
         include:
           - api-level: 28
             target: default
             arch: x86
           - api-level: 30
+            target: google_apis
+            arch: x86_64
+          - api-level: 33
+            target: google_apis
+            arch: x86_64
+          - api-level: 35
             target: google_apis
             arch: x86_64
     steps:
@@ -143,8 +154,17 @@ jobs:
           # invocation only installs them and runs the tests - no native
           # build competing with the running emulator.
           #
+          # Pre-grant POST_NOTIFICATIONS on API >= 33 before running: the app
+          # legitimately asks for it on first launch (MainActivity's
+          # LaunchedEffect), but the permission dialog it raises parks the
+          # activity at STARTED and every Compose assertion fails after that
+          # ("No compose hierarchies found" x19 on run 42939683291). Granting
+          # it up front removes the dialog; on API < 33 the permission does
+          # not exist and the grant is skipped. The debug build carries the
+          # ".debug" applicationIdSuffix.
+          #
           # UbuntuE2eVerificationTest is excluded: it is gated by
-          # `-e ubuntuE2e true` (an instrumentation arg) because it expects
+          # -e ubuntuE2e true (an instrumentation arg) because it expects
           # the deep-verification Ubuntu rootfs the separate
           # android-ubuntu-e2e pipeline installs through the UI driver
           # first. Without that arg AGP 8.x reports the AssumptionViolatedException
@@ -152,7 +172,12 @@ jobs:
           # is what turned all 16 of its methods red on run 42366128825
           # (API 35). The CI matrix never has that rootfs, so the test
           # simply does not belong here.
-          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            if [ "$(adb shell getprop ro.build.version.sdk)" -ge 33 ]; then
+              adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS
+            fi
+            ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
       # Retry once: hosted runners fall back to TCG software emulation
       # when KVM is unavailable, and on those runs Compose idles past the
       # 10-second test timeout ("No compose hierarchies found",
@@ -172,81 +197,14 @@ jobs:
           emulator-boot-timeout: 1500
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: instrumented-reports-api-${{ matrix.api-level }}
-          path: |
-            app/build/reports/androidTest/
-            app/build/outputs/androidTest-results/
-          retention-days: 7
-
-  # The newer-API half of the matrix, deliberately non-gating (continue-on-error):
-  # on the swiftshader emulators, tests that launch the real MainActivity never
-  # reach RESUMED on API 33/35 ("No compose hierarchies found" / "Activity never
-  # becomes requested state RESUMED"), deterministically, while the same tests
-  # pass on API 28/30 and tests that compose their own content pass on the very
-  # same 33/35 guest. That is an emulator-graphics incompatibility to debug with
-  # a live logcat, not an app regression to block main on. The jobs still run on
-  # every main push and their reports upload, so the day it is debugged the
-  # comparison history is here. API 28/30 stay in the gating job above.
-  instrumentation-newer:
-    name: Instrumented tests, non-gating (API ${{ matrix.api-level }})
-    needs: matrix-prep
-    if: needs.matrix-prep.outputs.should_run == 'true'
-    continue-on-error: true
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - api-level: 33
-            target: google_apis
-            arch: x86_64
-          - api-level: 35
-            target: google_apis
-            arch: x86_64
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Grant KVM access to the runner user
-        run: |
-          if [ -e /dev/kvm ]; then
-            sudo chmod 666 /dev/kvm
-            ls -l /dev/kvm
-          else
-            echo "::warning::no /dev/kvm on this runner - emulator will use TCG"
-          fi
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
-        with:
-          distribution: temurin
-          java-version: '17.0.13'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-      - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platform-tools" \
-            "platforms;${COMPILE_SDK}" \
-            "build-tools;${BUILD_TOOLS}" \
-            "ndk;29.0.13113456" \
-            "system-images;android-${{ matrix.api-level }};${{ matrix.target }};${{ matrix.arch }}" > /dev/null
-      - name: Pre-build the debug + test APKs (before the emulator boots)
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
-      - name: Boot the emulator and run the connected tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: ${{ matrix.api-level }}
-          target: ${{ matrix.target }}
-          arch: ${{ matrix.arch }}
-          force-avd-creation: false
-          emulator-boot-timeout: 1500
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
+          # Same pre-grant discipline on the retry: a fresh emulator means a
+          # fresh permission state, so the dialog would come back without it.
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            if [ "$(adb shell getprop ro.build.version.sdk)" -ge 33 ]; then
+              adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS
+            fi
+            ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -816,23 +816,35 @@ class E2eDriver:
         for el in elements:
             if el is node or el.attrs.get("selected") != "true":
                 continue
-            # Reaches into the container's band, rather than having its leading
-            # edge inside it: a landscape NavigationBarItem is tall enough that
-            # its top sits above the band cutoff while the item is wholly part
-            # of the bar, and the leading-edge test read that item as out of the
-            # bar - three taps that HAD switched the tab were reported as never
-            # taking. Reaching in is enough here because this loop's own tests
-            # (must contain this label's box, must not contain the others')
-            # already reject the tall nodes that are not the item.
+            # Mostly inside the container's band, rather than merely reaching into
+            # it: a landscape NavigationBarItem is tall enough that its top sits
+            # above the bar band cutoff while the item is still overwhelmingly part
+            # of the bar (560-720 against a 576 cutoff: 90% of the item is in the
+            # band), so an enclosure test read that item as out of the bar and
+            # three taps that HAD switched the tab were reported as never taking.
+            # But "reaches into the band" alone was too loose the other way: a
+            # Settings row carrying its own selected semantics can stretch from
+            # mid-screen down over the bar (1500-2232 against a 1920 cutoff: only
+            # 43% of the row is in the band), and a selected node that merely
+            # reaches the band then proved a tab that was never switched. The
+            # majority test keeps the landscape item and rejects the stretched
+            # screen row.
             r = el.rect
             if not r:
                 continue
-            _, edge = region
-            if region[0] == "bar":
-                if r[3] < edge:
+            kind, edge = region
+            if kind == "bar":
+                band_top, window_bottom = edge, self._window_extent(elements)[1]
+                in_band = max(0, r[3] - max(r[1], band_top))
+                height = r[3] - r[1]
+                if height <= 0 or in_band * 2 < height:
                     continue
-            elif r[0] > edge:
-                continue
+            else:
+                rail_right, window_left = edge, 0
+                in_rail = max(0, min(r[2], rail_right) - r[0])
+                width = r[2] - r[0]
+                if width <= 0 or in_rail * 2 < width:
+                    continue
             container = el.rect
             if not container or not _contains(container, box):
                 continue
