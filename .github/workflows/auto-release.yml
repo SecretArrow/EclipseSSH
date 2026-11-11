@@ -4,11 +4,13 @@
 #   1. This workflow fires on the workflow_run event for `CI` completing
 #      successfully on branch `main` (not on PRs, not on tags, not on
 #      cancelled runs).
-#   2. It bumps the patch version in app/build.gradle.kts, the
-#      TERMINAL_IDENTITY constant, and AUDIT-REPORT.md - the three places
-#      release.yml's v1.23.6 build proved need to stay in sync, or Android
-#      refuses the install as a downgrade and the terminal handshake
-#      advertises the wrong version.
+  #   2. It bumps the patch version in app/build.gradle.kts, the
+  #      TERMINAL_IDENTITY constant, AUDIT-REPORT.md, and the XTVERSION
+  #      reply fixture in testing/tmux-replay/record.py - the four places
+  #      release.yml's v1.23.7 build proved need to stay in sync, or
+  #      Android refuses the install as a downgrade, the terminal handshake
+  #      advertises the wrong version, and the record.py replay test fails
+  #      CI for the exact string TERMINAL_IDENTITY answers with.
 #   3. It commits the bump, pushes it to main, creates the `v<x>` tag, and
 #      pushes the tag.
 #   4. It dispatches release.yml via its `workflow_dispatch` trigger (input
@@ -119,6 +121,11 @@ jobs:
           sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/" app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt
           # AUDIT-REPORT.md records the version line a reader greps for.
           sed -i -E "s/versionCode ${CURRENT_CODE} \/ versionName ${CURRENT}/versionCode ${NEXT_CODE} \/ versionName ${NEXT}/" AUDIT-REPORT.md
+          # testing/tmux-replay/record.py hardcodes the XTVERSION reply
+          # that TERMINAL_IDENTITY answers with; CI's record.py replay
+          # test asserts the two match exactly, so this string moves with
+          # every bump.
+          sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/" testing/tmux-replay/record.py
           echo "new_version=${NEXT}" >> "$GITHUB_OUTPUT"
           git diff --stat
 
@@ -129,7 +136,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           NEXT="${{ steps.bump.outputs.new_version }}"
-          git add app/build.gradle.kts app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt AUDIT-REPORT.md
+          git add app/build.gradle.kts app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt AUDIT-REPORT.md testing/tmux-replay/record.py
           git commit -m "[auto-release] v${NEXT}
 
           Cut automatically by auto-release.yml after CI on main concluded
