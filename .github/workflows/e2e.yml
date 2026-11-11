@@ -163,6 +163,13 @@ jobs:
           # not exist and the grant is skipped. The debug build carries the
           # ".debug" applicationIdSuffix.
           #
+          # ONE LINE, because the emulator-runner executes this input LINE BY
+          # LINE - each line as its own `sh -c` - so a multi-line if/fi died
+          # with "Syntax error: end of file unexpected (expecting fi)" on run
+          # 42943921831 before any test ran. The `;` before gradlew means a
+          # refused grant on API < 33 does not stop the tests; gradle's own
+          # exit code is the verdict.
+          #
           # UbuntuE2eVerificationTest is excluded: it is gated by
           # -e ubuntuE2e true (an instrumentation arg) because it expects
           # the deep-verification Ubuntu rootfs the separate
@@ -172,12 +179,7 @@ jobs:
           # is what turned all 16 of its methods red on run 42366128825
           # (API 35). The CI matrix never has that rootfs, so the test
           # simply does not belong here.
-          script: |
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            if [ "$(adb shell getprop ro.build.version.sdk)" -ge 33 ]; then
-              adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS
-            fi
-            ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
+          script: adb install -r app/build/outputs/apk/debug/app-debug.apk && adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS; ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
       # Retry once: hosted runners fall back to TCG software emulation
       # when KVM is unavailable, and on those runs Compose idles past the
       # 10-second test timeout ("No compose hierarchies found",
@@ -197,14 +199,9 @@ jobs:
           emulator-boot-timeout: 1500
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          # Same pre-grant discipline on the retry: a fresh emulator means a
-          # fresh permission state, so the dialog would come back without it.
-          script: |
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            if [ "$(adb shell getprop ro.build.version.sdk)" -ge 33 ]; then
-              adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS
-            fi
-            ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
+          # Same pre-grant discipline on the retry (one line - see the comment
+          # above for why): a fresh emulator means a fresh permission state.
+          script: adb install -r app/build/outputs/apk/debug/app-debug.apk && adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS; ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:
