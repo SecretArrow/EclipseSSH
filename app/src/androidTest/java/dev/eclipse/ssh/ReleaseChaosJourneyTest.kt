@@ -59,6 +59,23 @@ class ReleaseChaosJourneyTest {
     }
 
     /**
+     * Waits for the text to be *displayed*, not merely present.
+     *
+     * The distinction matters on the rotation legs: `awaitText` answers when the node is in
+     * the tree, but a relayout mid-rotation can leave it present yet not displayed, and the
+     * assert that follows then fails against a window that is still settling — run
+     * 42949446785's only API 35 failure, on a test that passed the same seed on 28/30/33.
+     * The wait is named after the property the assertion needs, so a slow emulator spends
+     * its ten seconds waiting rather than failing.
+     */
+    private fun awaitDisplayed(text: String) {
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithText(text).fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() &&
+                runCatching { compose.onNodeWithText(text).assertIsDisplayed() }.isSuccess
+        }
+    }
+
+    /**
      * A tap on the navigation bar, and the screen it owns, arrived.
      *
      * `performClick` injects a touch and returns; nothing in the harness waits for the destination
@@ -210,7 +227,7 @@ class ReleaseChaosJourneyTest {
 
         open("Transfers", "release-bundle.tar.gz")
         rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-        awaitText("release-bundle.tar.gz")
+        awaitDisplayed("release-bundle.tar.gz")
         compose.onNodeWithText("release-bundle.tar.gz").assertIsDisplayed()
 
         open("Settings", "Terminal theme")
