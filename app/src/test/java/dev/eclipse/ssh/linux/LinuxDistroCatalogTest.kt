@@ -152,8 +152,12 @@ class LinuxDistroCatalogTest {
         // The Alpine family routes through the apk pipeline, not apt; an entry stamped
         // `family = UBUNTU` would misroute the install. The branch (`v3.19`/`v3.20`/`v3.21`) is
         // what the apk repository URL is built from, the way an Ubuntu codename feeds apt.
+        // Each Alpine series publishes three arches (arm64/amd64/armhf), so the catalogue carries
+        // 9 Alpine entries — three per id — and the chooser sees them per-arch via
+        // alpineVersionsFor rather than as de-duplicated ids.
         val alpine = LinuxDistroCatalog.all.filter { it.family == DistroFamily.ALPINE }
-        assertThat(alpine.map { it.id })
+        assertThat(alpine).hasSize(9)
+        assertThat(alpine.map { it.id }.distinct())
             .containsExactly("alpine-3.21", "alpine-3.20", "alpine-3.19")
             .inOrder()
         alpine.forEach { distro ->
