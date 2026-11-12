@@ -68,7 +68,6 @@ internal object Keys {
     val reconnectAskFirst = booleanPreferencesKey("reconnect_ask_first")
     val terminalScrollback = intPreferencesKey("terminal_scrollback")
     val terminalCursorStyle = stringPreferencesKey("terminal_cursor_style")
-    val useTermuxRenderer = booleanPreferencesKey("use_termux_renderer")
     val terminalKeepSystemBars = booleanPreferencesKey("terminal_keep_system_bars")
     val transferBytesPerSecond =
         androidx.datastore.preferences.core
@@ -130,9 +129,7 @@ internal fun settingsFrom(prefs: Preferences) =
         // Absent on every install that predates the setting; the default is the immersive behaviour
         // those installs already had.
         terminalKeepSystemBars = prefs[Keys.terminalKeepSystemBars] ?: false,
-        // Off by default — see [AppSettings.useTermuxRenderer] kdoc. Read here so toggling it in
         // Settings takes effect on the next recomposition rather than the next app start.
-        useTermuxRenderer = prefs[Keys.useTermuxRenderer] ?: false,
         transferBytesPerSecond =
             (prefs[Keys.transferBytesPerSecond] ?: 0L)
                 .coerceIn(0L, SettingsRepository.MAX_BANDWIDTH_BYTES_PER_SECOND),
@@ -188,7 +185,6 @@ class SettingsRepository(
 
     suspend fun setTerminalKeepSystemBars(enabled: Boolean) = editPrefs { it[Keys.terminalKeepSystemBars] = enabled }
 
-    suspend fun setUseTermuxRenderer(enabled: Boolean) = editPrefs { it[Keys.useTermuxRenderer] = enabled }
 
     suspend fun setDarkTheme(enabled: Boolean) = editPrefs { it[Keys.darkTheme] = enabled }
 

@@ -6,7 +6,7 @@
 #      cancelled runs).
   #   2. It bumps the patch version in app/build.gradle.kts, the
   #      TERMINAL_IDENTITY constant, AUDIT-REPORT.md, and the XTVERSION
-  #      reply fixture in testing/tmux-replay/record.py - the four places
+  #      reply fixture in - the four places
   #      release.yml's v1.23.7 build proved need to stay in sync, or
   #      Android refuses the install as a downgrade, the terminal handshake
   #      advertises the wrong version, and the record.py replay test fails
@@ -118,7 +118,7 @@ jobs:
           # TERMINAL_IDENTITY mirrors versionName - it advertises the
           # version in the terminal handshake (TERM/IDENTITY), so a stale
           # string here ships an APK that lies about its own version.
-          sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/" app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt
+          sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/"
           # AUDIT-REPORT.md records the version line a reader greps for.
           # The pattern matches any version, not just ${CURRENT}, so a
           # previously-stale AUDIT-REPORT (the v1.23.8 bump missed it) is
@@ -130,11 +130,6 @@ jobs:
           echo "AUDIT-REPORT before: $(grep -E 'versionCode [0-9]+ / versionName' AUDIT-REPORT.md | head -1)"
           sed -i -E "s/versionCode [0-9]+ \/ versionName [0-9]+\.[0-9]+\.[0-9]+/versionCode ${NEXT_CODE} \/ versionName ${NEXT}/" AUDIT-REPORT.md
           echo "AUDIT-REPORT after:  $(grep -E 'versionCode [0-9]+ / versionName' AUDIT-REPORT.md | head -1)"
-          # testing/tmux-replay/record.py hardcodes the XTVERSION reply
-          # that TERMINAL_IDENTITY answers with; CI's record.py replay
-          # test asserts the two match exactly, so this string moves with
-          # every bump.
-          sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/" testing/tmux-replay/record.py
           echo "new_version=${NEXT}" >> "$GITHUB_OUTPUT"
           git diff --stat
 
@@ -150,7 +145,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           NEXT="${{ steps.bump.outputs.new_version }}"
-          git add app/build.gradle.kts app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt AUDIT-REPORT.md testing/tmux-replay/record.py
+          git add app/build.gradle.kts AUDIT-REPORT.md
           git commit -m "[auto-release] v${NEXT}
 
           Cut automatically by auto-release.yml after CI on main concluded

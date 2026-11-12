@@ -209,6 +209,7 @@ import dev.eclipse.ssh.presentation.MAX_LISTED_ENTRIES
 import dev.eclipse.ssh.presentation.MainUiState
 import dev.eclipse.ssh.presentation.MainViewModel
 import dev.eclipse.ssh.presentation.ReconnectPrompt
+import dev.eclipse.ssh.presentation.TerminalSessionController
 import dev.eclipse.ssh.presentation.files.FilesExplorerController
 import dev.eclipse.ssh.presentation.files.LOCAL_SESSION_ID
 import dev.eclipse.ssh.presentation.files.ellipsizeCrumbs
@@ -223,17 +224,6 @@ import dev.eclipse.ssh.ssh.SshKeyProbe
 import dev.eclipse.ssh.ssh.TerminalChannel
 import dev.eclipse.ssh.ssh.probeSshKey
 import dev.eclipse.ssh.ssh.symbolicPermissions
-import dev.eclipse.ssh.terminal.MouseGesture
-import dev.eclipse.ssh.terminal.ReviewedCommand
-import dev.eclipse.ssh.terminal.TerminalCursorShape
-import dev.eclipse.ssh.terminal.TerminalExportRenderer
-import dev.eclipse.ssh.terminal.TerminalFrame
-import dev.eclipse.ssh.terminal.TerminalKey
-import dev.eclipse.ssh.terminal.TerminalSelection
-import dev.eclipse.ssh.terminal.TerminalViewport
-import dev.eclipse.ssh.terminal.hyperlinkAt
-import dev.eclipse.ssh.terminal.linesBelow
-import dev.eclipse.ssh.terminal.terminalCellText
 import dev.eclipse.ssh.ui.EclipseSuccess
 import dev.eclipse.ssh.ui.EclipseTheme
 import dev.eclipse.ssh.ui.EclipseWarning
@@ -296,17 +286,16 @@ import dev.eclipse.ssh.ui.settings.UbuntuActivity
 import dev.eclipse.ssh.ui.settings.VaultAutoLockActivity
 import dev.eclipse.ssh.ui.snippets.SnippetsActivity
 import dev.eclipse.ssh.ui.statusColor
+import dev.eclipse.ssh.ui.terminal.ConnectBotTerminal
 import dev.eclipse.ssh.ui.terminal.KeyBarPrefsCodec
-import dev.eclipse.ssh.ui.terminal.TerminalInputBridge
 import dev.eclipse.ssh.ui.terminal.TerminalKeyRow
+import dev.eclipse.ssh.ui.terminal.toVTermKey
+import dev.eclipse.ssh.ui.terminal.vTermModifiers
 import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
-import dev.eclipse.ssh.ui.terminal.TerminalReviewPane
 import dev.eclipse.ssh.ui.terminal.TerminalView
 import dev.eclipse.ssh.ui.terminal.minTerminalColumns
-import dev.eclipse.ssh.ui.terminal.rememberTerminalCellMetrics
 import dev.eclipse.ssh.ui.terminal.rememberTerminalLatches
 import dev.eclipse.ssh.ui.terminal.terminalTextInset
-import dev.eclipse.ssh.ui.terminal.termux.TermuxTerminalView
 import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1459,8 +1448,7 @@ private fun EclipseWorkspace(
                         WorkspaceScaffold(
                             destination = destination,
                             state = state,
-                            frames = viewModel.frames,
-                            channelProvider = viewModel::terminalChannelFor,
+                            controllerProvider = viewModel::terminalControllerFor,
                             filesExplorer = viewModel.filesExplorer,
                             linuxUserspace = viewModel.linuxUserspace,
                             localLinuxCard = viewModel.localLinuxCard,
@@ -1514,30 +1502,9 @@ private fun EclipseWorkspace(
                             // the system-bars half of full screen.
                             immersive = terminalSessionOpen,
                             onSendInput = viewModel::sendInput,
-                            onSendText = viewModel::sendText,
-                            onSendKey = viewModel::sendKey,
-                            onSendChar = viewModel::sendChar,
-                            onResizeTerminal = viewModel::resizeTerminal,
-                            onScrollTerminal = viewModel::scrollTerminalBy,
-                            onScrollTerminalTo = viewModel::scrollTerminal,
-                            onSessionReview = viewModel::sessionReview,
-                            onScrollToLine = viewModel::scrollTerminalToLine,
-                            onMouseWheel = viewModel::sendMouseWheel,
-                            onArrowKeys = viewModel::sendArrowKeys,
-                            onMouseGesture = viewModel::sendMouseGesture,
-                            onCopySelection = { hostId, sel ->
-                                val range = sel.toTextRange()
-                                val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
-                                if (text.isNotEmpty()) viewModel.copyToClipboard(text)
-                            },
                             onCopyTerminalText = viewModel::copyToClipboard,
                             onPasteTerminal = viewModel::pasteFromClipboard,
                             onSaveSnippet = viewModel::saveSnippet,
-                            onSaveLogs = { hostId, text ->
-                                pendingTextExport = ("Eclipse SSH session log\nHost: $hostId\nSaved: ${System.currentTimeMillis()}\n\n$text").toByteArray()
-                                pickerActive = true
-                                textExportPicker.launch("eclipse-$hostId.log")
-                            },
                             // The raw log comes straight from the view model's per-session transcript -
                             // keyed by session, so the shell on screen is the one saved - and rides the
                             // same SAF launcher and pending-bytes slot the diagnostics save uses. Nothing
@@ -1552,40 +1519,7 @@ private fun EclipseWorkspace(
                                     textExportPicker.launch("$hostName-session.log")
                                 }
                             },
-                            // The other half of the same incident. The log above is what the session sent;
-                            // this is what the app drew from it, and a rendering bug is only ever the two
-                            // read together.
-                            onSaveRenderAudit = { sessionKey, hostName ->
-                                val text = viewModel.renderAuditText(sessionKey)
-                                if (text.isNullOrEmpty()) {
-                                    viewModel.reportUiMessage("This session has not drawn anything yet")
-                                } else {
-                                    pendingTextExport = text.toByteArray()
-                                    pickerActive = true
-                                    textExportPicker.launch("$hostName-render-audit.txt")
-                                }
-                            },
                             onNotifyWhenDone = viewModel::notifyWhenDone,
-                            onSaveText = { hostId, text ->
-                                pendingTextExport = text.toByteArray()
-                                pickerActive = true
-                                textExportPicker.launch("eclipse-$hostId.txt")
-                            },
-                            onSaveScreen = { hostId, text ->
-                                // Rendered off the main thread. The bitmap is clamped to 2048x4096, so this
-                                // allocates up to ~33 MB and then PNG-compresses it — far too much to run in a
-                                // click handler, where it janked and risked an ANR on a long scrollback.
-                                // The picker is launched from inside the coroutine, after the bytes exist, so
-                                // the result callback can never observe pendingScreenExport still null.
-                                pickerActive = true
-                                scope.launch {
-                                    pendingScreenExport =
-                                        withContext(Dispatchers.Default) {
-                                            TerminalExportRenderer.renderScreenPng("Eclipse SSH · $hostId", text)
-                                        }
-                                    screenExportPicker.launch("eclipse-$hostId.png")
-                                }
-                            },
                             onClearCompleted = viewModel::clearCompletedTransfers,
                             onUpload = {
                                 pickerActive = true
@@ -1714,8 +1648,7 @@ private fun EclipseWorkspace(
                         WorkspaceScaffold(
                             destination = destination,
                             state = state,
-                            frames = viewModel.frames,
-                            channelProvider = viewModel::terminalChannelFor,
+                            controllerProvider = viewModel::terminalControllerFor,
                             filesExplorer = viewModel.filesExplorer,
                             linuxUserspace = viewModel.linuxUserspace,
                             localLinuxCard = viewModel.localLinuxCard,
@@ -1769,30 +1702,9 @@ private fun EclipseWorkspace(
                             // the system-bars half of full screen.
                             immersive = terminalSessionOpen,
                             onSendInput = viewModel::sendInput,
-                            onSendText = viewModel::sendText,
-                            onSendKey = viewModel::sendKey,
-                            onSendChar = viewModel::sendChar,
-                            onResizeTerminal = viewModel::resizeTerminal,
-                            onScrollTerminal = viewModel::scrollTerminalBy,
-                            onScrollTerminalTo = viewModel::scrollTerminal,
-                            onSessionReview = viewModel::sessionReview,
-                            onScrollToLine = viewModel::scrollTerminalToLine,
-                            onMouseWheel = viewModel::sendMouseWheel,
-                            onArrowKeys = viewModel::sendArrowKeys,
-                            onMouseGesture = viewModel::sendMouseGesture,
-                            onCopySelection = { hostId, sel ->
-                                val range = sel.toTextRange()
-                                val text = viewModel.terminalSelectionText(hostId, range.fromLine, range.fromColumn, range.toLine, range.toColumn)
-                                if (text.isNotEmpty()) viewModel.copyToClipboard(text)
-                            },
                             onCopyTerminalText = viewModel::copyToClipboard,
                             onPasteTerminal = viewModel::pasteFromClipboard,
                             onSaveSnippet = viewModel::saveSnippet,
-                            onSaveLogs = { hostId, text ->
-                                pendingTextExport = ("Eclipse SSH session log\nHost: $hostId\nSaved: ${System.currentTimeMillis()}\n\n$text").toByteArray()
-                                pickerActive = true
-                                textExportPicker.launch("eclipse-$hostId.log")
-                            },
                             // The raw log comes straight from the view model's per-session transcript -
                             // keyed by session, so the shell on screen is the one saved - and rides the
                             // same SAF launcher and pending-bytes slot the diagnostics save uses. Nothing
@@ -1807,40 +1719,7 @@ private fun EclipseWorkspace(
                                     textExportPicker.launch("$hostName-session.log")
                                 }
                             },
-                            // The other half of the same incident. The log above is what the session sent;
-                            // this is what the app drew from it, and a rendering bug is only ever the two
-                            // read together.
-                            onSaveRenderAudit = { sessionKey, hostName ->
-                                val text = viewModel.renderAuditText(sessionKey)
-                                if (text.isNullOrEmpty()) {
-                                    viewModel.reportUiMessage("This session has not drawn anything yet")
-                                } else {
-                                    pendingTextExport = text.toByteArray()
-                                    pickerActive = true
-                                    textExportPicker.launch("$hostName-render-audit.txt")
-                                }
-                            },
                             onNotifyWhenDone = viewModel::notifyWhenDone,
-                            onSaveText = { hostId, text ->
-                                pendingTextExport = text.toByteArray()
-                                pickerActive = true
-                                textExportPicker.launch("eclipse-$hostId.txt")
-                            },
-                            onSaveScreen = { hostId, text ->
-                                // Rendered off the main thread. The bitmap is clamped to 2048x4096, so this
-                                // allocates up to ~33 MB and then PNG-compresses it — far too much to run in a
-                                // click handler, where it janked and risked an ANR on a long scrollback.
-                                // The picker is launched from inside the coroutine, after the bytes exist, so
-                                // the result callback can never observe pendingScreenExport still null.
-                                pickerActive = true
-                                scope.launch {
-                                    pendingScreenExport =
-                                        withContext(Dispatchers.Default) {
-                                            TerminalExportRenderer.renderScreenPng("Eclipse SSH · $hostId", text)
-                                        }
-                                    screenExportPicker.launch("eclipse-$hostId.png")
-                                }
-                            },
                             onClearCompleted = viewModel::clearCompletedTransfers,
                             onUpload = {
                                 pickerActive = true
@@ -2538,17 +2417,14 @@ private fun WorkspaceScaffold(
     destination: Destination,
     state: MainUiState,
     /**
-     * The terminal viewports, as a flow rather than a value.
-     *
-     * Passed uncollected on purpose. A frame arrives up to thirty times a second, and reading it here
-     * would recompose this scaffold - its top bar, its snackbar host, its whole content lambda - at
-     * that rate on every destination. Collected inside [TerminalScreen] instead, which is both the only
-     * thing that draws a frame and the only place the collection can stop when the terminal is not on
-     * screen: no collector means [dev.eclipse.ssh.presentation.MainViewModel] skips building frames
-     * altogether while the user is on Hosts, Files, Transfers or Settings, or while the app is in the
-     * background. The pty keeps being drained the whole time; only the copies stop.
+     * The live terminal sessions, by session key. Under the ConnectBot engine the
+     * terminal itself is the library's Compose Terminal() drawing a session's
+     * emulator, so this is the only terminal plumbing the scaffold carries: the
+     * immersive branch resolves the session on screen and everything else needs
+     * nothing. The map is read only by [TerminalScreen], which is the only thing
+     * that draws a terminal.
      */
-    frames: StateFlow<Map<String, TerminalFrame>>,
+    controllerProvider: (String) -> TerminalSessionController?,
     /**
      * The Files tab's own state and actions. Passed whole rather than as a bag of collected values,
      * for the same reason [frames] is: the explorer's state changes on every listing, and reading it
@@ -2647,33 +2523,13 @@ private fun WorkspaceScaffold(
     immersive: Boolean,
     modifier: Modifier = Modifier,
     onSendInput: (String, String) -> Unit = { _, _ -> },
-    onSendText: (String, String) -> Unit = { _, _ -> },
-    onSendKey: (String, TerminalKey, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _, _ -> },
-    onSendChar: (String, Char, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
-    onResizeTerminal: (String, TerminalViewport) -> Unit = { _, _ -> },
-    onScrollTerminal: (String, Int) -> Unit = { _, _ -> },
-    onScrollTerminalTo: (String, Int) -> Unit = { _, _ -> },
-    /** Reads one session's commands, for the review pane - see MainViewModel.sessionReview. */
-    onSessionReview: (String) -> List<ReviewedCommand> = { emptyList() },
-    /** Scrolls one session so an absolute buffer line is at the top of the window. */
-    onScrollToLine: (String, Int) -> Unit = { _, _ -> },
-    onMouseWheel: (String, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
-    onArrowKeys: (String, Boolean, Int) -> Unit = { _, _, _ -> },
-    /** One gesture of the finger, for a program that asked the terminal to report the mouse. */
-    onMouseGesture: (String, MouseGesture, Int, Int) -> Unit = { _, _, _, _ -> },
-    onCopySelection: (String, TerminalSelection) -> Unit = { _, _ -> },
     onCopyTerminalText: (String) -> Unit = {},
     onPasteTerminal: (String) -> Unit = {},
     onSaveSnippet: (String, String) -> Unit = { _, _ -> },
-    onSaveLogs: (String, String) -> Unit = { _, _ -> },
     /** Saves a session's raw output log - session key and the host name to name the file after. */
     onSaveSessionLog: (String, String) -> Unit = { _, _ -> },
-    /** Saves what the app drew for a session - see MainViewModel.renderAuditText. */
-    onSaveRenderAudit: (String, String) -> Unit = { _, _ -> },
     /** Arms the finished-command notification for a session key. */
     onNotifyWhenDone: (String) -> Unit = {},
-    onSaveText: (String, String) -> Unit = { _, _ -> },
-    onSaveScreen: (String, String) -> Unit = { _, _ -> },
     onClearCompleted: () -> Unit = {},
     onUpload: () -> Unit = {},
     onDownloadFile: (RemoteFile) -> Unit = {},
@@ -2736,13 +2592,6 @@ private fun WorkspaceScaffold(
     // never into the scaffold's own parameter list, so all three references failed to resolve.
     onTerminalKeepSystemBars: (Boolean) -> Unit = {},
     /**
-     * Look up the live [TerminalChannel] for a session, so the Termux renderer can drive the
-     * emulator from the channel's byte stream. Returns null when the session has no channel
-     * (closed, or a local-runtime session the Termux path is not yet wired for) — the legacy
-     * renderer is used as the fallback in that case.
-     */
-    channelProvider: (String) -> TerminalChannel? = { null },
-    /**
      * The scrolled-back badge's count, from Settings. Wired into all four sites at once - this
      * scaffold, both of its call sites and [SettingsScreen] - because a parameter missing from one
      * of them fails to resolve three screens away from the omission.
@@ -2768,8 +2617,7 @@ private fun WorkspaceScaffold(
     if (immersive && openSession != null) {
         TerminalScreen(
             state = state,
-            frames = frames,
-            channelProvider = channelProvider,
+            controllerProvider = controllerProvider,
             pendingAction = pendingAction,
             onActionHandled = onActionHandled,
             onCloseTab = onCloseTab,
@@ -2780,27 +2628,11 @@ private fun WorkspaceScaffold(
             // whatever a resuming connection asks for, and a refusal still raises the retry prompt.
             onReconnectSession = onReconnectSession,
             onSendInput = onSendInput,
-            onSendText = onSendText,
-            onSendKey = onSendKey,
-            onSendChar = onSendChar,
-            onResize = onResizeTerminal,
-            onScroll = onScrollTerminal,
-            onScrollTo = onScrollTerminalTo,
-            onSessionReview = onSessionReview,
-            onScrollToLine = onScrollToLine,
-            onMouseWheel = onMouseWheel,
-            onArrowKeys = onArrowKeys,
-            onMouseGesture = onMouseGesture,
-            onCopySelection = onCopySelection,
-            onCopyText = onCopyTerminalText,
             onPaste = onPasteTerminal,
             onSaveSnippet = onSaveSnippet,
-            onSaveLogs = onSaveLogs,
             onSaveSessionLog = onSaveSessionLog,
-            onSaveRenderAudit = onSaveRenderAudit,
             onNotifyWhenDone = onNotifyWhenDone,
-            onSaveText = onSaveText,
-            onSaveScreen = onSaveScreen,
+            onCopyText = onCopyTerminalText,
             fontSize = state.settings.terminalFontSize,
             onFontSize = onTerminalFontSize,
             onKeyRowVisible = onTerminalKeyRow,
@@ -3314,42 +3146,21 @@ private fun HostCard(
 @Composable
 private fun TerminalScreen(
     state: MainUiState,
-    frames: StateFlow<Map<String, TerminalFrame>>,
-    channelProvider: (String) -> TerminalChannel? = { null },
+    controllerProvider: (String) -> TerminalSessionController?,
     onCloseTab: (SessionTab) -> Unit,
     onDisconnectAll: () -> Unit,
     /** Re-dials one session - the key is a tab id, never a host id. */
     onReconnectSession: (String) -> Unit,
     onSendInput: (String, String) -> Unit,
-    onSendText: (String, String) -> Unit,
-    onSendKey: (String, TerminalKey, Boolean, Boolean, Boolean) -> Unit,
-    onSendChar: (String, Char, Boolean, Boolean) -> Unit,
-    onResize: (String, TerminalViewport) -> Unit,
-    onScroll: (String, Int) -> Unit,
-    onScrollTo: (String, Int) -> Unit,
-    /** Reads one session's commands for the review pane - see MainViewModel.sessionReview. */
-    onSessionReview: (String) -> List<ReviewedCommand>,
-    /** Scrolls one session so an absolute buffer line is at the top of the window. */
-    onScrollToLine: (String, Int) -> Unit,
-    /** A turn of the wheel, for a program that asked the terminal to report the mouse. */
-    onMouseWheel: (String, Boolean, Int, Int) -> Unit,
-    /** Arrow key presses, for a drag on a screen with no history behind it. */
-    onArrowKeys: (String, Boolean, Int) -> Unit,
-    /** One gesture of the finger, for a program that asked the terminal to report the mouse. */
-    onMouseGesture: (String, MouseGesture, Int, Int) -> Unit,
-    onCopySelection: (String, TerminalSelection) -> Unit,
-    onCopyText: (String) -> Unit,
     onPaste: (String) -> Unit,
+    /** Saves a snippet of [command] under [label] - see MainViewModel.saveSnippet. */
     onSaveSnippet: (String, String) -> Unit,
-    onSaveLogs: (String, String) -> Unit,
-    /** Saves the raw session log - see MainViewModel.sessionLogText. */
+    /** Reads one session's raw transcript - see MainViewModel.sessionLogText. */
     onSaveSessionLog: (String, String) -> Unit,
-    /** Saves what the app drew for this session - see MainViewModel.renderAuditText. */
-    onSaveRenderAudit: (String, String) -> Unit,
     /** Arms the finished-command notification - see MainViewModel.notifyWhenDone. */
     onNotifyWhenDone: (String) -> Unit,
-    onSaveText: (String, String) -> Unit,
-    onSaveScreen: (String, String) -> Unit,
+    /** Copies arbitrary text (the whole transcript) to the clipboard. */
+    onCopyText: (String) -> Unit,
     /**
      * The session being shown, resolved by the caller.
      *
@@ -3375,7 +3186,7 @@ private fun TerminalScreen(
      */
     pendingAction: ActionAnswer? = null,
     onActionHandled: () -> Unit = {},
-    /** Persists a pinch-to-zoom result, so the size the user settled on survives leaving the screen. */
+    /** Persists a font-size change, so the size the user settled on survives leaving the screen. */
     onFontSize: (Int) -> Unit = {},
     /** Persists the shortcut bar's collapsed state, for the same reason. */
     onKeyRowVisible: (Boolean) -> Unit = {},
@@ -3384,7 +3195,6 @@ private fun TerminalScreen(
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showCommandBar by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
-    var showReview by rememberSaveable { mutableStateOf(false) }
     // For the one thing this screen launches rather than draws: the snippets window.
     val context = LocalContext.current
 
@@ -3406,16 +3216,6 @@ private fun TerminalScreen(
     var command by remember { mutableStateOf("") }
     var showSaveSnippet by remember { mutableStateOf(false) }
     var snippetLabel by remember { mutableStateOf("") }
-    var selection by remember { mutableStateOf<TerminalSelection?>(null) }
-    // Dropped when the session changes: the coordinates are buffer lines, so keeping them would
-    // highlight an unrelated stretch of the other session's scrollback.
-    LaunchedEffect(activeTab.id) { selection = null }
-    // What the soft keyboard is holding provisionally, drawn by the grid at the cursor. The shell has
-    // not been told about it - that is the point of withholding it - so the grid cannot carry it, and
-    // without this the user would be typing blind until each word was committed. Not saved across
-    // rotation: the IME session ends with the activity, and it is the IME that would restore it.
-    var composing by remember { mutableStateOf("") }
-    LaunchedEffect(activeTab.id) { composing = "" }
     /**
      * The hyperlink a tap landed on, waiting to be confirmed.
      *
@@ -3438,58 +3238,13 @@ private fun TerminalScreen(
             command = if (historyIndex < 0) "" else history[historyIndex]
         }
     }
-    // This tab's own scrollback - keyed by the tab id, which is the session key: a host with two
-    // shells keeps two independent transcripts.
+    // This tab's own transcript - keyed by the tab id, which is the session key: a host with two
+    // shells keeps two independent transcripts. Under the ConnectBot engine this is the session
+    // log's snapshot (the decoded output the terminal was fed), which is what Search, the
+    // transcript view and Copy all read; the grid itself is the library's to draw.
     val terminalText = state.terminalOutput[activeTab.id].orEmpty()
-    // The geometry this host has chosen, or zeroes for "match the screen". Looked up here rather than
-    // carried on the tab because it is a stored setting: editing it and coming back has to take effect.
-    val hostGeometry =
-        remember(state.hosts, activeTab.hostId) {
-            state.hosts
-                .firstOrNull { it.id == activeTab.hostId }
-                ?.let { it.terminalColumns to it.terminalRows } ?: (0 to 0)
-        }
-    // Collected here, at the one composable that draws it, and with the lifecycle: the collection ends
-    // when this screen leaves composition or the app stops, which is the signal the view model uses to
-    // stop producing frames nobody can see.
-    val currentFrames by frames.collectAsStateWithLifecycle()
-    val frame = currentFrames[activeTab.id] ?: TerminalFrame.EMPTY
-
-    /**
-     * The commands the review pane is showing.
-     *
-     * A snapshot rather than a flow, because the read is the *whole* session - every line turned into a
-     * string, then cut into commands - while the frame flow carries a window of forty-odd lines at a
-     * time. Deriving it in the composition would put a pass over the entire scrollback on every
-     * recomposition. So it is taken while the pane is open and the session has moved on since the last
-     * reading, which is what [REVIEW_POLL_MS] paces; with the pane closed, nothing here runs at all.
-     *
-     * Held across a close and a reopen, so a reader who jumps out to look at a command and comes back
-     * finds the list they left rather than an empty pane for a frame.
-     */
-    var review by remember(activeTab.id) { mutableStateOf<List<ReviewedCommand>>(emptyList()) }
-    LaunchedEffect(activeTab.id, showReview) {
-        if (!showReview) return@LaunchedEffect
-        // Read through the *state*, not through `frame` above: a lambda captures the value that was
-        // computed in the composition that launched this effect, and that value is the screen as it was
-        // when the pane opened. `currentFrames` is the state itself, so this sees each new frame.
-        var read = Long.MIN_VALUE
-        while (true) {
-            val revision = currentFrames[activeTab.id]?.revision ?: Long.MIN_VALUE
-            if (revision != read) {
-                // Off the main thread: the read takes the buffer's lock and walks the session, and the
-                // main thread is drawing a terminal. The revision is written only once the list it
-                // describes exists, so a frame that lands mid-read is read next time round rather than
-                // being lost.
-                review = withContext(Dispatchers.Default) { onSessionReview(activeTab.id) }
-                read = revision
-            }
-            delay(REVIEW_POLL_MS)
-        }
-    }
+    val controller = controllerProvider(activeTab.id)
     val latches = rememberTerminalLatches()
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
 
     /**
      * The size a live pinch is showing, or null when no pinch has happened since the setting caught up.
@@ -3499,15 +3254,14 @@ private fun TerminalScreen(
      * once. So the gesture drives this overlay for immediate feedback and writes the setting once, when
      * the fingers lift; the overlay then stays in charge until [fontSize] reports the same number,
      * which is what stops the text from snapping back to the old size for the frames in between.
+     *
+     * termlib 0.3.15's own pinch is a transient graphics scale that resets on lift, so the app's
+     * overlay remains the persistent half — the same arrangement the ConnectBot app has with its
+     * own fontSizeFlow.
      */
     var pinchSize by remember { mutableStateOf<Int?>(null) }
-
-    /** The size the current pinch started from; zero when no pinch is in progress. */
-    var pinchBase by remember { mutableIntStateOf(0) }
     LaunchedEffect(fontSize) { if (pinchSize == fontSize) pinchSize = null }
     val liveFontSize = pinchSize ?: fontSize
-    val textStyle = remember(liveFontSize) { TextStyle(fontFamily = TerminalMonoFontFamily, fontSize = liveFontSize.sp) }
-    val metrics = rememberTerminalCellMetrics(textStyle)
     // Measured against the screen rather than against this box, deliberately. The box loses height to
     // the software keyboard, and a margin derived from it would shrink every time the keyboard opened -
     // the text would step towards the top edge as the user typed. The screen does not change under an
@@ -3519,85 +3273,14 @@ private fun TerminalScreen(
         }
 
     /**
-     * Whether the invisible IME host actually holds focus, reported by the field itself.
-     *
-     * Observed rather than assumed because a focus *request* can fail - the node has to be attached
-     * and placed before it can take focus, and on the first composition of this screen it is neither -
-     * and a failed request is indistinguishable, from the outside, from a terminal that swallows every
-     * keystroke.
+     * The IME's own answer about whether it is up, straight from the terminal's
+     * ImeInputView. The ConnectBot engine owns focus and the IME session (a tap on
+     * the grid focuses and shows it; the library never reopens it on new output),
+     * so this screen only observes — the command bar, the search box and the
+     * transcript view take the keyboard away by being focused themselves, and the
+     * terminal takes it back when the user taps the grid again.
      */
-    var inputFocused by remember { mutableStateOf(false) }
-    val showKeyboard = {
-        runCatching { focusRequester.requestFocus() }
-        keyboard?.show()
-    }
-
-    /**
-     * Tabs whose keyboard has already been offered, so it is offered once and not fought over.
-     *
-     * A plain [remember] set, not state: it is read inside an effect and never drives a recomposition.
-     * Keyed on the tab rather than the host so a reconnect on the same tab does not reopen a keyboard
-     * the user had put away, while a new session gets one.
-     */
-    val keyboardOffered = remember { mutableSetOf<String>() }
-    /**
-     * Connects the keyboard to the shell as soon as the shell exists.
-     *
-     * This is the difference between a terminal and a picture of one. Focus was only ever requested
-     * from a tap on the grid, so after logging in the app sat with an unfocused IME host: the software
-     * keyboard stayed shut, and - because [onPreviewKeyEvent] only sees events routed to the focused
-     * node - a hardware keyboard's letters, Enter, Backspace and arrows all went nowhere. The user had
-     * to know to tap the screen first, and tapping is also what dismisses a selection, so on a session
-     * with anything selected it took two.
-     *
-     * The rules it follows, each of which is a way this can be got wrong:
-     *
-     *  - **Only when there is a shell to type into.** Gated on [SessionConnectionState.CONNECTED], so
-     *    a keyboard does not open over a failed connection or in front of a handshake.
-     *  - **Retried until it takes.** A [FocusRequester] cannot focus a node that has not been placed,
-     *    and on the frame this screen first composes it has not been; requesting once and hoping was
-     *    the version that worked on a fast device and failed on a slow one. It asks again on each of
-     *    the next few frames and stops as soon as the field reports focus.
-     *  - **The keyboard is offered once per session.** Focus is re-established freely - it is
-     *    invisible, and without it nothing works - but the IME is only *shown* the first time, so a
-     *    user who put the keyboard away to read output does not have it thrown back at them by a
-     *    reconnect, a resize, or a rotation.
-     *  - **Never over another field.** The command bar, the search box and the transcript view all own
-     *    the keyboard while they are open, and stealing focus from the search box mid-query would make
-     *    it impossible to type in.
-     */
-    LaunchedEffect(activeTab.id, activeTab.state, showCommandBar, showSearch, showHistory, showReview) {
-        if (!activeTab.state.isLive) return@LaunchedEffect
-        if (showCommandBar || showSearch || showHistory || showReview) return@LaunchedEffect
-        var attempts = 0
-        while (!inputFocused && attempts < TERMINAL_FOCUS_ATTEMPTS) {
-            // One frame per attempt: the bridge is composed in the same pass as this effect, so the
-            // first thing to wait for is the layout that places it.
-            withFrameNanos { }
-            runCatching { focusRequester.requestFocus() }
-            attempts++
-        }
-    }
-    /**
-     * Offers the software keyboard once the field can actually receive it, and only once per session.
-     *
-     * Separate from the effect above, and keyed on the focus itself, because the two questions have
-     * different answers at different times. Showing the IME is only meaningful once something holds
-     * focus - `show()` against an unfocused window does nothing at all - and focus does not always
-     * arrive inside the retry budget: it can be taken a moment later by the key row's own fallback, by
-     * a tap, or by a layout that finally settled. Deciding at the end of the retry loop meant that
-     * whenever the budget ran out first, the app ended up in the worst of the two states - a terminal
-     * wired to the shell, so keystrokes worked, with no keyboard on screen to produce any, and the user
-     * tapping to find out why.
-     *
-     * [keyboardOffered] still holds it to one offer per tab, so a keyboard the user dismissed to read
-     * output is not thrown back at them by the next reconnect, resize or rotation.
-     */
-    LaunchedEffect(activeTab.id, activeTab.state, inputFocused, showCommandBar, showSearch, showHistory, showReview) {
-        if (!activeTab.state.isLive) return@LaunchedEffect
-        if (showCommandBar || showSearch || showHistory || showReview) return@LaunchedEffect
-        if (inputFocused && keyboardOffered.add(activeTab.id)) keyboard?.show()
-    }
+    var imeVisible by remember { mutableStateOf(false) }
 
     // Painted to the edges of the screen, laid out inside them.
     //
@@ -3613,7 +3296,6 @@ private fun TerminalScreen(
         TerminalTabStrip(
             tabs = state.tabs,
             activeTab = activeTab,
-            frame = frame,
             onSelect = onSelectSession,
             onDuplicate = onDuplicateSession,
             onLeaveSession = onLeaveSession,
@@ -3624,33 +3306,19 @@ private fun TerminalScreen(
             onReconnect = { onReconnectSession(activeTab.id) },
             onToggleSearch = { showSearch = !showSearch },
             onToggleCommandBar = { showCommandBar = !showCommandBar },
-            // The transcript and the review are alternatives to the grid and to each other, so opening
-            // one closes the other: two flags that could both be set would leave the menu offering
-            // "Live terminal" twice and the screen drawing whichever the branch happens to test first.
-            onToggleHistory = {
-                showHistory = !showHistory
-                if (showHistory) showReview = false
-            },
-            onToggleReview = {
-                showReview = !showReview
-                if (showReview) showHistory = false
-            },
+            onToggleHistory = { showHistory = !showHistory },
             // A window rather than a sheet over this grid: the saved commands are only worth offering
             // while the command line they will land on is legible, and a sheet is a slot at the
             // bottom of the screen - exactly where the grid's own last lines are. It carries nothing:
             // the list is the snippet store, which that activity injects and watches directly.
             onSnippets = { context.startActivity(SnippetsActivity.intent(context)) },
-            onSaveLogs = { onSaveLogs(activeTab.hostId, terminalText) },
             // The session's own key, not the host: a host with two shells has two logs, and the
-            // tab's title is the host name the file should be called after.
+            // tab's title is the host name the file should be called after. Under the ConnectBot
+            // engine the transcript, the log and the screen are the one session-log snapshot.
             onSaveSessionLog = { onSaveSessionLog(activeTab.id, activeTab.title) },
-            onSaveRenderAudit = { onSaveRenderAudit(activeTab.id, activeTab.title) },
             onNotifyWhenDone = { onNotifyWhenDone(activeTab.id) },
-            onSaveText = { onSaveText(activeTab.hostId, terminalText) },
-            onSaveScreen = { onSaveScreen(activeTab.hostId, terminalText) },
             onCopyAll = { onCopyText(terminalText) },
             onPaste = { onPaste(activeTab.id) },
-            onScrollToBottom = { onScrollTo(activeTab.id, 0) },
             keyRowVisible = state.settings.terminalKeyRowVisible,
             onToggleKeyRow = { onKeyRowVisible(!state.settings.terminalKeyRowVisible) },
             searchQuery = searchQuery,
@@ -3658,7 +3326,6 @@ private fun TerminalScreen(
             showSearch = showSearch,
             showCommandBar = showCommandBar,
             showHistory = showHistory,
-            showReview = showReview,
             terminalText = terminalText,
             // The strip draws on the terminal's own background; these two are where every chrome
             // colour on it is derived from. See TerminalTabStrip's parameter docs.
@@ -3689,162 +3356,28 @@ private fun TerminalScreen(
                                 .padding(textInset),
                     )
                 }
-            } else if (showReview) {
-                // The same session, cut into commands rather than drawn as a grid - see
-                // [TerminalReviewPane] for why that is what makes it readable. The jump is the pane's
-                // only action, and it closes the pane as it goes: the reader asked to see the command,
-                // and the text it describes is in the grid behind this one.
-                TerminalReviewPane(
-                    commands = review,
+            } else if (controller != null) {
+                // The ConnectBot termlib renderer: the library's own Terminal() composable drawing
+                // this session's emulator. Rendering, keyboard, IME, selection, scrollback and
+                // pinch-zoom are the library's; the colours, font and sticky modifiers are the app's.
+                // A null controller (no session terminal yet — the tab is still connecting or the
+                // session was never opened) leaves the box on the theme background rather than
+                // drawing a grid nobody is feeding.
+                ConnectBotTerminal(
+                    controller = controller,
+                    background = termBg,
                     foreground = termFg,
-                    fontSize = liveFontSize.toFloat(),
-                    onJump = { command ->
-                        showReview = false
-                        onScrollToLine(activeTab.id, command.promptLine)
-                    },
-                    modifier = Modifier.padding(textInset),
+                    fontSizeSp = liveFontSize,
+                    latches = latches,
+                    onPasteRequest = { onPaste(activeTab.id) },
+                    onHyperlinkClick = { target -> hyperlinkTarget = target },
+                    // The transcript and its siblings own the keyboard while they are open; the
+                    // terminal takes it back when they close.
+                    keyboardEnabled = !showSearch && !showCommandBar,
+                    showSoftKeyboard = !showSearch && !showCommandBar,
+                    onImeVisibilityChanged = { visible -> imeVisible = visible },
+                    modifier = Modifier.fillMaxSize().padding(textInset),
                 )
-            } else {
-                // The Termux renderer is opt-in (see [AppSettings.useTermuxRenderer]). It drives
-                // the com.termux TerminalEmulator directly from the SSH channel's byte stream and
-                // forwards the user's keystrokes back through the channel — fixing the legacy
-                // renderer's text-stacking and realtime-streaming issues by using the same engine
-                // Termux itself ships. Falls back to the legacy [TerminalView] when no channel is
-                // available for this session (closed, or a local-runtime session the Termux path is
-                // not yet wired for).
-                val channel = channelProvider(activeTab.id)
-                if (state.settings.useTermuxRenderer && channel != null) {
-                    TermuxTerminalView(
-                        channel = channel,
-                        backgroundColor = termBg,
-                        fontSizeSp = liveFontSize,
-                        cursorShape = parseCursorShape(state.settings.terminalCursorStyle),
-                        modifier = Modifier.fillMaxSize().padding(textInset),
-                        // The on-screen key bar's Ctrl/Alt/Shift latches are sticky-until-used:
-                        // tapping CTRL arms it, the next keystroke consumes it. The Termux View
-                        // polls these on every key event (readControlKey/readAltKey/readShiftKey,
-                        // and via onCodePoint's merged ctrlDown), so wiring them as live reads
-                        // makes a latched Ctrl turn the next typed 'c' into Ctrl+C. onModifiersConsumed
-                        // disarms the latches after the keystroke lands — the key bar's own
-                        // direct-key path (onSendKey) consumes independently and never reaches here.
-                        isCtrlDown = { latches.ctrl },
-                        isAltDown = { latches.alt },
-                        isShiftDown = { latches.shift },
-                        onModifiersConsumed = { latches.consume() },
-                        onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
-                        onScale = { scale ->
-                            // Pinch-to-zoom on the Termux renderer: same coercion as the legacy
-                            // path below, but written once per gesture end (the Compose side owns
-                            // the gesture here, not Termux's own touch handler).
-                            val base = if (pinchBase > 0) pinchBase else fontSize.also { pinchBase = it }
-                            val next =
-                                (base * scale)
-                                    .roundToInt()
-                                    .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
-                            pinchSize = next
-                            if (next != fontSize) onFontSize(next)
-                            pinchBase = 0
-                        },
-                    )
-                } else {
-                    TerminalView(
-                        frame = frame,
-                        style = textStyle,
-                        background = termBg,
-                        foreground = termFg,
-                        metrics = metrics,
-                        modifier = Modifier.fillMaxSize().padding(textInset),
-                        // The host's own width is a floor here as well as an argument to the pty: a
-                        // viewport report resizes the pty, and the first one arrives before any output does.
-                        minColumns = minTerminalColumns(state.settings.terminalMinColumns, hostGeometry.first),
-                        // The app-wide height, which is a floor the view scrolls through — see [atLeastRows].
-                        // A taller terminal is a taller pty, not a taller screen: the shell prints without
-                        // paging and the window follows the cursor.
-                        minRows = state.settings.terminalRows,
-                        // The host's height over it, which can only shorten — see [atMostRows]. This is the
-                        // one place a per-host value beats the app-wide one, and the only way to tell a single
-                        // server that the window is short.
-                        hostRows = hostGeometry.second,
-                        selection = selection,
-                        onSelectionChange = { selection = it },
-                        onSelectionFinished = { finished ->
-                            // A drag that never left its cell is a tap that Compose reported as a drag;
-                            // treating it as a selection would copy one character and swallow the tap.
-                            if (finished.isSingleCell) {
-                                selection = null
-                                showKeyboard()
-                            } else {
-                                onCopySelection(activeTab.id, finished)
-                            }
-                        },
-                        onScroll = { delta -> onScroll(activeTab.id, delta) },
-                        onMouseWheel = { up, column, row, count ->
-                            repeat(count) { onMouseWheel(activeTab.id, up, column, row) }
-                        },
-                        onArrowKeys = { up, count -> onArrowKeys(activeTab.id, up, count) },
-                        onMouseGesture = { gesture, column, row ->
-                            onMouseGesture(activeTab.id, gesture, column, row)
-                        },
-                        composing = composing,
-                        onTap = { line, column ->
-                            // A link first, because the tap was aimed at the cell the finger is on and a
-                            // linked cell is the one case where a tap means something other than "give me
-                            // the keyboard" - and a reader who tapped a link did not mean to dismiss a
-                            // selection they were reading either.
-                            val target = hyperlinkAt(frame, line, column)
-                            when {
-                                target != null -> hyperlinkTarget = target
-                                selection != null -> selection = null
-                                else -> showKeyboard()
-                            }
-                        },
-                        onViewportChange = { viewport -> onResize(activeTab.id, viewport) },
-                        onZoom = { scale, ended ->
-                            // The gesture reports a factor against its own start, so the start size has to
-                            // be captured once: reading the current size every step would compound the
-                            // factor against a size it already changed and run away.
-                            val base = if (pinchBase > 0) pinchBase else fontSize.also { pinchBase = it }
-                            val next =
-                                (base * scale)
-                                    .roundToInt()
-                                    .coerceIn(SettingsRepository.TERMINAL_FONT_SIZE_RANGE)
-                            pinchSize = next
-                            if (ended) {
-                                pinchBase = 0
-                                // Written once, on lift. Writing per step would put a DataStore commit
-                                // behind every frame of the gesture.
-                                if (next == fontSize) pinchSize = null else onFontSize(next)
-                            }
-                        },
-                        onLongPressCell = { line, column ->
-                            val text = state.terminalLine(activeTab.id, line)
-                            selection = TerminalSelection.wordAt(line, column, text)
-                                // The line's own length, not the grid's: scrollback printed at a wider
-                                // terminal keeps every character, and a whole-line selection that stopped
-                                // at the current width would copy a truncated line.
-                                ?: TerminalSelection.wholeLine(line, maxOf(frame.columns, text.length))
-                            selection?.let { onCopySelection(activeTab.id, it) }
-                        },
-                    )
-                    // Scrolled back, so the live output is no longer on screen. Without this the only
-                    // clue is that nothing moves, which reads as a hung session — so it is drawn when
-                    // the count is asked for, and the grid is left alone when it is not. Read from the
-                    // state this screen already has, the way the key row's own visibility is read
-                    // below: a preference that changes what the terminal draws needs no plumbing to
-                    // reach the thing that draws it.
-                    val linesBelow = frame.linesBelow()
-                    if (state.settings.terminalScrollbackCountVisible && linesBelow > 0) {
-                        ScrollbackBadge(
-                            lines = linesBelow,
-                            // What the row is keyed on, and the only thing that brings it back: the
-                            // viewport moving. New output arriving behind a viewport that is standing
-                            // still leaves it hidden, which is the point of hiding it at all.
-                            scrollPosition = frame.firstLine,
-                            onJump = { onScrollTo(activeTab.id, 0) },
-                            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
-                        )
-                    }
-                } // end legacy TerminalView branch
             }
         }
         // Offered rather than followed: the tap opens this, and nothing leaves the app until the reader
@@ -3884,24 +3417,29 @@ private fun TerminalScreen(
                 remember(state.settings.terminalKeyBarJson) {
                     KeyBarPrefsCodec.decode(state.settings.terminalKeyBarJson).withMissingStandardCaps()
                 }
-            TerminalKeyRow(
-                latches = latches,
-                prefs = keyBarPrefs,
-                onKey = { key, ctrl, alt, shift ->
-                    onSendKey(activeTab.id, key, ctrl, alt, shift)
-                    // Every cap is a clickable surface, and a clickable surface is focusable: a tap can
-                    // leave the IME host unfocused, after which the software keyboard's characters and a
-                    // hardware keyboard's keys both have nowhere to go while the row itself still works.
-                    // A no-op when the field already has focus, which is the usual case.
-                    if (!inputFocused) runCatching { focusRequester.requestFocus() }
-                },
-                onText = { text -> onSendText(activeTab.id, text) },
-                onChar = { char, ctrl, alt -> onSendChar(activeTab.id, char, ctrl, alt) },
-                // The fades at the row's edges have to blend into what is behind it, and what is
-                // behind it is the terminal's own background.
-                background = termBg,
-                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
-            )
+            // The key row's caps go through the terminal's own emulator under the ConnectBot
+            // engine: the library dispatches keys and applies the sticky latches itself, so a cap
+            // press is exactly what the same key on a hardware keyboard would produce —
+            // application-cursor modes, bracketed paste and every other remote-set mode included.
+            // Text caps (snippets, snippets-while-typing) go through the emulator's paste path,
+            // which honours bracketed paste.
+            controller?.let { session ->
+                TerminalKeyRow(
+                    latches = latches,
+                    prefs = keyBarPrefs,
+                    onKey = { key, ctrl, alt, shift ->
+                        session.emulator.dispatchKey(vTermModifiers(ctrl, alt, shift), key.toVTermKey())
+                    },
+                    onText = { text -> session.paste(text) },
+                    onChar = { char, ctrl, alt ->
+                        session.emulator.dispatchCharacter(vTermModifiers(ctrl, alt), char.code)
+                    },
+                    // The fades at the row's edges have to blend into what is behind it, and what is
+                    // behind it is the terminal's own background.
+                    background = termBg,
+                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
+                )
+            }
         }
         if (showCommandBar) {
             TerminalCommandBar(
@@ -3923,28 +3461,13 @@ private fun TerminalScreen(
                 fontSize = liveFontSize,
             )
         }
-        // The IME host. One pixel, transparent, always in the tree while the terminal is: an
-        // InputConnection cannot be established for a view that is not composed, so a field created
-        // only when the keyboard was wanted would arrive after the request to open it.
-        TerminalInputBridge(
-            focusRequester = focusRequester,
-            latches = latches,
-            onText = { text -> onSendText(activeTab.id, text) },
-            onKey = { key, ctrl, alt, shift -> onSendKey(activeTab.id, key, ctrl, alt, shift) },
-            onChar = { char, ctrl, alt -> onSendChar(activeTab.id, char, ctrl, alt) },
-            onFocusChanged = { focused -> inputFocused = focused },
-            // The IME's provisional text, which the grid draws at the cursor because the shell has not
-            // been told about it: see [TerminalInputBridge.onComposing] and [composingPreview].
-            onComposing = { text -> composing = text },
-        )
     }
 
     // What the snippets window answered. Drained here rather than in the workspace because both of
-    // these rows need something only this screen has: an insert is typed into the session on screen
-    // and then has to raise the keyboard over this screen's own focus host, and the save row names
-    // the command this screen's command bar is holding. Delete is the one row that does *not* come
-    // through here - the window makes that write itself, which is what lets the row it removed go
-    // immediately rather than when the workspace comes back to the front.
+    // these rows need something only this screen has: an insert is typed into the session on screen,
+    // and the save row names the command this screen's command bar is holding. Delete is the one row
+    // that does *not* come through here - the window makes that write itself, which is what lets the
+    // row it removed go immediately rather than when the workspace comes back to the front.
     LaunchedEffect(pendingAction) {
         val answer = pendingAction as? ActionAnswer.SnippetAction ?: return@LaunchedEffect
         // Read from the list this screen is showing - the same store the window drew its rows from -
@@ -3957,8 +3480,9 @@ private fun TerminalScreen(
                     // Typed into the remote shell rather than into a form, so the shell's own line
                     // editing applies: the snippet arrives on the command line where it can be
                     // corrected before Enter, which is what a snippet is for. Deliberately no newline.
-                    onSendText(activeTab.id, it.command)
-                    showKeyboard()
+                    // Through the emulator's paste path, which honours bracketed paste the same way a
+                    // real paste does.
+                    controller?.paste(it.command)
                 }
             // The naming dialog stays here rather than moving into the window, and this is why the
             // row is an answer at all: it names the command the user has typed, which is live text
@@ -3991,43 +3515,6 @@ private fun TerminalScreen(
  * non-blank line and is bounded work per row however long the session has been open.
  */
 private const val SESSION_PREVIEW_SCAN_CHARS = 1_000
-
-/** How long the scrolled-back chip stays up after the view last moved, in milliseconds. */
-private const val SCROLLBACK_BADGE_IDLE_MS = 4_000L
-
-/** The scrolled-back chip's opacity: opaque enough to read, thin enough to see the grid through. */
-private const val SCROLLBACK_BADGE_ALPHA = 0.82f
-
-/**
- * How many frames the terminal spends trying to put focus on its IME host before giving up.
- *
- * A focus request can only land on a node that is attached *and placed*, and on the frame the terminal
- * first composes its one-pixel input field is neither - so a single request is lost on any device slow
- * enough to need a second frame for the first layout, and the user is left with a shell that ignores
- * the keyboard.
- *
- * Sixty frames is about a second at 60Hz. It was five - 80ms - which is a fair estimate of how long a
- * first layout takes and a poor budget for one, because the frames this competes with are the frames
- * of a cold start: the session was dialled, authenticated and given a pty in the same breath, Room and
- * DataStore are reading, and the first composition of a full-screen terminal is measuring a glyph. On a
- * slow device the field can easily still be unplaced after five of those, and the cost of guessing low
- * is the exact complaint this exists to answer. A focus request that finds nothing to focus is cheap;
- * asking sixty times over a second is not something a user can perceive, and it is still bounded, so a
- * screen where focus genuinely cannot be taken - something else holding it, a harness with no window -
- * stops asking rather than spinning for the life of the session.
- */
-private const val TERMINAL_FOCUS_ATTEMPTS = 60
-
-/**
- * How often the review pane asks whether the session has moved on.
- *
- * A poll rather than a signal off the frame flow, because a revision-keyed effect is cancelled and
- * restarted by every frame: on a session that is streaming output the read would be cancelled before it
- * finished, every time, and the pane would sit empty. Half a second is a compromise between a list that
- * lags behind a command the reader just watched finish and a full pass over the scrollback twice a
- * second - and the pass is skipped outright when nothing has changed.
- */
-private const val REVIEW_POLL_MS = 500L
 
 /**
  * The Terminal destination with no shell open: every live session, as a list.
@@ -4517,84 +4004,13 @@ private fun ConfirmDisconnectAllDialog(
 }
 
 /**
- * The characters of buffer line [line], one per cell, so that [TerminalSelection.wordAt]'s column
- * indexes them directly.
- *
- * Long-press word selection needs the characters around the tap, and the frame only holds the
- * viewport. The transcript is the whole buffer in the same line order, so indexing it gives the line
- * even when the tap landed on scrollback. Out of range returns empty, which selects nothing.
- *
- * [terminalCellText] rather than the transcript line itself, and that is the whole point of this being
- * a function rather than one line at the call site: the transcript is the text a person reads, so a
- * cell carrying a combining mark or a zero-width joiner contributes its whole cluster there, and every
- * character after such a cell then sits one place to the left of the cell the user actually tapped. The
- * selection that comes back is addressed in cells, so the string it is found in has to be too.
- */
-private fun MainUiState.terminalLine(
-    sessionKey: String,
-    line: Int,
-): String {
-    val text = terminalOutput[sessionKey] ?: return ""
-    return terminalCellText(text.lineSequence().elementAtOrNull(line).orEmpty())
-}
-
-/**
- * The scrolled-back indicator: how far behind the live output the view is, and a way back.
- *
- * A count and nothing else. The down-arrow that used to sit beside it was the tallest, brightest
- * thing in the busiest corner of the grid — directly under the size readout (`120x60`) — and it
- * spent that position on a gesture the terminal already has: scrolling to the bottom. What it
- * *said*, that the view is behind the live output rather than hung, is what the count says, so the
- * count is what is left.
- *
- * It is drawn only when Settings → Terminal → "Show lines below" is on, which is off by default:
- * with the arrow gone this chip is the count, and a terminal that does not want the count wants
- * nothing here at all. The way back is never lost by the setting — it is the menu's own "Jump to
- * live output", which the full-screen terminal has always had, and this chip keeps its tap target
- * and its description for as long as it is drawn.
- *
- * It covers grid the user is reading, which is the second complaint it drew, so it is drawn while
- * the view is *moving* and then out of the way: [scrollPosition] changing restarts the timer, and a
- * scrollback nobody is scrolling is a scrollback nobody is counting. Nothing is lost by the pause —
- * scroll and the count is back — and the gesture that summoned it is the same gesture that brings it
- * back. The alpha is the rest of the answer, for the whole of the timer: what is under the chip stays
- * legible rather than being blotted out by it.
- */
-@Composable
-private fun ScrollbackBadge(
-    lines: Int,
-    scrollPosition: Int,
-    onJump: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var settled by remember { mutableStateOf(false) }
-    LaunchedEffect(scrollPosition) {
-        settled = false
-        delay(SCROLLBACK_BADGE_IDLE_MS)
-        settled = true
-    }
-    if (settled) return
-    Surface(
-        modifier = modifier.clickable(onClick = onJump).semantics { contentDescription = "Jump to live output" },
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = SCROLLBACK_BADGE_ALPHA),
-    ) {
-        Text(
-            "$lines lines below",
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
-    }
-}
-
-/**
  * The one row of chrome above a full-screen terminal: which session, and everything that is not
  * typing.
  *
- * Every action the card interface had is still here - search, snippets, the three exports, the
- * transcript toggle, the command bar - because none of them was replaced by the pty; they were only
- * competing with it for the screen. Collapsing them into an overflow menu is what freed the rest of
- * the window for the terminal itself.
+ * Every action the card interface had is still here - search, snippets, the session log export,
+ * the transcript toggle, the command bar - because none of them was replaced by the pty; they were
+ * only competing with it for the screen. Collapsing them into an overflow menu is what freed the
+ * rest of the window for the terminal itself.
  */
 
 /**
@@ -4648,7 +4064,6 @@ private fun TerminalKeyRowHandle(
 private fun TerminalTabStrip(
     tabs: List<SessionTab>,
     activeTab: SessionTab,
-    frame: TerminalFrame,
     onSelect: (SessionTab) -> Unit,
     /** Long-press on a tab (or its menu item): a second, independent shell on the same host. */
     onDuplicate: (SessionTab) -> Unit,
@@ -4659,20 +4074,13 @@ private fun TerminalTabStrip(
     onToggleSearch: () -> Unit,
     onToggleCommandBar: () -> Unit,
     onToggleHistory: () -> Unit,
-    onToggleReview: () -> Unit,
     onSnippets: () -> Unit,
-    onSaveLogs: () -> Unit,
     /** Saves the raw session log; the item is hidden until the session has output to save. */
     onSaveSessionLog: () -> Unit,
-    /** Saves what the app drew for the session on screen - see MainViewModel.renderAuditText. */
-    onSaveRenderAudit: () -> Unit,
     /** Arms the finished-command notification for the session on screen. */
     onNotifyWhenDone: () -> Unit,
-    onSaveText: () -> Unit,
-    onSaveScreen: () -> Unit,
     onCopyAll: () -> Unit,
     onPaste: () -> Unit,
-    onScrollToBottom: () -> Unit,
     keyRowVisible: Boolean,
     onToggleKeyRow: () -> Unit,
     searchQuery: String,
@@ -4680,7 +4088,6 @@ private fun TerminalTabStrip(
     showSearch: Boolean,
     showCommandBar: Boolean,
     showHistory: Boolean,
-    showReview: Boolean,
     terminalText: String,
     /**
      * The terminal's own background and foreground, the pair the strip sits on. Every chrome colour
@@ -4754,9 +4161,10 @@ private fun TerminalTabStrip(
                         // title length. The max and the ellipsis are the other end of the same problem:
                         // an unbounded title made a single chip wider than the strip.
                         Text(
-                            // The remote window title when a program set one, which is how a session
-                            // running `top` or an editor identifies itself in the strip.
-                            if (tab == activeTab && !frame.title.isNullOrBlank()) frame.title!! else tab.title,
+                            // The tab's own title. termlib 0.3.15 does not surface the remote window
+                            // title (OSC 0/2) through its public API, so under the ConnectBot engine
+                            // the chip names the host the way it does before a program sets a title.
+                            tab.title,
                             modifier = Modifier.widthIn(min = 48.dp, max = 168.dp),
                             style = MaterialTheme.typography.labelLarge,
                             // The chip's own text follows the terminal pair too - see the Surface
@@ -4810,13 +4218,6 @@ private fun TerminalTabStrip(
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text(if (showReview) "Live terminal" else "Command review") },
-                    onClick = {
-                        menuOpen = false
-                        onToggleReview()
-                    },
-                )
-                DropdownMenuItem(
                     text = { Text(if (keyRowVisible) "Hide shortcut keys" else "Show shortcut keys") },
                     onClick = {
                         menuOpen = false
@@ -4835,14 +4236,6 @@ private fun TerminalTabStrip(
                     menuOpen = false
                     onCopyAll()
                 })
-                DropdownMenuItem(text = { Text("Jump to live output") }, onClick = {
-                    menuOpen = false
-                    onScrollToBottom()
-                })
-                DropdownMenuItem(text = { Text("Save logs") }, onClick = {
-                    menuOpen = false
-                    onSaveLogs()
-                })
                 // Only once there is something to save: the session log is created with the
                 // session, so on a shell that has not spoken yet the item would offer an empty
                 // file. `terminalText` is the observable proxy for "this session has output" -
@@ -4853,21 +4246,6 @@ private fun TerminalTabStrip(
                         onSaveSessionLog()
                     })
                 }
-                // Not gated on output, unlike the log above: the audit is the file that says whether
-                // anything was drawn, so hiding it while the screen is blank would hide it exactly
-                // when it is wanted. An audit with nothing in it says so in its own words.
-                DropdownMenuItem(text = { Text("Save render audit") }, onClick = {
-                    menuOpen = false
-                    onSaveRenderAudit()
-                })
-                DropdownMenuItem(text = { Text("Save text") }, onClick = {
-                    menuOpen = false
-                    onSaveText()
-                })
-                DropdownMenuItem(text = { Text("Save screen") }, onClick = {
-                    menuOpen = false
-                    onSaveScreen()
-                })
                 DropdownMenuItem(text = { Text("Disconnect all") }, onClick = {
                     menuOpen = false
                     confirmDisconnectAll = true
@@ -4954,15 +4332,6 @@ private fun TerminalTabStrip(
             ) {
                 Text("Why?", style = MaterialTheme.typography.labelMedium)
             }
-        }
-        if (frame.columns > 0) {
-            Text(
-                "${frame.columns}x${frame.rows}",
-                style = MaterialTheme.typography.labelSmall,
-                // The terminal pair, dimmed, not the app theme's onSurfaceVariant - this sits on
-                // [termBg] like everything else in the strip.
-                color = termFg.copy(alpha = 0.7f),
-            )
         }
     }
     if (showSearch) {
@@ -6527,20 +5896,6 @@ private fun SettingsScreen(
     // snapshot the view model holds, and a fingerprint forgotten in that window would leave the row
     // above counting one that is gone; see the ON_RESUME refresh in the workspace.
 }
-
-/**
- * Parse the user's cursor-style setting (a string from DataStore) into the
- * [dev.eclipse.ssh.terminal.TerminalCursorShape] enum the Termux renderer takes.
- *
- * Falls back to [TerminalCursorShape.BLOCK] for unknown values — the same default
- * [dev.eclipse.ssh.data.settings.SettingsRepository] writes when the setting is absent.
- */
-private fun parseCursorShape(setting: String): TerminalCursorShape =
-    when (setting.lowercase()) {
-        "underline" -> TerminalCursorShape.UNDERLINE
-        "bar", "beam" -> TerminalCursorShape.BAR
-        else -> TerminalCursorShape.BLOCK
-    }
 
 /**
  * A one-line summary of the Ubuntu userspace state, for the row on the Linux screen.

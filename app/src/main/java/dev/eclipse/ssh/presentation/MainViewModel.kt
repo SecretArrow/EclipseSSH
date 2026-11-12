@@ -105,25 +105,7 @@ import dev.eclipse.ssh.ssh.isAppFault
 import dev.eclipse.ssh.ssh.isCredentialRejection
 import dev.eclipse.ssh.ssh.isFault
 import dev.eclipse.ssh.ssh.joinRemote
-import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
-import dev.eclipse.ssh.terminal.FrameSample
-import dev.eclipse.ssh.terminal.KeyboardModes
-import dev.eclipse.ssh.terminal.MouseEncoding
-import dev.eclipse.ssh.terminal.MouseGesture
-import dev.eclipse.ssh.terminal.RenderAudit
-import dev.eclipse.ssh.terminal.ReviewedCommand
 import dev.eclipse.ssh.terminal.TerminalColors
-import dev.eclipse.ssh.terminal.TerminalFrame
-import dev.eclipse.ssh.terminal.TerminalKey
-import dev.eclipse.ssh.terminal.TerminalKeys
-import dev.eclipse.ssh.terminal.TerminalModifiers
-import dev.eclipse.ssh.terminal.TerminalViewport
-import dev.eclipse.ssh.terminal.Utf8StreamDecoder
-import dev.eclipse.ssh.terminal.offsetToShowLine
-import dev.eclipse.ssh.terminal.paintedCells
-import dev.eclipse.ssh.terminal.reviewCommands
-import dev.eclipse.ssh.terminal.screenKind
-import dev.eclipse.ssh.terminal.terminalLayout
 import dev.eclipse.ssh.ui.terminal.pageSteps
 import dev.eclipse.ssh.ui.terminal.tallestRowsPerLine
 import dev.eclipse.ssh.widget.QuickConnectWidget
@@ -222,8 +204,6 @@ class MainViewModel
          * quarter of a million cell objects - whereas a frame copies only the rows currently on screen.
          * Publishing snapshots at frame rate is what made the terminal the app's worst source of garbage.
          */
-        private val terminalFrames = MutableStateFlow<Map<String, TerminalFrame>>(emptyMap())
-        val frames: StateFlow<Map<String, TerminalFrame>> = terminalFrames
 
         /**
          * The host a Quick Settings tile or home-screen widget tap has asked to dial, or null when no
@@ -246,7 +226,6 @@ class MainViewModel
          * offset is measured from the bottom, so every new line would otherwise slide the view onto
          * different text while the user was reading it. See [pinScrollback].
          */
-        private val scrollOffsets = ConcurrentHashMap<String, Int>()
 
         /**
          * The page-scroll animation running on each host, if any.
@@ -280,7 +259,6 @@ class MainViewModel
          * the same clock, so the two can be read together. Bounded (a few hundred bytes per session) and
          * created lazily by the collector, so a session that is never exported costs one empty map entry.
          */
-        private val renderAudits = ConcurrentHashMap<String, RenderAudit>()
 
         /**
          * The armed "Notify when done" detector of each session that asked for one, keyed by session
@@ -310,7 +288,6 @@ class MainViewModel
          * empties a list the user has been building up. The shell's own history, reachable with the Up
          * arrow for the first time, is the accurate one.
          */
-        private val typedLines = ConcurrentHashMap<String, StringBuilder>()
 
         private val commandHistory = MutableStateFlow<Map<String, List<String>>>(emptyMap())
 
@@ -466,7 +443,6 @@ class MainViewModel
          * whole process shares.
          */
         private val channels: ConcurrentHashMap<String, TerminalChannel> get() = sessionStore.channels
-        private val terminalBuffers: ConcurrentHashMap<String, AnsiTerminalBuffer> get() = sessionStore.buffers
         private val sessions: ConcurrentHashMap<String, ClientSession> get() = sessionStore.sessions
 
         /**
@@ -485,7 +461,70 @@ class MainViewModel
          * (the local-runtime branch feeds the same [TerminalChannel.output] stream, so the same code
          * path will work once the local channel's `writeBytes` is confirmed to match the SSH one).
          */
-        fun terminalChannelFor(sessionKey: String): TerminalChannel? = channels[sessionKey]
+        fun terminalControllerFor(sessionKey: String): TerminalSessionController? = terminalSessions[sessionKey]
+
+        /** One ConnectBot terminal per session key, alive from first connect to tab close. */
+        private val terminalSessions = ConcurrentHashMap<String, TerminalSessionController>()
+
+        /**
+         * Publishes the session's transcript into [terminalOutput] on a one-second conflation:
+         * Search, the transcript view and Copy all read it, and rebuilding a 256 KiB snapshot
+         * per chunk would be absurd. One in-flight rebuild per session.
+         */
+        private val transcriptDue = ConcurrentHashMap<String, Boolean>()
+
+        private fun scheduleTranscriptPublish(
+            sessionKey: String,
+            @Suppress("UNUSED_PARAMETER") chunk: String,
+        ) {
+            if (transcriptDue.putIfAbsent(sessionKey, true) != null) return
+            viewModelScope.launch {
+                try {
+                    delay(TERMINAL_TEXT_MS)
+                    transcriptDue.remove(sessionKey)
+                    val log = sessionLogs[sessionKey] ?: return@launch
+                    val text = log.snapshot().takeLast(MAX_TERMINAL_CHARS)
+                    terminalOutput.update { if (tabs.value.any { it.id == sessionKey }) it + (sessionKey to text) else it - sessionKey }
+                } finally {
+                    transcriptDue.remove(sessionKey)
+                }
+            }
+        }
+
+        /**
+         * The session's terminal controller, created on first need with the theme's colours
+         * wired. The controller — and with it the emulator, its scrollback and its modes —
+         * outlives every channel: a redial attaches a new channel to the same controller,
+         * which is what preserves the transcript across a reconnect.
+         */
+        private fun sessionController(key: String): TerminalSessionController =
+            terminalSessions.getOrPut(key) {
+                val colors = currentThemeColors()
+                TerminalSessionController(
+                    defaultForeground = colors.foreground,
+                    defaultBackground = colors.background,
+                    onKeyboardInput = { data -> channels[key]?.writeBytes(data) },
+                    tees = listOf(OutputTee { chunk -> sessionLogs.getOrPut(key) { SessionLog() }.append(chunk) }),
+                    externalScope = viewModelScope,
+                )
+            }
+
+        /**
+         * Wires one live channel into the session's terminal: output is pumped into the
+         * emulator, the session log sees every decoded chunk, and the channel's ending is
+         * reported once — after the stream has drained, so the shell's parting output
+         * reaches the screen first. The [onEnd] handling mirrors what the old collector
+         * did because they are facts about channels, not about either engine.
+         */
+        private fun wireTerminal(
+            sessionKey: String,
+            hostId: String,
+            terminal: TerminalChannel,
+        ) {
+            val controller = sessionController(sessionKey)
+            controller.detachCurrent()
+            controller.attach(terminal, onEnd = { end -> onTerminalChannelEnd(sessionKey, hostId, terminal, end) })
+        }
 
         /**
          * This view model's theme, read when a program asks rather than copied into a buffer.
@@ -497,21 +536,9 @@ class MainViewModel
             TerminalColors(theme.foreground.toInt(), theme.background.toInt())
         }
 
-        /**
-         * The buffer for [key], with this view model's theme wired into it.
-         *
-         * Set on every hand-out and not only when the buffer is built: a buffer outlives the view model
-         * that built it - [adoptExistingSessions] picks up a session the foreground service kept alive -
-         * and a theme read through a dead view model's state would answer with the colours the screen has
-         * stopped painting.
-         */
-        private fun themedBuffer(key: String): AnsiTerminalBuffer =
-            terminalBuffers
-                .getOrPut(key) { AnsiTerminalBuffer() }
                 .also { it.themeColors = currentThemeColors }
 
         /** Output collectors, one per live channel, cancelled when the tab or host goes away. */
-        private val terminalJobs = ConcurrentHashMap<String, Job>()
 
         /** In-flight connect attempts, so double-tapping a host cannot open two sessions. */
         private val connectJobs = ConcurrentHashMap<String, Job>()
@@ -618,7 +645,7 @@ class MainViewModel
          * the height of the window the user reads are three different numbers - and every one of them has a
          * place in this class that used to say "rows".
          */
-        private val viewportSizes = ConcurrentHashMap<String, TerminalViewport>()
+        private val viewportSizes = ConcurrentHashMap<String, Pair<Int, Int>>()
 
         /**
          * When each live session's shell came up, on the monotonic clock, for the "up=" field in the
@@ -872,14 +899,6 @@ class MainViewModel
             sshConnectionManager.hostKeyChallenges
                 .onEach { challenge -> hostKeyChallenge.value = challenge }
                 .launchIn(viewModelScope)
-            // The moment anything starts drawing terminals, hand it the frames that were skipped while
-            // nothing was. Edge-triggered rather than polled: `map`+`distinctUntilChanged` collapses the
-            // subscription count to a boolean, so a second collector arriving does not rebuild anything.
-            terminalFrames.subscriptionCount
-                .map { it > 0 }
-                .distinctUntilChanged()
-                .onEach { watched -> if (watched) republishFrames() }
-                .launchIn(viewModelScope)
             networkMonitor.available
                 .onEach { reconnectWake.trySend(Unit) }
                 .launchIn(viewModelScope)
@@ -930,7 +949,6 @@ class MainViewModel
                     // orphan all of it.
                     val sessionKey = sessionStore.primarySessionFor(hostId) ?: return@forEach
                     val terminal = channels[sessionKey] ?: return@forEach
-                    val buffer = themedBuffer(sessionKey)
                     updateTab(sessionKey) { existing ->
                         (existing ?: SessionTab(id = sessionKey, hostId = hostId, title = host.name)).copy(
                             state = SessionConnectionState.CONNECTED,
@@ -947,8 +965,7 @@ class MainViewModel
                         idleForMs = terminal.idleForMs(),
                     )
                     terminalJobs.remove(sessionKey)?.cancelAndJoin()
-                    terminalJobs[sessionKey] = launchTerminalCollector(sessionKey, hostId, terminal, buffer)
-                    publishTerminalFrame(sessionKey, buffer)
+                    wireTerminal(sessionKey, hostId, terminal)
                 }
             }
         }
@@ -1169,7 +1186,7 @@ class MainViewModel
                                 // sessions") true for the one phase it did not cover: after auth, before shell.
                                 val terminal =
                                     try {
-                                        sshConnectionManager.openTerminal(session, size?.columns, size?.ptyRows, host)
+                                        sshConnectionManager.openTerminal(session, size?.first, size?.second, host)
                                     } catch (error: Throwable) {
                                         runCatching { session.close(false) }
                                         throw error
@@ -1312,7 +1329,7 @@ class MainViewModel
             markOpeningShell(sessionKey, dial, resuming)
             val terminal =
                 try {
-                    sshConnectionManager.openTerminal(session, size?.columns, size?.ptyRows, host)
+                    sshConnectionManager.openTerminal(session, size?.first, size?.second, host)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Throwable) {
@@ -1416,8 +1433,8 @@ class MainViewModel
                         val process =
                             withContext(Dispatchers.IO) {
                                 graph.runtime.spawnSession(
-                                    rows = size?.ptyRows ?: LOCAL_DEFAULT_ROWS,
-                                    columns = size?.columns ?: LOCAL_DEFAULT_COLUMNS,
+                                    rows = size?.second ?: LOCAL_DEFAULT_ROWS,
+                                    columns = size?.first ?: LOCAL_DEFAULT_COLUMNS,
                                 )
                             }
                         val terminal = LocalTerminalChannel(process)
@@ -1427,17 +1444,13 @@ class MainViewModel
                         // this one has no equivalent for: cancel the outgoing collector first so it never
                         // reports the hand-over as an outage, and never close a channel another dial
                         // installed under this key in the meantime.
-                        terminalJobs.remove(key)?.cancelAndJoin()
                         channels.put(key, terminal)?.let { previous ->
                             if (previous !== terminal) {
                                 previous.markDeliberate()
                                 runCatching { previous.close() }
                             }
                         }
-                        val buffer = themedBuffer(key)
-                        viewportSizes[key]?.let { buffer.resize(it.columns, it.bufferRows) }
-                        terminalJobs[key] = launchTerminalCollector(key, host.id, terminal, buffer)
-                        publishTerminalFrame(key, buffer)
+                        wireTerminal(key, host.id, terminal)
                         updateTab(key) { it?.copy(state = SessionConnectionState.CONNECTED, lastError = null) }
                         connectedAt[key] = SystemClock.elapsedRealtime()
                         diagnostics.record(
@@ -1473,7 +1486,7 @@ class MainViewModel
          *  - a collector reports the close of its channel as the end of the session, which for a channel
          *    being replaced is not what it means. Cancelled first, it never sees that close at all;
          *  - a reconnect deliberately keeps the host's buffer so its scrollback survives, and
-         *    [AnsiTerminalBuffer] is a plain list model with no locking. A cancel only *asks* a coroutine
+         *    the old engine's collector had no lock; the ConnectBot controller joins its pump
          *    to stop, so the outgoing collector could still be feeding or reading that buffer while its
          *    replacement fed it from another thread. That is a data race on an ArrayList: torn frames at
          *    best, an index out of bounds in the middle of a reconnect at worst. Joining makes the
@@ -1495,7 +1508,6 @@ class MainViewModel
             // here. Honoured now, before anything below runs: the rest of this function presents a session
             // to the user, and an attempt that has been replaced by another has none to present.
             currentCoroutineContext().ensureActive()
-            terminalJobs.remove(sessionKey)?.cancelAndJoin()
             channels.put(sessionKey, terminal)?.let { previous ->
                 // Never the channel just installed: adopting hands back the channel that is already in
                 // the map, and closing it would end the session this call exists to present.
@@ -1504,39 +1516,7 @@ class MainViewModel
                     runCatching { previous.close() }
                 }
             }
-            val buffer = themedBuffer(sessionKey)
-        /*
-         * The local half of the size the pty was just opened at.
-         *
-         * [resizeTerminal] could not apply it when it was measured, and that is structural rather than a
-         * race: the first viewport report of a connection arrives while the screen still says
-         * CONNECTING, and no buffer exists to resize until this line has run. The composable reports
-         * only when the size it measures *changes*, so it never mentioned that size again - which left
-         * the grid on its 120x40 default for the whole session while the remote pty was correctly sized
-         * to the phone, undoing the half of "both are required" that had arrived too early.
-         *
-         * Alternate-screen programs are what paid for it. `vim` and `top` draw for the rows the server
-         * told them about, so a grid holding ten rows more than the pty kept ten rows of whatever was
-         * on screen before, with a cursor row that agreed with neither. Both halves are coerced into
-         * [TERMINAL_COLUMN_RANGE]/[TERMINAL_ROW_RANGE] by [AnsiTerminalBuffer.resize] and
-         * [TerminalChannel.open] respectively, so they land on the same numbers even at a size no
-         * terminal may actually be.
-         *
-         * The grid catches up with [TerminalViewport.bufferRows] and not with the pty's height, which is
-         * now allowed to differ: a pty in an alternate screen is told the height of the screen, while the
-         * local grid keeps the taller one the app-wide setting asked for, so leaving `vim` does not
-         * reflow a screenful of scrollback into the shape of a full-screen program.
-         *
-         * No [SessionEvent.PTY_RESIZED] here: nothing is being asked of the far end. This is the local
-         * grid catching up with what the far end was already told, and recording it as a resize would
-         * put a window-change in the trace that never went out on the wire.
-         */
-            viewportSizes[sessionKey]?.let { buffer.resize(it.columns, it.bufferRows) }
-            terminalJobs[sessionKey] = launchTerminalCollector(sessionKey, host.id, terminal, buffer)
-            // An adopted session may be sitting at a prompt with nothing to say, and the collector only
-            // publishes when output arrives - so without this the scrollback the user already had would
-            // stay off screen until they pressed a key.
-            publishTerminalFrame(sessionKey, buffer)
+            wireTerminal(sessionKey, host.id, terminal)
             updateTab(sessionKey) { it?.copy(state = SessionConnectionState.CONNECTED, lastError = null) }
             connectedAt[sessionKey] = SystemClock.elapsedRealtime()
             diagnostics.record(
@@ -2130,340 +2110,112 @@ class MainViewModel
         }
 
         /**
-         * Feeds [terminal]'s output into [buffer] and publishes rendered frames at a bounded rate.
+         * What one channel's ending means for the session that owned it.
          *
-         * The previous version rendered on every emission, on the main thread, and that was the app's
-         * worst ANR by a wide margin. [TerminalChannel] emits once per `write` from Apache MINA's pump —
-         * which for a single keystroke echo is *one chunk per byte* — and each emission ran
-         * `plainText()`, which concatenates every cell of a 2 000-line scrollback (a `Char.toString()`
-         * per cell, so a quarter of a million short-lived Strings), plus `snapshot()`, which deep-copies
-         * the same grid, plus two whole-map copies of the `StateFlow` values. `cat` on any real file made
-         * the UI thread do that tens of thousands of times and the app stopped drawing.
-         *
-         * What this does instead:
-         *  - runs on [Dispatchers.Default], so parsing and rendering are off the main thread entirely;
-         *  - drains every chunk that has already arrived into the buffer before rendering once, so a
-         *    burst costs one render rather than one per byte;
-         *  - renders on the leading edge — the first chunk after an idle period is published immediately,
-         *    so an echoed keystroke is not held back;
-         *  - then rate-limits with [TERMINAL_FRAME_MS] before looking again. Anything that arrived during
-         *    that pause is drained and published on the next pass, so the tail of a burst always reaches
-         *    the screen; nothing is dropped and nothing is left stale.
-         *
-         * No chunk is discarded: the channel is unbounded and every byte reaches [AnsiTerminalBuffer] in
-         * order. Only the *rendering* is coalesced, which is invisible above about 30 frames a second.
-         *
-         * [buffer] is confined to this coroutine, so the frame it renders is always a whole one.
+         * The ConnectBot engine's pump calls this once, after the stream has drained, so the
+         * shell's parting output has already reached the emulator and the session log. The
+         * rules are the old collector's, unchanged, because they are facts about channels
+         * rather than about either engine: a close the app asked for is recorded but never
+         * reported as an outage; a channel another dial replaced is not this one's to report;
+         * a real drop either starts the reconnect ladder or tells the tab why it stopped.
          */
-        private fun launchTerminalCollector(
+        private fun onTerminalChannelEnd(
             sessionKey: String,
             hostId: String,
             terminal: TerminalChannel,
-            buffer: AnsiTerminalBuffer,
-        ): Job =
-            viewModelScope.launch(Dispatchers.Default) {
-                val incoming = Channel<ByteArray>(Channel.UNLIMITED)
-                val decoder = Utf8StreamDecoder()
-                // Created here rather than beside the buffer in `connect` so every path that starts a
-                // collector - a fresh connect, an adopted session, a reconnect - gets one, and so a
-                // reconnect (same session key, same scrollback) keeps the log it already had.
-                val sessionLog = sessionLogs.getOrPut(sessionKey) { SessionLog() }
-                // Answers to the queries the remote side sends: a cursor-position report, a device-attributes
-                // reply. The buffer produces them while parsing and cannot write them itself; without this a
-                // program that asks where the cursor is - anything using readline for a multi-line prompt -
-                // waits for a reply that never comes and appears to hang. write() only appends to a queue, so
-                // this never blocks the parser.
-                val responder: (String) -> Unit = { reply -> runCatching { terminal.writeBytes(reply.toByteArray()) } }
-                buffer.responder = responder
-                var reportedDroppedOutput = false
-                // Separate coroutine so a slow render can never make the shared flow drop an emission:
-                // TerminalChannel publishes with tryEmit first, and a full buffer would otherwise block
-                // Apache MINA's pump thread for as long as this loop took to catch up.
-                //
-                // It also closes `incoming`, because it is the only thing that writes to it, and it does so on
-                // reaching [TerminalChannel.END_OF_OUTPUT] - the terminator the channel puts at the end of the
-                // stream itself. `closer` used to close the queue the moment `awaitClosed` returned, and those
-                // are two signals delivered on two threads with nothing ordering them: under load the close won
-                // and the chunk still sitting in the shared flow was thrown away. That chunk is the shell's
-                // parting line - the farewell of a `logout`, the last line of a build, the single line a
-                // `nologin` account prints before it goes - so the session ended with its most useful output
-                // missing from the screen and from the transcript that Search and Save logs read.
-                val pump =
-                    launch {
-                        terminal.output.takeWhile { it !== TerminalChannel.END_OF_OUTPUT }.collect(incoming::send)
-                        incoming.close()
+            end: SessionEnd,
+        ) {
+            // A close the app asked for is not an outage: the tab is already going wherever
+            // the caller is taking it, and describing the app's own decision as a fault of
+            // the network is what the deliberate flag exists to prevent.
+            if (terminal.endedDeliberately) {
+                diagnostics.record(
+                    hostId,
+                    SessionEvent.CLOSED_BY_USER,
+                    channel = terminal.channelLabel,
+                    idleForMs = terminal.idleForMs(),
+                    upForMs = connectedAt.remove(sessionKey)?.let { SystemClock.elapsedRealtime() - it },
+                )
+                return
+            }
+            // Only if nothing newer has taken this session over. A redial replaces the
+            // channel under this key; reporting the replaced one would overwrite the
+            // CONNECTED state the new session just got. Absent is not the same as replaced -
+            // the liveness sweep can also have removed it - but in both cases this ending is
+            // not the one the user is looking at.
+            val current = channels[sessionKey]
+            if (current == null || current === terminal) {
+                channels.remove(sessionKey, terminal)
+                val endReason = describeSessionEnd(end)
+                // The corpse comes out of the registry here, at the one moment the app is
+                // entitled to remove it: the ending has been published, and this is the only
+                // path a dead session is guaranteed to reach. Declines to touch a session
+                // that is still live - a shell that exited under a transport carrying an SFTP
+                // transfer is the ordinary case. See [SshSessionStore.reap].
+                val reaped = sessionStore.reap(sessionKey)
+                val upForMs = connectedAt.remove(sessionKey)?.let { SystemClock.elapsedRealtime() - it }
+                if (upForMs != null && upForMs >= STABLE_SESSION_MS) reconnectAttempts.remove(sessionKey)
+                val refusedBeforeOutput = endedBeforeItRan(end, upForMs = upForMs, idleForMs = terminal.idleForMs())
+                val refusedByServer = serverRefusedYoungSession(end, upForMs = upForMs)
+                val refused = refusedBeforeOutput || refusedByServer
+                val willReconnect =
+                    !refused &&
+                        shouldAutoReconnect(
+                            end,
+                            tabIsOpen = tabs.value.any { it.id == sessionKey },
+                            endedDeliberately = false,
+                            autoReconnectEnabled = reconnectPolicies[sessionKey]?.enabled ?: true,
+                        )
+                val ended =
+                    when {
+                        !end.isFault -> SessionConnectionState.DISCONNECTED
+                        willReconnect -> SessionConnectionState.RECONNECTING
+                        else -> SessionConnectionState.ERROR
                     }
-                // Whatever the throttle below declined to publish, published once the throttle window is over.
-                // Skipping a rebuild is only ever meant to be a *delay*, but the loop that would have caught up
-                // blocks on the next chunk, and a shell that has just printed its prompt sends nothing more -
-                // so the last thing every burst produced was dropped from the transcript and stayed dropped.
-                // Search, Save logs and Save text all read that transcript, which meant the answer to "why is
-                // the last line of my build missing from the log I just saved" was this throttle. Conflated on
-                // purpose: at most one catch-up is ever outstanding, and nothing wakes at all while the
-                // transcript is current, so a quiet session costs nothing.
-                val transcriptDue = Channel<Unit>(Channel.CONFLATED)
-                val transcript =
-                    launch {
-                        for (unused in transcriptDue) {
-                            delay(TERMINAL_TEXT_MS)
-                            publishTerminalText(sessionKey, buffer, force = true)
-                        }
+                val reason =
+                    when {
+                        refusedByServer -> "$endReason · the server disconnected right after login, so it was not retried"
+                        refusedBeforeOutput -> "$endReason · closed before the shell produced any output, so it was not retried"
+                        else -> endReason
                     }
-                // Notices that the far end is gone, which nothing used to. [TerminalChannel.output] is a
-                // SharedFlow and a SharedFlow never completes, so a shell that exited, a server that rebooted
-                // and a network that went away all looked exactly like a prompt with nobody typing at it: the
-                // tab went on saying CONNECTED, keystrokes went into a dead stream without a word, and the only
-                // way to find out was to close the tab and try again. Closing `incoming` rather than cancelling
-                // anything lets the loop drain what is already queued first, so the shell's parting output -
-                // `logout`, a farewell banner, the last line of a job that ended - still reaches the screen.
-                val closer =
-                    launch {
-                        val end = terminal.awaitClosed()
-                        // Waits for the terminator to travel the stream, so everything the shell said before it
-                        // ended is in the buffer before the tab is told the session is over - and so a reconnect,
-                        // which cancels this collector to hand the buffer to its replacement, cannot cancel it out
-                        // from under output that has arrived but not yet been parsed.
-                        //
-                        // Bounded, and closing the queue by hand if the wait runs out, because the terminator is
-                        // emitted with `tryEmit` and a shared flow holding hundreds of undelivered chunks cannot
-                        // take it. That means the collector had already stopped draining, which is the one case
-                        // where there is nothing left to protect and a session that never reported its end would
-                        // be the worse outcome.
-                        if (withTimeoutOrNull(TERMINAL_DRAIN_MS) { pump.join() } == null) incoming.close()
-                        // Only if nothing newer has taken this session over. A reconnect cancels this coroutine
-                        // before it closes the channel it is replacing, so ordinarily it never sees that close -
-                        // but a cancel is a request, not a suspension of physics: this can already have been
-                        // resumed on another core, and reporting a replaced channel as a disconnection would
-                        // overwrite the CONNECTED state the new session had just been given.
-                        //
-                        // Absent is not the same as replaced, and testing for `remove` returning true conflated
-                        // them. Something else can legitimately have taken this channel out of the registry first -
-                        // the liveness sweep discards the channel of a session it proved dead - so on a real drop
-                        // that sweep and this handler raced for the same entry, and when the sweep won, this
-                        // returned early and the tab that had just lost its connection was left saying CONNECTED,
-                        // with nothing scheduled to bring it back.
-                        val current = channels[sessionKey]
-                        if (current == null || current === terminal) {
-                            channels.remove(sessionKey, terminal)
-                            // A close the app asked for is not an outage, and must not be described as one: the
-                            // tab is already going wherever the caller is taking it - closed, replaced by a
-                            // reconnect, or ended by Stop sessions - and overwriting it with "Disconnected from
-                            // the remote host" would report the app's own decision as a fault of the network.
-                            if (terminal.endedDeliberately) {
-                                diagnostics.record(
-                                    hostId,
-                                    SessionEvent.CLOSED_BY_USER,
-                                    channel = terminal.channelLabel,
-                                    idleForMs = terminal.idleForMs(),
-                                    upForMs = connectedAt.remove(sessionKey)?.let { SystemClock.elapsedRealtime() - it },
-                                )
-                                return@launch
-                            }
-                            // Which of the two endings this was decides the colour as well as the wording: a shell
-                            // that ran and exited is finished, a transport that died under it failed. See
-                            // [SessionEnd.isFault].
-                            val endReason = describeSessionEnd(end)
-                            // The corpse comes out of the registry here, at the one moment the app is entitled to
-                            // remove it: the ending has been published, so nothing can be reported over it, and this
-                            // is the only path a dead session is guaranteed to reach - a redial replaces the entry
-                            // itself, but a tab whose auto-reconnect is off, or whose ladder ran out, never dials
-                            // again. Declines to touch a session that is still live, which is the ordinary case when
-                            // a shell exits under a transport still carrying an SFTP transfer. See
-                            // [SshSessionStore.reap].
-                            val reaped = sessionStore.reap(sessionKey)
-                            // Read once, here, because two things now depend on it: the trace, and whether this
-                            // ending starts a new ladder or continues the one already running.
-                            val upForMs = connectedAt.remove(sessionKey)?.let { SystemClock.elapsedRealtime() - it }
-                            // A session that stood up for a while and then dropped is a *new* outage and gets the
-                            // full allowance back. One that died shortly after coming up is flapping, and its
-                            // allowance carries over so that five of those in a row reach the end of the ladder and
-                            // say what happened, instead of reconnecting for as long as the app is open. See
-                            // [STABLE_SESSION_MS] for why the threshold is minutes rather than seconds.
-                            if (upForMs != null && upForMs >= STABLE_SESSION_MS) reconnectAttempts.remove(sessionKey)
-                            // A shell the far end hung up on before it produced a single byte. Answering that with a
-                            // ladder is the loop users report, so it is answered with the server's reason instead.
-                            // See [endedBeforeItRan] for how narrow this is.
-                            val refusedBeforeOutput = endedBeforeItRan(end, upForMs = upForMs, idleForMs = terminal.idleForMs())
-                            // A server that sends SSH_MSG_DISCONNECT (byPeer) within the first moments of a login did
-                            // not suffer a transient drop - it refused the session. Reconnecting answers a deliberate
-                            // server decision and loops on every login, so it is answered with the server's reason
-                            // instead. See [serverRefusedYoungSession].
-                            val refusedByServer = serverRefusedYoungSession(end, upForMs = upForMs)
-                            val refused = refusedBeforeOutput || refusedByServer
-                            val willReconnect =
-                                !refused &&
-                                    shouldAutoReconnect(
-                                        end,
-                                        tabIsOpen = tabs.value.any { it.id == sessionKey },
-                                        endedDeliberately = false,
-                                        autoReconnectEnabled = reconnectPolicies[sessionKey]?.enabled ?: true,
-                                    )
-                            // A fault the ladder is about to answer is a *reconnecting* tab, not an error one.
-                            // Writing ERROR here and RECONNECTING a moment later - from inside the scheduling
-                            // coroutine, on the far side of a settings read from disk - made every genuine drop
-                            // flash red with "Disconnected from the remote host" before admitting it was already
-                            // dealing with it, and a slow read left it sitting in that state. Nothing is lost by
-                            // starting in the state the app is actually in: the reason still rides along as the
-                            // line under it, and an ending that is nobody's plan to recover from is still ERROR.
-                            val ended =
-                                when {
-                                    !end.isFault -> SessionConnectionState.DISCONNECTED
-                                    willReconnect -> SessionConnectionState.RECONNECTING
-                                    else -> SessionConnectionState.ERROR
-                                }
-                            // Why there is no recovery running gets said in the same breath as what happened,
-                            // because a tab that stops after one ending, with no explanation of why it did not try
-                            // again, is the same unanswerable report in a different costume.
-                            val reason =
-                                when {
-                                    refusedByServer -> "$endReason · the server disconnected right after login, so it was not retried"
-                                    refusedBeforeOutput -> "$endReason · closed before the shell produced any output, so it was not retried"
-                                    else -> endReason
-                                }
-                            updateTab(sessionKey) { it?.copy(state = ended, lastError = reason) }
-                            diagnostics.record(
-                                hostId,
-                                SessionEvent.ENDED,
-                                state = ended,
-                                detail =
-                                    "${end::class.java.simpleName}: $endReason" +
-                                        (if (refusedByServer) " · refused by server right after login" else "") +
-                                        (if (refusedBeforeOutput) " · refused before first output" else "") +
-                                        (if (reaped) " · session reaped" else ""),
-                                network = networkMonitor.describe(),
-                                pty = terminal.ptyLabel,
-                                channel = terminal.channelLabel,
-                                // The evidence that separates "the transport died under a live session" from "the
-                                // far end had stopped talking long before". Recorded on the ending itself because
-                                // by the time anything else reads this channel it has been reaped.
-                                idleForMs = terminal.idleForMs(),
-                                upForMs = upForMs,
-                            )
-                            // The one ending that says something about the userspace rather than about the
-                            // session: a local pty whose child exited 127 could not run the program proot was
-                            // asked for, which for an interactive session means the guest's own shell is gone.
-                            // Nothing else would conclude it - this ending is deliberately *not* a fault (a shell
-                            // that ran and exited is finished, see [SessionEnd.isFault]), so the tab is
-                            // DISCONNECTED, the userspace stays Running, and the card goes on offering a terminal
-                            // that cannot open while the Repair that would fix it is never offered.
-                            //
-                            // On [transportScope] rather than inline, and that is the point of the scope: the
-                            // verdict belongs to the userspace, not to this tab. Deciding it costs a health probe
-                            // (a proot fork), and this collector can be cancelled a moment later by a reconnect
-                            // or a Stop; the manager takes its own mutex and applies its own conditions before it
-                            // concludes anything. See [LinuxUserspaceManager.noteSessionEnded].
-                            if (LocalLinuxHost.isLocalHost(hostId) && sessionEndBlamesUserspace(end)) {
-                                linuxUserspace.graph?.manager?.let { manager ->
-                                    transportScope.launch { manager.noteSessionEnded(sessionKey, end) }
-                                }
-                            }
-                            if (willReconnect) {
-                                scheduleAutoReconnect(sessionKey, hostId, reason)
-                            } else {
-                                // A shell that exited is finished with its session; nothing is going to use the
-                                // transport again, and leaving it open would hold a socket and a heartbeat for a
-                                // tab showing a dead prompt. Keyed by session, so this can only ever be closing
-                                // the transport under *this* terminal - a sibling terminal to the same host holds
-                                // its own session under its own key and is not touched. Through the store rather
-                                // than the raw map, so the host index entry goes with it.
-                                sessionStore.close(sessionKey)
-                            }
-                            // The host's saved tunnels ride its primary session, and this ending may have just
-                            // taken that transport with it. A sibling terminal still holds a live session, so the
-                            // forwards can be rebound to the survivor now; on a host whose last session this was,
-                            // nothing runs - the ladder's own attach brings the tunnels back with the session it
-                            // dials. [startSavedForwards] stops the old handles first, so a host with no saved
-                            // rules is a no-op.
-                            if (sessionStore.sessionKeysForHost(hostId).any { it != sessionKey && sessionStore.isLive(it) }) {
-                                runCatching { hostRepository.hosts.first() }
-                                    .getOrNull()
-                                    ?.firstOrNull { it.id == hostId }
-                                    ?.let { host -> startSavedForwards(host) }
-                            }
-                        }
+                updateTab(sessionKey) { it?.copy(state = ended, lastError = reason) }
+                diagnostics.record(
+                    hostId,
+                    SessionEvent.ENDED,
+                    state = ended,
+                    detail =
+                        "${end::class.java.simpleName}: $endReason" +
+                            (if (refusedByServer) " · refused by server right after login" else "") +
+                            (if (refusedBeforeOutput) " · refused before first output" else "") +
+                            (if (reaped) " · session reaped" else ""),
+                    network = networkMonitor.describe(),
+                    pty = terminal.ptyLabel,
+                    channel = terminal.channelLabel,
+                    idleForMs = terminal.idleForMs(),
+                    upForMs = upForMs,
+                )
+                // A local pty whose child exited 127 could not run the program proot was asked
+                // for; the verdict belongs to the userspace, not to this tab.
+                if (LocalLinuxHost.isLocalHost(hostId) && sessionEndBlamesUserspace(end)) {
+                    linuxUserspace.graph?.manager?.let { manager ->
+                        transportScope.launch { manager.noteSessionEnded(sessionKey, end) }
                     }
-                try {
-                    while (isActive) {
-                        var chunk: ByteArray? = incoming.receiveCatching().getOrNull() ?: break
-                        val before = buffer.cursorLine
-                        do {
-                            // Decoded here rather than in the channel because the state that matters - the
-                            // two or three bytes of a codepoint that straddled a network read - lives between
-                            // chunks. See [Utf8StreamDecoder].
-                            val decoded = decoder.decode(chunk!!)
-                            buffer.feed(decoded)
-                            // The single tee point for everything a session showed: every decoded chunk
-                            // passes through here on its way to the buffer, so the session log and the
-                            // notify-when-done detector see exactly what the terminal saw. Typed input
-                            // needs no second plumbing - there is no local echo; a keystroke is written to
-                            // the channel and comes back through `terminal.output` like any other output,
-                            // so it reaches this tee when the shell echoes it.
-                            sessionLog.append(decoded)
-                            // Beside the log, from the same tee and for the same reason: what counts as output
-                            // is exactly what the terminal was handed. The position handed over is the log's
-                            // own cumulative count, not this chunk's length, so a note names a character that
-                            // can be found in the export rather than one only this coroutine could count. See
-                            // [renderAudits].
-                            renderAudit(sessionKey).onOutput(sessionLog.written())
-                            sessionDetectors[sessionKey]?.onOutput()
-                            chunk = incoming.tryReceive().getOrNull()
-                        } while (chunk != null)
-                        pinScrollback(sessionKey, buffer, before)
-                        publishTerminalFrame(sessionKey, buffer)
-                        if (!publishTerminalText(sessionKey, buffer)) transcriptDue.trySend(Unit)
-                        // Said once per session, and only if it ever happens. A hole in the transcript is
-                        // something the user has to be told about: the emulator's state depends on having seen
-                        // every byte, so what is on screen after a drop may be wrong in ways that look like the
-                        // remote program misbehaving. See [TerminalChannel.droppedChunks].
-                        if (!reportedDroppedOutput && terminal.droppedChunks > 0) {
-                            reportedDroppedOutput = true
-                            diagnostics.record(hostId, SessionEvent.OUTPUT_DROPPED, detail = "${terminal.droppedChunks} chunks")
-                            report("Some terminal output was dropped - the display may be out of step with the shell")
-                        }
-                        delay(TERMINAL_FRAME_MS)
-                    }
-                } finally {
-                    pump.cancel()
-                    // `closer` is deliberately left alone. It is what reports the ending, and the loop above
-                    // exits *because* of that ending - so cancelling it here is a race whose loser is a tab
-                    // that lost its session and never said so. It always finishes on its own: it is waiting on
-                    // a channel that has closed, and everything after that wait is a few non-suspending state
-                    // updates. This coroutine's completion waits for it, as a parent waits for its children;
-                    // a cancelled collector still takes it down, which is what replacing a channel wants.
-                    transcript.cancel()
-                    transcriptDue.close()
-                    // Only when it is still ours. Nothing should be able to overlap a collector with its
-                    // replacement - connect joins this one before starting the next - but a shared buffer left
-                    // with no responder is a session where anything that asks for the cursor position, which is
-                    // anything drawing a multi-line prompt, waits for a reply that never comes. Cheap insurance
-                    // against that ever becoming reachable again.
-                    if (buffer.responder === responder) buffer.responder = null
-                    // A batch is a promise from a program that is still running, and this one is not. The
-                    // buffer outlives the session - a reconnect reuses it - so a latch left set here would hold
-                    // the new shell's output back for as long as it was connected. See
-                    // [AnsiTerminalBuffer.releaseSynchronizedOutput].
-                    buffer.releaseSynchronizedOutput()
-                    // A truncated codepoint at the end of the stream becomes one replacement character
-                    // instead of vanishing, so a session cut mid-character still ends with what arrived.
-                    val tail = decoder.flush()
-                    // The same tail goes into the session log - it is real output, the last thing the
-                    // session ever said, and a log that stops one character short of the farewell it was
-                    // built to keep would be a strange one. It also feeds the detector, for symmetry with
-                    // the tee above; a session ending here disarms it via the watchdog's tab check.
-                    if (tail.isNotEmpty()) {
-                        buffer.feed(tail)
-                        sessionLog.append(tail)
-                        renderAudit(sessionKey).onOutput(sessionLog.written())
-                        sessionDetectors[sessionKey]?.onOutput()
-                    }
-                    // Unconditionally, and past the throttle. Cancelling `transcript` above cancels whatever
-                    // catch-up it still owed, and at the end of a session there is no next chunk to trigger
-                    // another one - so a shell whose last second was throttled ended with its farewell on
-                    // screen but missing from the transcript that Search, Save logs and Save text all read.
-                    publishTerminalFrame(sessionKey, buffer)
-                    publishTerminalText(sessionKey, buffer, force = true)
+                }
+                if (willReconnect) {
+                    scheduleAutoReconnect(sessionKey, hostId, reason)
+                } else {
+                    sessionStore.close(sessionKey)
+                }
+                // The host's saved tunnels ride its primary session; rebind them to a surviving
+                // sibling terminal, if there is one.
+                if (sessionStore.sessionKeysForHost(hostId).any { it != sessionKey && sessionStore.isLive(it) }) {
+                    runCatching { hostRepository.hosts.first() }
+                        .getOrNull()
+                        ?.firstOrNull { it.id == hostId }
+                        ?.let { host -> startSavedForwards(host) }
                 }
             }
+        }
 
         /**
          * Reconnects [hostId] after the transport died, waiting out a growing backoff first.
@@ -2648,291 +2400,6 @@ class MainViewModel
             job.invokeOnCompletion { reconnectJobs.remove(sessionKey, job) }
         }
 
-        /**
-         * How many rows of [buffer] are actually on screen for [sessionKey].
-         *
-         * The height of the window, as opposed to the height of the terminal, and the two stopped being the
-         * same number when the app-wide setting became a floor: a 1000-row terminal on a 40-row phone holds
-         * a thousand rows of scrollback, and cutting a frame at the grid's height would hand the view all of
-         * them to draw forty of. [AnsiTerminalBuffer.frame] anchors its window on the cursor, so the rows the
-         * user reads are the ones around where the shell is writing, wherever that is in the buffer.
-         *
-         * Falls back to the buffer's own height before any view has reported one - which is the state every
-         * test that drives this class without a screen is in, and the state a session is in for the few
-         * milliseconds between its shell opening and its first measurement.
-         */
-        private fun visibleRowsOf(
-            sessionKey: String,
-            buffer: AnsiTerminalBuffer,
-        ): Int = viewportSizes[sessionKey]?.visibleRows ?: buffer.viewportRows
-
-        /**
-         * The width the view will paint at, or zero before any view has reported one.
-         *
-         * Handed to [AnsiTerminalBuffer.frame] alongside the height so the buffer can fit its window in
-         * *wrapped* rows: the pty is told at least 80 columns by default while a phone in portrait fits
-         * about 44, so one line of output is two rows on screen and a window of N lines is more than N
-         * rows. Zero means "not wrapped for a screen", which is what the buffer did for every caller before
-         * this number existed, and remains right for a snapshot, the export renderer, and every test that
-         * drives the buffer without a view.
-         */
-        private fun visibleColumnsOf(sessionKey: String): Int = viewportSizes[sessionKey]?.visibleColumns ?: 0
-
-        /**
-         * Keeps scrolled-back text still while new output arrives underneath it.
-         *
-         * The offset is measured from the window's anchor - the cursor's line - because that is the
-         * coordinate the live view needs: "zero" has to mean "following the output" no matter how long the
-         * scrollback is. The cost is that every line the shell prints moves the window the offset describes,
-         * so a user reading output halfway up a busy log would watch the text slide away under their eyes
-         * while they read. Adding the anchor's own movement back cancels that exactly.
-         *
-         * The movement is measured from the cursor rather than from the line count, and the two are the same
-         * number in every session whose pty is exactly as tall as the buffer - the case [AnsiTerminalBuffer]
-         * was written for. They part company when the pty is taller, which is what the app-wide height
-         * setting asks for: on a 1000-row terminal with 200 lines written, a new line moves the cursor down
-         * without adding a line to the buffer at all, so a compensation keyed on the buffer's growth is zero
-         * and the view slides up by one row per line printed. One `ls` would walk a scrolled-back window off
-         * the screen. [AnsiTerminalBuffer.cursorLine] is the anchor the frame is really taken from, so it is
-         * the number that has to be given back.
-         *
-         * Clamped by [AnsiTerminalBuffer.maxScrollOffset] because the buffer also shrinks from the top once
-         * the scrollback limit starts evicting lines, and an offset past the top would otherwise stick to a
-         * line that no longer exists.
-         *
-         * A view that is already live is left alone - it is *supposed* to move.
-         *
-         * Applied as a compare-and-set rather than a read, an add and a write, because this runs on the
-         * collector's thread while the user's finger sets the same entry from the main thread. The three
-         * steps lose that race in the worst way available: the user scrolls to 80, the collector - holding
-         * the 50 it read a moment ago - writes 50 + growth, and the view jumps to a position the user has
-         * already left. It is also the direction the bug is felt in, since a user scrolls back precisely
-         * when output is arriving: "the terminal will not scroll while something is printing" is this
-         * write. [heldOffset] adds the growth to whatever the offset is *now*.
-         */
-        private fun pinScrollback(
-            sessionKey: String,
-            buffer: AnsiTerminalBuffer,
-            anchorBefore: Int,
-        ) {
-            val growth = buffer.cursorLine - anchorBefore
-            if (growth <= 0) return
-            val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
-            scrollOffsets.compute(sessionKey) { _, current -> heldOffset(current, growth, ceiling) }
-        }
-
-        /**
-         * The viewport the renderer draws: only the rows on screen, at the offset the user scrolled to.
-         *
-         * Skipped entirely while nothing is collecting [frames], which is the state the app is in whenever
-         * the terminal is not the visible destination — backgrounded, on the Files tab, or behind a dialog.
-         * The session is deliberately *not* paused with it: [launchTerminalCollector] keeps draining the
-         * pty, so the remote shell never blocks on a full window and the scrollback is complete the moment
-         * the user comes back. Only the per-frame copy is skipped, and that is the expensive part —
-         * [AnsiTerminalBuffer.frame] allocates a fresh list per row plus a list per row's cells, up to 30
-         * times a second, and on a low-end device that is a measurable amount of a session spent producing
-         * frames for a screen that is not on. [republishFrames] makes good on it as soon as anyone looks.
-         *
-         * `update`, not `value = value + …`: there is one collector coroutine per session and they publish
-         * concurrently, so the read-modify-write on the map has to be a compare-and-set or two hosts
-         * printing at once can lose one of the entries until the next frame.
-         */
-        private fun publishTerminalFrame(
-            sessionKey: String,
-            buffer: AnsiTerminalBuffer,
-        ) {
-            if (!isDisplaying(sessionKey, buffer)) return
-            if (terminalFrames.subscriptionCount.value == 0) return
-            val offset = scrollOffsets[sessionKey] ?: 0
-            val frame =
-                buffer.frame(
-                    offset,
-                    visibleRowsOf(sessionKey, buffer),
-                    visibleColumnsOf(sessionKey),
-                )
-            // Asked a second time, from inside the update: the check above only decides whether the frame
-            // is worth building. See [isDisplaying] for why the write is where the question has to be
-            // settled. [publishableFrame] settles the other two questions the write has to answer: whether
-            // this frame is still a description of the screen the user is looking at, and, if it is,
-            // whether it is the newest one anybody built.
-            terminalFrames.update { current ->
-                if (!isDisplaying(sessionKey, buffer)) {
-                    current
-                } else {
-                    val publishable =
-                        publishableFrame(
-                            published = current[sessionKey],
-                            built = frame,
-                            builtOffset = offset,
-                            currentOffset = scrollOffsets[sessionKey] ?: 0,
-                        )
-                    if (publishable == null) current else current + (sessionKey to publishable)
-                }
-            }
-            // After the write, not inside it: `update` may run its lambda more than once, and a note
-            // written twice would read as a screen that blanked twice. Only the live view is recorded -
-            // a scrolled-back window is a function of where the finger went, and a window panned past the
-            // end of the text is empty for reasons that have nothing to do with a session. A frame held
-            // back by a synchronized-output batch is not recorded either: nothing was published, and the
-            // audit would otherwise read the hold as output that arrived without a repaint, which is the
-            // very thing it exists to report as a fault.
-            if (offset == 0 && !frame.synchronizedOutput && isDisplaying(sessionKey, buffer)) {
-                terminalFrames.value[sessionKey]?.let { renderAudit(sessionKey).onFrame(sampleOf(it)) }
-            }
-        }
-
-        /** The audit of [sessionKey], created on first use by whichever of the two tees reaches it first. */
-        private fun renderAudit(sessionKey: String): RenderAudit = renderAudits.getOrPut(sessionKey) { RenderAudit() }
-
-        /**
-         * One published frame as the numbers the audit keeps.
-         *
-         * [paintedCells] rather than the frame's own width counters: the question the audit answers is
-         * whether the screen was empty, and a row that reaches column 52 with two characters on it is as
-         * empty as one that reaches column 2. The cursor is carried because it is the other half of every
-         * rendering report - a screen whose text is right and whose cursor is elsewhere is a different bug
-         * from one that is blank.
-         */
-        private fun sampleOf(frame: TerminalFrame): FrameSample =
-            FrameSample(
-                revision = frame.revision,
-                inkCells = paintedCells(frame.lines),
-                cursorRow = frame.cursorRow,
-                cursorColumn = frame.cursorColumn,
-                screen = screenKind(frame.alternateScreen, frame.positionalScreen),
-            )
-
-        /**
-         * Rebuilds every live terminal's frame, for the moment something starts drawing them again.
-         *
-         * Every buffer rather than only the ones known to have changed, and that is not laziness. Tracking
-         * which hosts were skipped invites a race the tracking cannot win: a collector that has already
-         * checked [MutableStateFlow.subscriptionCount] and found it zero will mark its host stale *after*
-         * this has run, and if its output then stops - which is exactly what a session sitting at a prompt
-         * does - nothing would rebuild that frame until the next byte arrived. The user would be looking at
-         * output from before the app was backgrounded with no way to know it. Rebuilding all of them costs
-         * one viewport copy per open session, once per foreground transition, and cannot get that wrong.
-         */
-        private fun republishFrames() {
-            if (terminalBuffers.isEmpty()) return
-            terminalFrames.update { current ->
-                current +
-                    terminalBuffers.entries.associate { (sessionKey, buffer) ->
-                        // Same guard as the collector's publish, for the same reason: this builds one snapshot
-                        // per open session and a session that is printing can publish a newer one in between.
-                        sessionKey to
-                            newerTerminalFrame(
-                                current[sessionKey],
-                                buffer.frame(
-                                    scrollOffsets[sessionKey] ?: 0,
-                                    visibleRowsOf(sessionKey, buffer),
-                                    visibleColumnsOf(sessionKey),
-                                ),
-                            )
-                    }
-            }
-        }
-
-        /**
-         * The whole scrollback as plain text, for the features that need words rather than cells:
-         * in-terminal search, the global search, and Save logs / Save text / Save screen.
-         *
-         * Throttled far harder than the frame, and separately from it, because it is the expensive half.
-         * [AnsiTerminalBuffer.plainText] walks every cell of the entire buffer - up to 2 000 lines - so at
-         * frame rate it would allocate hundreds of thousands of characters a second to serve a search field
-         * that is usually closed. Once a second is imperceptible for a text search and costs about
-         * three per cent of what the frame path does.
-         *
-         * [force] is for the end of a session, where "the last second of output" is not something the user
-         * can wait for.
-         */
-        private fun publishTerminalText(
-            sessionKey: String,
-            buffer: AnsiTerminalBuffer,
-            force: Boolean = false,
-        ): Boolean {
-            // Reported as published rather than as throttled: there is nothing to catch up to.
-            if (!isDisplaying(sessionKey, buffer)) return true
-            val now = SystemClock.elapsedRealtime()
-            val last = textPublishedAt[sessionKey]
-            if (!force && last != null && now - last < TERMINAL_TEXT_MS) return false
-            textPublishedAt[sessionKey] = now
-            val text = buffer.plainText().takeLast(MAX_TERMINAL_CHARS)
-            // Inside the update, for the reason [isDisplaying] gives: a whole scrollback is the largest
-            // thing a closed session can leave behind.
-            terminalOutput.update { if (isDisplaying(sessionKey, buffer)) it + (sessionKey to text) else it }
-            // And the throttle stamp with it, which is written above before the answer is known.
-            if (!isDisplaying(sessionKey, buffer)) textPublishedAt.remove(sessionKey)
-            return true
-        }
-
-        /**
-         * Whether [buffer] is still the terminal this host displays, and so whether publishing is wanted.
-         *
-         * Publishing is asynchronous with tearing a session down. [closeTab] and [deleteHost] cancel a
-         * collector and then forget the host's frame and transcript, but a cancelled collector does not
-         * stop where it stands: it finishes the iteration it was in and then runs its teardown, either of
-         * which can land after the cleanup and put a whole scrollback back into a map nothing will ever
-         * read again - retained for the life of the ViewModel. Both callers therefore drop the buffer
-         * *before* they cancel anything, which makes this the reliable answer to "is anyone still going to
-         * draw this?".
-         *
-         * Identity rather than presence, because a reconnect deliberately keeps the same buffer so the
-         * scrollback survives it; the outgoing collector and the incoming one share it, and a last
-         * publication from the outgoing one is the same content the new one would publish anyway.
-         *
-         * Reliable only if it is asked *as part of* the write, which is why both publishers ask it inside
-         * their `update` lambda rather than only on the way in. Collectors run on [Dispatchers.Default]
-         * and [closeTab] runs on the main thread, so a check at the top of a publisher and the write at
-         * the bottom are two steps with a whole teardown able to fit between them: the publisher passed
-         * the check, `closeTab` dropped the buffer and then removed the host's frame and transcript, and
-         * the publisher put them straight back - permanently, since nothing runs after a close. Asking
-         * inside the lambda makes the answer part of the compare-and-set: a publisher that wins the race
-         * has its entry removed by the removal that follows, and one that loses it reads the map
-         * `closeTab` has already emptied and writes nothing. That leak was a viewport of cells and up to
-         * [MAX_TERMINAL_CHARS] of scrollback per closed tab, held for the life of the ViewModel, and it is
-         * what `repeatedConnectAndDisconnectCyclesLeaveNothingBehind` caught.
-         */
-        private fun isDisplaying(
-            sessionKey: String,
-            buffer: AnsiTerminalBuffer,
-        ): Boolean = terminalBuffers[sessionKey] === buffer
-
-        /**
-         * Whether [generation] is still the dial [sessionKey] is on. See [dialGenerations].
-         *
-         * Absent means yes, deliberately: nothing removes a session's counter, so the only way to read null
-         * here is for the counter to have gone with the whole map, and refusing to report at all would be
-         * the worse of the two failures.
-         */
-        private fun isCurrentDial(
-            sessionKey: String,
-            generation: Long,
-        ): Boolean = (dialGenerations[sessionKey]?.get() ?: generation) == generation
-
-        fun acceptHostKey() {
-            val challenge = hostKeyChallenge.value ?: return
-            // The connection goes ahead either way - the user has just said they trust this key - but if
-            // the decision did not reach disk they have to be told, because the only symptom otherwise is
-            // being asked the same question again after every restart, which looks like the app ignoring
-            // the answer rather than a storage problem.
-            if (!sshConnectionManager.trustHost(challenge)) {
-                report("Connected, but this host key could not be saved - you will be asked again")
-            }
-            hostKeyChallenge.value = null
-            // The question has been answered, so it must not be put again to whatever collects next:
-            // see `SshConnectionManager.challengeHandled`.
-            sshConnectionManager.challengeHandled()
-            knownHostsState.value = sshConnectionManager.knownHosts()
-            pendingConnection?.let {
-                connect(it.host, it.password, it.keyPair, it.keyBytes, it.keyPassphrase, resuming = it.resuming)
-            }
-        }
-
-        fun refreshKnownHosts() {
-            knownHostsState.value = sshConnectionManager.knownHosts()
-        }
-
         fun forgetKnownHost(key: String) {
             val (host, port) =
                 runCatching {
@@ -2970,7 +2437,7 @@ class MainViewModel
         /**
          * Sends a whole line, as the command bar and the snippet list do.
          *
-         * The newline is rewritten to a carriage return by [TerminalKeys.normalizeNewlines]: a pty runs
+         * The newline is rewritten to a carriage return by the emulator's paste path: a pty runs
          * with ICRNL, so CR is what the Enter key actually transmits and what the remote line discipline
          * translates. Sending LF instead worked with `bash` and silently did nothing useful in a few
          * full-screen programs that read raw input.
@@ -2982,7 +2449,7 @@ class MainViewModel
             if (value.endsWith("\n") || value.endsWith("\r")) {
                 recordCommand(sessionKey, value.trimEnd('\n', '\r'))
             }
-            writeToTerminal(sessionKey, TerminalKeys.encode(TerminalKeys.normalizeNewlines(value)))
+            terminalSessions[sessionKey]?.paste(value.replace("\n", "\r"))
         }
 
         /**
@@ -2995,134 +2462,7 @@ class MainViewModel
             sessionKey: String,
             text: String,
         ) {
-            if (text.isEmpty()) return
-            accumulateTyped(sessionKey, text)
-            writeToTerminal(sessionKey, TerminalKeys.encode(text))
-        }
-
-        /**
-         * Sends a named key, encoded for the mode the remote side has the terminal in.
-         *
-         * The mode matters: with DECCKM set - which `vi`, `less` and anything using ncurses do - an arrow
-         * key is `ESC O A`, and outside it `ESC [ A`. Sending the wrong one puts a stray `A` in the file
-         * instead of moving the cursor, which is why this reads [TerminalFrame.applicationCursorKeys] from
-         * the buffer rather than assuming.
-         *
-         * Page Up and Page Down may belong to the local scrollback instead; [terminalKeyTarget] decides,
-         * and everything it does not claim goes to the remote as before. A key that is *not* claimed is
-         * never made local, so a press the scrollback cannot use is never a silent no-op.
-         */
-        fun sendKey(
-            sessionKey: String,
-            key: TerminalKey,
-            ctrl: Boolean = false,
-            alt: Boolean = false,
-            shift: Boolean = false,
-        ) {
-            val buffer = terminalBuffers[sessionKey]
-            val applicationCursorKeys = buffer?.applicationCursorKeysEnabled() ?: false
-            val modes = buffer?.keyboardModes() ?: KeyboardModes.NONE
-            val modifiers = TerminalModifiers(ctrl = ctrl, alt = alt, shift = shift)
-            // Asked only for the two keys the scrollback could want, so an ordinary keypress does not pay
-            // for a layout it has no use for. [terminalKeyTarget] stays the one place that decides where
-            // these two go; anything it does not claim falls through to the remote as before.
-            if (buffer != null && (key == TerminalKey.PAGE_UP || key == TerminalKey.PAGE_DOWN)) {
-                val target =
-                    terminalKeyTarget(
-                        key = key,
-                        modifiers = modifiers,
-                        programScreen = buffer.programOwnsScreen,
-                        scrollOffset = scrollOffsets[sessionKey] ?: 0,
-                        scrollCeiling =
-                            buffer.maxScrollOffset(
-                                visibleRowsOf(sessionKey, buffer),
-                                visibleColumnsOf(sessionKey),
-                            ),
-                    )
-                if (target == KeyTarget.LocalScroll) {
-                    pageTerminalScroll(sessionKey, back = key == TerminalKey.PAGE_UP)
-                    return
-                }
-            }
-            when (key) {
-                TerminalKey.ENTER -> recordCommand(sessionKey, typedLines.remove(sessionKey)?.toString().orEmpty())
-                TerminalKey.BACKSPACE -> typedLines[sessionKey]?.let { line -> if (line.isNotEmpty()) line.setLength(line.length - 1) }
-                else -> Unit
-            }
-            writeToTerminal(sessionKey, TerminalKeys.encode(key, modifiers, applicationCursorKeys, modes))
-        }
-
-        /**
-         * Reports a turn of the wheel to a program that asked for the mouse, at the cell the finger is over.
-         *
-         * Raw bytes rather than [sendKey] or [sendInput]: this is not a keystroke and not typed text. The
-         * newline normalization and command bookkeeping those two do would be wrong here - a mouse report
-         * is a fixed escape sequence the program parses, not input to a line editor.
-         */
-        fun sendMouseWheel(
-            sessionKey: String,
-            up: Boolean,
-            column: Int,
-            row: Int,
-        ) {
-            val button = if (up) MouseEncoding.Button.SCROLL_UP else MouseEncoding.Button.SCROLL_DOWN
-            writeToTerminal(sessionKey, MouseEncoding.encode(button = button, column = column, row = row))
-        }
-
-        /**
-         * Reports one gesture of the finger to a program that asked for the mouse, at a 1-based screen cell.
-         *
-         * Raw bytes, like [sendMouseWheel] and for the same reason: a mouse report is a fixed escape sequence
-         * the program parses, not a keystroke and not typed text.
-         *
-         * Whether the program is owed this gesture is the caller's answer, not this one's. The caller is the
-         * view, which decides from the frame it is drawing - so the report and the local gesture it was told
-         * apart from are read off the same set of modes and cannot disagree about who owns the screen.
-         */
-        fun sendMouseGesture(
-            sessionKey: String,
-            gesture: MouseGesture,
-            column: Int,
-            row: Int,
-        ) {
-            writeToTerminal(sessionKey, MouseEncoding.encodeGesture(gesture, column, row))
-        }
-
-        /**
-         * Sends [count] arrow key presses, for a drag on a screen that has no history to scroll.
-         *
-         * Through [sendKey], so the encoding follows DECCKM exactly as the arrow keys on the key bar do -
-         * a program that took the screen is the likeliest of all to have asked for the SS3 form.
-         */
-        fun sendArrowKeys(
-            sessionKey: String,
-            up: Boolean,
-            count: Int,
-        ) {
-            if (count <= 0) return
-            val key = if (up) TerminalKey.ARROW_UP else TerminalKey.ARROW_DOWN
-            repeat(count) { sendKey(sessionKey, key) }
-        }
-
-        /** Sends a single character with its modifiers - the Ctrl row, and the IME's own key events. */
-        fun sendChar(
-            sessionKey: String,
-            char: Char,
-            ctrl: Boolean = false,
-            alt: Boolean = false,
-        ) {
-            if (!ctrl && !alt) {
-                accumulateTyped(sessionKey, char.toString())
-            } else if (ctrl) {
-                // Ctrl-C, Ctrl-U and friends all abandon the line one way or another. Keeping a partial
-                // command after them would file text the user explicitly discarded.
-                typedLines.remove(sessionKey)
-            }
-            val modes = terminalBuffers[sessionKey]?.keyboardModes() ?: KeyboardModes.NONE
-            writeToTerminal(
-                sessionKey,
-                TerminalKeys.encode(char, TerminalModifiers(ctrl = ctrl, alt = alt), modes),
-            )
+            terminalSessions[sessionKey]?.paste(text)
         }
 
         /**
@@ -3157,8 +2497,7 @@ class MainViewModel
             text: String,
         ) {
             if (text.isEmpty()) return
-            val bracketed = terminalBuffers[sessionKey]?.bracketedPasteEnabled() ?: false
-            writeToTerminal(sessionKey, TerminalKeys.paste(text, bracketed))
+            terminalSessions[sessionKey]?.paste(text)
         }
 
         /**
@@ -3183,161 +2522,6 @@ class MainViewModel
                 return null
             }
             return text
-        }
-
-        /**
-         * Scrolls [sessionKey]'s terminal to [offset] lines above the live bottom; 0 follows the output again.
-         *
-         * Any page-scroll animation is dropped first: a scroll the user made by hand is taken from wherever
-         * the screen is *now*, and an animation still running behind it would keep writing the offset the
-         * drag is fighting for.
-         */
-        fun scrollTerminal(
-            sessionKey: String,
-            offset: Int,
-        ) {
-            pageScrolls.remove(sessionKey)?.cancel()
-            applyScroll(sessionKey, offset)
-        }
-
-        /** Scrolls by [delta] lines - positive is back into the history. */
-        fun scrollTerminalBy(
-            sessionKey: String,
-            delta: Int,
-        ) {
-            scrollTerminal(sessionKey, (scrollOffsets[sessionKey] ?: 0) + delta)
-        }
-
-        /**
-         * Pages [sessionKey]'s scrollback by one screenful, forward or back, a line at a time.
-         *
-         * Where the key goes is decided before this by [terminalKeyTarget]; this is only the local half of
-         * it. The distance is measured in rows rather than lines - see [pageSteps] - so the page lands on a
-         * screenful of text however the lines wrapped.
-         */
-        private fun pageTerminalScroll(
-            sessionKey: String,
-            back: Boolean,
-        ) {
-            pageScrolls.remove(sessionKey)?.cancel()
-            val buffer = terminalBuffers[sessionKey] ?: return
-            val rows = visibleRowsOf(sessionKey, buffer)
-            val columns = visibleColumnsOf(sessionKey)
-            val offset = scrollOffsets[sessionKey] ?: 0
-            val ceiling = buffer.maxScrollOffset(rows, columns)
-            val frame = terminalFrames.value[sessionKey] ?: buffer.frame(offset, rows, columns)
-            val layout = terminalLayout(frame, columns, rows)
-            // A layout describes the window the frame holds, in frame-relative lines; the walk runs over
-            // absolute buffer lines, which is what firstLine is for. Lines outside the window - the ones a
-            // page reaches before they have been drawn once - are charged at the tallest on screen.
-            val typical = tallestRowsPerLine(layout.rows)
-            val heights = HashMap<Int, Int>(layout.rows.size)
-            for (row in layout.rows) {
-                val line = row.line + frame.firstLine
-                heights[line] = (heights[line] ?: 0) + 1
-            }
-            val steps =
-                pageSteps(
-                    anchor = buffer.cursorLine,
-                    fromOffset = offset,
-                    pageRows = if (back) rows else -rows,
-                    ceiling = ceiling,
-                    rowsOfLine = { line -> heights[line] ?: typical },
-                )
-            if (steps == 0) return
-            val direction = if (steps > 0) 1 else -1
-            val lines = steps * direction
-            pageScrolls[sessionKey] =
-                viewModelScope.launch {
-                    // Spread over the same time whatever the length, so a short page and a long one feel alike.
-                    val perLine = (PAGE_SCROLL_MS / lines).coerceAtLeast(1L)
-                    repeat(lines) {
-                        applyScroll(sessionKey, (scrollOffsets[sessionKey] ?: 0) + direction)
-                        delay(perLine)
-                    }
-                }
-        }
-
-        /** Writes the scroll position and republishes, with no animation to interrupt. */
-        private fun applyScroll(
-            sessionKey: String,
-            offset: Int,
-        ) {
-            val buffer = terminalBuffers[sessionKey] ?: return
-            val ceiling = buffer.maxScrollOffset(visibleRowsOf(sessionKey, buffer), visibleColumnsOf(sessionKey))
-            val clamped = offset.coerceIn(0, ceiling)
-            if (clamped == 0) scrollOffsets.remove(sessionKey) else scrollOffsets[sessionKey] = clamped
-            publishTerminalFrame(sessionKey, buffer)
-        }
-
-        /** The text of a selection, in absolute buffer coordinates, for copy. */
-        fun terminalSelectionText(
-            sessionKey: String,
-            fromLine: Int,
-            fromColumn: Int,
-            toLine: Int,
-            toColumn: Int,
-        ): String = terminalBuffers[sessionKey]?.textIn(fromLine, fromColumn, toLine, toColumn).orEmpty()
-
-        /** One whole line of the buffer, for double-tap word selection and select-line. */
-        fun terminalLineText(
-            sessionKey: String,
-            line: Int,
-        ): String = terminalBuffers[sessionKey]?.textIn(line, 0, line, Int.MAX_VALUE).orEmpty()
-
-        /**
-         * The raw transcript of one session, for "Save session log".
-         *
-         * Read on demand rather than pushed through [uiState] because it is only ever wanted at the
-         * moment the user taps export - see [sessionLogs]. Null when the session has no log (its tab
-         * was closed or it never connected), empty when it has simply not produced output yet; the
-         * caller treats both as "nothing to save".
-         */
-        fun sessionLogText(sessionKey: String): String? = sessionLogs[sessionKey]?.snapshot()
-
-        /**
-         * What one session's own frames did, for "Save render audit".
-         *
-         * The companion to [sessionLogText] and read the same way - on demand, at the moment the user taps
-         * export - because it exists for the bugs that cannot be reproduced off the device: the two files
-         * describe the same seconds from the two ends that matter, the bytes the session received and the
-         * screens the app built out of them. Null when the session has no audit at all, which is a session
-         * that was closed before it ever spoke; see [renderAudits].
-         *
-         * The log's own eviction count goes in with it, because it is the log being exported beside this
-         * one: it turns a note's position in the session's output into a character of the text that was
-         * actually saved, and says so when that character is one eviction has already dropped.
-         */
-        fun renderAuditText(sessionKey: String): String? = renderAudits[sessionKey]?.report(sessionLogs[sessionKey]?.dropped())
-
-        /**
-         * One session's commands as a reader reads them, for the review pane - see [reviewCommands].
-         *
-         * Read on demand rather than pushed through [uiState], for the reason [sessionLogText] gives and one
-         * of its own: it is wanted only while the pane is open, and it is the *whole* session rather than the
-         * window a frame carries, so publishing it would put a full pass over the scrollback - every line of
-         * it turned into a string - on the frame path, for a pane that is usually closed. Empty when the
-         * session has no buffer (its tab was closed) or its shell has announced no prompts, which the pane
-         * reports as "nothing to review" rather than as a failure; both are the same answer to the question
-         * the pane asks.
-         */
-        fun sessionReview(sessionKey: String): List<ReviewedCommand> = terminalBuffers[sessionKey]?.sessionLines()?.let(::reviewCommands).orEmpty()
-
-        /**
-         * Scrolls [sessionKey] so the absolute buffer line [line] is at the top of the window, as near as the
-         * scrollback allows - the jump a review entry makes to the text it describes.
-         *
-         * The arithmetic is [offsetToShowLine]'s, over the same anchor the live view uses: the offset is
-         * measured from the cursor's line, which is what makes zero mean "following the output". A line that
-         * is already on screen therefore answers zero and the view stays where it is, which is the right
-         * result for a reader who jumped to a command they could already see.
-         */
-        fun scrollTerminalToLine(
-            sessionKey: String,
-            line: Int,
-        ) {
-            val buffer = terminalBuffers[sessionKey] ?: return
-            scrollTerminal(sessionKey, offsetToShowLine(buffer.cursorLine, line, visibleRowsOf(sessionKey, buffer)))
         }
 
         /**
@@ -3403,25 +2587,6 @@ class MainViewModel
             runCatching { channels[sessionKey]?.writeBytes(bytes) }
         }
 
-        /** Appends printable text to the reconstructed command line. See [typedLines]. */
-        private fun accumulateTyped(
-            sessionKey: String,
-            text: String,
-        ) {
-            val line = typedLines.getOrPut(sessionKey) { StringBuilder() }
-            for (char in text) {
-                when {
-                    char == '\n' || char == '\r' -> {
-                        recordCommand(sessionKey, line.toString())
-                        line.setLength(0)
-                    }
-                    // Control characters are commands to the shell, not part of what was typed.
-                    char.code >= 0x20 && char.code != 0x7F -> line.append(char)
-                }
-            }
-            if (line.length > MAX_TYPED_LINE) line.delete(0, line.length - MAX_TYPED_LINE)
-        }
-
         /**
          * Files a finished command under the recent-commands list.
          *
@@ -3443,62 +2608,29 @@ class MainViewModel
         }
 
         /**
-         * Applies a newly measured viewport to both halves of the terminal: the local grid and the remote pty.
-         *
-         * Both are required. Resizing only the buffer would leave the remote side drawing for the old
-         * width, so a full-screen program would wrap its own status line; telling only the remote side
-         * would leave the parser wrapping text the shell had already fitted. This runs on rotation, on a
-         * multi-window drag, when the software keyboard opens, and when a program enters or leaves the
-         * alternate screen - the last of which changes the height the pty is given without changing the grid.
-         *
-         * The three heights in [viewport] go to three different places on purpose; see [TerminalViewport]
-         * for why the pty's is not always the grid's.
+         * Remembers the session's pty size and tells the live channel, for a redial whose
+         * channel opens after the screen last measured. Under the ConnectBot engine the
+         * grid resize is the library's own (Terminal() measures, emulator.resize fires, the
+         * controller routes it to the pty).
          */
         fun resizeTerminal(
             sessionKey: String,
-            viewport: TerminalViewport,
+            columns: Int,
+            rows: Int,
         ) {
-            val buffer = terminalBuffers[sessionKey]
-            buffer?.resize(viewport.columns, viewport.bufferRows)
-            if (buffer != null) {
-                // A taller viewport can leave the stored offset past the top of a short buffer.
-                scrollOffsets[sessionKey]?.let { offset ->
-                    // Measured against the window the user is looking through, which is what the offset was
-                    // recorded in. The grid's own height would now be the taller of the two and would clear
-                    // an offset that is still perfectly valid.
-                    val ceiling = buffer.maxScrollOffset(viewport.visibleRows, viewport.visibleColumns)
-                    if (offset > ceiling) {
-                        if (ceiling <= 0) scrollOffsets.remove(sessionKey) else scrollOffsets[sessionKey] = ceiling
-                    }
-                }
-                publishTerminalFrame(sessionKey, buffer)
-            }
-            // Remembered for the *next* pty this session opens. The composable only reports a size when the
-            // size it measures changes, and a reconnect does not change the screen - so without this a new
-            // channel kept the 120x40 default while the UI, having already reported the real size once,
-            // never mentioned it again. Every full-screen program on a reconnected session was drawn for a
-            // terminal twice the width of the phone.
-            val previous = viewportSizes.put(sessionKey, viewport)
-            // Only when the geometry really moved. The composable reports on every measurement pass, and
-            // an entry per pass would push the interesting history out of the ring within seconds of
-            // scrolling. The trace is per *server*, so the host is resolved from the tab rather than
-            // assumed to be the key. An alternate-screen flip counts as a move here, and should: the far end
-            // is about to be told a different height, and a window-change in the trace is what explains the
-            // reflow that follows.
-            if (previous != viewport) {
+            val previous = viewportSizes.put(sessionKey, columns to rows)
+            if (previous?.first != columns || previous?.second != rows) {
                 tabs.value.firstOrNull { it.id == sessionKey }?.hostId?.let { hostId ->
                     diagnostics.record(
                         hostId,
                         SessionEvent.PTY_RESIZED,
-                        pty = "${viewport.columns}x${viewport.ptyRows}",
-                        detail = previous?.let { "was ${it.columns}x${it.ptyRows}" },
+                        pty = "${columns}x${rows}",
+                        detail = previous?.let { "was ${it.first}x${it.second}" },
                     )
                 }
             }
-            // sendWindowChange writes an SSH packet, which blocks when the transport is
-            // congested; keep it off the main thread so a stalled link cannot cause an ANR.
             transportScope.launch {
-                runCatching { channels[sessionKey]?.resize(viewport.columns, viewport.ptyRows) }
+                runCatching { channels[sessionKey]?.resize(columns, rows) }
             }
         }
 
@@ -4948,8 +4080,7 @@ class MainViewModel
         fun closeTab(tab: SessionTab) {
             // Before the cancel below, not after: see [isDisplaying]. A collector that is still
             // finishing an iteration must not be able to publish a frame for a session being closed.
-            terminalBuffers.remove(tab.id)
-            terminalJobs.remove(tab.id)?.cancel()
+            terminalSessions.remove(tab.id)?.close()
             connectJobs.remove(tab.id)?.cancel()
             // Closing a tab is the clearest possible statement that this session is not wanted, so it also
             // ends any reconnect waiting to bring it back.
@@ -4967,15 +4098,10 @@ class MainViewModel
             linuxUserspace.graph?.processes?.unregister(tab.id)
             tabs.value = tabs.value.filterNot { it.id == tab.id }
             terminalOutput.update { it - tab.id }
-            terminalFrames.update { it - tab.id }
             sessionLogs.remove(tab.id)
-            renderAudits.remove(tab.id)
             // Silently: a tab the user closed is not a command that finished, and the notification
             // would arrive for a session that no longer exists.
             sessionDetectors.remove(tab.id)
-            scrollOffsets.remove(tab.id)
-            textPublishedAt.remove(tab.id)
-            typedLines.remove(tab.id)
             viewportSizes.remove(tab.id)
             connectedAt.remove(tab.id)
             // Asked *after* the store entry is gone, so the answer already reflects this session leaving.
@@ -6389,7 +5515,7 @@ internal const val NEVER_RAN_MS = 3_000L
  * `theRemoteShellAttachesItselfAfterAuthenticationAndItsOutputArrivesUntyped` caught once the box
  * was loaded enough to lose that race.
  *
- * [AnsiTerminalBuffer.revision] is the ordering, and it is a sound one here: it never goes
+ * the session log's append order is the ordering, and it is a sound one here: it never goes
  * backwards, and every frame a host publishes is built from the one buffer it keeps for as long as
  * it has a published frame at all - [MainViewModel.closeTab] and [MainViewModel.deleteHost] drop
  * the buffer and the frame together, so a later session's revision 0 is never compared against an

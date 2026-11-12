@@ -22,17 +22,13 @@ bouncycastle = "1.86"
 # f39cbe2 is the revision whose RFB handshake, pixel format and thread model the
 # VNC engine in dev.eclipse.ssh.vnc was written and tested against.
 vernacular-vnc = "f39cbe28538a94ee70113ce0909a2e40b1bfe8f1"
-# Apache-2.0 (terminal-emulator + terminal-view are the only Termux submodules under Apache;
-# termux-app as a whole is GPL-3.0, but these two are derivatives of jackpal/Android-Terminal-Emulator
-# and retain its Apache-2.0 license — see terminal-emulator/LICENSE in the termux-app tree).
-# Used by the new TermuxTerminalView adapter to replace the legacy custom Compose renderer.
-#
-# JitPack coordinates. The termux-app repo publishes its submodules to JitPack as
-# `com.github.Termux.Termux-app:<submodule>:<git-tag>`. The git tag is the termux-app
-# release tag (e.g. v0.119.0-beta.3). Pinned to v0.118.3 — the latest stable release
-# as of Oct 2026, the same one F-Droid ships.
-termux-terminal-emulator = "v0.118.3"
-termux-terminal-view = "v0.118.3"
+# The ConnectBot terminal library — the official terminal engine this app uses for
+# emulation (libvterm via JNI) and the Compose Terminal() renderer. Apache-2.0, with
+# its bundled libvterm under MIT. Published on Maven Central, so the pin is a real
+# artifact rather than a JitPack build. 0.3.15 is the latest release, the same
+# version the ConnectBot app itself ships (connectbot repo, libs.versions.toml).
+# Bundle: AAR with jni_cb_term.so for all four ABIs + a Compose UI module.
+termlib = "0.3.15"
 # Spotless auto-fix: ktlint runs under Spotless so one task covers both style + format.
 # Pinned to ktlint_official 1.5.0 (matches the Kotlin 2.4.20 dialect used by AGP 9.4.1).
 spotless = "7.0.4"
@@ -127,17 +123,12 @@ androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "andro
 androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
 robolectric = { module = "org.robolectric:robolectric", version = "4.17" }
 
-# --- Terminal engine (Termux terminal-view, Apache-2.0) ---
-# terminal-emulator provides TerminalEmulator + TerminalBuffer (the VT100/ANSI parser).
-# terminal-view provides TerminalView (the Canvas renderer with realtime streaming,IME,mouse).
-# Both are pure Java/Kotlin — no JNI dependency on libtermux.so is required when only the
-# emulator+view are used (the JNI lib is needed by TerminalSession for local PTY, which we
-# don't use: EclipseSSH drives the emulator via the SSH channel bytes directly).
-#
-# JitPack coordinates: groupId `com.github.Termux.Termux-app`, artifactId is the submodule
-# name. See gradle/libs.versions.toml's `termux-terminal-emulator` version pin.
-termux-terminal-emulator = { module = "com.github.Termux.Termux-app:terminal-emulator", version.ref = "termux-terminal-emulator" }
-termux-terminal-view = { module = "com.github.Termux.Termux-app:terminal-view", version.ref = "termux-terminal-view" }
+# --- Terminal engine (ConnectBot termlib, Apache-2.0; bundled libvterm is MIT) ---
+# One artifact carries both halves: the libvterm-backed TerminalEmulator (JNI, all four
+# ABIs) and the Compose Terminal() renderer with keyboard/IME, selection, scrollback
+# and pinch-to-zoom. The app drives it from the SSH channel's byte stream — the library
+# owns emulation and rendering, never the transport.
+termlib = { module = "org.connectbot:termlib", version.ref = "termlib" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

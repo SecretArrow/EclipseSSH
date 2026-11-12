@@ -1,6 +1,5 @@
 package dev.eclipse.ssh.ssh
 
-import dev.eclipse.ssh.terminal.AnsiTerminalBuffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -72,7 +71,6 @@ class SshSessionStore
         val channels = ConcurrentHashMap<String, TerminalChannel>()
 
         /** Terminal state per session, kept across a reconnect so scrollback survives it. */
-        val buffers = ConcurrentHashMap<String, AnsiTerminalBuffer>()
 
         /**
          * Which host each session key belongs to, so host-scoped questions can be answered without
@@ -384,11 +382,10 @@ class SshSessionStore
             val host = hostOf.remove(oldKey) ?: return false
             val session = sessions.remove(oldKey)
             val channel = channels.remove(oldKey)
-            val buffer = buffers.remove(oldKey)
-            if (session == null && channel == null && buffer == null) return false
+            val buffer =             if (session == null && channel == null && buffer == null) return false
             if (session != null) sessions[newKey] = session
             if (channel != null) channels[newKey] = channel
-            if (buffer != null) buffers[newKey] = buffer
+            if (buffer != null) {} = buffer
             hostOf[newKey] = host
             return true
         }
@@ -484,8 +481,7 @@ class SshSessionStore
         /** [close], and forget the terminal state too. For a tab the user has closed. */
         fun forget(sessionKey: String) {
             close(sessionKey)
-            buffers.remove(sessionKey)
-        }
+                    }
 
         /** Closes every session. For "Stop sessions", and for the app being torn down deliberately. */
         fun closeAll() {

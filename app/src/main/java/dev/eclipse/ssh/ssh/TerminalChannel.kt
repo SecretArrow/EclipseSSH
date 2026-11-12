@@ -135,8 +135,7 @@ interface TerminalChannel : Closeable {
  * the cursor, the C0 controls a key press sends, and the UTF-8 of the text itself all share one
  * stream, and the boundaries between network reads fall wherever the network put them. Decoding each
  * read to a `String` here, which is what this class used to do, split multi-byte codepoints in half at
- * random and turned them into replacement characters (see [dev.eclipse.ssh.terminal.Utf8StreamDecoder]
- * for what that looks like). It also made the channel the wrong place to decide the encoding: the
+ * random and turned them into replacement characters (bytes are decoded at the emulator). It also made the channel the wrong place to decide the encoding: the
  * decoder has to be stateful across chunks, so it belongs with the session that owns the terminal
  * buffer, not with the transport.
  *

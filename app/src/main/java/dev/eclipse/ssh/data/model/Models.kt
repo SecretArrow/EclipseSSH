@@ -990,22 +990,7 @@ data class AppSettings(
      * and applied as a SGR-style draw for the Compose paint.
      */
     val terminalCursorStyle: String = "block",
-    /**
-     * Whether the terminal screen uses the Termux renderer (`com.termux:terminal-view`) instead of
-     * the legacy Compose Canvas renderer.
-     *
-     * Off by default in v1.25.0-beta1: the Termux integration is opt-in while it is verified on
-     * real devices. When on, the legacy [dev.eclipse.ssh.ui.terminal.TerminalView] composable is
-     * replaced by [dev.eclipse.ssh.ui.terminal.termux.TermuxTerminalView], which drives the Termux
-     * `TerminalEmulator` directly from the SSH channel's byte stream — fixing the legacy
-     * renderer's text-stacking and realtime-streaming issues by using the same engine Termux
-     * itself ships.
-     *
-     * Read through `state.settings.useTermuxRenderer` in [dev.eclipse.ssh.MainActivity] rather
-     * than cached, so toggling it in Settings takes effect on the next recomposition without an
-     * app restart.
-     */
-    val useTermuxRenderer: Boolean = false,
+
     /**
      * Whether the system bars stay on screen while a terminal session is open.
      *

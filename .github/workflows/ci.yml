@@ -57,8 +57,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/check-doc-figures.sh
-      - run: python3 scripts/terminal-symbols.py
-      - run: python3 scripts/terminal-width.py
 
   # Lint gate: Spotless ktlint check + Android lintRelease. Spotless is the
   # fast path (ktlint is ~30s); lintRelease is the slow one (~3min) but it is

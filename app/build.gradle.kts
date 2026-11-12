@@ -170,19 +170,6 @@ android {
         // instead of loaded from the APK.
         jniLibs {
             useLegacyPackaging = true
-            // Termux terminal-view ships libtermux.so (TerminalSession local-PTY)
-            // and liblocal-socket.so (LocalSocket/AmSocketServer) for the
-            // in-app Termux use case. EclipseSSH only needs TerminalEmulator +
-            // TerminalView (the parser and renderer), driven from SSH channel
-            // bytes, so both .so files are dead weight that would otherwise
-            // extract to nativeLibraryDir under useLegacyPackaging. Strip them
-            // before packaging to keep the APK lean and to avoid shipping a
-            // native binary the app never calls.
-            excludes +=
-                setOf(
-                    "lib/*/libtermux.so",
-                    "lib/*/liblocal-socket.so",
-                )
         }
         resources {
             excludes +=
@@ -511,18 +498,15 @@ dependencies {
     // of quietly removing the provider the whole SSH stack initialises against.
     implementation(libs.bouncycastle.prov)
 
-    // === Terminal engine (Termux terminal-view, Apache-2.0) ===
-    // Re-enabled for the Termux renderer integration (v1.25.0-beta1). The
-    // API surface is now verified against termux-app v0.118.3 source:
-    //   - TerminalSession(String, String, String[], String[], Integer, TerminalSessionClient)
-    //   - TerminalEmulator(TerminalOutput, int, int, int, int, Integer, TerminalSessionClient)
-    //   - TerminalViewClient: 19 abstract methods
-    //   - TerminalSessionClient: 16 abstract methods
-    // The .so files in terminal-view's AAR (libtermux.so for local-PTY exec, liblocal-socket.so
-    // for IPC) are excluded via jniLibs.excludes above — EclipseSshTerminalSession overrides
-    // initializeEmulator() to skip JNI.createSubprocess, so neither .so is ever loaded.
-    implementation(libs.termux.terminal.emulator)
-    implementation(libs.termux.terminal.view)
+    // === Terminal engine (ConnectBot termlib, Apache-2.0; bundled libvterm is MIT) ===
+    // The official ConnectBot terminal library: a libvterm-backed TerminalEmulator
+    // (JNI `jni_cb_term` for all four ABIs, packaged in the AAR) plus the Compose
+    // Terminal() renderer (keyboard/IME, selection, scrollback, pinch-to-zoom).
+    // The app owns the transport and feeds it through TerminalChannel's byte
+    // stream — see TerminalSessionController for the pump, and NOTICE for the
+    // upstream licenses. 0.3.15 is pinned from Maven Central, the same release
+    // the ConnectBot app itself ships.
+    implementation(libs.termlib)
 
     // The RDP engine's JNI wrapper and native libraries.
     implementation(project(":freerdp"))
