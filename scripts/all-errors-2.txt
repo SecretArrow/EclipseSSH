@@ -1,0 +1,123 @@
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:291:36 Unresolved reference 'TerminalKeyRow'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:295:36 Unresolved reference 'TerminalView'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:296:36 Unresolved reference 'minTerminalColumns'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:297:36 Unresolved reference 'TerminalLatches'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:298:36 Unresolved reference 'rememberTerminalLatches'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:299:36 Unresolved reference 'terminalTextInset'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1127:67 Unresolved reference 'refreshKnownHosts' on receiver of type 'MainViewModel'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1514:54 Unresolved reference 'sessionLogText' on receiver of type 'MainViewModel'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1714:54 Unresolved reference 'sessionLogText' on receiver of type 'MainViewModel'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1954:43 Unresolved reference 'acceptHostKey'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3248:19 Unresolved reference 'rememberTerminalLatches'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3272:9 Cannot infer type for type parameter 'T'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3273:13 Unresolved reference 'terminalTextInset'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3427:25 Cannot infer type for type parameter 'R'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3428:17 Unresolved reference 'TerminalKeyRow'.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:31 Cannot infer type for value parameter 'key'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:36 Cannot infer type for value parameter 'ctrl'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:42 Cannot infer type for value parameter 'alt'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:47 Cannot infer type for value parameter 'shift'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3434:32 Cannot infer type for value parameter 'text'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3435:32 Cannot infer type for value parameter 'char'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3435:38 Cannot infer type for value parameter 'ctrl'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3435:44 Cannot infer type for value parameter 'alt'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:16:33 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:17:33 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:417:96 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:442:81 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:5:33 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:6:33 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:152:47 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:153:41 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:108:33 Unresolved reference 'TerminalColors'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:109:36 Unresolved reference 'pageSteps'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:110:36 Unresolved reference 'tallestRowsPerLine'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:505:48 Unresolved reference 'foreground'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:506:48 Unresolved reference 'background'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:537:47 Unresolved reference 'TerminalColors'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:539:13 Unresolved reference 'TerminalColors'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:542:28 Unresolved reference 'themeColors'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:542:42 Variable 'currentThemeColors' must be initialized.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:970:21 Unresolved reference 'terminalJobs'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1238:65 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1264:52 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1273:48 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1282:61 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2215:56 Suspend function 'suspend fun <T> Flow<T>.first(): T' can only be called from a coroutine or another suspend function.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2417:13 Unresolved reference 'refreshKnownHosts'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2424:13 Unresolved reference 'refreshKnownHosts'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2606:13 Unresolved reference 'typedLines'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4348:39 Unresolved reference 'terminalBuffers'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4349:39 Unresolved reference 'terminalJobs'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4349:65 Unresolved reference 'cancel'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4355:21 Unresolved reference 'scrollOffsets'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4357:21 Unresolved reference 'typedLines'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4369:17 Unresolved reference 'terminalFrames'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4369:32 Cannot infer type for type parameter 'T'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4369:41 Cannot infer type for type parameter 'T'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4371:39 Unresolved reference 'renderAudits'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4766:13 Unresolved reference 'terminalJobs'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4766:43 Unresolved reference 'it'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4767:13 Unresolved reference 'terminalJobs'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4791:13 Unresolved reference 'scrollOffsets'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4793:13 Unresolved reference 'typedLines'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4799:13 Unresolved reference 'terminalBuffers'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4800:21 Unresolved reference 'it'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4800:48 Unresolved reference 'it'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4883:53 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4933:53 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5531:16 Unresolved reference 'TerminalFrame'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5532:12 Unresolved reference 'TerminalFrame'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5533:4 Unresolved reference 'TerminalFrame'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5533:55 Unresolved reference 'revision' on receiver of type 'Any'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5533:72 Unresolved reference 'revision'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5565:16 Unresolved reference 'TerminalFrame'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5566:12 Unresolved reference 'TerminalFrame'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5569:4 Unresolved reference 'TerminalFrame'.
+app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5572:15 Unresolved reference 'synchronizedOutput'.
+app/src/main/java/dev/eclipse/ssh/presentation/TerminalSessionController.kt:99:41 Unresolved reference 'takeWhile'.
+app/src/main/java/dev/eclipse/ssh/presentation/TerminalSessionController.kt:99:69 Cannot infer type for value parameter 'bytes'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/presentation/TerminalSessionController.kt:100:32 Cannot infer type for value parameter 'bytes'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:381:81 Unresolved reference 'buffers'.
+app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:385:38 'if' must have both main and 'else' branches when used as an expression.
+app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:385:80 Unresolved reference 'buffer'.
+app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:388:13 'if' must have both main and 'else' branches when used as an expression.
+app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:388:13 Variable expected.
+app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:4:33 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:5:33 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:512:44 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:513:38 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:583:44 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:584:38 Unresolved reference 'TERMINAL_ROW_RANGE'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:97:26 Unresolved reference 'TerminalLatches'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:99:52 Unresolved reference 'ctrl'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:101:51 Unresolved reference 'alt'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:103:53 Unresolved reference 'shift'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:107:17 Unresolved reference 'consume'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:127:37 None of the following candidates is applicable:
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:129:11 Unresolved reference 'build'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:130:14 Cannot infer type for type parameter 'T'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:130:14 Cannot infer type for type parameter 'R'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:130:20 Cannot infer type for type parameter 'T'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:135:18 Unresolved reference 'createFromResource'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:166:14 Unresolved reference 'TerminalLatches'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:175:19 Unresolved reference 'LocalContext'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:135:54 Initializer type mismatch: expected 'Map<TerminalKey, String>', actual 'String'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:9 Unresolved reference 'NAMED_ROW'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:31 Cannot infer type for implicit value parameter 'it'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:31 Operator call 'component1()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:31 Operator call 'component2()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:51 Cannot infer type for type parameter 'A'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:51 Cannot infer type for type parameter 'B'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:51 Candidate 'fun <A, B> A.to(that: B): Pair<A, B>' is inapplicable because of a receiver type mismatch.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:13 Unresolved reference 'NAMED_ROW'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:36 Cannot infer type for value parameter 'index'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:43 Cannot infer type for implicit value parameter 'it'. Specify it explicitly.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:43 Operator call 'component1()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:43 Operator call 'component2()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:168:31 Unresolved reference 'name'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:73:14 Unresolved reference 'TerminalFace'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:75:9 'when' expression must be exhaustive. Add an 'else' branch.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:75:15 Unresolved reference 'TerminalFace'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:76:13 Unresolved reference 'TerminalFace'.
+app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:77:13 Unresolved reference 'TerminalFace'.

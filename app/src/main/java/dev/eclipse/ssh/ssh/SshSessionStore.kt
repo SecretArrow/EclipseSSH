@@ -378,14 +378,13 @@ class SshSessionStore
             oldKey: String,
             newKey: String,
         ): Boolean {
-            if (sessions.containsKey(newKey) || channels.containsKey(newKey) || buffers.containsKey(newKey)) return false
+            if (sessions.containsKey(newKey) || channels.containsKey(newKey)) return false
             val host = hostOf.remove(oldKey) ?: return false
             val session = sessions.remove(oldKey)
             val channel = channels.remove(oldKey)
-            val buffer =             if (session == null && channel == null && buffer == null) return false
+            if (session == null && channel == null) return false
             if (session != null) sessions[newKey] = session
             if (channel != null) channels[newKey] = channel
-            if (buffer != null) {} = buffer
             hostOf[newKey] = host
             return true
         }

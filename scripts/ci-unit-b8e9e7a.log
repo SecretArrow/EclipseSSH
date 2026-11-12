@@ -1,0 +1,726 @@
+﻿2026-11-12T21:06:20.8488889Z Current runner version: '2.338.2'
+2026-11-12T21:06:20.8510636Z ##[group]Runner Image Provisioner
+2026-11-12T21:06:20.8511387Z Hosted Compute Agent
+2026-11-12T21:06:20.8511961Z Version: 20261028.624
+2026-11-12T21:06:20.8512508Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+2026-11-12T21:06:20.8513105Z Build Date: 2026-10-28T21:51:42Z
+2026-11-12T21:06:20.8513747Z Worker ID: {d34dcb2a-05e9-47d2-aeee-4a6fb69450fb}
+2026-11-12T21:06:20.8514382Z Region: westus2
+2026-11-12T21:06:20.8514874Z Cloud: Azure
+2026-11-12T21:06:20.8515353Z ##[endgroup]
+2026-11-12T21:06:20.8516998Z ##[group]Operating System
+2026-11-12T21:06:20.8517655Z Ubuntu
+2026-11-12T21:06:20.8518120Z 24.04.5
+2026-11-12T21:06:20.8518586Z LTS
+2026-11-12T21:06:20.8519052Z ##[endgroup]
+2026-11-12T21:06:20.8519531Z ##[group]Runner Image
+2026-11-12T21:06:20.8520112Z Image: ubuntu-24.04
+2026-11-12T21:06:20.8520596Z Version: 20261101.360.1
+2026-11-12T21:06:20.8521996Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-12T21:06:20.8523264Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261101.360
+2026-11-12T21:06:20.8524119Z ##[endgroup]
+2026-11-12T21:06:20.8525076Z ##[group]GITHUB_TOKEN Permissions
+2026-11-12T21:06:20.8527210Z Contents: read
+2026-11-12T21:06:20.8527734Z Metadata: read
+2026-11-12T21:06:20.8528334Z ##[endgroup]
+2026-11-12T21:06:20.8530146Z Secret source: Actions
+2026-11-12T21:06:20.8530893Z Cache mode: write
+2026-11-12T21:06:20.8531738Z Prepare workflow directory
+2026-11-12T21:06:20.8843739Z Prepare all required actions
+2026-11-12T21:06:20.8882683Z Getting action download info
+2026-11-12T21:06:21.2211348Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-11-12T21:06:21.3346866Z Download action repository 'actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6' (SHA:de7274f081f381c8f8158605e0321c36c376e2e6)
+2026-11-12T21:06:21.9654383Z Download action repository 'gradle/actions@v4' (SHA:ed408507eac070d1f99cc633dbcf757c94c7933a)
+2026-11-12T21:06:23.0410364Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-12T21:06:23.3818592Z Complete job name: Unit tests
+2026-11-12T21:06:23.4680643Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-11-12T21:06:23.4682194Z with:
+2026-11-12T21:06:23.4683092Z   repository: SecretArrow/EclipseSSH
+2026-11-12T21:06:23.4691044Z   token: ***
+2026-11-12T21:06:23.4691912Z   ssh-strict: true
+2026-11-12T21:06:23.4692817Z   ssh-user: git
+2026-11-12T21:06:23.4693667Z   persist-credentials: true
+2026-11-12T21:06:23.4694618Z   clean: true
+2026-11-12T21:06:23.4695505Z   sparse-checkout-cone-mode: true
+2026-11-12T21:06:23.4696516Z   fetch-depth: 1
+2026-11-12T21:06:23.4697556Z   fetch-tags: false
+2026-11-12T21:06:23.4698433Z   show-progress: true
+2026-11-12T21:06:23.4699331Z   lfs: false
+2026-11-12T21:06:23.4700196Z   submodules: false
+2026-11-12T21:06:23.4701139Z   set-safe-directory: true
+2026-11-12T21:06:23.4702142Z   allow-unsafe-pr-checkout: false
+2026-11-12T21:06:23.4703382Z env:
+2026-11-12T21:06:23.4704416Z   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+2026-11-12T21:06:23.4705847Z   BUILD_TOOLS: 36.0.0
+2026-11-12T21:06:23.4706841Z   COMPILE_SDK: android-37.0
+2026-11-12T21:06:23.4707814Z   MIN_SDK: 28
+2026-11-12T21:06:23.4708631Z   TARGET_SDK: android-35
+2026-11-12T21:06:23.4709593Z ##[endgroup]
+2026-11-12T21:06:24.0778872Z Syncing repository: SecretArrow/EclipseSSH
+2026-11-12T21:06:24.0780329Z ##[group]Getting Git version info
+2026-11-12T21:06:24.0780710Z Working directory is '/home/runner/work/EclipseSSH/EclipseSSH'
+2026-11-12T21:06:24.0781241Z [command]/usr/bin/git version
+2026-11-12T21:06:24.0891291Z git version 2.56.0
+2026-11-12T21:06:24.0915187Z ##[endgroup]
+2026-11-12T21:06:24.0927966Z Temporarily overriding HOME='/home/runner/work/_temp/56feeaf7-4905-43a7-bc0c-ea74610d9115' before making global git config changes
+2026-11-12T21:06:24.0937650Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-12T21:06:24.0938735Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/EclipseSSH/EclipseSSH
+2026-11-12T21:06:24.0979528Z Deleting the contents of '/home/runner/work/EclipseSSH/EclipseSSH'
+2026-11-12T21:06:24.0984319Z ##[group]Determining repository object format
+2026-11-12T21:06:24.0985176Z ##[endgroup]
+2026-11-12T21:06:24.0985703Z ##[group]Initializing the repository
+2026-11-12T21:06:24.0990409Z [command]/usr/bin/git init /home/runner/work/EclipseSSH/EclipseSSH
+2026-11-12T21:06:24.1110117Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-12T21:06:24.1110716Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-12T21:06:24.1111177Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-12T21:06:24.1111552Z hint: call:
+2026-11-12T21:06:24.1111757Z hint:
+2026-11-12T21:06:24.1112133Z hint: 	git config --global init.defaultBranch <name>
+2026-11-12T21:06:24.1112441Z hint:
+2026-11-12T21:06:24.1112773Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-12T21:06:24.1113219Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-12T21:06:24.1113594Z hint:
+2026-11-12T21:06:24.1113808Z hint: 	git branch -m <name>
+2026-11-12T21:06:24.1114064Z hint:
+2026-11-12T21:06:24.1114367Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-12T21:06:24.1120621Z Initialized empty Git repository in /home/runner/work/EclipseSSH/EclipseSSH/.git/
+2026-11-12T21:06:24.1132147Z [command]/usr/bin/git remote add origin https://github.com/SecretArrow/EclipseSSH
+2026-11-12T21:06:24.1186218Z ##[endgroup]
+2026-11-12T21:06:24.1186871Z ##[group]Disabling automatic garbage collection
+2026-11-12T21:06:24.1190392Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-12T21:06:24.1228485Z ##[endgroup]
+2026-11-12T21:06:24.1229541Z ##[group]Setting up auth
+2026-11-12T21:06:24.1229915Z Removing SSH command configuration
+2026-11-12T21:06:24.1234914Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-12T21:06:24.1292953Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-12T21:06:24.1655246Z Removing HTTP extra header
+2026-11-12T21:06:24.1661340Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-12T21:06:24.1699827Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-12T21:06:24.1906404Z Removing includeIf entries pointing to credentials config files
+2026-11-12T21:06:24.1911453Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-12T21:06:24.1951373Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-12T21:06:24.2164735Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-12T21:06:24.2206113Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git.path /home/runner/work/_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:06:24.2243052Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:06:24.2280689Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:06:24.2318330Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:06:24.2352648Z ##[endgroup]
+2026-11-12T21:06:24.2353352Z ##[group]Fetching the repository
+2026-11-12T21:06:24.2358223Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b8e9e7a709c78fc3f44743838f50fd219c058b6a:refs/remotes/origin/main
+2026-11-12T21:06:25.2616241Z From https://github.com/SecretArrow/EclipseSSH
+2026-11-12T21:06:25.2617392Z  * [new ref]         b8e9e7a709c78fc3f44743838f50fd219c058b6a -> origin/main
+2026-11-12T21:06:25.2624443Z [command]/usr/bin/git branch --list --remote origin/main
+2026-11-12T21:06:25.2658225Z   origin/main
+2026-11-12T21:06:25.2665394Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-11-12T21:06:25.2695637Z b8e9e7a709c78fc3f44743838f50fd219c058b6a
+2026-11-12T21:06:25.2699522Z ##[endgroup]
+2026-11-12T21:06:25.2700006Z ##[group]Determining the checkout info
+2026-11-12T21:06:25.2703512Z ##[endgroup]
+2026-11-12T21:06:25.2704028Z [command]/usr/bin/git sparse-checkout disable
+2026-11-12T21:06:25.2764162Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-12T21:06:25.2805881Z ##[group]Checking out the ref
+2026-11-12T21:06:25.2806645Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-11-12T21:06:25.3337924Z Switched to a new branch 'main'
+2026-11-12T21:06:25.3341653Z branch 'main' set up to track 'origin/main'.
+2026-11-12T21:06:25.3349923Z ##[endgroup]
+2026-11-12T21:06:25.3405689Z [command]/usr/bin/git log -1 --format=%H
+2026-11-12T21:06:25.3440129Z b8e9e7a709c78fc3f44743838f50fd219c058b6a
+2026-11-12T21:06:25.3718947Z ##[group]Run actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+2026-11-12T21:06:25.3719288Z with:
+2026-11-12T21:06:25.3719469Z   distribution: temurin
+2026-11-12T21:06:25.3719672Z   java-version: 17.0.13
+2026-11-12T21:06:25.3719874Z   java-package: jdk
+2026-11-12T21:06:25.3720050Z   check-latest: false
+2026-11-12T21:06:25.3720227Z   force-download: false
+2026-11-12T21:06:25.3720428Z   set-default: true
+2026-11-12T21:06:25.3720593Z   server-id: github
+2026-11-12T21:06:25.3720787Z   mvn-repositories-include-central: true
+2026-11-12T21:06:25.3721046Z   mvn-repositories-prioritize-central: true
+2026-11-12T21:06:25.3721320Z   overwrite-settings: true
+2026-11-12T21:06:25.3721574Z   cache-read-only: false
+2026-11-12T21:06:25.3721768Z   job-status: success
+2026-11-12T21:06:25.3723789Z   token: ***
+2026-11-12T21:06:25.3723976Z   show-download-progress: false
+2026-11-12T21:06:25.3724194Z   problem-matcher: true
+2026-11-12T21:06:25.3724381Z env:
+2026-11-12T21:06:25.3724644Z   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+2026-11-12T21:06:25.3724931Z   BUILD_TOOLS: 36.0.0
+2026-11-12T21:06:25.3725118Z   COMPILE_SDK: android-37.0
+2026-11-12T21:06:25.3725309Z   MIN_SDK: 28
+2026-11-12T21:06:25.3725480Z   TARGET_SDK: android-35
+2026-11-12T21:06:25.3725665Z ##[endgroup]
+2026-11-12T21:06:25.4408281Z ##[group]Installed distributions
+2026-11-12T21:06:25.4536752Z Trying to resolve the latest version from remote
+2026-11-12T21:06:25.9167957Z Resolved latest version as 17.0.13+11
+2026-11-12T21:06:25.9174331Z Trying to download...
+2026-11-12T21:06:25.9175781Z Downloading Java 17.0.13+11 (Temurin-Hotspot) from https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_linux_hotspot_17.0.13_11.tar.gz ...
+2026-11-12T21:06:27.1728908Z Verifying Java package signature...
+2026-11-12T21:06:27.7542727Z Extracting Java archive...
+2026-11-12T21:06:27.7636399Z [command]/usr/bin/tar --use-compress-program /usr/bin/pigz -d -x --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/0cd7ca05-7cfc-47f2-952f-c7858dfd4a89 -f /home/runner/work/_temp/12e9da35-2536-412f-83b3-b62c0c272e90
+2026-11-12T21:06:28.8371271Z Java 17.0.13+11 was downloaded
+2026-11-12T21:06:28.8371847Z Setting Java 17.0.13+11 as the default
+2026-11-12T21:06:28.8376892Z 
+2026-11-12T21:06:28.8377243Z Java configuration:
+2026-11-12T21:06:28.8377654Z   Distribution: temurin
+2026-11-12T21:06:28.8378117Z   Version: 17.0.13+11
+2026-11-12T21:06:28.8378512Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:28.8378860Z 
+2026-11-12T21:06:28.8379303Z ##[endgroup]
+2026-11-12T21:06:28.8420691Z Creating settings.xml with server-id: github
+2026-11-12T21:06:28.8422389Z Creating toolchains.xml for JDK version 17.0.13 from temurin
+2026-11-12T21:06:28.8425186Z Writing to /home/runner/.m2/settings.xml
+2026-11-12T21:06:28.8427924Z Writing to /home/runner/.m2/toolchains.xml
+2026-11-12T21:06:28.8434286Z Configured MAVEN_ARGS to include -ntp to suppress Maven transfer progress logs. Set 'show-download-progress: true' to keep the download progress output.
+2026-11-12T21:06:28.8693385Z ##[group]Run gradle/actions/setup-gradle@v4
+2026-11-12T21:06:28.8693653Z with:
+2026-11-12T21:06:28.8693834Z   cache-read-only: false
+2026-11-12T21:06:28.8694054Z   cache-disabled: false
+2026-11-12T21:06:28.8694248Z   cache-write-only: false
+2026-11-12T21:06:28.8694449Z   cache-overwrite-existing: false
+2026-11-12T21:06:28.8694669Z   cache-cleanup: on-success
+2026-11-12T21:06:28.8694909Z   gradle-home-cache-includes: caches
+notifications
+
+2026-11-12T21:06:28.8695173Z   add-job-summary: always
+2026-11-12T21:06:28.8695384Z   add-job-summary-as-pr-comment: never
+2026-11-12T21:06:28.8695614Z   dependency-graph: disabled
+2026-11-12T21:06:28.8695859Z   dependency-graph-report-dir: dependency-graph-reports
+2026-11-12T21:06:28.8696141Z   dependency-graph-continue-on-failure: true
+2026-11-12T21:06:28.8696377Z   build-scan-publish: false
+2026-11-12T21:06:28.8696876Z   validate-wrappers: true
+2026-11-12T21:06:28.8697130Z   allow-snapshot-wrappers: false
+2026-11-12T21:06:28.8697389Z   gradle-home-cache-strict-match: false
+2026-11-12T21:06:28.8697623Z   workflow-job-context: null
+2026-11-12T21:06:28.8699688Z   github-token: ***
+2026-11-12T21:06:28.8699876Z env:
+2026-11-12T21:06:28.8700103Z   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+2026-11-12T21:06:28.8700383Z   BUILD_TOOLS: 36.0.0
+2026-11-12T21:06:28.8700574Z   COMPILE_SDK: android-37.0
+2026-11-12T21:06:28.8700776Z   MIN_SDK: 28
+2026-11-12T21:06:28.8700944Z   TARGET_SDK: android-35
+2026-11-12T21:06:28.8701221Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:28.8701606Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:28.8701986Z   MAVEN_ARGS: -ntp
+2026-11-12T21:06:28.8702160Z ##[endgroup]
+2026-11-12T21:06:29.1798261Z Merged default JDK locations into /home/runner/.m2/toolchains.xml
+2026-11-12T21:06:29.1817157Z Preparing cache for cleanup.
+2026-11-12T21:06:29.1817786Z ##[group]Restore Gradle state from cache
+2026-11-12T21:06:29.4392376Z Cache hit for restore-key: gradle-home-v1|Linux-X64|unit[b8a35c2f917259958c9abe8f2ff1b5ff]-2437bd7215bb7df95871f85feb6b893c87cf4c92
+2026-11-12T21:06:30.7085349Z Received 16092586 of 32869802 (49.0%), 15.3 MBs/sec
+2026-11-12T21:06:30.8494740Z Received 32869802 of 32869802 (100.0%), 27.4 MBs/sec
+2026-11-12T21:06:30.8496002Z Cache Size: ~31 MB (32869802 B)
+2026-11-12T21:06:30.8516705Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2b9bd9ee-2379-4d7c-905f-5be068ef6b35/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:31.0474171Z Cache restored successfully
+2026-11-12T21:06:31.0491070Z Restored cache entry with key gradle-home-v1|Linux-X64|unit[b8a35c2f917259958c9abe8f2ff1b5ff]-b8e9e7a709c78fc3f44743838f50fd219c058b6a to /home/runner/.gradle/caches,/home/runner/.gradle/notifications,/home/runner/.gradle/.setup-gradle in 1868ms
+2026-11-12T21:06:31.3046783Z Cache hit for: gradle-dependencies-v1-205acd7bf4c4dc65a70daefa1f538d38
+2026-11-12T21:06:31.3050453Z Cache hit for: gradle-groovy-dsl-v1-c4a64a5bc967497c2181cc17a881f7ec
+2026-11-12T21:06:31.3097483Z Cache hit for: gradle-wrapper-zips-v1-c9df1941c607e9f3a791c5cd067a03dd
+2026-11-12T21:06:31.3188307Z Cache hit for: gradle-transforms-v1-9d35fbb7c2e562a666f25a8072be0149
+2026-11-12T21:06:31.3210050Z Cache hit for: gradle-instrumented-jars-v1-4b650e7c28052cd05f4cccb6b2e9223f
+2026-11-12T21:06:31.3214157Z Cache hit for: gradle-kotlin-dsl-v1-82d465f226195c4c4642f4c25071d9a9
+2026-11-12T21:06:31.9766769Z Received 108904 of 108904 (100.0%), 0.3 MBs/sec
+2026-11-12T21:06:31.9767710Z Cache Size: ~0 MB (108904 B)
+2026-11-12T21:06:31.9785255Z [command]/usr/bin/tar -xf /home/runner/work/_temp/13c34152-d527-4565-9f3a-ba215724c9d9/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:32.0082453Z Received 64667 of 64667 (100.0%), 0.2 MBs/sec
+2026-11-12T21:06:32.0082984Z Cache Size: ~0 MB (64667 B)
+2026-11-12T21:06:32.0527544Z [command]/usr/bin/tar -xf /home/runner/work/_temp/4667a1a6-8325-474a-92a0-39c22d888848/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:32.0764172Z Cache restored successfully
+2026-11-12T21:06:32.0767450Z Restored cache entry with key gradle-instrumented-jars-v1-4b650e7c28052cd05f4cccb6b2e9223f to /home/runner/.gradle/caches/jars-*/*/ in 1026ms
+2026-11-12T21:06:32.0837251Z Cache restored successfully
+2026-11-12T21:06:32.0838795Z Restored cache entry with key gradle-groovy-dsl-v1-c4a64a5bc967497c2181cc17a881f7ec to /home/runner/.gradle/caches/*/groovy-dsl/*/ in 1033ms
+2026-11-12T21:06:32.2798600Z Received 339465 of 339465 (100.0%), 0.5 MBs/sec
+2026-11-12T21:06:32.2799040Z Cache Size: ~0 MB (339465 B)
+2026-11-12T21:06:32.2835136Z [command]/usr/bin/tar -xf /home/runner/work/_temp/03f022b1-f2f6-4c5b-8715-cf91b067e14b/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:32.3440762Z Cache restored successfully
+2026-11-12T21:06:32.3478561Z Restored cache entry with key gradle-kotlin-dsl-v1-82d465f226195c4c4642f4c25071d9a9 to /home/runner/.gradle/caches/*/kotlin-dsl/accessors/*/,/home/runner/.gradle/caches/*/kotlin-dsl/scripts/*/ in 1294ms
+2026-11-12T21:06:32.5947966Z Received 25165824 of 581884285 (4.3%), 24.0 MBs/sec
+2026-11-12T21:06:32.6030837Z Received 0 of 312265551 (0.0%), 0.0 MBs/sec
+2026-11-12T21:06:32.6150460Z Received 8388608 of 150831906 (5.6%), 8.0 MBs/sec
+2026-11-12T21:06:33.5929742Z Received 138412032 of 581884285 (23.8%), 66.0 MBs/sec
+2026-11-12T21:06:33.6031815Z Received 130023424 of 312265551 (41.6%), 62.0 MBs/sec
+2026-11-12T21:06:33.6153447Z Received 125829120 of 150831906 (83.4%), 60.0 MBs/sec
+2026-11-12T21:06:34.5958470Z Received 297795584 of 581884285 (51.2%), 94.6 MBs/sec
+2026-11-12T21:06:34.6197495Z Received 142606336 of 312265551 (45.7%), 45.1 MBs/sec
+2026-11-12T21:06:34.6198726Z Received 125829120 of 150831906 (83.4%), 40.0 MBs/sec
+2026-11-12T21:06:35.5965764Z Received 411041792 of 581884285 (70.6%), 97.9 MBs/sec
+2026-11-12T21:06:35.6198479Z Received 272629760 of 312265551 (87.3%), 64.8 MBs/sec
+2026-11-12T21:06:35.6217967Z Received 146637602 of 150831906 (97.2%), 34.9 MBs/sec
+2026-11-12T21:06:35.7124709Z Received 150831906 of 150831906 (100.0%), 35.1 MBs/sec
+2026-11-12T21:06:35.7129549Z Cache Size: ~144 MB (150831906 B)
+2026-11-12T21:06:35.7414219Z [command]/usr/bin/tar -xf /home/runner/work/_temp/3c9e6bfb-c752-4528-bc14-8e369c8f86e2/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:35.9688018Z Received 312265551 of 312265551 (100.0%), 68.2 MBs/sec
+2026-11-12T21:06:35.9701114Z Cache Size: ~298 MB (312265551 B)
+2026-11-12T21:06:35.9818781Z [command]/usr/bin/tar -xf /home/runner/work/_temp/432cb7f6-1f93-42ab-8c76-c56451a5b345/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:36.0256181Z Cache restored successfully
+2026-11-12T21:06:36.0322985Z Restored cache entry with key gradle-wrapper-zips-v1-c9df1941c607e9f3a791c5cd067a03dd to /home/runner/.gradle/wrapper/dists/gradle-9.8.0-bin/3m7h6ceboy5k31n8kzwzuxssm in 4983ms
+2026-11-12T21:06:36.5964431Z Received 536870912 of 581884285 (92.3%), 102.3 MBs/sec
+2026-11-12T21:06:37.5732880Z Received 581884285 of 581884285 (100.0%), 92.8 MBs/sec
+2026-11-12T21:06:37.5767538Z Cache Size: ~555 MB (581884285 B)
+2026-11-12T21:06:37.6032274Z [command]/usr/bin/tar -xf /home/runner/work/_temp/8cbf1eff-9291-435e-89b9-8e3d7ceddeb2/cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --use-compress-program unzstd
+2026-11-12T21:06:40.9368698Z Cache restored successfully
+2026-11-12T21:06:40.9507114Z Restored cache entry with key gradle-transforms-v1-9d35fbb7c2e562a666f25a8072be0149 to /home/runner/.gradle/caches/transforms-4/*/,/home/runner/.gradle/caches/*/transforms/*/ in 9900ms
+2026-11-12T21:06:41.0190197Z Cache restored successfully
+2026-11-12T21:06:41.0426960Z Restored cache entry with key gradle-dependencies-v1-205acd7bf4c4dc65a70daefa1f538d38 to /home/runner/.gradle/caches/modules-*/files-*/*/*/*/* in 9993ms
+2026-11-12T21:06:41.0659332Z ##[endgroup]
+2026-11-12T21:06:41.0769607Z ##[group]All Gradle Wrapper jars are valid
+2026-11-12T21:06:41.0770696Z ✓ Found known Gradle Wrapper JAR files:
+2026-11-12T21:06:41.0771442Z   238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5 gradle/wrapper/gradle-wrapper.jar
+2026-11-12T21:06:41.0772037Z ##[endgroup]
+2026-11-12T21:06:41.2189453Z ##[group]Run # The runner image ships Android SDK at $ANDROID_HOME (typically
+2026-11-12T21:06:41.2190014Z [36;1m# The runner image ships Android SDK at $ANDROID_HOME (typically[0m
+2026-11-12T21:06:41.2190465Z [36;1m# /usr/local/lib/android/sdk); just install the missing packages.[0m
+2026-11-12T21:06:41.2190887Z [36;1m# Do NOT install a second SDK at $HOME — AGP errors with[0m
+2026-11-12T21:06:41.2191285Z [36;1m# "Several environment variables and/or system properties contain[0m
+2026-11-12T21:06:41.2191704Z [36;1m# different paths to the SDK" if ANDROID_HOME points at a different[0m
+2026-11-12T21:06:41.2192082Z [36;1m# tree than the runner's pre-installed one.[0m
+2026-11-12T21:06:41.2192528Z [36;1myes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true[0m
+2026-11-12T21:06:41.2193019Z [36;1m"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \[0m
+2026-11-12T21:06:41.2193338Z [36;1m  "platform-tools" \[0m
+2026-11-12T21:06:41.2193645Z [36;1m  "platforms;${COMPILE_SDK}" \[0m
+2026-11-12T21:06:41.2194047Z [36;1m  "build-tools;${BUILD_TOOLS}" > /dev/null[0m
+2026-11-12T21:06:41.2215720Z shell: /usr/bin/bash -e {0}
+2026-11-12T21:06:41.2215974Z env:
+2026-11-12T21:06:41.2216254Z   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+2026-11-12T21:06:41.2216781Z   BUILD_TOOLS: 36.0.0
+2026-11-12T21:06:41.2217022Z   COMPILE_SDK: android-37.0
+2026-11-12T21:06:41.2217255Z   MIN_SDK: 28
+2026-11-12T21:06:41.2217459Z   TARGET_SDK: android-35
+2026-11-12T21:06:41.2217788Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:41.2218225Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:41.2218564Z   MAVEN_ARGS: -ntp
+2026-11-12T21:06:41.2218812Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-12T21:06:41.2219110Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-12T21:06:41.2219379Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-12T21:06:41.2219663Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-12T21:06:41.2220052Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-12T21:06:41.2220467Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-12T21:06:41.2220766Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-12T21:06:41.2221039Z ##[endgroup]
+2026-11-12T21:06:43.8038888Z yes: standard output: Broken pipe
+2026-11-12T21:06:45.4130145Z ##[group]Run ./gradlew testDebugUnitTest --no-daemon --continue -x :freerdp:buildFreerdpNative -x :linux:buildLinuxNative
+2026-11-12T21:06:45.4130891Z [36;1m./gradlew testDebugUnitTest --no-daemon --continue -x :freerdp:buildFreerdpNative -x :linux:buildLinuxNative[0m
+2026-11-12T21:06:45.4149003Z shell: /usr/bin/bash -e {0}
+2026-11-12T21:06:45.4149247Z env:
+2026-11-12T21:06:45.4149681Z   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+2026-11-12T21:06:45.4150001Z   BUILD_TOOLS: 36.0.0
+2026-11-12T21:06:45.4150231Z   COMPILE_SDK: android-37.0
+2026-11-12T21:06:45.4150454Z   MIN_SDK: 28
+2026-11-12T21:06:45.4150655Z   TARGET_SDK: android-35
+2026-11-12T21:06:45.4150967Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:45.4151395Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:06:45.4151737Z   MAVEN_ARGS: -ntp
+2026-11-12T21:06:45.4152024Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-12T21:06:45.4152317Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-12T21:06:45.4152589Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-12T21:06:45.4152869Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-12T21:06:45.4153250Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-12T21:06:45.4153664Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-12T21:06:45.4153968Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-12T21:06:45.4154224Z ##[endgroup]
+2026-11-12T21:06:46.1251903Z To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.8.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+2026-11-12T21:06:47.0231422Z Daemon will be stopped at the end of the build 
+2026-11-12T21:06:48.4248688Z Calculating task graph as no cached configuration is available for tasks: testDebugUnitTest
+2026-11-12T21:06:53.6267566Z 
+2026-11-12T21:06:53.6271924Z > Configure project :app
+2026-11-12T21:06:53.6298120Z WARNING: keystore.properties is missing, so the release APK will be signed with the DEBUG key. It is not publishable and cannot upgrade an existing install. Provide keystore.properties to sign it for real.
+2026-11-12T21:06:57.0230697Z 
+2026-11-12T21:06:57.0232205Z > Task :app:preBuild UP-TO-DATE
+2026-11-12T21:06:57.0233696Z > Task :freerdp:preBuild UP-TO-DATE
+2026-11-12T21:06:57.0234402Z > Task :app:preDebugBuild UP-TO-DATE
+2026-11-12T21:06:57.0234976Z > Task :freerdp:preDebugBuild UP-TO-DATE
+2026-11-12T21:06:57.1230867Z > Task :app:generateDebugResources FROM-CACHE
+2026-11-12T21:06:57.1232496Z > Task :freerdp:processDebugNavigationResources FROM-CACHE
+2026-11-12T21:06:57.1233307Z > Task :linux:preBuild UP-TO-DATE
+2026-11-12T21:06:57.1234053Z > Task :linux:preDebugBuild UP-TO-DATE
+2026-11-12T21:06:57.1234783Z > Task :linux:processDebugNavigationResources FROM-CACHE
+2026-11-12T21:06:57.1235523Z > Task :app:packageDebugResources FROM-CACHE
+2026-11-12T21:06:57.1236184Z > Task :freerdp:generateDebugResources FROM-CACHE
+2026-11-12T21:06:57.1237041Z > Task :freerdp:packageDebugResources FROM-CACHE
+2026-11-12T21:06:58.5257982Z > Task :freerdp:parseDebugLocalResources FROM-CACHE
+2026-11-12T21:06:58.6248442Z > Task :freerdp:generateDebugRFile FROM-CACHE
+2026-11-12T21:06:58.6257319Z > Task :freerdp:compileDebugKotlin NO-SOURCE
+2026-11-12T21:06:58.6287277Z > Task :freerdp:javaPreCompileDebug FROM-CACHE
+2026-11-12T21:06:58.7248688Z > Task :app:processDebugNavigationResources FROM-CACHE
+2026-11-12T21:06:58.7275590Z > Task :app:parseDebugLocalResources FROM-CACHE
+2026-11-12T21:06:58.7277035Z > Task :app:generateDebugRFile FROM-CACHE
+2026-11-12T21:06:58.8277931Z > Task :linux:generateDebugResources FROM-CACHE
+2026-11-12T21:06:58.8287164Z > Task :linux:packageDebugResources FROM-CACHE
+2026-11-12T21:06:58.8317266Z > Task :linux:parseDebugLocalResources FROM-CACHE
+2026-11-12T21:06:58.8337157Z > Task :linux:generateDebugRFile FROM-CACHE
+2026-11-12T21:06:58.9248421Z > Task :linux:compileDebugKotlin FROM-CACHE
+2026-11-12T21:06:58.9249125Z > Task :linux:javaPreCompileDebug FROM-CACHE
+2026-11-12T21:06:58.9249878Z > Task :linux:compileDebugJavaWithJavac NO-SOURCE
+2026-11-12T21:06:59.0257879Z > Task :linux:bundleLibCompileToJarDebug
+2026-11-12T21:06:59.0286200Z > Task :app:javaPreCompileDebug FROM-CACHE
+2026-11-12T21:06:59.0288380Z > Task :linux:bundleLibRuntimeToJarDebug
+2026-11-12T21:06:59.0289295Z > Task :freerdp:writeDebugAarMetadata
+2026-11-12T21:06:59.0289915Z > Task :linux:writeDebugAarMetadata
+2026-11-12T21:06:59.2243409Z > Task :app:checkDebugAarMetadata
+2026-11-12T21:06:59.2244378Z > Task :app:mapDebugSourceSetPaths
+2026-11-12T21:06:59.2245031Z > Task :app:compileDebugNavigationResources FROM-CACHE
+2026-11-12T21:06:59.2245739Z > Task :freerdp:compileDebugJavaWithJavac FROM-CACHE
+2026-11-12T21:06:59.3247869Z > Task :freerdp:bundleLibCompileToJarDebug
+2026-11-12T21:06:59.5232395Z > Task :app:mergeDebugResources FROM-CACHE
+2026-11-12T21:06:59.5258534Z > Task :freerdp:bundleLibRuntimeToJarDebug
+2026-11-12T21:06:59.6245861Z > Task :app:createDebugCompatibleScreenManifests
+2026-11-12T21:06:59.6257281Z > Task :app:extractDeepLinksDebug FROM-CACHE
+2026-11-12T21:06:59.6284312Z > Task :freerdp:extractDeepLinksDebug FROM-CACHE
+2026-11-12T21:06:59.6317078Z > Task :freerdp:processDebugManifest FROM-CACHE
+2026-11-12T21:06:59.6347083Z > Task :linux:extractDeepLinksDebug FROM-CACHE
+2026-11-12T21:06:59.6367474Z > Task :linux:processDebugManifest FROM-CACHE
+2026-11-12T21:06:59.7231455Z > Task :app:processDebugMainManifest FROM-CACHE
+2026-11-12T21:06:59.7247350Z > Task :app:processDebugManifest FROM-CACHE
+2026-11-12T21:06:59.7247943Z > Task :app:processDebugManifestForPackage FROM-CACHE
+2026-11-12T21:06:59.7248460Z > Task :freerdp:mapDebugSourceSetPaths
+2026-11-12T21:06:59.7248973Z > Task :freerdp:compileDebugLibraryResources FROM-CACHE
+2026-11-12T21:06:59.7249497Z > Task :linux:mapDebugSourceSetPaths
+2026-11-12T21:06:59.8245805Z > Task :linux:compileDebugLibraryResources FROM-CACHE
+2026-11-12T21:07:00.0238438Z > Task :app:processDebugResources FROM-CACHE
+2026-11-12T21:07:00.0277471Z > Task :app:generateDebugAssets UP-TO-DATE
+2026-11-12T21:07:00.0278356Z > Task :freerdp:generateDebugAssets UP-TO-DATE
+2026-11-12T21:07:00.0307235Z > Task :freerdp:mergeDebugAssets
+2026-11-12T21:07:00.0307984Z > Task :linux:generateDebugAssets UP-TO-DATE
+2026-11-12T21:07:00.1247788Z > Task :linux:mergeDebugAssets
+2026-11-12T21:07:00.1259387Z > Task :app:mergeDebugAssets
+2026-11-12T21:07:00.1260354Z > Task :app:preDebugUnitTestBuild UP-TO-DATE
+2026-11-12T21:07:00.3238126Z > Task :app:packageDebugUnitTestForUnitTest
+2026-11-12T21:07:00.4238300Z > Task :app:stripSshdServices
+2026-11-12T21:07:00.8229617Z 
+2026-11-12T21:07:00.8233371Z > Task :app:mergeDebugUnitTestManifest
+2026-11-12T21:07:00.8234388Z /home/runner/work/EclipseSSH/EclipseSSH/app/src/main/AndroidManifest.xml:480:13-483:39 Warning:
+2026-11-12T21:07:00.8235826Z 	meta-data#androidx.work.WorkManagerInitializer was tagged at AndroidManifest.xml:480 to remove other declarations but no other declaration present
+2026-11-12T21:07:00.8236939Z 
+2026-11-12T21:07:00.8237264Z > Task :app:processDebugUnitTestManifest
+2026-11-12T21:07:00.9238355Z > Task :app:generateDebugUnitTestConfig
+2026-11-12T21:07:00.9267552Z > Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+2026-11-12T21:07:00.9304813Z > Task :freerdp:processDebugJavaRes NO-SOURCE
+2026-11-12T21:07:00.9305346Z > Task :linux:processDebugJavaRes
+2026-11-12T21:07:00.9305789Z > Task :freerdp:preDebugUnitTestBuild UP-TO-DATE
+2026-11-12T21:07:00.9306314Z > Task :freerdp:generateDebugUnitTestStubRFile FROM-CACHE
+2026-11-12T21:07:00.9306984Z > Task :freerdp:compileDebugUnitTestKotlin NO-SOURCE
+2026-11-12T21:07:00.9307499Z > Task :freerdp:javaPreCompileDebugUnitTest FROM-CACHE
+2026-11-12T21:07:00.9308044Z > Task :freerdp:compileDebugUnitTestJavaWithJavac NO-SOURCE
+2026-11-12T21:07:00.9308599Z > Task :freerdp:processDebugUnitTestJavaRes NO-SOURCE
+2026-11-12T21:07:00.9309060Z > Task :freerdp:testDebugUnitTest NO-SOURCE
+2026-11-12T21:07:00.9309942Z > Task :linux:preDebugUnitTestBuild UP-TO-DATE
+2026-11-12T21:07:00.9310310Z > Task :linux:generateDebugUnitTestStubRFile FROM-CACHE
+2026-11-12T21:07:00.9310924Z > Task :linux:compileDebugUnitTestKotlin NO-SOURCE
+2026-11-12T21:07:00.9311467Z > Task :linux:javaPreCompileDebugUnitTest FROM-CACHE
+2026-11-12T21:07:00.9311973Z > Task :linux:compileDebugUnitTestJavaWithJavac NO-SOURCE
+2026-11-12T21:07:00.9312724Z > Task :linux:processDebugUnitTestJavaRes NO-SOURCE
+2026-11-12T21:07:00.9313198Z > Task :linux:testDebugUnitTest NO-SOURCE
+2026-11-12T21:07:16.8232263Z > Task :app:kspDebugKotlin
+2026-11-12T21:07:46.8230264Z > Task :app:compileDebugKotlin
+2026-11-12T21:09:07.3258420Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:291:36 Unresolved reference 'TerminalKeyRow'.
+2026-11-12T21:09:07.3294206Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:295:36 Unresolved reference 'TerminalView'.
+2026-11-12T21:09:07.3317862Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:296:36 Unresolved reference 'minTerminalColumns'.
+2026-11-12T21:09:07.3347888Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:297:36 Unresolved reference 'TerminalLatches'.
+2026-11-12T21:09:07.3377860Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:298:36 Unresolved reference 'rememberTerminalLatches'.
+2026-11-12T21:09:07.3397675Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:299:36 Unresolved reference 'terminalTextInset'.
+2026-11-12T21:09:07.3407748Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1127:67 Unresolved reference 'refreshKnownHosts' on receiver of type 'MainViewModel'.
+2026-11-12T21:09:07.3465212Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1514:54 Unresolved reference 'sessionLogText' on receiver of type 'MainViewModel'.
+2026-11-12T21:09:07.3477793Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1714:54 Unresolved reference 'sessionLogText' on receiver of type 'MainViewModel'.
+2026-11-12T21:09:07.3479485Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:1954:43 Unresolved reference 'acceptHostKey'.
+2026-11-12T21:09:07.3507679Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3248:19 Unresolved reference 'rememberTerminalLatches'.
+2026-11-12T21:09:07.3537675Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3272:9 Cannot infer type for type parameter 'T'. Specify it explicitly.
+2026-11-12T21:09:07.3553793Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3273:13 Unresolved reference 'terminalTextInset'.
+2026-11-12T21:09:07.3577751Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3427:25 Cannot infer type for type parameter 'R'. Specify it explicitly.
+2026-11-12T21:09:07.3607566Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3428:17 Unresolved reference 'TerminalKeyRow'.
+2026-11-12T21:09:07.3637754Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:31 Cannot infer type for value parameter 'key'. Specify it explicitly.
+2026-11-12T21:09:07.3647703Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:36 Cannot infer type for value parameter 'ctrl'. Specify it explicitly.
+2026-11-12T21:09:07.3669883Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:42 Cannot infer type for value parameter 'alt'. Specify it explicitly.
+2026-11-12T21:09:07.3697779Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3431:47 Cannot infer type for value parameter 'shift'. Specify it explicitly.
+2026-11-12T21:09:07.3727824Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3434:32 Cannot infer type for value parameter 'text'. Specify it explicitly.
+2026-11-12T21:09:07.3762365Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3435:32 Cannot infer type for value parameter 'char'. Specify it explicitly.
+2026-11-12T21:09:07.3797926Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3435:38 Cannot infer type for value parameter 'ctrl'. Specify it explicitly.
+2026-11-12T21:09:07.3829879Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:3435:44 Cannot infer type for value parameter 'alt'. Specify it explicitly.
+2026-11-12T21:09:07.3857782Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:16:33 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4238957Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:17:33 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4260025Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:417:96 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4262055Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/data/settings/SettingsRepository.kt:442:81 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4263717Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:5:33 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4265389Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:6:33 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4267326Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:152:47 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4269120Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/linux/LocalTerminalChannel.kt:153:41 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4270818Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:108:33 Unresolved reference 'TerminalColors'.
+2026-11-12T21:09:07.4272484Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:109:36 Unresolved reference 'pageSteps'.
+2026-11-12T21:09:07.4274180Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:110:36 Unresolved reference 'tallestRowsPerLine'.
+2026-11-12T21:09:07.4276320Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:505:48 Unresolved reference 'foreground'.
+2026-11-12T21:09:07.4278147Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:506:48 Unresolved reference 'background'.
+2026-11-12T21:09:07.4289775Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:537:47 Unresolved reference 'TerminalColors'.
+2026-11-12T21:09:07.4291555Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:539:13 Unresolved reference 'TerminalColors'.
+2026-11-12T21:09:07.4293459Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:542:28 Unresolved reference 'themeColors'.
+2026-11-12T21:09:07.4295185Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:542:42 Variable 'currentThemeColors' must be initialized.
+2026-11-12T21:09:07.4297010Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:970:21 Unresolved reference 'terminalJobs'.
+2026-11-12T21:09:07.4298906Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1238:65 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+2026-11-12T21:09:07.4300345Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1264:52 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+2026-11-12T21:09:07.4301481Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1273:48 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+2026-11-12T21:09:07.4302581Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:1282:61 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+2026-11-12T21:09:07.4303898Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2215:56 Suspend function 'suspend fun <T> Flow<T>.first(): T' can only be called from a coroutine or another suspend function.
+2026-11-12T21:09:07.4305183Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2417:13 Unresolved reference 'refreshKnownHosts'.
+2026-11-12T21:09:07.4306235Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2424:13 Unresolved reference 'refreshKnownHosts'.
+2026-11-12T21:09:07.4307799Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:2606:13 Unresolved reference 'typedLines'.
+2026-11-12T21:09:07.4309392Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4348:39 Unresolved reference 'terminalBuffers'.
+2026-11-12T21:09:07.4311081Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4349:39 Unresolved reference 'terminalJobs'.
+2026-11-12T21:09:07.4315271Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4349:65 Unresolved reference 'cancel'.
+2026-11-12T21:09:07.4317535Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4355:21 Unresolved reference 'scrollOffsets'.
+2026-11-12T21:09:07.4319199Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4357:21 Unresolved reference 'typedLines'.
+2026-11-12T21:09:07.4320867Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4369:17 Unresolved reference 'terminalFrames'.
+2026-11-12T21:09:07.4322654Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4369:32 Cannot infer type for type parameter 'T'. Specify it explicitly.
+2026-11-12T21:09:07.4324517Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4369:41 Cannot infer type for type parameter 'T'. Specify it explicitly.
+2026-11-12T21:09:07.4326148Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4371:39 Unresolved reference 'renderAudits'.
+2026-11-12T21:09:07.4327757Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4766:13 Unresolved reference 'terminalJobs'.
+2026-11-12T21:09:07.4329313Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4766:43 Unresolved reference 'it'.
+2026-11-12T21:09:07.4330428Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4767:13 Unresolved reference 'terminalJobs'.
+2026-11-12T21:09:07.4331309Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4791:13 Unresolved reference 'scrollOffsets'.
+2026-11-12T21:09:07.4332304Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4793:13 Unresolved reference 'typedLines'.
+2026-11-12T21:09:07.4333178Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4799:13 Unresolved reference 'terminalBuffers'.
+2026-11-12T21:09:07.4334031Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4800:21 Unresolved reference 'it'.
+2026-11-12T21:09:07.4334903Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4800:48 Unresolved reference 'it'.
+2026-11-12T21:09:07.4335879Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4883:53 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+2026-11-12T21:09:07.4337262Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:4933:53 Too many arguments for 'fun isCurrentDial(key: String): Boolean'.
+2026-11-12T21:09:07.4338213Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5531:16 Unresolved reference 'TerminalFrame'.
+2026-11-12T21:09:07.4339084Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5532:12 Unresolved reference 'TerminalFrame'.
+2026-11-12T21:09:07.4339945Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5533:4 Unresolved reference 'TerminalFrame'.
+2026-11-12T21:09:07.4340851Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5533:55 Unresolved reference 'revision' on receiver of type 'Any'.
+2026-11-12T21:09:07.4341764Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5533:72 Unresolved reference 'revision'.
+2026-11-12T21:09:07.4342637Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5565:16 Unresolved reference 'TerminalFrame'.
+2026-11-12T21:09:07.4343519Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5566:12 Unresolved reference 'TerminalFrame'.
+2026-11-12T21:09:07.4344384Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5569:4 Unresolved reference 'TerminalFrame'.
+2026-11-12T21:09:07.4345263Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/MainViewModel.kt:5572:15 Unresolved reference 'synchronizedOutput'.
+2026-11-12T21:09:07.4346165Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/TerminalSessionController.kt:99:41 Unresolved reference 'takeWhile'.
+2026-11-12T21:09:07.4347645Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/TerminalSessionController.kt:99:69 Cannot infer type for value parameter 'bytes'. Specify it explicitly.
+2026-11-12T21:09:07.4349452Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/presentation/TerminalSessionController.kt:100:32 Cannot infer type for value parameter 'bytes'. Specify it explicitly.
+2026-11-12T21:09:07.4389115Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:381:81 Unresolved reference 'buffers'.
+2026-11-12T21:09:07.4390661Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:385:38 'if' must have both main and 'else' branches when used as an expression.
+2026-11-12T21:09:07.4392079Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:385:80 Unresolved reference 'buffer'.
+2026-11-12T21:09:07.4393585Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:388:13 'if' must have both main and 'else' branches when used as an expression.
+2026-11-12T21:09:07.4394881Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/SshSessionStore.kt:388:13 Variable expected.
+2026-11-12T21:09:07.4396078Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:4:33 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4397570Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:5:33 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4398873Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:512:44 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4400182Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:513:38 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4401291Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:583:44 Unresolved reference 'TERMINAL_COLUMN_RANGE'.
+2026-11-12T21:09:07.4402145Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ssh/TerminalChannel.kt:584:38 Unresolved reference 'TERMINAL_ROW_RANGE'.
+2026-11-12T21:09:07.4403029Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:97:26 Unresolved reference 'TerminalLatches'.
+2026-11-12T21:09:07.4403904Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:99:52 Unresolved reference 'ctrl'.
+2026-11-12T21:09:07.4404730Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:101:51 Unresolved reference 'alt'.
+2026-11-12T21:09:07.4405575Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:103:53 Unresolved reference 'shift'.
+2026-11-12T21:09:07.4406417Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:107:17 Unresolved reference 'consume'.
+2026-11-12T21:09:07.4408067Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:127:37 None of the following candidates is applicable:
+2026-11-12T21:09:07.4408938Z 
+2026-11-12T21:09:07.4409114Z constructor(p0: Font): Font.Builder:
+2026-11-12T21:09:07.4409693Z   Argument type mismatch: actual type is 'Typeface', but 'Font' was expected.
+2026-11-12T21:09:07.4410127Z 
+2026-11-12T21:09:07.4410355Z constructor(p0: ParcelFileDescriptor): Font.Builder:
+2026-11-12T21:09:07.4411075Z   Argument type mismatch: actual type is 'Typeface', but 'ParcelFileDescriptor' was expected.
+2026-11-12T21:09:07.4411583Z 
+2026-11-12T21:09:07.4411771Z constructor(p0: File): Font.Builder:
+2026-11-12T21:09:07.4412336Z   Argument type mismatch: actual type is 'Typeface', but 'File' was expected.
+2026-11-12T21:09:07.4412757Z 
+2026-11-12T21:09:07.4412937Z constructor(p0: ByteBuffer): Font.Builder:
+2026-11-12T21:09:07.4413555Z   Argument type mismatch: actual type is 'Typeface', but 'ByteBuffer' was expected.
+2026-11-12T21:09:07.4414895Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:129:11 Unresolved reference 'build'.
+2026-11-12T21:09:07.4416682Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:130:14 Cannot infer type for type parameter 'T'. Specify it explicitly.
+2026-11-12T21:09:07.4418466Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:130:14 Cannot infer type for type parameter 'R'. Specify it explicitly.
+2026-11-12T21:09:07.4420392Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:130:20 Cannot infer type for type parameter 'T'. Specify it explicitly.
+2026-11-12T21:09:07.4422073Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:135:18 Unresolved reference 'createFromResource'.
+2026-11-12T21:09:07.4423670Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:166:14 Unresolved reference 'TerminalLatches'.
+2026-11-12T21:09:07.4425211Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/ConnectBotTerminal.kt:175:19 Unresolved reference 'LocalContext'.
+2026-11-12T21:09:07.4426986Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:135:54 Initializer type mismatch: expected 'Map<TerminalKey, String>', actual 'String'.
+2026-11-12T21:09:07.4428582Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:9 Unresolved reference 'NAMED_ROW'.
+2026-11-12T21:09:07.4430153Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:31 Cannot infer type for implicit value parameter 'it'. Specify it explicitly.
+2026-11-12T21:09:07.4432022Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:31 Operator call 'component1()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+2026-11-12T21:09:07.4434562Z fun <T> Array<out T>.component1(): T
+2026-11-12T21:09:07.4434989Z fun ByteArray.component1(): Byte
+2026-11-12T21:09:07.4435381Z fun ShortArray.component1(): Short
+2026-11-12T21:09:07.4435808Z fun IntArray.component1(): Int
+2026-11-12T21:09:07.4436203Z fun LongArray.component1(): Long
+2026-11-12T21:09:07.4436756Z fun FloatArray.component1(): Float
+2026-11-12T21:09:07.4437176Z fun DoubleArray.component1(): Double
+2026-11-12T21:09:07.4437603Z fun BooleanArray.component1(): Boolean
+2026-11-12T21:09:07.4438020Z fun CharArray.component1(): Char
+2026-11-12T21:09:07.4438420Z fun <T> List<T>.component1(): T
+2026-11-12T21:09:07.4438826Z fun <K, V> Map.Entry<K, V>.component1(): K
+2026-11-12T21:09:07.4439249Z fun UIntArray.component1(): UInt
+2026-11-12T21:09:07.4439661Z fun ULongArray.component1(): ULong
+2026-11-12T21:09:07.4440064Z fun UByteArray.component1(): UByte
+2026-11-12T21:09:07.4440472Z fun UShortArray.component1(): UShort
+2026-11-12T21:09:07.4441712Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:31 Operator call 'component2()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+2026-11-12T21:09:07.4443066Z fun <T> Array<out T>.component2(): T
+2026-11-12T21:09:07.4443479Z fun ByteArray.component2(): Byte
+2026-11-12T21:09:07.4443881Z fun ShortArray.component2(): Short
+2026-11-12T21:09:07.4444292Z fun IntArray.component2(): Int
+2026-11-12T21:09:07.4444696Z fun LongArray.component2(): Long
+2026-11-12T21:09:07.4445092Z fun FloatArray.component2(): Float
+2026-11-12T21:09:07.4445493Z fun DoubleArray.component2(): Double
+2026-11-12T21:09:07.4445909Z fun BooleanArray.component2(): Boolean
+2026-11-12T21:09:07.4446316Z fun CharArray.component2(): Char
+2026-11-12T21:09:07.4447052Z fun <T> List<T>.component2(): T
+2026-11-12T21:09:07.4447458Z fun <K, V> Map.Entry<K, V>.component2(): V
+2026-11-12T21:09:07.4447880Z fun UIntArray.component2(): UInt
+2026-11-12T21:09:07.4448270Z fun ULongArray.component2(): ULong
+2026-11-12T21:09:07.4448675Z fun UByteArray.component2(): UByte
+2026-11-12T21:09:07.4449073Z fun UShortArray.component2(): UShort
+2026-11-12T21:09:07.4450293Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:51 Cannot infer type for type parameter 'A'. Specify it explicitly.
+2026-11-12T21:09:07.4451997Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:51 Cannot infer type for type parameter 'B'. Specify it explicitly.
+2026-11-12T21:09:07.4453751Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:136:51 Candidate 'fun <A, B> A.to(that: B): Pair<A, B>' is inapplicable because of a receiver type mismatch.
+2026-11-12T21:09:07.4455368Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:13 Unresolved reference 'NAMED_ROW'.
+2026-11-12T21:09:07.4457241Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:36 Cannot infer type for value parameter 'index'. Specify it explicitly.
+2026-11-12T21:09:07.4458949Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:43 Cannot infer type for implicit value parameter 'it'. Specify it explicitly.
+2026-11-12T21:09:07.4460911Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:43 Operator call 'component1()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+2026-11-12T21:09:07.4462148Z fun <T> Array<out T>.component1(): T
+2026-11-12T21:09:07.4462539Z fun ByteArray.component1(): Byte
+2026-11-12T21:09:07.4462907Z fun ShortArray.component1(): Short
+2026-11-12T21:09:07.4463307Z fun IntArray.component1(): Int
+2026-11-12T21:09:07.4463697Z fun LongArray.component1(): Long
+2026-11-12T21:09:07.4464090Z fun FloatArray.component1(): Float
+2026-11-12T21:09:07.4464516Z fun DoubleArray.component1(): Double
+2026-11-12T21:09:07.4464936Z fun BooleanArray.component1(): Boolean
+2026-11-12T21:09:07.4465366Z fun CharArray.component1(): Char
+2026-11-12T21:09:07.4465750Z fun <T> List<T>.component1(): T
+2026-11-12T21:09:07.4466220Z fun <K, V> Map.Entry<K, V>.component1(): K
+2026-11-12T21:09:07.4466926Z fun UIntArray.component1(): UInt
+2026-11-12T21:09:07.4467329Z fun ULongArray.component1(): ULong
+2026-11-12T21:09:07.4467737Z fun UByteArray.component1(): UByte
+2026-11-12T21:09:07.4468151Z fun UShortArray.component1(): UShort
+2026-11-12T21:09:07.4469550Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:167:43 Operator call 'component2()' is ambiguous for destructuring of type '??? (Unknown type for value parameter <destruct>)'. Applicable candidates:
+2026-11-12T21:09:07.4470953Z fun <T> Array<out T>.component2(): T
+2026-11-12T21:09:07.4471362Z fun ByteArray.component2(): Byte
+2026-11-12T21:09:07.4471766Z fun ShortArray.component2(): Short
+2026-11-12T21:09:07.4472166Z fun IntArray.component2(): Int
+2026-11-12T21:09:07.4472562Z fun LongArray.component2(): Long
+2026-11-12T21:09:07.4472957Z fun FloatArray.component2(): Float
+2026-11-12T21:09:07.4473358Z fun DoubleArray.component2(): Double
+2026-11-12T21:09:07.4473781Z fun BooleanArray.component2(): Boolean
+2026-11-12T21:09:07.4474198Z fun CharArray.component2(): Char
+2026-11-12T21:09:07.4474584Z fun <T> List<T>.component2(): T
+2026-11-12T21:09:07.4474982Z fun <K, V> Map.Entry<K, V>.component2(): V
+2026-11-12T21:09:07.4475413Z fun UIntArray.component2(): UInt
+2026-11-12T21:09:07.4475806Z fun ULongArray.component2(): ULong
+2026-11-12T21:09:07.4476409Z fun UByteArray.component2(): UByte
+2026-11-12T21:09:07.4476970Z fun UShortArray.component2(): UShort
+2026-11-12T21:09:07.4477847Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/KeyBarPrefs.kt:168:31 Unresolved reference 'name'.
+2026-11-12T21:09:07.4479225Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:73:14 Unresolved reference 'TerminalFace'.
+2026-11-12T21:09:07.4480890Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:75:9 'when' expression must be exhaustive. Add an 'else' branch.
+2026-11-12T21:09:07.4482383Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:75:15 Unresolved reference 'TerminalFace'.
+2026-11-12T21:09:07.4483809Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:76:13 Unresolved reference 'TerminalFace'.
+2026-11-12T21:09:07.4485233Z e: file:///home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/ui/terminal/TerminalFont.kt:77:13 Unresolved reference 'TerminalFace'.
+2026-11-12T21:09:07.5241083Z 
+2026-11-12T21:09:07.5241116Z 
+2026-11-12T21:09:07.5241786Z > Task :app:compileDebugKotlin FAILED
+2026-11-12T21:09:07.5242614Z gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1794517609046.json
+2026-11-12T21:09:07.5243289Z 
+2026-11-12T21:09:07.5243872Z [Incubating] Problems report is available at: file:///home/runner/work/EclipseSSH/EclipseSSH/build/reports/problems/problems-report.html
+2026-11-12T21:09:07.5244555Z 
+2026-11-12T21:09:07.5244933Z Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+2026-11-12T21:09:07.5245418Z 
+2026-11-12T21:09:07.5245977Z You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+2026-11-12T21:09:07.5246819Z 
+2026-11-12T21:09:07.5247453Z For more on this, please refer to https://docs.gradle.org/9.8.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+2026-11-12T21:09:07.5248365Z 60 actionable tasks: 22 executed, 38 from cache
+2026-11-12T21:09:07.5275112Z FAILURE: Build failed with an exception.
+2026-11-12T21:09:07.5297248Z 
+2026-11-12T21:09:07.5312232Z * What went wrong:
+2026-11-12T21:09:07.5313152Z Execution failed for task ':app:compileDebugKotlin' (registered by plugin 'com.android.internal.application').
+2026-11-12T21:09:07.5314236Z > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+2026-11-12T21:09:07.5314984Z    > Kotlin compiler: UNRESOLVED_IMPORT
+2026-11-12T21:09:07.5315494Z        Kotlin compiler error
+2026-11-12T21:09:07.5315975Z          Unresolved reference 'TerminalKeyRow'.
+2026-11-12T21:09:07.5317014Z          Location: /home/runner/work/EclipseSSH/EclipseSSH/app/src/main/java/dev/eclipse/ssh/MainActivity.kt:291
+2026-11-12T21:09:07.5317710Z 
+2026-11-12T21:09:07.5317944Z * Try:
+2026-11-12T21:09:07.5318333Z > Run with --stacktrace option to get the stack trace.
+2026-11-12T21:09:07.5318896Z > Run with --info or --debug option to get more log output.
+2026-11-12T21:09:07.5319507Z > Run with --scan to get full insights from a Build Scan (powered by Develocity).
+2026-11-12T21:09:07.5320138Z > Get more help at https://help.gradle.org.
+2026-11-12T21:09:07.5320471Z 
+2026-11-12T21:09:07.5320703Z BUILD FAILED in 2m 22s
+2026-11-12T21:09:07.6233423Z Configuration cache entry stored.
+2026-11-12T21:09:08.0344247Z ##[error]Process completed with exit code 1.
+2026-11-12T21:09:08.0403809Z ##[group]Run actions/upload-artifact@v4
+2026-11-12T21:09:08.0404096Z with:
+2026-11-12T21:09:08.0404311Z   name: unit-test-reports
+2026-11-12T21:09:08.0404595Z   path: app/build/reports/tests/
+app/build/test-results/
+
+2026-11-12T21:09:08.0404899Z   retention-days: 7
+2026-11-12T21:09:08.0405116Z   if-no-files-found: warn
+2026-11-12T21:09:08.0405341Z   compression-level: 6
+2026-11-12T21:09:08.0405557Z   overwrite: false
+2026-11-12T21:09:08.0405774Z   include-hidden-files: false
+2026-11-12T21:09:08.0406008Z env:
+2026-11-12T21:09:08.0406265Z   GRADLE_OPTS: -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8
+2026-11-12T21:09:08.0406700Z   BUILD_TOOLS: 36.0.0
+2026-11-12T21:09:08.0406926Z   COMPILE_SDK: android-37.0
+2026-11-12T21:09:08.0407349Z   MIN_SDK: 28
+2026-11-12T21:09:08.0407554Z   TARGET_SDK: android-35
+2026-11-12T21:09:08.0407863Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:09:08.0408321Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.13-11/x64
+2026-11-12T21:09:08.0408661Z   MAVEN_ARGS: -ntp
+2026-11-12T21:09:08.0408897Z   GRADLE_ACTION_ID: gradle/actions/setup-gradle
+2026-11-12T21:09:08.0409182Z   GRADLE_USER_HOME: /home/runner/.gradle
+2026-11-12T21:09:08.0409453Z   GRADLE_BUILD_ACTION_SETUP_COMPLETED: true
+2026-11-12T21:09:08.0409731Z   GRADLE_BUILD_ACTION_CACHE_RESTORED: true
+2026-11-12T21:09:08.0410115Z   DEVELOCITY_INJECTION_INIT_SCRIPT_NAME: gradle-actions.inject-develocity.init.gradle
+2026-11-12T21:09:08.0410532Z   DEVELOCITY_INJECTION_CUSTOM_VALUE: gradle-actions
+2026-11-12T21:09:08.0410820Z   GITHUB_DEPENDENCY_GRAPH_ENABLED: false
+2026-11-12T21:09:08.0411062Z ##[endgroup]
+2026-11-12T21:09:08.1796285Z (node:2621) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-12T21:09:08.1797194Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-12T21:09:08.1828780Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-11-12T21:09:08.1834788Z The least common ancestor is /home/runner/work/EclipseSSH/EclipseSSH/app/build. This will be the root directory of the artifact
+2026-11-12T21:09:08.1847422Z ##[warning]No files were found with the provided path: app/build/reports/tests/
+app/build/test-results/. No artifacts will be uploaded.
+2026-11-12T21:09:08.2121569Z Post job cleanup.
+2026-11-12T21:09:08.4175957Z In post-action step
+2026-11-12T21:09:08.4185595Z ##[group]Stopping Gradle daemons
+2026-11-12T21:09:08.4186866Z Stopping Gradle daemons for /home/runner/.gradle/wrapper/dists/gradle-9.8.0-bin/3m7h6ceboy5k31n8kzwzuxssm/gradle-9.8.0
+2026-11-12T21:09:08.4199663Z [command]/home/runner/.gradle/wrapper/dists/gradle-9.8.0-bin/3m7h6ceboy5k31n8kzwzuxssm/gradle-9.8.0/bin/gradle --stop
+2026-11-12T21:09:08.9167439Z No Gradle daemons are running.
+2026-11-12T21:09:08.9272817Z ##[endgroup]
+2026-11-12T21:09:08.9274087Z Not performing cache-cleanup due to build failure
+2026-11-12T21:09:08.9274711Z ##[group]Caching Gradle state
+2026-11-12T21:09:08.9398801Z Not saving configuration-cache state, as no encryption key was provided
+2026-11-12T21:09:13.3601615Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/EclipseSSH/EclipseSSH --files-from manifest.txt --use-compress-program zstdmt
+2026-11-12T21:09:14.7854400Z Sent 19726336 of 32954495 (59.9%), 18.8 MBs/sec
+2026-11-12T21:09:15.1869636Z Sent 32954495 of 32954495 (100.0%), 22.4 MBs/sec
+2026-11-12T21:09:15.4639099Z Saved cache entry with key gradle-home-v1|Linux-X64|unit[b8a35c2f917259958c9abe8f2ff1b5ff]-b8e9e7a709c78fc3f44743838f50fd219c058b6a from /home/runner/.gradle/caches,/home/runner/.gradle/notifications,/home/runner/.gradle/.setup-gradle in 2116ms
+2026-11-12T21:09:15.4640753Z ##[endgroup]
+2026-11-12T21:09:15.4644707Z Generating Job Summary
+2026-11-12T21:09:15.4654535Z Completed post-action step
+2026-11-12T21:09:15.4879643Z Post job cleanup.
+2026-11-12T21:09:15.5634340Z Post job cleanup.
+2026-11-12T21:09:15.6361431Z [command]/usr/bin/git version
+2026-11-12T21:09:15.6405677Z git version 2.56.0
+2026-11-12T21:09:15.6437799Z Temporarily overriding HOME='/home/runner/work/_temp/f3238e1a-fec1-46c1-848e-6fa1acc7acf5' before making global git config changes
+2026-11-12T21:09:15.6438837Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-12T21:09:15.6445093Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/EclipseSSH/EclipseSSH
+2026-11-12T21:09:15.6488000Z Removing SSH command configuration
+2026-11-12T21:09:15.6495168Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-12T21:09:15.6537335Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-12T21:09:15.6781483Z Removing HTTP extra header
+2026-11-12T21:09:15.6786912Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-12T21:09:15.6858484Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-12T21:09:15.7069911Z Removing includeIf entries pointing to credentials config files
+2026-11-12T21:09:15.7078787Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-12T21:09:15.7119393Z includeif.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git.path
+2026-11-12T21:09:15.7126815Z includeif.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git/worktrees/*.path
+2026-11-12T21:09:15.7129344Z includeif.gitdir:/github/workspace/.git.path
+2026-11-12T21:09:15.7130121Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-12T21:09:15.7131849Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git.path
+2026-11-12T21:09:15.7162207Z /home/runner/work/_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:09:15.7171383Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-2e7af186\-8d43\-40e1\-8785\-568dda1a4b13\.config
+2026-11-12T21:09:15.7228776Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git/worktrees/*.path
+2026-11-12T21:09:15.7259451Z /home/runner/work/_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:09:15.7267062Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/EclipseSSH/EclipseSSH/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-2e7af186\-8d43\-40e1\-8785\-568dda1a4b13\.config
+2026-11-12T21:09:15.7305359Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-12T21:09:15.7334377Z /github/runner_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:09:15.7341133Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-2e7af186\-8d43\-40e1\-8785\-568dda1a4b13\.config
+2026-11-12T21:09:15.7379255Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-12T21:09:15.7407463Z /github/runner_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config
+2026-11-12T21:09:15.7413906Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-2e7af186\-8d43\-40e1\-8785\-568dda1a4b13\.config
+2026-11-12T21:09:15.7452016Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-12T21:09:15.7653523Z Removing credentials config '/home/runner/work/_temp/git-credentials-2e7af186-8d43-40e1-8785-568dda1a4b13.config'
+2026-11-12T21:09:15.8042873Z Cleaning up orphan processes
+2026-11-12T21:09:15.8342835Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@v4, gradle/actions/setup-gradle@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

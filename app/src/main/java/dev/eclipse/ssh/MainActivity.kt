@@ -292,7 +292,6 @@ import dev.eclipse.ssh.ui.terminal.TerminalKeyRow
 import dev.eclipse.ssh.ui.terminal.toVTermKey
 import dev.eclipse.ssh.ui.terminal.vTermModifiers
 import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
-import dev.eclipse.ssh.ui.terminal.TerminalView
 import dev.eclipse.ssh.ui.terminal.minTerminalColumns
 import dev.eclipse.ssh.ui.terminal.TerminalLatches
 import dev.eclipse.ssh.ui.terminal.rememberTerminalLatches
