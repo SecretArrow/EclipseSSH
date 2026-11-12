@@ -120,7 +120,16 @@ jobs:
           # string here ships an APK that lies about its own version.
           sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/" app/src/main/java/dev/eclipse/ssh/terminal/AnsiTerminalBuffer.kt
           # AUDIT-REPORT.md records the version line a reader greps for.
-          sed -i -E "s/versionCode ${CURRENT_CODE} \/ versionName ${CURRENT}/versionCode ${NEXT_CODE} \/ versionName ${NEXT}/" AUDIT-REPORT.md
+          # The pattern matches any version, not just ${CURRENT}, so a
+          # previously-stale AUDIT-REPORT (the v1.23.8 bump missed it) is
+          # corrected on the next bump rather than left drifting further.
+          # The grep before/after is a diagnostic: if the line did not
+          # change, the bump step's own diff stat will show AUDIT-REPORT
+          # unchanged and the next docs-figures CI failure names it
+          # rather than the failure being a mystery.
+          echo "AUDIT-REPORT before: $(grep -E 'versionCode [0-9]+ / versionName' AUDIT-REPORT.md | head -1)"
+          sed -i -E "s/versionCode [0-9]+ \/ versionName [0-9]+\.[0-9]+\.[0-9]+/versionCode ${NEXT_CODE} \/ versionName ${NEXT}/" AUDIT-REPORT.md
+          echo "AUDIT-REPORT after:  $(grep -E 'versionCode [0-9]+ / versionName' AUDIT-REPORT.md | head -1)"
           # testing/tmux-replay/record.py hardcodes the XTVERSION reply
           # that TERMINAL_IDENTITY answers with; CI's record.py replay
           # test asserts the two match exactly, so this string moves with
