@@ -275,23 +275,24 @@ object LinuxDistroCatalog {
                     rootfsSizeBytes = s.tarballSizeBytes,
                 )
             }
-        } + alpineSeries.flatMap { s ->
-            ALPINE_ARCHES.map { arch ->
-                LinuxDistro(
-                    id = s.id,
-                    displayName = s.displayName,
-                    release = s.release,
-                    ubuntuArch = arch,
-                    family = DistroFamily.ALPINE,
-                    packageManager = PackageManager.APK,
-                    rootfsTarballUrl =
-                        "$ALPINE_RELEASES_URL/${s.release}/releases/${alpineTarballArch(arch)}/" +
-                            "alpine-minirootfs-${s.pointRelease}-${alpineTarballArch(arch)}.tar.gz",
-                    rootfsSha256 = s.sha256ByArch.getValue(arch),
-                    rootfsSizeBytes = s.tarballSizeBytesByArch.getValue(arch),
-                )
+        } +
+            alpineSeries.flatMap { s ->
+                ALPINE_ARCHES.map { arch ->
+                    LinuxDistro(
+                        id = s.id,
+                        displayName = s.displayName,
+                        release = s.release,
+                        ubuntuArch = arch,
+                        family = DistroFamily.ALPINE,
+                        packageManager = PackageManager.APK,
+                        rootfsTarballUrl =
+                            "$ALPINE_RELEASES_URL/${s.release}/releases/${alpineTarballArch(arch)}/" +
+                                "alpine-minirootfs-${s.pointRelease}-${alpineTarballArch(arch)}.tar.gz",
+                        rootfsSha256 = s.sha256ByArch.getValue(arch),
+                        rootfsSizeBytes = s.tarballSizeBytesByArch.getValue(arch),
+                    )
+                }
             }
-        }
 
     /**
      * Every LTS this device can run, newest first — the version chooser's list. Empty when the
