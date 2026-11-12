@@ -16,7 +16,24 @@ package dev.eclipse.ssh.linux
  * manager derives every apt suite from it — `$release`, `$release-updates`, `$release-security` —
  * so a catalog entry is all a version needs to be installable: the rootfs pin and the archive
  * name travel together and can never disagree.
+ *
+ * [family] is the lineage the entry belongs to — Ubuntu, Debian, Alpine — and [packageManager]
+ * is the tool the install pipeline drives inside that rootfs. The Ubuntu family reuses the apt
+ * pipeline this class was built around; Alpine uses apk and runs through [ApkSetup] instead.
+ * A new family carries its own setup path; the catalog only carries the pin and the names, never
+ * the pipeline, so a wrong pair (an Alpine entry stamped `apt`) is caught at setup, not at install
+ * time twenty minutes in.
  */
+enum class DistroFamily {
+    UBUNTU,
+    ALPINE,
+}
+
+enum class PackageManager {
+    APT,
+    APK,
+}
+
 data class LinuxDistro(
     /** Stable machine id, used for the installed-state directory name. */
     val id: String,
@@ -26,6 +43,10 @@ data class LinuxDistro(
     val release: String,
     /** The Ubuntu architecture name, as it appears in the tarball file name. */
     val ubuntuArch: String,
+    /** The lineage this entry belongs to — drives which setup pipeline runs. Defaults to UBUNTU. */
+    val family: DistroFamily = DistroFamily.UBUNTU,
+    /** The package tool the install pipeline drives inside this rootfs. */
+    val packageManager: PackageManager = PackageManager.APT,
     /** Where the verified rootfs tarball comes from. */
     val rootfsTarballUrl: String,
     /** SHA256 of the tarball; a mismatch aborts the install. */
@@ -139,6 +160,105 @@ object LinuxDistroCatalog {
             ),
         )
 
+    /**
+     * One Alpine mini-rootfs release: the smallest root filesystem published by any mainstream
+     * Linux distribution (~3 MB compressed). Officially published by dl-cdn.alpinelinux.org,
+     * with a published `.sha256` beside every tarball — the same pin-and-verify contract Ubuntu
+     * Base offers, only lighter.
+     *
+     * Alpine ships BusyBox and `apk` rather than `apt`/coreutils, so a catalog entry here carries
+     * [DistroFamily.ALPINE] / [PackageManager.APK]; the install pipeline routes on `family` to
+     * the apk-specific setup path rather than the apt one this class was first built around.
+     * `release` is the Alpine branch (`v3.19`, `v3.20`, `v3.21`); `pointRelease` is the patch
+     * version this build was verified against.
+     */
+    private data class AlpineRelease(
+        val id: String,
+        val displayName: String,
+        val release: String,
+        val pointRelease: String,
+        val tarballSizeBytesByArch: Map<String, Long>,
+        val sha256ByArch: Map<String, String>,
+    )
+
+    /** The Alpine architecture names, in catalogue order within a series. */
+    private val ALPINE_ARCHES = listOf("arm64", "amd64", "armhf")
+
+    /** The Alpine architecture as it appears in the tarball file name (aarch64 not arm64). */
+    private fun alpineTarballArch(ubuntuArch: String): String =
+        when (ubuntuArch) {
+            "arm64" -> "aarch64"
+            "amd64" -> "x86_64"
+            "armhf" -> "armhf"
+            else -> ubuntuArch
+        }
+
+    private const val ALPINE_RELEASES_URL = "https://dl-cdn.alpinelinux.org/alpine"
+
+    /**
+     * The Alpine series, newest first. Every SHA256 here was fetched from the `.sha256` file
+     * `dl-cdn.alpinelinux.org` publishes beside each tarball (the same source the catalogue's
+     * Ubuntu Base entries use cdimage's `SHA256SUMS` for); the install refuses a tarball whose
+     * hash disagrees with this pin.
+     */
+    private val alpineSeries =
+        listOf(
+            AlpineRelease(
+                id = "alpine-3.21",
+                displayName = "Alpine 3.21",
+                release = "v3.21",
+                pointRelease = "3.21.0",
+                tarballSizeBytesByArch =
+                    mapOf(
+                        "arm64" to 3_851_686L,
+                        "amd64" to 3_509_360L,
+                        "armhf" to 3_253_867L,
+                    ),
+                sha256ByArch =
+                    mapOf(
+                        "arm64" to "f31202c4070c4ef7de9e157e1bd01cb4da3a2150035d74ea5372c5e86f1efac1",
+                        "amd64" to "55ea3e5a7c2c35e6268c5dcbb8e45a9cd5b0e372e7b4e798499a526834f7ed90",
+                        "armhf" to "67ca07481d98ca85dfa52271ca22ed1cc01731ea5a0b37e7d9e4ac34bbfb211f",
+                    ),
+            ),
+            AlpineRelease(
+                id = "alpine-3.20",
+                displayName = "Alpine 3.20",
+                release = "v3.20",
+                pointRelease = "3.20.3",
+                tarballSizeBytesByArch =
+                    mapOf(
+                        "arm64" to 3_947_906L,
+                        "amd64" to 3_490_290L,
+                        "armhf" to 3_255_452L,
+                    ),
+                sha256ByArch =
+                    mapOf(
+                        "arm64" to "041fa34a81788242df9e78fa69b97ab45b8ec47ddbf88864755610414a7bf3de",
+                        "amd64" to "d4e6fd67dcf75e40c451560ac7265166c2b72a0f38ddc9aae756a7de3d1efa0c",
+                        "armhf" to "39e396324dc765beb4eef6b1e4d52de3143101094acbe48b837623e4e6bae500",
+                    ),
+            ),
+            AlpineRelease(
+                id = "alpine-3.19",
+                displayName = "Alpine 3.19",
+                release = "v3.19",
+                pointRelease = "3.19.7",
+                tarballSizeBytesByArch =
+                    mapOf(
+                        "arm64" to 3_228_534L,
+                        "amd64" to 3_300_388L,
+                        "armhf" to 3_069_587L,
+                    ),
+                sha256ByArch =
+                    mapOf(
+                        "arm64" to "edff55343f93f873841045a017074077a3a0675463bd978abe73acec71417c28",
+                        "amd64" to "49263264b5dd296568480ab4ba56af2aa48dac395b780e89a0d74fd7c077f9dc",
+                        "armhf" to "4ec53e887a5e6bb396c140cbc8368b73d7556918231eeb225c9081ea5d2aa007",
+                    ),
+            ),
+        )
+
     /** Everything the app can install, newest LTS series first, keyed by nothing — see [byId]. */
     val all: List<LinuxDistro> =
         series.flatMap { s ->
@@ -155,6 +275,22 @@ object LinuxDistroCatalog {
                     rootfsSizeBytes = s.tarballSizeBytes,
                 )
             }
+        } + alpineSeries.flatMap { s ->
+            ALPINE_ARCHES.map { arch ->
+                LinuxDistro(
+                    id = s.id,
+                    displayName = s.displayName,
+                    release = s.release,
+                    ubuntuArch = arch,
+                    family = DistroFamily.ALPINE,
+                    packageManager = PackageManager.APK,
+                    rootfsTarballUrl =
+                        "$ALPINE_RELEASES_URL/${s.release}/releases/${alpineTarballArch(arch)}/" +
+                            "alpine-minirootfs-${s.pointRelease}-${alpineTarballArch(arch)}.tar.gz",
+                    rootfsSha256 = s.sha256ByArch.getValue(arch),
+                    rootfsSizeBytes = s.tarballSizeBytesByArch.getValue(arch),
+                )
+            }
         }
 
     /**
@@ -162,13 +298,28 @@ object LinuxDistroCatalog {
      * device maps to no Ubuntu architecture, which the UI renders as "unsupported" rather than a
      * chooser with nothing in it.
      *
+     * The chooser offers the Ubuntu family only: the apt install pipeline is the one this class
+     * was first built around, and an entry a chooser surfaces is an entry the install screen
+     * promises to set up. Alpine lives in [all] (so [byId] resolves an installed Alpine rootfs
+     * already on disk), and surfaces through [alpineVersionsFor] once the apk pipeline is wired.
+     *
      * [supportedAbis] is injectable because `Build.SUPPORTED_ABIS` is a device fact a JVM test
      * cannot produce; the first entry is the device's primary ABI, which is the one the proot
      * binaries in `nativeLibraryDir` are built for.
      */
     fun versionsFor(supportedAbis: List<String>): List<LinuxDistro> {
         val ubuntuArch = supportedAbis.firstOrNull()?.toUbuntuArch() ?: return emptyList()
-        return all.filter { it.ubuntuArch == ubuntuArch }
+        return all.filter { it.ubuntuArch == ubuntuArch && it.family == DistroFamily.UBUNTU }
+    }
+
+    /**
+     * Every Alpine series this device can run, newest first. Parallel to [versionsFor] for the
+     * apk family — the chooser surfaces Ubuntu first, and an Alpine-aware chooser (or a future
+     * family switch) reads this for the apk branch.
+     */
+    fun alpineVersionsFor(supportedAbis: List<String>): List<LinuxDistro> {
+        val ubuntuArch = supportedAbis.firstOrNull()?.toUbuntuArch() ?: return emptyList()
+        return all.filter { it.ubuntuArch == ubuntuArch && it.family == DistroFamily.ALPINE }
     }
 
     /**

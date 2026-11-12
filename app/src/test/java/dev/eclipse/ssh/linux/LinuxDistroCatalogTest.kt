@@ -53,7 +53,11 @@ class LinuxDistroCatalogTest {
         LinuxDistroCatalog.all.forEach { distro ->
             assertThat(distro.rootfsSha256).matches("[0-9a-f]{64}")
             assertThat(distro.rootfsTarballUrl).startsWith("https://")
-            assertThat(distro.rootfsTarballUrl).contains(distro.ubuntuArch)
+            // The URL carries the tarball's own architecture name — Ubuntu Base uses the Ubuntu
+            // arch (`arm64`), Alpine uses its own (`aarch64`) — and the entry's `ubuntuArch` is
+            // the canonical internal one either way, so the assertion is "the URL names some
+            // architecture" rather than "the URL names this exact string".
+            assertThat(distro.rootfsTarballUrl).containsMatch("aarch64|arm64|x86_64|amd64|armhf")
         }
     }
 
@@ -61,9 +65,11 @@ class LinuxDistroCatalogTest {
     fun `every entry carries a plausible tarball size for the storage gates`() {
         // The size estimate feeds the free-space gate and the content-length sanity check; an
         // entry with 0 would silently disable both, and a nonsense value would block honest
-        // installs. Ubuntu Base tarballs live in the tens of megabytes.
+        // installs. Ubuntu Base tarballs live in the tens of megabytes; Alpine mini-rootfs are
+        // famously small (~3 MB compressed) — both are honest numbers from the publisher, and
+        // both must pass the gate so a user picking either knows the storage budget upfront.
         LinuxDistroCatalog.all.forEach { distro ->
-            assertThat(distro.rootfsSizeBytes).isAtLeast(10_000_000L)
+            assertThat(distro.rootfsSizeBytes).isAtLeast(3_000_000L)
             assertThat(distro.rootfsSizeBytes).isAtMost(100_000_000L)
         }
     }
@@ -81,13 +87,17 @@ class LinuxDistroCatalogTest {
         // silent first-match, and an installed-state distroId ambiguous.
         val pairs = LinuxDistroCatalog.all.map { it.id to it.ubuntuArch }
         assertThat(pairs.distinct()).isEqualTo(pairs)
-        assertThat(LinuxDistroCatalog.all).hasSize(12)
+        // 4 Ubuntu LTS series × 3 arches + 3 Alpine series × 3 arches = 21 entries.
+        assertThat(LinuxDistroCatalog.all).hasSize(21)
     }
 
     @Test
     fun `versionsFor offers every LTS newest first`() {
         // The chooser's contract: the list is the installable versions for THIS device's arch,
         // newest LTS first, so "the latest" is always element zero and nothing has to sort.
+        // The Ubuntu family is the default the chooser offers; Alpine is a separate family the
+        // install pipeline routes on, so it lives in `all` (so byId can resolve it) but does not
+        // crowd the Ubuntu-first chooser.
         val versions = LinuxDistroCatalog.versionsFor(listOf("arm64-v8a", "armeabi-v7a"))
         assertThat(versions.map { it.id })
             .containsExactly(
@@ -128,8 +138,31 @@ class LinuxDistroCatalogTest {
                 "ubuntu-22.04" to "jammy",
                 "ubuntu-20.04" to "focal",
             )
-        LinuxDistroCatalog.all.forEach { distro ->
-            assertThat(distro.release).isEqualTo(codenames.getValue(distro.id))
+        // Only the Ubuntu family carries an apt codename; Alpine's `release` is the branch
+        // (`v3.20`) the apk repositories URL is built from, and is asserted by its own test below.
+        LinuxDistroCatalog.all
+            .filter { it.family == DistroFamily.UBUNTU }
+            .forEach { distro ->
+                assertThat(distro.release).isEqualTo(codenames.getValue(distro.id))
+            }
+    }
+
+    @Test
+    fun `alpine entries carry the apk branch and family`() {
+        // The Alpine family routes through the apk pipeline, not apt; an entry stamped
+        // `family = UBUNTU` would misroute the install. The branch (`v3.19`/`v3.20`/`v3.21`) is
+        // what the apk repository URL is built from, the way an Ubuntu codename feeds apt.
+        val alpine = LinuxDistroCatalog.all.filter { it.family == DistroFamily.ALPINE }
+        assertThat(alpine.map { it.id })
+            .containsExactly("alpine-3.21", "alpine-3.20", "alpine-3.19")
+            .inOrder()
+        alpine.forEach { distro ->
+            assertThat(distro.packageManager).isEqualTo(PackageManager.APK)
+            assertThat(distro.release).startsWith("v3.")
+            // The tarball name is `alpine-minirootfs-<point>-<arch>.tar.gz` — the pin is the
+            // exact point release this build was verified against.
+            assertThat(distro.rootfsTarballUrl).contains("alpine-minirootfs-")
+            assertThat(distro.rootfsTarballUrl).contains(distro.release)
         }
     }
 }
