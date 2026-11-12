@@ -227,7 +227,7 @@ is 28).
 
 ## Tests
 
-The suite is 2,717 JVM/Robolectric test methods in 218 test files and contacts nothing off the
+The suite is 1,763 JVM/Robolectric test methods in 168 test files and contacts nothing off the
 machine: the SSH and SFTP integration tests start a real Apache MINA SSHD server on a loopback port
 inside the test JVM, and a second class dials a real OpenSSH `sshd` that the `test` job starts on
 loopback first (`tools/local-sshd.sh`, because interop bugs live in the gap an in-JVM server cannot
@@ -241,7 +241,7 @@ so a run executes more classes than there are files here.
 across 151 until that check existed, because one test file carried a literal NUL byte inside a
 string and every `grep`-based count of the suite stopped counting that file's methods.
 
-`app/src/sharedTest/` is compiled into both source sets — 33 test methods in 3 files — and holds the
+`app/src/sharedTest/` is compiled into both source sets — 0 test methods in 0 files — and holds the
 cases whose answer depends on the platform rather than on this app: how wide a character is, where
 the boundary of a wide character falls in an erase or an insert, and the grid a real terminal ends
 on for a given byte sequence. Each is one file rather than two copies, so a case added for the JVM
@@ -251,7 +251,7 @@ run cannot be forgotten on the device run, and the figure above and the one belo
 `encrypted_ed25519`) used only to exercise key parsing against that in-process server. They are test
 data, they authorise nothing anywhere, and they must never be reused as real credentials.
 
-`app/src/androidTest/` holds the instrumentation tests — 87 test methods in 11 files — which run on
+`app/src/androidTest/` holds the instrumentation tests — 49 test methods in 7 files — which run on
 a device or emulator. Thirty-three of those methods are the shared ones above, so the device runs the
 grid cases as well as the JVM does. Five more are in `TerminalRenderGoldenTest.kt`, which reads back
 the pixels the terminal view actually paints — which cell a background covers, which cell a glyph

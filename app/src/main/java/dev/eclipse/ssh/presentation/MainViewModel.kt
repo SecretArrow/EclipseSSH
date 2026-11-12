@@ -134,6 +134,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.sync.Mutex
@@ -516,6 +517,8 @@ class MainViewModel
          * reaches the screen first. The [onEnd] handling mirrors what the old collector
          * did because they are facts about channels, not about either engine.
          */
+        private fun isCurrentDial(key: String): Boolean = channels[key] != null
+
         private fun wireTerminal(
             sessionKey: String,
             hostId: String,
@@ -4794,7 +4797,7 @@ class MainViewModel
             // a buffer left holding it would answer with colours nothing paints any more - and hold this
             // view model alive to do it. A successor sets its own on the next hand-out.
             terminalBuffers.values.forEach {
-                if (it.themeColors === currentThemeColors) it.themeColors = null
+                if (it === currentThemeColors) it.themeColors = null
             }
             super.onCleared()
         }
