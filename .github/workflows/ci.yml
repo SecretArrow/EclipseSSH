@@ -133,6 +133,14 @@ jobs:
             "platform-tools" \
             "platforms;${COMPILE_SDK}" \
             "build-tools;${BUILD_TOOLS}" > /dev/null
+      - name: Clone termlib source for host native build
+        # ConnectBot termlib's TerminalEmulator loads libjni_cb_term.so via System.loadLibrary
+        # in a static initializer. The Android .so from the AAR links against bionic libc
+        # (version symbols glibc lacks), so it cannot load on the host JVM. The unit-test
+        # config in app/build.gradle.kts builds a host .so from termlib's C++/C source, which
+        # links against glibc and has no Android dependency. termlib is a sibling repo
+        # (connectbot/termlib), cloned here so the build can find it at ../termlib.
+        run: git clone --depth 1 https://github.com/connectbot/termlib.git ../termlib
       - name: Run unit tests
         # The native :freerdp/:linux builds are excluded for the same reason
         # the assemble job excludes them: Robolectric tests run on the JVM

@@ -299,12 +299,16 @@ android {
                 test.systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn")
                 // ConnectBot termlib's TerminalEmulator loads libjni_cb_term.so via System.loadLibrary
                 // in a static initializer, and the unit-test JVM (Robolectric) has no Android
-                // classloader to find it through. The AAR ships the .so for every ABI; this extracts
-                // the host-arch one (x86_64 on CI's ubuntu runner, x86_64/arm64 on dev machines) into
-                // build/native-test-lib/ and points java.library.path at it, so the load that used to
-                // throw UnsatisfiedLinkError on every controller-touching test finds the library
-                // instead. Done in doFirst so the extract runs after configuration, against the host's
-                // real arch rather than the build's target.
+                // classloader to find it through. The Android .so from the AAR links against bionic
+                // libc (with version symbols like `LIBC`) that glibc does not provide, so it cannot
+                // load on the host. The fix is to build a host .so from the termlib C++/C source —
+                // the same path termlib's own build takes (cmakeBuildHost) — which links against
+                // glibc directly and has no Android dependency.
+                //
+                // The termlib source tree is a sibling repo at ../termlib (cloned alongside EclipseSSH
+                // for the migration). The .so is one C++ translation unit (Terminal.cpp) plus the
+                // libvterm C sources compiled as a static archive; g++/gcc are on the CI runner.
+                val termlibSrcDir = rootProject.projectDir.resolveSibling("termlib")
                 val nativeHostDir =
                     layout.buildDirectory
                         .dir("native-test-lib")
@@ -312,26 +316,63 @@ android {
                         .asFile
                 test.doFirst {
                     nativeHostDir.mkdirs()
-                    val hostArch =
-                        when (System.getProperty("os.arch")) {
-                            "aarch64" -> "arm64-v8a"
-                            "x86_64", "amd64" -> "x86_64"
-                            else -> "x86_64"
+                    if (!termlibSrcDir.isDirectory) {
+                        logger.warn("termlib source not found at ${termlibSrcDir.absolutePath}; native tests will fail")
+                        return@doFirst
+                    }
+                    val cppDir = termlibSrcDir.resolve("lib/src/main/cpp")
+                    val vtermSrc = cppDir.resolve("libvterm/src")
+                    val jniInclude = (providers.systemProperty("java.home").get() + "/include")
+                    val jniIncludeLinux = "$jniInclude/linux"
+                    val objDir = layout.buildDirectory.dir("native-test-obj").get().asFile.apply { mkdirs() }
+                    // Compile libvterm C sources to .o (gcc, because libvterm is C).
+                    val vtermFiles =
+                        listOf("encoding", "keyboard", "mouse", "parser", "pen", "screen", "state", "unicode", "vterm")
+                    for (name in vtermFiles) {
+                        val proc =
+                            ProcessBuilder(
+                                "gcc", "-c", "-fPIC",
+                                "-I${cppDir}/libvterm/include",
+                                "-DVTERM_STATIC",
+                                vtermSrc.resolve("$name.c").absolutePath,
+                                "-o", objDir.resolve("$name.o").absolutePath,
+                            ).redirectErrorStream(true).start()
+                        val out = proc.inputStream.bufferedReader().readText()
+                        if (proc.waitFor() != 0) {
+                            logger.warn("libvterm $name.c compile failed: $out")
                         }
-                    configurations
-                        .detachedConfiguration(dependencies.create("org.connectbot:termlib:0.3.15"))
-                        .files
-                        .forEach { aar ->
-                            if (aar.name.endsWith(".aar")) {
-                                copy {
-                                    from(zipTree(aar)) {
-                                        include("jni/$hostArch/libjni_cb_term.so")
-                                        eachFile { path = name } // flatten jni/<arch>/ prefix
-                                    }
-                                    into(nativeHostDir)
-                                }
-                            }
-                        }
+                    }
+                    // Archive libvterm objects into a static lib.
+                    val arProc =
+                        ProcessBuilder(
+                            "ar", "rcs", objDir.resolve("libvterm.a").absolutePath,
+                        ).redirectErrorStream(true).start()
+                    arProc.inputStream.bufferedReader().readText()
+                    arProc.waitFor()
+                    for (name in vtermFiles) {
+                        val addProc =
+                            ProcessBuilder(
+                                "ar", "rs", objDir.resolve("libvterm.a").absolutePath,
+                                objDir.resolve("$name.o").absolutePath,
+                            ).redirectErrorStream(true).start()
+                        addProc.inputStream.bufferedReader().readText()
+                        addProc.waitFor()
+                    }
+                    // Compile + link Terminal.cpp against libvterm.a → libjni_cb_term.so (g++).
+                    val linkProc =
+                        ProcessBuilder(
+                            "g++", "-std=c++17", "-shared", "-fPIC",
+                            "-I$jniInclude", "-I$jniIncludeLinux",
+                            "-I${cppDir}/libvterm/include",
+                            "-DVTERM_STATIC",
+                            cppDir.resolve("Terminal.cpp").absolutePath,
+                            objDir.resolve("libvterm.a").absolutePath,
+                            "-o", File(nativeHostDir, "libjni_cb_term.so").absolutePath,
+                        ).redirectErrorStream(true).start()
+                    val linkOut = linkProc.inputStream.bufferedReader().readText()
+                    if (linkProc.waitFor() != 0) {
+                        logger.warn("libjni_cb_term.so link failed: $linkOut")
+                    }
                 }
                 test.systemProperty("java.library.path", nativeHostDir.absolutePath)
                 test.jvmArgs("-Djava.library.path=${nativeHostDir.absolutePath}")
