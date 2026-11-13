@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 
@@ -123,17 +124,11 @@ class LatchModifierManager(
  * native object with no per-composition cost.
  */
 internal fun terminalTypeface(context: Context): Typeface =
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-        android.graphics.fonts.Font.Builder(
-            context.resources.getFont(dev.eclipse.ssh.R.font.jetbrains_mono_regular),
-        ).build()
-            .let { jetbrainsMono ->
-                Typeface.CustomFallbackBuilder(jetbrainsMono)
-                    .build()
-            }
-    } else {
-        Typeface.createFromResource(context, dev.eclipse.ssh.R.font.jetbrains_mono_regular)
-    }
+    // The bundled JetBrains Mono, with the platform's per-glyph system fallback answering for
+    // any glyph the bundle lacks (CJK, Arabic, and the rest a terminal can print). resources.getFont
+    // returns a Typeface the renderer paints with directly, and the platform's own fallback chain
+    // covers what the bundle does not — the same path every Android app's text rendering takes.
+    context.resources.getFont(dev.eclipse.ssh.R.font.jetbrains_mono_regular)
 
 /**
  * Draws one session's terminal through the ConnectBot termlib renderer.

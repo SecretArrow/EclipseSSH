@@ -4,6 +4,7 @@ import android.util.Log
 import dev.eclipse.ssh.ssh.SessionEnd
 import dev.eclipse.ssh.ssh.TerminalChannel
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,8 +97,9 @@ class TerminalSessionController(
         val incoming = Channel<ByteArray>(Channel.UNLIMITED)
         val producer =
             scope.launch {
-                kotlinx.coroutines.flow.takeWhile(channel.output) { bytes -> bytes !== TerminalChannel.END_OF_OUTPUT }
-                    .collect { bytes -> incoming.trySend(bytes) }
+                channel.output
+                    .takeWhile { chunk -> chunk !== TerminalChannel.END_OF_OUTPUT }
+                    .collect { chunk -> incoming.trySend(chunk) }
                 incoming.close()
             }
         val pump =

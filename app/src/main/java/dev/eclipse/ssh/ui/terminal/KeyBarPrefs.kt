@@ -170,6 +170,28 @@ object KeyBarCatalog {
 }
 
 /**
+ * The default cap order: the keys every install's bar has always shown, in the order every
+ * user's thumb has learned. Catalog data — the same caps in the same order ship with every
+ * fresh install — rather than a pref, so it lives in [KeyBarCatalog].
+ */
+internal val NAMED_ROW: List<Pair<String, TerminalKey>> = listOf(
+    "ESC" to TerminalKey.ESCAPE,
+    "TAB" to TerminalKey.TAB,
+    "—" to TerminalKey.DELETE,
+    "←" to TerminalKey.ARROW_LEFT,
+    "↓" to TerminalKey.ARROW_DOWN,
+    "↑" to TerminalKey.ARROW_UP,
+    "→" to TerminalKey.ARROW_RIGHT,
+    "HOME" to TerminalKey.HOME,
+    "END" to TerminalKey.END,
+    "PGUP" to TerminalKey.PAGE_UP,
+    "PGDN" to TerminalKey.PAGE_DOWN,
+    "INS" to TerminalKey.INSERT,
+    "DEL" to TerminalKey.DELETE,
+)
+
+
+/**
  * The built-in starting points, offered in the settings screen behind a confirmation.
  *
  * Each preset is a whole [KeyBarPrefs], not a patch: applying one replaces the arrangement, which

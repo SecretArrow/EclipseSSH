@@ -1,5 +1,12 @@
 package dev.eclipse.ssh.ui.terminal
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import dev.eclipse.ssh.terminal.TerminalKey
 
 @Composable

@@ -68,11 +68,3 @@ internal val TerminalSymbolFontFamily: FontFamily =
     FontFamily(
         Font(R.font.terminal_symbols, FontWeight.Normal),
     )
-
-/** The family that draws [this] face. See [terminalFaceFor] for which cluster goes to which. */
-internal val TerminalFace.family: FontFamily
-    get() =
-        when (this) {
-            TerminalFace.TEXT -> TerminalMonoFontFamily
-            TerminalFace.SYMBOL -> TerminalSymbolFontFamily
-        }
