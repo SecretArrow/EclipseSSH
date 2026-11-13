@@ -324,18 +324,26 @@ android {
                     val vtermSrc = cppDir.resolve("libvterm/src")
                     val jniInclude = (providers.systemProperty("java.home").get() + "/include")
                     val jniIncludeLinux = "$jniInclude/linux"
-                    val objDir = layout.buildDirectory.dir("native-test-obj").get().asFile.apply { mkdirs() }
+                    val objDir =
+                        layout.buildDirectory
+                            .dir("native-test-obj")
+                            .get()
+                            .asFile
+                            .apply { mkdirs() }
                     // Compile libvterm C sources to .o (gcc, because libvterm is C).
                     val vtermFiles =
                         listOf("encoding", "keyboard", "mouse", "parser", "pen", "screen", "state", "unicode", "vterm")
                     for (name in vtermFiles) {
                         val proc =
                             ProcessBuilder(
-                                "gcc", "-c", "-fPIC",
-                                "-I${cppDir}/libvterm/include",
+                                "gcc",
+                                "-c",
+                                "-fPIC",
+                                "-I$cppDir/libvterm/include",
                                 "-DVTERM_STATIC",
                                 vtermSrc.resolve("$name.c").absolutePath,
-                                "-o", objDir.resolve("$name.o").absolutePath,
+                                "-o",
+                                objDir.resolve("$name.o").absolutePath,
                             ).redirectErrorStream(true).start()
                         val out = proc.inputStream.bufferedReader().readText()
                         if (proc.waitFor() != 0) {
@@ -345,14 +353,18 @@ android {
                     // Archive libvterm objects into a static lib.
                     val arProc =
                         ProcessBuilder(
-                            "ar", "rcs", objDir.resolve("libvterm.a").absolutePath,
+                            "ar",
+                            "rcs",
+                            objDir.resolve("libvterm.a").absolutePath,
                         ).redirectErrorStream(true).start()
                     arProc.inputStream.bufferedReader().readText()
                     arProc.waitFor()
                     for (name in vtermFiles) {
                         val addProc =
                             ProcessBuilder(
-                                "ar", "rs", objDir.resolve("libvterm.a").absolutePath,
+                                "ar",
+                                "rs",
+                                objDir.resolve("libvterm.a").absolutePath,
                                 objDir.resolve("$name.o").absolutePath,
                             ).redirectErrorStream(true).start()
                         addProc.inputStream.bufferedReader().readText()
@@ -361,13 +373,18 @@ android {
                     // Compile + link Terminal.cpp against libvterm.a → libjni_cb_term.so (g++).
                     val linkProc =
                         ProcessBuilder(
-                            "g++", "-std=c++17", "-shared", "-fPIC",
-                            "-I$jniInclude", "-I$jniIncludeLinux",
-                            "-I${cppDir}/libvterm/include",
+                            "g++",
+                            "-std=c++17",
+                            "-shared",
+                            "-fPIC",
+                            "-I$jniInclude",
+                            "-I$jniIncludeLinux",
+                            "-I$cppDir/libvterm/include",
                             "-DVTERM_STATIC",
                             cppDir.resolve("Terminal.cpp").absolutePath,
                             objDir.resolve("libvterm.a").absolutePath,
-                            "-o", File(nativeHostDir, "libjni_cb_term.so").absolutePath,
+                            "-o",
+                            File(nativeHostDir, "libjni_cb_term.so").absolutePath,
                         ).redirectErrorStream(true).start()
                     val linkOut = linkProc.inputStream.bufferedReader().readText()
                     if (linkProc.waitFor() != 0) {
