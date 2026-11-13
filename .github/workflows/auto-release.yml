@@ -115,10 +115,13 @@ jobs:
           NEXT_CODE=$((CURRENT_CODE + 1))
           sed -i -E "s/^(\s*versionCode = )[0-9]+/\1${NEXT_CODE}/" app/build.gradle.kts
           sed -i -E "s/^(\s*versionName = \")[0-9]+\.[0-9]+\.[0-9]+(\")/\1${NEXT}\2/" app/build.gradle.kts
-          # TERMINAL_IDENTITY mirrors versionName - it advertises the
-          # version in the terminal handshake (TERM/IDENTITY), so a stale
-          # string here ships an APK that lies about its own version.
-          sed -i -E "s/EclipseSSH\(${CURRENT}\)/EclipseSSH(${NEXT})/"
+          # TERMINAL_IDENTITY - the "EclipseSSH(<version>)" string the old terminal engine
+          # advertised in the handshake - went away with the termlib migration: both files it
+          # lived in (AnsiTerminalBuffer.kt and testing/tmux-replay/record.py) were deleted, so
+          # the sed that bumped them went with them. Left in place, the bare sed fails with
+          # "no input files" (exit 4) and breaks every release bump. Nothing embeds a literal
+          # version string any more: AboutActivity reads packageInfo.versionName, which the
+          # versionName bump above already updated.
           # AUDIT-REPORT.md records the version line a reader greps for.
           # The pattern matches any version, not just ${CURRENT}, so a
           # previously-stale AUDIT-REPORT (the v1.23.8 bump missed it) is
