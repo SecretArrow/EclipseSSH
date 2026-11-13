@@ -202,8 +202,10 @@ android_files="$(test_files app/src/androidTest)"
 # many methods does that task run", and a method in the shared directory is in both answers. It gets
 # a figure of its own as well, because "the two counts overlap by this much" is a thing the README
 # states and a reader can only check against a number.
-shared_methods="$(test_methods app/src/sharedTest 2>/dev/null || echo 0)"
-shared_files="$(test_files app/src/sharedTest 2>/dev/null || echo 0)"
+shared_methods="$(test_methods app/src/sharedTest 2>/dev/null || true)"
+shared_files="$(test_files app/src/sharedTest 2>/dev/null || true)"
+shared_methods="${shared_methods:-0}"
+shared_files="${shared_files:-0}"
 jvm_methods=$((jvm_methods + shared_methods))
 jvm_files=$((jvm_files + shared_files))
 android_methods=$((android_methods + shared_methods))
