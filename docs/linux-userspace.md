@@ -5,9 +5,9 @@ byte comes from, and why each layer is shaped the way it is. The native half has
 [`../linux/README.md`](../linux/README.md); third-party licensing is in
 [`THIRD-PARTY.md`](THIRD-PARTY.md).
 
-The feature in one sentence: a real Ubuntu userland — whichever LTS series you pick, 20.04 through
-26.04 — bash, apt, git, curl, wget, sudo and an SSH client — running on the phone itself, inside
-the app's sandbox, with no VM, no root and no ISO.
+The feature in one sentence: a real Ubuntu userland — whichever supported series you pick, the LTS
+line 20.04 through 26.04 or the current 25.10 interim — bash, apt, git, curl, wget, sudo and an SSH
+client — running on the phone itself, inside the app's sandbox, with no VM, no root and no ISO.
 
 ## Table of contents
 
@@ -69,8 +69,10 @@ the exact path a remote one does.
 Every root filesystem on offer is an **Ubuntu Base** release, pinned per architecture to an exact
 tarball plus SHA256 from the release's own `SHA256SUMS`
 (`cdimage.ubuntu.com/ubuntu-base/releases/<series>/release`). The catalogue carries all four current
-LTS series — 20.04, 22.04, 24.04 and 26.04, each with its own per-architecture tarball and hash — so
-22.04.5 is the default starting point rather than the only choice. Ubuntu Base is the only officially
+LTS series — 20.04, 22.04, 24.04 and 26.04 — plus the current interim (25.10), each with its own
+per-architecture tarball and hash; the newest LTS (26.04) is the default starting point rather than
+the only choice, and the interim carries the same pin-and-verify contract with a shorter support
+window. Ubuntu Base is the only officially
 published Ubuntu rootfs that fits the constraints:
 
 - ~30 MB compressed (the desktop image is ~4 GB),

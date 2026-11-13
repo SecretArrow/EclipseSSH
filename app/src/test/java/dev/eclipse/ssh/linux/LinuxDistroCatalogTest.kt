@@ -87,21 +87,24 @@ class LinuxDistroCatalogTest {
         // silent first-match, and an installed-state distroId ambiguous.
         val pairs = LinuxDistroCatalog.all.map { it.id to it.ubuntuArch }
         assertThat(pairs.distinct()).isEqualTo(pairs)
-        // 4 Ubuntu LTS series × 3 arches + 3 Alpine series × 3 arches = 21 entries.
-        assertThat(LinuxDistroCatalog.all).hasSize(21)
+        // 5 Ubuntu series (4 LTS + the 25.10 interim) × 3 arches + 3 Alpine series × 3 arches
+        // = 24 entries.
+        assertThat(LinuxDistroCatalog.all).hasSize(24)
     }
 
     @Test
-    fun `versionsFor offers every LTS newest first`() {
+    fun `versionsFor offers every supported series newest first`() {
         // The chooser's contract: the list is the installable versions for THIS device's arch,
-        // newest LTS first, so "the latest" is always element zero and nothing has to sort.
+        // newest first, so "the latest" is always element zero and nothing has to sort.
         // The Ubuntu family is the default the chooser offers; Alpine is a separate family the
         // install pipeline routes on, so it lives in `all` (so byId can resolve it) but does not
-        // crowd the Ubuntu-first chooser.
+        // crowd the Ubuntu-first chooser. The 25.10 interim sits between the LTS series it is
+        // newer and older than — same family, same apt pipeline, shorter support window.
         val versions = LinuxDistroCatalog.versionsFor(listOf("arm64-v8a", "armeabi-v7a"))
         assertThat(versions.map { it.id })
             .containsExactly(
                 "ubuntu-26.04",
+                "ubuntu-25.10",
                 "ubuntu-24.04",
                 "ubuntu-22.04",
                 "ubuntu-20.04",
@@ -124,7 +127,14 @@ class LinuxDistroCatalogTest {
         // A different arch under the same id is a different entry, not the same one again.
         assertThat(LinuxDistroCatalog.byId("ubuntu-24.04", "amd64")!!.rootfsSha256)
             .isNotEqualTo(distro.rootfsSha256)
-        assertThat(LinuxDistroCatalog.byId("ubuntu-25.10", "arm64")).isNull()
+        // The 25.10 interim publishes no point-suffixed tarball: the file name is built from the
+        // bare version, and the pin is the cdimage SHA256SUMS line (the arm64 value was confirmed
+        // against a full download at catalog time).
+        val interim = LinuxDistroCatalog.byId("ubuntu-25.10", "arm64")
+        assertThat(interim).isNotNull()
+        assertThat(interim!!.release).isEqualTo("questing")
+        assertThat(interim.rootfsTarballUrl).contains("ubuntu-base-25.10-base-arm64.tar.gz")
+        assertThat(interim.rootfsTarballUrl).doesNotContain("25.10.1")
     }
 
     @Test
@@ -134,6 +144,7 @@ class LinuxDistroCatalogTest {
         val codenames =
             mapOf(
                 "ubuntu-26.04" to "resolute",
+                "ubuntu-25.10" to "questing",
                 "ubuntu-24.04" to "noble",
                 "ubuntu-22.04" to "jammy",
                 "ubuntu-20.04" to "focal",

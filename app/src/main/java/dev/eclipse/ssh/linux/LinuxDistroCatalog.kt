@@ -61,21 +61,27 @@ data class LinuxDistro(
     val rootfsSizeBytes: Long = 0L,
 )
 
-/**
- * The catalogue of installable distributions plus the device-architecture mapping.
- *
- * Every LTS Ubuntu Base publishes — 20.04 through 26.04 — is listed, newest first, so a caller
- * reading [versionsFor] gets "the latest first" without sorting anything itself. Interim releases
- * exist on cdimage too (25.10, 26.10) and are deliberately not offered: a rootfs this app pins and
- * verifies should track the series Ubuntu maintains for five years, not the one that stops
- * receiving updates nine months after it ships.
- *
- * The default ([DEFAULT_DISTRO_ID]) is a starting point, not an override: the install screen's
- * version chooser offers every series above (for the device's architecture), newest first, and a
- * pick there — like an already-installed distro — wins over it. A user's existing install keeps
- * its installed distro regardless, because the userspace state file records the distro id it was
- * installed from. `LinuxUserspaceGraphProvider.resolveDistro` holds that resolution order.
- */
+    /**
+     * The catalogue of installable distributions plus the device-architecture mapping.
+     *
+     * Every supported Ubuntu Base series — 20.04 through 26.04 — is listed, newest first, so a
+     * caller reading [versionsFor] gets "the latest first" without sorting anything itself. LTS
+     * series are the backbone of the list: they are what Ubuntu maintains for five years. The
+     * current interim (25.10) is offered too — a conscious exception to the earlier LTS-only
+     * rule, added on demand so the newest userspace is reachable — under the same pin-and-verify
+     * contract as everything else: a cdimage `SHA256SUMS` line per architecture, verified before
+     * a byte is extracted (the arm64 pin was additionally confirmed against a full download and
+     * its own byte-for-byte hash at catalog time). Its nine-month support window is the price a
+     * user picking it accepts knowingly.
+     *
+     * The default ([DEFAULT_DISTRO_ID]) is a starting point, not an override: the install screen's
+     * version chooser offers every series above (for the device's architecture), newest first, and a
+     * pick there — like an already-installed distro — wins over it. It names the newest LTS, not the
+     * interim, so tapping through the install dialog without choosing never lands on a series that
+     * stops receiving updates nine months after it ships. A user's existing install keeps its
+     * installed distro regardless, because the userspace state file records the distro id it was
+     * installed from. `LinuxUserspaceGraphProvider.resolveDistro` holds that resolution order.
+     */
 object LinuxDistroCatalog {
     /**
      * One LTS series: everything the per-architecture entries share. The per-arch map exists
@@ -88,6 +94,13 @@ object LinuxDistroCatalog {
         val release: String,
         /** The point release this build was verified against; a bump must re-verify the SHA256s. */
         val pointRelease: String,
+        /**
+         * The point release as it appears in the tarball's file name. Null when the series
+         * publishes no point-suffixed tarball — interim releases name the file after the bare
+         * version (`ubuntu-base-25.10-base-arm64.tar.gz`) — in which case the name is built
+         * from [id].
+         */
+        val tarballPointRelease: String? = null,
         /** The tarball's approximate size, shared by the per-arch entries; see [LinuxDistro.rootfsSizeBytes]. */
         val tarballSizeBytes: Long,
         val sha256ByArch: Map<String, String>,
@@ -99,10 +112,10 @@ object LinuxDistroCatalog {
     private val ARCHES = listOf("amd64", "arm64", "armhf")
 
     /**
-     * The LTS series, newest first — the order [all] and [versionsFor] inherit. SHA256s straight
-     * from each release's own `SHA256SUMS`, which is published beside the tarballs. If a hash here
-     * ever disagrees with a fresh download, the tarball changed and the pin is stale — the install
-     * refuses rather than extracting unknown bytes.
+     * The supported series, newest first — the order [all] and [versionsFor] inherit. SHA256s
+     * straight from each release's own `SHA256SUMS`, which is published beside the tarballs. If a
+     * hash here ever disagrees with a fresh download, the tarball changed and the pin is stale —
+     * the install refuses rather than extracting unknown bytes.
      */
     private val series =
         listOf(
@@ -112,6 +125,7 @@ object LinuxDistroCatalog {
                 displayName = "Ubuntu 26.04 LTS",
                 release = "resolute",
                 pointRelease = "26.04.1",
+                tarballPointRelease = "26.04.1",
                 sha256ByArch =
                     mapOf(
                         "amd64" to "a496a960472ce474a59590b8987d3a1135d3cbef1991f3b1abe8cacfea8bf85a",
@@ -120,11 +134,28 @@ object LinuxDistroCatalog {
                     ),
             ),
             ReleaseSeries(
+                id = "ubuntu-25.10",
+                tarballSizeBytes = 35_000_000L,
+                displayName = "Ubuntu 25.10",
+                release = "questing",
+                // Interims publish no point-suffixed tarball: the file is ubuntu-base-25.10-base-<arch>,
+                // so tarballPointRelease stays null and the name is built from the id. SHA256s verbatim
+                // from this release's SHA256SUMS; the arm64 value was confirmed against a full download.
+                pointRelease = "25.10",
+                sha256ByArch =
+                    mapOf(
+                        "amd64" to "febb74fc4e09b2d84ed8655a9e25b55777cdb970f8eb8e6dee302676b519bc95",
+                        "arm64" to "11534a7d4d94db63e7c65d6012b8696abdd6cf14b4efde01c6b1da196b77bc3b",
+                        "armhf" to "b830eca311f03e0514048bfb578bddb885d374be275299bf6391c53fbd6c5a27",
+                    ),
+            ),
+            ReleaseSeries(
                 id = "ubuntu-24.04",
                 tarballSizeBytes = 31_000_000L,
                 displayName = "Ubuntu 24.04 LTS",
                 release = "noble",
                 pointRelease = "24.04.5",
+                tarballPointRelease = "24.04.5",
                 sha256ByArch =
                     mapOf(
                         "amd64" to "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86",
@@ -138,6 +169,7 @@ object LinuxDistroCatalog {
                 displayName = "Ubuntu 22.04 LTS",
                 release = "jammy",
                 pointRelease = "22.04.5",
+                tarballPointRelease = "22.04.5",
                 sha256ByArch =
                     mapOf(
                         "amd64" to "242cd8898b33ea806ef5f13b1076ed7c76f9f989d18384452f7166692438ff1a",
@@ -151,6 +183,7 @@ object LinuxDistroCatalog {
                 displayName = "Ubuntu 20.04 LTS",
                 release = "focal",
                 pointRelease = "20.04.5",
+                tarballPointRelease = "20.04.5",
                 sha256ByArch =
                     mapOf(
                         "amd64" to "60e216b60947653dc8989be3821380268315b99b2959c29882781541bfe5a426",
@@ -270,7 +303,7 @@ object LinuxDistroCatalog {
                     ubuntuArch = arch,
                     rootfsTarballUrl =
                         "$CDIMAGE_RELEASES_URL/${s.id.removePrefix("ubuntu-")}/release/" +
-                            "ubuntu-base-${s.pointRelease}-base-$arch.tar.gz",
+                            "ubuntu-base-${s.tarballPointRelease ?: s.id.removePrefix("ubuntu-")}-base-$arch.tar.gz",
                     rootfsSha256 = s.sha256ByArch.getValue(arch),
                     rootfsSizeBytes = s.tarballSizeBytes,
                 )
