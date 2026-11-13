@@ -61,27 +61,27 @@ data class LinuxDistro(
     val rootfsSizeBytes: Long = 0L,
 )
 
-    /**
-     * The catalogue of installable distributions plus the device-architecture mapping.
-     *
-     * Every supported Ubuntu Base series — 20.04 through 26.04 — is listed, newest first, so a
-     * caller reading [versionsFor] gets "the latest first" without sorting anything itself. LTS
-     * series are the backbone of the list: they are what Ubuntu maintains for five years. The
-     * current interim (25.10) is offered too — a conscious exception to the earlier LTS-only
-     * rule, added on demand so the newest userspace is reachable — under the same pin-and-verify
-     * contract as everything else: a cdimage `SHA256SUMS` line per architecture, verified before
-     * a byte is extracted (the arm64 pin was additionally confirmed against a full download and
-     * its own byte-for-byte hash at catalog time). Its nine-month support window is the price a
-     * user picking it accepts knowingly.
-     *
-     * The default ([DEFAULT_DISTRO_ID]) is a starting point, not an override: the install screen's
-     * version chooser offers every series above (for the device's architecture), newest first, and a
-     * pick there — like an already-installed distro — wins over it. It names the newest LTS, not the
-     * interim, so tapping through the install dialog without choosing never lands on a series that
-     * stops receiving updates nine months after it ships. A user's existing install keeps its
-     * installed distro regardless, because the userspace state file records the distro id it was
-     * installed from. `LinuxUserspaceGraphProvider.resolveDistro` holds that resolution order.
-     */
+/**
+ * The catalogue of installable distributions plus the device-architecture mapping.
+ *
+ * Every supported Ubuntu Base series — 20.04 through 26.04 — is listed, newest first, so a
+ * caller reading [versionsFor] gets "the latest first" without sorting anything itself. LTS
+ * series are the backbone of the list: they are what Ubuntu maintains for five years. The
+ * current interim (25.10) is offered too — a conscious exception to the earlier LTS-only
+ * rule, added on demand so the newest userspace is reachable — under the same pin-and-verify
+ * contract as everything else: a cdimage `SHA256SUMS` line per architecture, verified before
+ * a byte is extracted (the arm64 pin was additionally confirmed against a full download and
+ * its own byte-for-byte hash at catalog time). Its nine-month support window is the price a
+ * user picking it accepts knowingly.
+ *
+ * The default ([DEFAULT_DISTRO_ID]) is a starting point, not an override: the install screen's
+ * version chooser offers every series above (for the device's architecture), newest first, and a
+ * pick there — like an already-installed distro — wins over it. It names the newest LTS, not the
+ * interim, so tapping through the install dialog without choosing never lands on a series that
+ * stops receiving updates nine months after it ships. A user's existing install keeps its
+ * installed distro regardless, because the userspace state file records the distro id it was
+ * installed from. `LinuxUserspaceGraphProvider.resolveDistro` holds that resolution order.
+ */
 object LinuxDistroCatalog {
     /**
      * One LTS series: everything the per-architecture entries share. The per-arch map exists
