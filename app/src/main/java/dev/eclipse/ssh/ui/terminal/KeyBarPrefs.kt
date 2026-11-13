@@ -178,7 +178,6 @@ internal val NAMED_ROW: List<Pair<String, TerminalKey>> =
     listOf(
         "ESC" to TerminalKey.ESCAPE,
         "TAB" to TerminalKey.TAB,
-        "—" to TerminalKey.DELETE,
         "←" to TerminalKey.ARROW_LEFT,
         "↓" to TerminalKey.ARROW_DOWN,
         "↑" to TerminalKey.ARROW_UP,
@@ -187,8 +186,9 @@ internal val NAMED_ROW: List<Pair<String, TerminalKey>> =
         "END" to TerminalKey.END,
         "PGUP" to TerminalKey.PAGE_UP,
         "PGDN" to TerminalKey.PAGE_DOWN,
-        "INS" to TerminalKey.INSERT,
         "DEL" to TerminalKey.DELETE,
+        "BS" to TerminalKey.BACKSPACE,
+        "⏎" to TerminalKey.ENTER,
     )
 
 /**
