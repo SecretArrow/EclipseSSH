@@ -297,6 +297,39 @@ android {
                 // before the first logger is created, and EclipseApp yields to a property the
                 // host already set.
                 test.systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "warn")
+                // ConnectBot termlib's TerminalEmulator loads libjni_cb_term.so via System.loadLibrary
+                // in a static initializer, and the unit-test JVM (Robolectric) has no Android
+                // classloader to find it through. The AAR ships the .so for every ABI; this extracts
+                // the host-arch one (x86_64 on CI's ubuntu runner, x86_64/arm64 on dev machines) into
+                // build/native-test-lib/ and points java.library.path at it, so the load that used to
+                // throw UnsatisfiedLinkError on every controller-touching test finds the library
+                // instead. Done in doFirst so the extract runs after configuration, against the host's
+                // real arch rather than the build's target.
+                val nativeHostDir = layout.buildDirectory.dir("native-test-lib").get().asFile
+                test.doFirst {
+                    nativeHostDir.mkdirs()
+                    val hostArch = when (System.getProperty("os.arch")) {
+                        "aarch64" -> "arm64-v8a"
+                        "x86_64", "amd64" -> "x86_64"
+                        else -> "x86_64"
+                    }
+                    configurations
+                        .detachedConfiguration(dependencies.create("org.connectbot:termlib:0.3.15"))
+                        .files
+                        .forEach { aar ->
+                            if (aar.name.endsWith(".aar")) {
+                                copy {
+                                    from(zipTree(aar)) {
+                                        include("jni/$hostArch/libjni_cb_term.so")
+                                        eachFile { path = name } // flatten jni/<arch>/ prefix
+                                    }
+                                    into(nativeHostDir)
+                                }
+                            }
+                        }
+                }
+                test.systemProperty("java.library.path", nativeHostDir.absolutePath)
+                test.jvmArgs("-Djava.library.path=${nativeHostDir.absolutePath}")
                 // The default condensed format prints only the exception class and one frame —
                 // `IllegalStateException at SomeTest.kt:289` — which names the wait that timed out
                 // but not what it was waiting *for*: the describe() strings and assertion diffs
