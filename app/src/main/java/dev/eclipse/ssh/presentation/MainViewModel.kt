@@ -1548,7 +1548,7 @@ class MainViewModel
             // no-op, because they are already the same string) is what lets [adoptStoredSession] find it
             // and open a shell on it rather than logging in a second time. Refused when the key already
             // holds anything, which is the tab's own live session saying so.
-            if (adopt) sessionStore.rekey(host.id, key)
+            if (adopt && !tabs.value.any { it.id == host.id && it.id != key }) sessionStore.rekey(host.id, key)
             // First, and synchronously: from here on this is the dial that speaks for this session, and
             // every attempt still unwinding somewhere behind it is one whose report the user must not be shown.
             val dial = dialGenerations.computeIfAbsent(key) { AtomicLong() }.incrementAndGet()

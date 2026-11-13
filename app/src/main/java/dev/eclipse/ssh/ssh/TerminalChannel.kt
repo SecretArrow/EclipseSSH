@@ -324,7 +324,16 @@ class SshTerminalChannel(
      * like a dropped link.
      */
     private fun markClosed(reason: SessionEnd) {
-        finish(shellReport() ?: reason)
+        // The shell's own exit takes precedence, and a transport close that arrives while the shell
+        // channel is still open came from a sibling (e.g. an SFTP subsystem refusal tearing down the
+        // shared session) — reporting it here would tear down a shell that was never the problem. The
+        // shell's own close future will fire when the channel actually ends.
+        if (shellReport() != null) {
+            finish(shellReport()!!)
+        } else if (!runCatching { channel.isOpen }.getOrDefault(false)) {
+            finish(reason)
+        }
+        // else: shell channel still open, sibling caused this — do not complete.
     }
 
     /**
