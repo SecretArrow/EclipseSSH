@@ -75,6 +75,7 @@ import dev.eclipse.ssh.feature.wakeonlan.parseMac
 import dev.eclipse.ssh.linux.LinuxUserspaceState
 import dev.eclipse.ssh.linux.LocalLinuxHost
 import dev.eclipse.ssh.linux.LocalTerminalChannel
+import dev.eclipse.ssh.linux.sessionEndBlamesUserspace
 import dev.eclipse.ssh.presentation.files.FilesExplorerController
 import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
 import dev.eclipse.ssh.security.SecureClipboard
@@ -102,6 +103,7 @@ import dev.eclipse.ssh.ssh.describeSftpFailure
 import dev.eclipse.ssh.ssh.fallbackHome
 import dev.eclipse.ssh.ssh.isAppFault
 import dev.eclipse.ssh.ssh.isCredentialRejection
+import dev.eclipse.ssh.ssh.isFault
 import dev.eclipse.ssh.ssh.joinRemote
 import dev.eclipse.ssh.terminal.TerminalColors
 import dev.eclipse.ssh.widget.QuickConnectWidget
@@ -677,13 +679,162 @@ class MainViewModel
         private fun onTerminalChannelEnd(
             sessionKey: String,
             hostId: String,
-            @Suppress("UNUSED_PARAMETER") terminal: TerminalChannel,
+            terminal: TerminalChannel,
             end: SessionEnd,
         ) {
             terminalSessions[sessionKey]?.detachCurrent()
-            val endReason = describeSessionEnd(end)
             viewModelScope.launch(Dispatchers.Default) {
-                scheduleAutoReconnect(sessionKey, hostId, endReason)
+                // Only if nothing newer has taken this session over. A reconnect cancels this coroutine
+                // before it closes the channel it is replacing, so ordinarily it never sees that close -
+                // but a cancel is a request, not a suspension of physics: this can already have been
+                // resumed on another core, and reporting a replaced channel as a disconnection would
+                // overwrite the CONNECTED state the new session had just been given.
+                //
+                // Absent is not the same as replaced, and testing for `remove` returning true conflated
+                // them. Something else can legitimately have taken this channel out of the registry first -
+                // the liveness sweep discards the channel of a session it proved dead - so on a real drop
+                // that sweep and this handler raced for the same entry, and when the sweep won, this
+                // returned early and the tab that had just lost its connection was left saying CONNECTED,
+                // with nothing scheduled to bring it back.
+                val current = channels[sessionKey]
+                if (current == null || current === terminal) {
+                    channels.remove(sessionKey, terminal)
+                    // A close the app asked for is not an outage, and must not be described as one: the
+                    // tab is already going wherever the caller is taking it - closed, replaced by a
+                    // reconnect, or ended by Stop sessions - and overwriting it with "Disconnected from
+                    // the remote host" would report the app's own decision as a fault of the network.
+                    if (terminal.endedDeliberately) {
+                        diagnostics.record(
+                            hostId,
+                            SessionEvent.CLOSED_BY_USER,
+                            channel = terminal.channelLabel,
+                            idleForMs = terminal.idleForMs(),
+                            upForMs = connectedAt.remove(sessionKey)?.let { SystemClock.elapsedRealtime() - it },
+                        )
+                        return@launch
+                    }
+                    // Which of the two endings this was decides the colour as well as the wording: a shell
+                    // that ran and exited is finished, a transport that died under it failed. See
+                    // [SessionEnd.isFault].
+                    val endReason = describeSessionEnd(end)
+                    // The corpse comes out of the registry here, at the one moment the app is entitled to
+                    // remove it: the ending has been published, so nothing can be reported over it, and this
+                    // is the only path a dead session is guaranteed to reach - a redial replaces the entry
+                    // itself, but a tab whose auto-reconnect is off, or whose ladder ran out, never dials
+                    // again. Declines to touch a session that is still live, which is the ordinary case when
+                    // a shell exits under a transport still carrying an SFTP transfer. See
+                    // [SshSessionStore.reap].
+                    val reaped = sessionStore.reap(sessionKey)
+                    // Read once, here, because two things now depend on it: the trace, and whether this
+                    // ending starts a new ladder or continues the one already running.
+                    val upForMs = connectedAt.remove(sessionKey)?.let { SystemClock.elapsedRealtime() - it }
+                    // A session that stood up for a while and then dropped is a *new* outage and gets the
+                    // full allowance back. One that died shortly after coming up is flapping, and its
+                    // allowance carries over so that five of those in a row reach the end of the ladder and
+                    // say what happened, instead of reconnecting for as long as the app is open. See
+                    // [STABLE_SESSION_MS] for why the threshold is minutes rather than seconds.
+                    if (upForMs != null && upForMs >= STABLE_SESSION_MS) reconnectAttempts.remove(sessionKey)
+                    // A shell the far end hung up on before it produced a single byte. Answering that with a
+                    // ladder is the loop users report, so it is answered with the server's reason instead.
+                    // See [endedBeforeItRan] for how narrow this is.
+                    val refusedBeforeOutput = endedBeforeItRan(end, upForMs = upForMs, idleForMs = terminal.idleForMs())
+                    // A server that sends SSH_MSG_DISCONNECT (byPeer) within the first moments of a login did
+                    // not suffer a transient drop - it refused the session. Reconnecting answers a deliberate
+                    // server decision and loops on every login, so it is answered with the server's reason
+                    // instead. See [serverRefusedYoungSession].
+                    val refusedByServer = serverRefusedYoungSession(end, upForMs = upForMs)
+                    val refused = refusedBeforeOutput || refusedByServer
+                    val willReconnect =
+                        !refused &&
+                            shouldAutoReconnect(
+                                end,
+                                tabIsOpen = tabs.value.any { it.id == sessionKey },
+                                endedDeliberately = false,
+                                autoReconnectEnabled = reconnectPolicies[sessionKey]?.enabled ?: true,
+                            )
+                    // A fault the ladder is about to answer is a *reconnecting* tab, not an error one.
+                    // Writing ERROR here and RECONNECTING a moment later - from inside the scheduling
+                    // coroutine, on the far side of a settings read from disk - made every genuine drop
+                    // flash red with "Disconnected from the remote host" before admitting it was already
+                    // dealing with it, and a slow read left it sitting in that state. Nothing is lost by
+                    // starting in the state the app is actually in: the reason still rides along as the
+                    // line under it, and an ending that is nobody's plan to recover from is still ERROR.
+                    val ended =
+                        when {
+                            !end.isFault -> SessionConnectionState.DISCONNECTED
+                            willReconnect -> SessionConnectionState.RECONNECTING
+                            else -> SessionConnectionState.ERROR
+                        }
+                    // Why there is no recovery running gets said in the same breath as what happened,
+                    // because a tab that stops after one ending, with no explanation of why it did not try
+                    // again, is the same unanswerable report in a different costume.
+                    val reason =
+                        when {
+                            refusedByServer -> "$endReason · the server disconnected right after login, so it was not retried"
+                            refusedBeforeOutput -> "$endReason · closed before the shell produced any output, so it was not retried"
+                            else -> endReason
+                        }
+                    updateTab(sessionKey) { it?.copy(state = ended, lastError = reason) }
+                    diagnostics.record(
+                        hostId,
+                        SessionEvent.ENDED,
+                        state = ended,
+                        detail =
+                            "${end::class.java.simpleName}: $endReason" +
+                                (if (refusedByServer) " · refused by server right after login" else "") +
+                                (if (refusedBeforeOutput) " · refused before first output" else "") +
+                                (if (reaped) " · session reaped" else ""),
+                        network = networkMonitor.describe(),
+                        pty = terminal.ptyLabel,
+                        channel = terminal.channelLabel,
+                        // The evidence that separates "the transport died under a live session" from "the
+                        // far end had stopped talking long before". Recorded on the ending itself because
+                        // by the time anything else reads this channel it has been reaped.
+                        idleForMs = terminal.idleForMs(),
+                        upForMs = upForMs,
+                    )
+                    // The one ending that says something about the userspace rather than about the
+                    // session: a local pty whose child exited 127 could not run the program proot was
+                    // asked for, which for an interactive session means the guest's own shell is gone.
+                    // Nothing else would conclude it - this ending is deliberately *not* a fault (a shell
+                    // that ran and exited is finished, see [SessionEnd.isFault]), so the tab is
+                    // DISCONNECTED, the userspace stays Running, and the card goes on offering a terminal
+                    // that cannot open while the Repair that would fix it is never offered.
+                    //
+                    // On [transportScope] rather than inline, and that is the point of the scope: the
+                    // verdict belongs to the userspace, not to this tab. Deciding it costs a health probe
+                    // (a proot fork), and this collector can be cancelled a moment later by a reconnect
+                    // or a Stop; the manager takes its own mutex and applies its own conditions before it
+                    // concludes anything. See [LinuxUserspaceManager.noteSessionEnded].
+                    if (LocalLinuxHost.isLocalHost(hostId) && sessionEndBlamesUserspace(end)) {
+                        linuxUserspace.graph?.manager?.let { manager ->
+                            transportScope.launch { manager.noteSessionEnded(sessionKey, end) }
+                        }
+                    }
+                    if (willReconnect) {
+                        scheduleAutoReconnect(sessionKey, hostId, reason)
+                    } else {
+                        // A shell that exited is finished with its session; nothing is going to use the
+                        // transport again, and leaving it open would hold a socket and a heartbeat for a
+                        // tab showing a dead prompt. Keyed by session, so this can only ever be closing
+                        // the transport under *this* terminal - a sibling terminal to the same host holds
+                        // its own session under its own key and is not touched. Through the store rather
+                        // than the raw map, so the host index entry goes with it.
+                        sessionStore.close(sessionKey)
+                    }
+                    // The host's saved tunnels ride its primary session, and this ending may have just
+                    // taken that transport with it. A sibling terminal still holds a live session, so the
+                    // forwards can be rebound to the survivor now; on a host whose last session this was,
+                    // nothing runs - the ladder's own attach brings the tunnels back with the session it
+                    // dials. [startSavedForwards] stops the old handles first, so a host with no saved
+                    // rules is a no-op.
+                    if (sessionStore.sessionKeysForHost(hostId).any { it != sessionKey && sessionStore.isLive(it) }) {
+                        runCatching { hostRepository.hosts.first() }
+                            .getOrNull()
+                            ?.firstOrNull { it.id == hostId }
+                            ?.let { host -> startSavedForwards(host) }
+                    }
+                }
             }
         }
 
