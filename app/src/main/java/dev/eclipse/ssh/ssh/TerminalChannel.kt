@@ -559,7 +559,19 @@ class SshTerminalChannel(
         // server or the socket had already explained. First reason wins only if the thing that knows
         // the reason is listening first.
         channel.session.addSessionListener(transportDeath)
-        channel.addCloseFutureListener { finish(closeReason()) }
+        // Same sibling-discrimination guard as markClosed: a shell channel whose close future fires
+        // while its session is still live was closed by a sibling (e.g. an SFTP subsystem refusal
+        // tearing down a shared channel), not by the shell itself. Completing here would tear down
+        // a terminal that was never the problem — markClosed (via transportDeath) or release
+        // (app-initiated) handle the genuine endings.
+        channel.addCloseFutureListener {
+            if (shellReport() != null) {
+                finish(shellReport()!!)
+            } else if (!runCatching { channel.session.isOpen }.getOrDefault(false)) {
+                finish(closeReason())
+            }
+            // else: session still open, sibling caused this — do not complete.
+        }
         // Closes the gap between the open completing and the listeners being in place: a session that
         // ended inside that window has already fired every event it is going to fire.
         if (!channel.session.isOpen) markClosed(transportReason ?: SessionEnd.TransportClosed)
