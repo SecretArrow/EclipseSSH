@@ -480,7 +480,7 @@ class SshSessionStore
         /** [close], and forget the terminal state too. For a tab the user has closed. */
         fun forget(sessionKey: String) {
             close(sessionKey)
-                    }
+        }
 
         /** Closes every session. For "Stop sessions", and for the app being torn down deliberately. */
         fun closeAll() {

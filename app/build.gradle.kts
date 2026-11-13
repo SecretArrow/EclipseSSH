@@ -305,14 +305,19 @@ android {
                 // throw UnsatisfiedLinkError on every controller-touching test finds the library
                 // instead. Done in doFirst so the extract runs after configuration, against the host's
                 // real arch rather than the build's target.
-                val nativeHostDir = layout.buildDirectory.dir("native-test-lib").get().asFile
+                val nativeHostDir =
+                    layout.buildDirectory
+                        .dir("native-test-lib")
+                        .get()
+                        .asFile
                 test.doFirst {
                     nativeHostDir.mkdirs()
-                    val hostArch = when (System.getProperty("os.arch")) {
-                        "aarch64" -> "arm64-v8a"
-                        "x86_64", "amd64" -> "x86_64"
-                        else -> "x86_64"
-                    }
+                    val hostArch =
+                        when (System.getProperty("os.arch")) {
+                            "aarch64" -> "arm64-v8a"
+                            "x86_64", "amd64" -> "x86_64"
+                            else -> "x86_64"
+                        }
                     configurations
                         .detachedConfiguration(dependencies.create("org.connectbot:termlib:0.3.15"))
                         .files

@@ -3,19 +3,18 @@ package dev.eclipse.ssh.presentation
 import android.util.Log
 import dev.eclipse.ssh.ssh.SessionEnd
 import dev.eclipse.ssh.ssh.TerminalChannel
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.connectbot.terminal.TerminalDimensions
 import org.connectbot.terminal.TerminalEmulator
 import org.connectbot.terminal.TerminalEmulatorFactory
+import java.util.concurrent.atomic.AtomicBoolean
 
 fun interface OutputTee {
     fun onChunk(chunk: String)
@@ -46,8 +45,12 @@ class TerminalSessionController(
         TerminalEmulatorFactory.create(
             onKeyboardInput = keyboard,
             onResize = resize,
-            defaultForeground = androidx.compose.ui.graphics.Color(fg),
-            defaultBackground = androidx.compose.ui.graphics.Color(bg),
+            defaultForeground =
+                androidx.compose.ui.graphics
+                    .Color(fg),
+            defaultBackground =
+                androidx.compose.ui.graphics
+                    .Color(bg),
         )
     },
     externalScope: CoroutineScope,
@@ -126,7 +129,10 @@ class TerminalSessionController(
         current.producer.cancel()
     }
 
-    fun applyTheme(foreground: Int, background: Int) {
+    fun applyTheme(
+        foreground: Int,
+        background: Int,
+    ) {
         runCatching { emulator.setDefaultColors(foreground, background) }
     }
 

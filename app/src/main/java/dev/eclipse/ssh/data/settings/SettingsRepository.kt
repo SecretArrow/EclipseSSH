@@ -185,7 +185,6 @@ class SettingsRepository(
 
     suspend fun setTerminalKeepSystemBars(enabled: Boolean) = editPrefs { it[Keys.terminalKeepSystemBars] = enabled }
 
-
     suspend fun setDarkTheme(enabled: Boolean) = editPrefs { it[Keys.darkTheme] = enabled }
 
     suspend fun setClipboardSeconds(seconds: Int) = editPrefs { it[Keys.clipboardSeconds] = seconds }

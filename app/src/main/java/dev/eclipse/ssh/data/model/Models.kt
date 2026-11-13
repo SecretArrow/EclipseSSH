@@ -990,7 +990,6 @@ data class AppSettings(
      * and applied as a SGR-style draw for the Compose paint.
      */
     val terminalCursorStyle: String = "block",
-
     /**
      * Whether the system bars stay on screen while a terminal session is open.
      *

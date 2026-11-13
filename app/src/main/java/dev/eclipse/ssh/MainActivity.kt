@@ -123,11 +123,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -137,7 +135,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -196,7 +193,6 @@ import dev.eclipse.ssh.data.model.isLive
 import dev.eclipse.ssh.data.saf.LocalFile
 import dev.eclipse.ssh.data.saf.StorageAccess
 import dev.eclipse.ssh.data.saf.readPickedKeyFile
-import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.feature.quickconnect.QuickConnectContract
 import dev.eclipse.ssh.feature.vault.shouldRelockVault
 import dev.eclipse.ssh.linux.LinuxInstallStep
@@ -221,7 +217,6 @@ import dev.eclipse.ssh.security.SecureClipboard
 import dev.eclipse.ssh.ssh.PERMISSION_PRESETS
 import dev.eclipse.ssh.ssh.RemoteFile
 import dev.eclipse.ssh.ssh.SshKeyProbe
-import dev.eclipse.ssh.ssh.TerminalChannel
 import dev.eclipse.ssh.ssh.probeSshKey
 import dev.eclipse.ssh.ssh.symbolicPermissions
 import dev.eclipse.ssh.ui.EclipseSuccess
@@ -289,13 +284,11 @@ import dev.eclipse.ssh.ui.statusColor
 import dev.eclipse.ssh.ui.terminal.ConnectBotTerminal
 import dev.eclipse.ssh.ui.terminal.KeyBarPrefsCodec
 import dev.eclipse.ssh.ui.terminal.TerminalKeyRow
-import dev.eclipse.ssh.ui.terminal.toVTermKey
-import dev.eclipse.ssh.ui.terminal.vTermModifiers
 import dev.eclipse.ssh.ui.terminal.TerminalMonoFontFamily
-import dev.eclipse.ssh.ui.terminal.minTerminalColumns
-import dev.eclipse.ssh.ui.terminal.TerminalLatches
 import dev.eclipse.ssh.ui.terminal.rememberTerminalLatches
 import dev.eclipse.ssh.ui.terminal.terminalTextInset
+import dev.eclipse.ssh.ui.terminal.toVTermKey
+import dev.eclipse.ssh.ui.terminal.vTermModifiers
 import dev.eclipse.ssh.ui.transfers.TransferActionsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -308,7 +301,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
-import kotlin.math.roundToInt
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
@@ -3216,6 +3208,7 @@ private fun TerminalScreen(
     var command by remember { mutableStateOf("") }
     var showSaveSnippet by remember { mutableStateOf(false) }
     var snippetLabel by remember { mutableStateOf("") }
+
     /**
      * The hyperlink a tap landed on, waiting to be confirmed.
      *

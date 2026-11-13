@@ -75,7 +75,6 @@ import dev.eclipse.ssh.feature.wakeonlan.parseMac
 import dev.eclipse.ssh.linux.LinuxUserspaceState
 import dev.eclipse.ssh.linux.LocalLinuxHost
 import dev.eclipse.ssh.linux.LocalTerminalChannel
-import dev.eclipse.ssh.linux.sessionEndBlamesUserspace
 import dev.eclipse.ssh.presentation.files.FilesExplorerController
 import dev.eclipse.ssh.presentation.linux.LinuxUserspaceController
 import dev.eclipse.ssh.security.SecureClipboard
@@ -103,7 +102,6 @@ import dev.eclipse.ssh.ssh.describeSftpFailure
 import dev.eclipse.ssh.ssh.fallbackHome
 import dev.eclipse.ssh.ssh.isAppFault
 import dev.eclipse.ssh.ssh.isCredentialRejection
-import dev.eclipse.ssh.ssh.isFault
 import dev.eclipse.ssh.ssh.joinRemote
 import dev.eclipse.ssh.terminal.TerminalColors
 import dev.eclipse.ssh.widget.QuickConnectWidget
@@ -112,7 +110,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -121,7 +118,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -129,7 +125,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -137,7 +132,6 @@ import kotlinx.coroutines.plus
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.sftp.client.SftpClient
 import java.io.IOException
@@ -248,7 +242,6 @@ class MainViewModel
          * the user starts by hand, can take the screen back from the animation mid-flight.
          */
         private val pageScrolls = ConcurrentHashMap<String, Job>()
-
 
         /**
          * The raw transcript each session keeps for "Save session log", keyed by session key.
@@ -472,7 +465,7 @@ class MainViewModel
          * (the local-runtime branch feeds the same [TerminalChannel.output] stream, so the same code
          * path will work once the local channel's `writeBytes` is confirmed to match the SSH one).
          */
-                /**
+        /**
          * The buffer for [key], with this view model's theme wired into it.
          *
          * Set on every hand-out and not only when the buffer is built: a buffer outlives the view model
@@ -480,13 +473,14 @@ class MainViewModel
          * and a theme read through a dead view model's state would answer with the colours the screen has
          * stopped painting.
          */
+
         /**
          * The session's terminal controller, created on first need with the theme's colours wired.
          * The controller — and with it the emulator, its scrollback and its modes — outlives every
          * channel: a redial attaches a new channel to the same controller, which is what preserves
          * the transcript across a reconnect.
          */
-private fun scheduleAutoReconnect(
+        private fun scheduleAutoReconnect(
             sessionKey: String,
             hostId: String,
             endReason: String,
@@ -633,8 +627,7 @@ private fun scheduleAutoReconnect(
             job.invokeOnCompletion { reconnectJobs.remove(sessionKey, job) }
         }
 
-
-fun rejectHostKey() {
+        fun rejectHostKey() {
             hostKeyChallenge.value = null
             sshConnectionManager.challengeHandled()
             pendingConnection?.host?.id?.let { id ->
@@ -647,13 +640,11 @@ fun rejectHostKey() {
             pendingConnection = null
         }
 
-
-fun refreshKnownHosts() {
+        fun refreshKnownHosts() {
             knownHostsState.value = sshConnectionManager.knownHosts()
         }
 
-
-fun forgetKnownHost(key: String) {
+        fun forgetKnownHost(key: String) {
             val (host, port) =
                 runCatching {
                     val idx = key.lastIndexOf(':')
@@ -667,14 +658,12 @@ fun forgetKnownHost(key: String) {
             refreshKnownHosts()
         }
 
-
-fun clearKnownHosts() {
+        fun clearKnownHosts() {
             if (!sshConnectionManager.clearKnownHosts()) {
                 report("Cleared for now, but the change could not be saved - they may return after a restart")
             }
             refreshKnownHosts()
         }
-
 
         /**
          * What one channel's ending means for the session that owned it.
@@ -719,7 +708,7 @@ fun clearKnownHosts() {
          * Wires one live channel into the session's terminal. The old collector's ending rules
          * live in [onTerminalChannelEnd]; the pump itself is the controller's.
          */
-private fun isCurrentDial(
+        private fun isCurrentDial(
             sessionKey: String,
             generation: Long,
         ): Boolean = (dialGenerations[sessionKey]?.get() ?: generation) == generation
@@ -743,8 +732,7 @@ private fun isCurrentDial(
             }
         }
 
-
-fun sessionLogText(sessionKey: String): String? = sessionLogs[sessionKey]?.snapshot()
+        fun sessionLogText(sessionKey: String): String? = sessionLogs[sessionKey]?.snapshot()
 
         /**
          * What one session's own frames did, for "Save render audit".
@@ -781,7 +769,7 @@ fun sessionLogText(sessionKey: String): String? = sessionLogs[sessionKey]?.snaps
          * is already on screen therefore answers zero and the view stays where it is, which is the right
          * result for a reader who jumped to a command they could already see.
          */
-fun notifyWhenDone(sessionKey: String) {
+        fun notifyWhenDone(sessionKey: String) {
             sessionDetectors.getOrPut(sessionKey) { SilenceDetector() }.arm()
             // Restarting rather than relying on a session-lifetime loop: the watchdog ends itself when
             // the last detector is dropped, so a session that never asks never wakes anything, and this
@@ -804,7 +792,6 @@ fun notifyWhenDone(sessionKey: String) {
                     }
                 }
         }
-
 
         private fun wireTerminal(
             sessionKey: String,
@@ -854,7 +841,7 @@ fun notifyWhenDone(sessionKey: String) {
                     diagnostics.record(
                         hostId,
                         SessionEvent.PTY_RESIZED,
-                        pty = "${columns}x${rows}",
+                        pty = "${columns}x$rows",
                         detail = previous?.let { "was ${it.first}x${it.second}" },
                     )
                 }
@@ -1841,7 +1828,7 @@ fun notifyWhenDone(sessionKey: String) {
                 }
             }
             wireTerminal(sessionKey, host.id, terminal)
-                        updateTab(sessionKey) { it?.copy(state = SessionConnectionState.CONNECTED, lastError = null) }
+            updateTab(sessionKey) { it?.copy(state = SessionConnectionState.CONNECTED, lastError = null) }
             connectedAt[sessionKey] = SystemClock.elapsedRealtime()
             diagnostics.record(
                 host.id,
@@ -2459,7 +2446,7 @@ fun notifyWhenDone(sessionKey: String) {
          *
          * [buffer] is confined to this coroutine, so the frame it renders is always a whole one.
          */
-                /**
+        /**
          * What one channel's ending means for the session that owned it.
          *
          * The ConnectBot engine's pump calls this once, after the stream has drained, so the
@@ -2467,6 +2454,7 @@ fun notifyWhenDone(sessionKey: String) {
          * rules are the old collector's, unchanged, because they are facts about channels
          * rather than about either engine.
          */
+
         /**
          * Sends text into the session's terminal through the emulator's paste path, which
          * honours whatever paste mode the remote side has set.
@@ -2495,7 +2483,7 @@ fun notifyWhenDone(sessionKey: String) {
          * This is the path the software keyboard uses, so it also has to feed the recent-commands list -
          * see [typedLines] for why that has to be reconstructed rather than observed.
          */
-                /**
+        /**
          * Sends a named key, encoded for the mode the remote side has the terminal in.
          *
          * The mode matters: with DECCKM set - which `vi`, `less` and anything using ncurses do - an arrow
@@ -2507,14 +2495,14 @@ fun notifyWhenDone(sessionKey: String) {
          * and everything it does not claim goes to the remote as before. A key that is *not* claimed is
          * never made local, so a press the scrollback cannot use is never a silent no-op.
          */
-                /**
+        /**
          * Reports a turn of the wheel to a program that asked for the mouse, at the cell the finger is over.
          *
          * Raw bytes rather than [sendKey] or [sendInput]: this is not a keystroke and not typed text. The
          * newline normalization and command bookkeeping those two do would be wrong here - a mouse report
          * is a fixed escape sequence the program parses, not input to a line editor.
          */
-                /**
+        /**
          * Reports one gesture of the finger to a program that asked for the mouse, at a 1-based screen cell.
          *
          * Raw bytes, like [sendMouseWheel] and for the same reason: a mouse report is a fixed escape sequence
@@ -2524,14 +2512,14 @@ fun notifyWhenDone(sessionKey: String) {
          * view, which decides from the frame it is drawing - so the report and the local gesture it was told
          * apart from are read off the same set of modes and cannot disagree about who owns the screen.
          */
-                /**
+        /**
          * Sends [count] arrow key presses, for a drag on a screen that has no history to scroll.
          *
          * Through [sendKey], so the encoding follows DECCKM exactly as the arrow keys on the key bar do -
          * a program that took the screen is the likeliest of all to have asked for the SS3 form.
          */
-                /** Sends a single character with its modifiers - the Ctrl row, and the IME's own key events. */
-                /**
+        /** Sends a single character with its modifiers - the Ctrl row, and the IME's own key events. */
+        /**
          * Pastes [text] into the remote shell, bracketed when the remote side asked for it.
          *
          * Whether to bracket is the remote program's decision, not a preference: an editor that enabled
@@ -2597,18 +2585,19 @@ fun notifyWhenDone(sessionKey: String) {
          * the screen is *now*, and an animation still running behind it would keep writing the offset the
          * drag is fighting for.
          */
-                /** Scrolls by [delta] lines - positive is back into the history. */
-                /**
+        /** Scrolls by [delta] lines - positive is back into the history. */
+        /**
          * Pages [sessionKey]'s scrollback by one screenful, forward or back, a line at a time.
          *
          * Where the key goes is decided before this by [terminalKeyTarget]; this is only the local half of
          * it. The distance is measured in rows rather than lines - see [pageSteps] - so the page lands on a
          * screenful of text however the lines wrapped.
          */
-                /** Writes the scroll position and republishes, with no animation to interrupt. */
-                /** The text of a selection, in absolute buffer coordinates, for copy. */
-                /** Appends printable text to the reconstructed command line. See [typedLines]. */
-                /**
+        /** Writes the scroll position and republishes, with no animation to interrupt. */
+        /** The text of a selection, in absolute buffer coordinates, for copy. */
+        /** Appends printable text to the reconstructed command line. See [typedLines]. */
+
+        /**
          * Files a finished command under the recent-commands list.
          *
          * The line being filed is session-scoped (each terminal reconstructs its own), but the history is
@@ -2639,7 +2628,8 @@ fun notifyWhenDone(sessionKey: String) {
          * The three heights in [viewport] go to three different places on purpose; see [TerminalViewport]
          * for why the pty's is not always the grid's.
          */
-                /**
+
+        /**
          * Lists [path] on [host]. When [path] is null the directory this host is already showing is listed
          * again, and a host that is showing nothing yet gets the server's own home directory - resolved by
          * canonicalising "." over SFTP and cached per host in [homePaths]. The old "/home/$username" guess
@@ -5532,6 +5522,7 @@ internal const val NEVER_RAN_MS = 3_000L
  * and an entry holding zero is only ever read as "absent" anyway - see [scrollTerminal], which removes
  * the entry for that value rather than storing it.
  */
+
 /**
  * Whether the far end explicitly disconnected a session that had only just come up, in which case the
  * ladder is the loop rather than the cure - the server's decision, not a link that faltered.
