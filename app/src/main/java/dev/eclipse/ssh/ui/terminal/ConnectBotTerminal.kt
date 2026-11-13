@@ -20,6 +20,15 @@
  */
 package dev.eclipse.ssh.ui.terminal
 
+import android.content.Context
+import android.graphics.Typeface
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.presentation.TerminalSessionController
 import dev.eclipse.ssh.terminal.TerminalKey
@@ -28,15 +37,6 @@ import org.connectbot.terminal.ModifierManager
 import org.connectbot.terminal.RightAltMode
 import org.connectbot.terminal.Terminal
 import org.connectbot.terminal.VTermKey
-import android.content.Context
-import android.graphics.Typeface
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.sp
 
 /**
  * The app's key-bar key ids as the library's VTermKey codes — one exact match each,

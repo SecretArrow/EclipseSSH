@@ -17,11 +17,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -36,8 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -56,7 +55,8 @@ internal fun KeyRowScroller(
     val scrollState = rememberScrollState()
     var scrolling by remember { mutableStateOf(false) }
     Box(
-        Modifier.horizontalScroll(scrollState)
+        Modifier
+            .horizontalScroll(scrollState)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -133,13 +133,11 @@ private fun CapBox(
             .background(
                 color = if (pressed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(8.dp),
-            )
-            .border(
+            ).border(
                 width = if (pressed) 2.dp else 1.dp,
                 color = tint.takeIf { it != Color.Transparent } ?: MaterialTheme.colorScheme.outlineVariant,
                 shape = RoundedCornerShape(8.dp),
-            )
-            .clickable(onClick = onClick),
+            ).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -153,22 +151,25 @@ private fun CapBox(
 }
 
 /** Width per cap, by the user's chosen key-bar size. */
-private fun SettingsKeyBarSize.width() = when (this) {
-    SettingsKeyBarSize.COMPACT -> 44.dp
-    SettingsKeyBarSize.NORMAL -> 56.dp
-    SettingsKeyBarSize.LARGE -> 72.dp
-}
+private fun SettingsKeyBarSize.width() =
+    when (this) {
+        SettingsKeyBarSize.COMPACT -> 44.dp
+        SettingsKeyBarSize.NORMAL -> 56.dp
+        SettingsKeyBarSize.LARGE -> 72.dp
+    }
 
 /** Height per cap, by the user's chosen key-bar size. */
-private fun SettingsKeyBarSize.height() = when (this) {
-    SettingsKeyBarSize.COMPACT -> 32.dp
-    SettingsKeyBarSize.NORMAL -> 40.dp
-    SettingsKeyBarSize.LARGE -> 48.dp
-}
+private fun SettingsKeyBarSize.height() =
+    when (this) {
+        SettingsKeyBarSize.COMPACT -> 32.dp
+        SettingsKeyBarSize.NORMAL -> 40.dp
+        SettingsKeyBarSize.LARGE -> 48.dp
+    }
 
 /** Label font size, by the user's chosen key-bar size. */
-private fun SettingsKeyBarSize.fontSize() = when (this) {
-    SettingsKeyBarSize.COMPACT -> 11.sp
-    SettingsKeyBarSize.NORMAL -> 13.sp
-    SettingsKeyBarSize.LARGE -> 15.sp
-}
+private fun SettingsKeyBarSize.fontSize() =
+    when (this) {
+        SettingsKeyBarSize.COMPACT -> 11.sp
+        SettingsKeyBarSize.NORMAL -> 13.sp
+        SettingsKeyBarSize.LARGE -> 15.sp
+    }
