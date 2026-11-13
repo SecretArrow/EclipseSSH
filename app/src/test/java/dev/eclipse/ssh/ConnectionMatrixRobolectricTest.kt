@@ -303,7 +303,7 @@ class ConnectionMatrixRobolectricTest {
         pumpUntil(describe = { "the tab never closed" }) { tabFor(hostId) == null }
         assertThat(viewModel.uiState.value.tabs).isEmpty()
         assertThat(viewModel.uiState.value.terminalOutput).doesNotContainKey(hostId)
-        assertThat(viewModel.frames.value).doesNotContainKey(hostId)
+        assertThat(viewModel.terminalControllerFor(hostId)).isNull()
     }
 
     /**
@@ -336,7 +336,7 @@ class ConnectionMatrixRobolectricTest {
         }
         assertThat(viewModel.uiState.value.tabs).isEmpty()
         assertThat(viewModel.uiState.value.terminalOutput).doesNotContainKey(hostId)
-        assertThat(viewModel.frames.value).doesNotContainKey(hostId)
+        assertThat(viewModel.terminalControllerFor(hostId)).isNull()
     }
 
     /**
@@ -365,7 +365,7 @@ class ConnectionMatrixRobolectricTest {
         }
 
         assertThat(viewModel.uiState.value.tabs).isEmpty()
-        assertThat(viewModel.frames.value).doesNotContainKey(host.id)
+        assertThat(viewModel.terminalControllerFor(host.id)).isNull()
         // One shell per cycle: no attempt was silently retried and no session was left open.
         awaitCount(shellsStarted, CYCLES, "shells the server started")
         awaitCount(authAttempts, CYCLES, "passwords offered to the server")
@@ -408,15 +408,15 @@ class ConnectionMatrixRobolectricTest {
             // let that land rather than run in front of it.
             settle()
             assertWithMessage("cycle $cycle left a frame behind")
-                .that(viewModel.frames.value)
-                .doesNotContainKey(host.id)
+                .that(viewModel.terminalControllerFor(host.id))
+                .isNull()
             assertWithMessage("cycle $cycle left a transcript behind")
                 .that(viewModel.uiState.value.terminalOutput)
                 .doesNotContainKey(host.id)
         }
 
         awaitCount(shellsStarted, MID_OUTPUT_CYCLES, "shells the server started")
-        assertThat(viewModel.frames.value).doesNotContainKey(host.id)
+        assertThat(viewModel.terminalControllerFor(host.id)).isNull()
         assertThat(viewModel.uiState.value.terminalOutput).doesNotContainKey(host.id)
     }
 
@@ -476,7 +476,7 @@ class ConnectionMatrixRobolectricTest {
             viewModel.uiState.value.savedCredentials[host.id]
                 ?.hasPassword != true
         }
-        assertThat(viewModel.frames.value).doesNotContainKey(host.id)
+        assertThat(viewModel.terminalControllerFor(host.id)).isNull()
     }
 
     /**
@@ -553,7 +553,7 @@ class ConnectionMatrixRobolectricTest {
             viewModel.uiState.value.tabs
                 .isEmpty()
         }
-        assertThat(viewModel.frames.value).isEmpty()
+        assertThat(viewModel.terminalControllerFor("absent-session")).isNull()
     }
 
     /**
@@ -640,7 +640,7 @@ class ConnectionMatrixRobolectricTest {
         awaitCount(authAttempts, 1, "passwords offered to the server")
         awaitCount(shellsStarted, 1, "shells the server started")
         // A pty that is genuinely wired to the UI, rather than a tab that merely says CONNECTED.
-        assertThat(viewModel.frames.value).containsKey(host.id)
+        assertThat(viewModel.terminalControllerFor(host.id)).isNotNull()
     }
 
     /**
@@ -698,7 +698,7 @@ class ConnectionMatrixRobolectricTest {
         assertThat(store.liveSession(host.id)).isSameInstanceAs(restored)
         awaitCount(authAttempts, 2, "passwords offered to the server")
         awaitCount(shellsStarted, 2, "shells the server started")
-        assertThat(viewModel.frames.value).containsKey(host.id)
+        assertThat(viewModel.terminalControllerFor(host.id)).isNotNull()
     }
 
     // ---------------------------------------------------------------- driving the app

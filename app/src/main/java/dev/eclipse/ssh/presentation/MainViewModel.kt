@@ -2467,6 +2467,18 @@ fun notifyWhenDone(sessionKey: String) {
          * rules are the old collector's, unchanged, because they are facts about channels
          * rather than about either engine.
          */
+        /**
+         * Sends text into the session's terminal through the emulator's paste path, which
+         * honours whatever paste mode the remote side has set.
+         */
+        fun sendText(
+            sessionKey: String,
+            text: String,
+        ) {
+            if (text.isEmpty()) return
+            terminalSessions[sessionKey]?.paste(text)
+        }
+
         fun sendInput(
             sessionKey: String,
             value: String,

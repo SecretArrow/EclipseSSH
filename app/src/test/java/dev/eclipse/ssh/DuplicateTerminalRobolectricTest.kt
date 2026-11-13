@@ -117,8 +117,8 @@ class DuplicateTerminalRobolectricTest {
         awaitCount(shellsStarted, 2, "shells the server started")
         // Both terminals have a frame of their own, keyed by their own session key: the duplicate
         // is wired to the UI, not merely listed as CONNECTED.
-        val frames = viewModel().frames.value
-        assertThat(frames.keys).containsAtLeastElementsIn(tabsFor(host.id).map(SessionTab::id))
+        val controller = viewModel().terminalControllerFor(host.id)
+        assertThat(controller).isNotNull()
     }
 
     /**

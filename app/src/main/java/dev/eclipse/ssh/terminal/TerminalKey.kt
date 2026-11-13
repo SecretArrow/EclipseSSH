@@ -1,10 +1,10 @@
 package dev.eclipse.ssh.terminal
 
 /** The pty widths the app will ask a remote side for, inclusive. */
-val TERMINAL_COLUMN_RANGE = 80..512
+val TERMINAL_COLUMN_RANGE = 20..400
 
 /** The pty heights the app will ask a remote side for, inclusive. */
-val TERMINAL_ROW_RANGE = 24..128
+val TERMINAL_ROW_RANGE = 5..1000
 
 /**
  * The keys the on-screen key row and hardware shortcuts name, as the app's own
