@@ -314,22 +314,28 @@ android {
                         .dir("native-test-lib")
                         .get()
                         .asFile
+                // jniInclude/objDir are resolved here, at configuration time, and NOT inside the
+                // doFirst below: a task action reaching for project-scoped objects (providers,
+                // layout, the script's logger) makes the configuration-cache store fail the whole
+                // build — a failure that only surfaced once the suite first ran green, because the
+                // store phase is reached only after the tasks it serializes have succeeded. The
+                // doFirst body closes over plain values (Files, Strings) and the task's own logger.
+                val jniInclude = (providers.systemProperty("java.home").get() + "/include")
+                val jniIncludeLinux = "$jniInclude/linux"
+                val objDir =
+                    layout.buildDirectory
+                        .dir("native-test-obj")
+                        .get()
+                        .asFile
                 test.doFirst {
                     nativeHostDir.mkdirs()
+                    objDir.mkdirs()
                     if (!termlibSrcDir.isDirectory) {
-                        logger.warn("termlib source not found at ${termlibSrcDir.absolutePath}; native tests will fail")
+                        test.logger.warn("termlib source not found at ${termlibSrcDir.absolutePath}; native tests will fail")
                         return@doFirst
                     }
                     val cppDir = termlibSrcDir.resolve("lib/src/main/cpp")
                     val vtermSrc = cppDir.resolve("libvterm/src")
-                    val jniInclude = (providers.systemProperty("java.home").get() + "/include")
-                    val jniIncludeLinux = "$jniInclude/linux"
-                    val objDir =
-                        layout.buildDirectory
-                            .dir("native-test-obj")
-                            .get()
-                            .asFile
-                            .apply { mkdirs() }
                     // Compile libvterm C sources to .o (gcc, because libvterm is C).
                     val vtermFiles =
                         listOf("encoding", "keyboard", "mouse", "parser", "pen", "screen", "state", "unicode", "vterm")
@@ -347,7 +353,7 @@ android {
                             ).redirectErrorStream(true).start()
                         val out = proc.inputStream.bufferedReader().readText()
                         if (proc.waitFor() != 0) {
-                            logger.warn("libvterm $name.c compile failed: $out")
+                            test.logger.warn("libvterm $name.c compile failed: $out")
                         }
                     }
                     // Archive libvterm objects into a static lib.
@@ -388,7 +394,7 @@ android {
                         ).redirectErrorStream(true).start()
                     val linkOut = linkProc.inputStream.bufferedReader().readText()
                     if (linkProc.waitFor() != 0) {
-                        logger.warn("libjni_cb_term.so link failed: $linkOut")
+                        test.logger.warn("libjni_cb_term.so link failed: $linkOut")
                     }
                 }
                 test.systemProperty("java.library.path", nativeHostDir.absolutePath)
