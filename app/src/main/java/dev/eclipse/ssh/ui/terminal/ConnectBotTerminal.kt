@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 import dev.eclipse.ssh.data.settings.SettingsRepository
 import dev.eclipse.ssh.presentation.TerminalSessionController
@@ -131,6 +133,20 @@ internal fun terminalTypeface(context: Context): Typeface =
     context.resources.getFont(dev.eclipse.ssh.R.font.jetbrains_mono_regular)
 
 /**
+ * The name the terminal's input surface carries in the semantics tree.
+ *
+ * The pristine UI named an app-owned hidden text field (`TerminalInputBridge`) with this
+ * description, because that field was the whole of the terminal's IME story: the surface the soft
+ * keyboard typed into and the node a screen reader landed on. The termlib migration moved that
+ * session inside the library — its root takes hardware keys through `onPreviewKeyEvent` and drives
+ * its own IME input view — so the name moved with the job, onto the node that actually receives the
+ * keystrokes. It is also the assertion the Robolectric suites make against "the terminal is on
+ * screen", which is a different fact from "the session claims to be connected": a session can be
+ * CONNECTED while the surface that would carry the user's typing is gone.
+ */
+private const val TERMINAL_INPUT_DESCRIPTION = "Terminal input"
+
+/**
  * Draws one session's terminal through the ConnectBot termlib renderer.
  *
  * @param controller the session's terminal owner — the emulator inside it is what
@@ -182,7 +198,15 @@ fun ConnectBotTerminal(
 
     Terminal(
         terminalEmulator = controller.emulator,
-        modifier = modifier.fillMaxSize(),
+        modifier =
+            modifier
+                .fillMaxSize()
+                // The terminal is the thing the user types into — the library's root takes
+                // hardware keys and holds the IME session — so the surface is named here,
+                // where the keystrokes land. Naming a wrapper instead of a second, app-owned
+                // input field keeps the library the only writer to the emulator: nothing to
+                // steal focus, nothing to send a key twice.
+                .semantics { contentDescription = TERMINAL_INPUT_DESCRIPTION },
         typeface = typeface,
         initialFontSize = fontSize.sp,
         backgroundColor = background,
