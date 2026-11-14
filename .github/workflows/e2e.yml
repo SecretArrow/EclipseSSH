@@ -107,11 +107,11 @@ jobs:
           else
             echo "::warning::no /dev/kvm on this runner - emulator will use TCG"
           fi
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v4.1.0
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v4.1.0
         with:
           distribution: temurin
           java-version: '17.0.13'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Install Android SDK 37 + build-tools 36.0.0 + NDK 29
@@ -202,7 +202,7 @@ jobs:
           # Same pre-grant discipline on the retry (one line - see the comment
           # above for why): a fresh emulator means a fresh permission state.
           script: adb install -r app/build/outputs/apk/debug/app-debug.apk && adb shell pm grant dev.eclipse.ssh.debug android.permission.POST_NOTIFICATIONS; ./gradlew connectedDebugAndroidTest --no-daemon --continue -Pandroid.testInstrumentationRunnerArguments.notClass=dev.eclipse.ssh.linux.UbuntuE2eVerificationTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: instrumented-reports-api-${{ matrix.api-level }}
