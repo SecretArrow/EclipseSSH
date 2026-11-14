@@ -174,13 +174,28 @@ jobs:
       # the file they fetched.
       - name: Compute SHA-256 checksums
         run: |
-          cd app/build/outputs
-          {
-            cd apk/release && sha256sum *.apk && cd -
-            cd bundle/release && sha256sum *.aab && cd -
-          } > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          # One "<64-hex>  <basename>" line per artifact, nothing else. The earlier
+          # version cd'd into each subdir and used `cd -` to come back — but `cd -`
+          # echoes the directory to stdout, which landed two bare
+          # `/home/runner/.../outputs` lines inside SHA256SUMS.txt. Every honest
+          # `sha256sum -c SHA256SUMS.txt` then failed ("no properly formatted
+          # checksum lines"), which reads to a user exactly like a corrupted,
+          # invalid download of a perfectly valid APK. Loop over the files instead
+          # of cd-ing; only hash lines ever reach the file.
+          : > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          for f in app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab; do
+            [ -f "$f" ] || continue
+            sha256sum "$f" | sed 's#  .*/#  #' >> "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          done
           echo "Checksums:"
           cat "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          # Guard the format the release page tells downloaders to rely on: every
+          # line is "<64 hex>  <basename>" — no paths, no strays. This fails the
+          # build rather than shipping a sums file that fails its own consumers.
+          if grep -qvE '^[0-9a-f]{64}  [A-Za-z0-9._-]+$' "$GITHUB_WORKSPACE/SHA256SUMS.txt"; then
+            echo "FAIL: SHA256SUMS.txt contains malformed lines" >&2
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -219,6 +234,36 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
+          # The install guidance sits above the generated notes because the most
+          # common "invalid package" report is a phone being handed the .aab —
+          # the Play-Console bundle format cannot be installed directly, and the
+          # asset list alone does not say so. The v1.23.10 release shipped valid,
+          # canonically signed APKs (cert 7a91c1ff…) whose checksums verified —
+          # what it did not ship was this text.
+          body: |
+            ## Which file to install on your device
+
+            | Device | File |
+            | --- | --- |
+            | Android phone, 2019 or newer (arm64 — nearly all) | `app-arm64-v8a-release.apk` |
+            | Older 32-bit ARM phone | `app-armeabi-v7a-release.apk` |
+            | Tablet / Chromebook (x86_64) | `app-x86_64-release.apk` |
+            | x86 devices and emulators | `app-x86-release.apk` |
+            | Not sure — any device (largest, all ABIs) | `app-universal-release.apk` |
+
+            **`app-release.aab` is not installable on a device.** It is the Play
+            Console upload format; Android reports "invalid package / App not
+            installed" for it. Install one of the `.apk` files above.
+
+            ### Verify the download before installing
+
+            ```
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            If an APK still fails to install: re-download it (a partial download
+            is the other common cause) and confirm the file size matches the
+            asset size listed on this page.
           files: |
             artifacts/app/build/outputs/apk/release/*.apk
             artifacts/app/build/outputs/bundle/release/*.aab
