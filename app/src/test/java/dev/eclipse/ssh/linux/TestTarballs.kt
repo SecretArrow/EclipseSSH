@@ -2,6 +2,8 @@ package dev.eclipse.ssh.linux
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -61,6 +63,57 @@ internal object TestTarballs {
                 putFile(tar, "etc/group", "root:x:0:\ndaemon:x:1:\n".toByteArray())
                 putFile(tar, "etc/shadow", "root:*:19850:0:99999:7:::\ndaemon:*:19850:0:99999:7:::\n".toByteArray())
                 putFile(tar, "etc/apt/sources.list", "deb https://fixtures.invalid/ubuntu jammy main\n".toByteArray())
+                putFile(tar, "var/lib/rootfs-fixture.pad", ByteArray(3 * 1024 * 1024))
+            }
+        }
+        return target
+    }
+
+    /**
+     * The same rootfs fixture as [writeRootfsFixture], but xz-compressed — the wrapper the distros
+     * the roadmap names (Debian, Fedora, Arch) ship their rootfs tarballs in. The fixture exists
+     * so [openTarStream]'s xz magic detection is exercised against a real xz stream, not a
+     * hand-rolled byte layout.
+     */
+    fun writeRootfsFixtureXz(
+        target: File,
+        linkerName: String = "ld-linux-aarch64.so.1",
+    ): File {
+        target.parentFile?.mkdirs()
+        XZCompressorOutputStream(target.outputStream().buffered()).use { xz ->
+            TarArchiveOutputStream(xz).use { tar ->
+                putDirectory(tar, "bin")
+                putDirectory(tar, "etc")
+                putDirectory(tar, "etc/apk")
+                putFile(tar, "bin/sh", "fake shell\n".toByteArray(), mode = 0b111_101_101)
+                putFile(tar, "etc/passwd", "root:x:0:0:root:/root:/bin/sh\n".toByteArray())
+                putFile(tar, "etc/apk/repositories", "https://dl-cdn.alpinelinux.org/alpine/v3.21/main\n".toByteArray())
+                putFile(tar, "lib/$linkerName", "fake linker\n".toByteArray(), mode = 0b111_101_101)
+                putFile(tar, "var/lib/rootfs-fixture.pad", ByteArray(3 * 1024 * 1024))
+            }
+        }
+        return target
+    }
+
+    /**
+     * The same rootfs fixture as [writeRootfsFixture], but bzip2-compressed — the wrapper some
+     * older distro rootfs tarballs ship in. The fixture exists so [openTarStream]'s bzip2 magic
+     * detection is exercised against a real bzip2 stream.
+     */
+    fun writeRootfsFixtureBzip2(
+        target: File,
+        linkerName: String = "ld-linux-aarch64.so.1",
+    ): File {
+        target.parentFile?.mkdirs()
+        BZip2CompressorOutputStream(target.outputStream().buffered()).use { bzip2 ->
+            TarArchiveOutputStream(bzip2).use { tar ->
+                putDirectory(tar, "bin")
+                putDirectory(tar, "etc")
+                putDirectory(tar, "etc/apk")
+                putFile(tar, "bin/sh", "fake shell\n".toByteArray(), mode = 0b111_101_101)
+                putFile(tar, "etc/passwd", "root:x:0:0:root:/root:/bin/sh\n".toByteArray())
+                putFile(tar, "etc/apk/repositories", "https://dl-cdn.alpinelinux.org/alpine/v3.21/main\n".toByteArray())
+                putFile(tar, "lib/$linkerName", "fake linker\n".toByteArray(), mode = 0b111_101_101)
                 putFile(tar, "var/lib/rootfs-fixture.pad", ByteArray(3 * 1024 * 1024))
             }
         }
