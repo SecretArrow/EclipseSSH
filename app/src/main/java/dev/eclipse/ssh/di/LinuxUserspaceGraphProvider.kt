@@ -7,6 +7,7 @@ import android.os.Process
 import androidx.annotation.VisibleForTesting
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.eclipse.ssh.linux.AndroidGroupNames
+import dev.eclipse.ssh.linux.DistributionManager
 import dev.eclipse.ssh.linux.LinuxDistro
 import dev.eclipse.ssh.linux.LinuxDistroCatalog
 import dev.eclipse.ssh.linux.LinuxProcessManager
@@ -41,7 +42,7 @@ class LinuxUserspaceGraph(
     val distro: LinuxDistro,
     val runtime: ProotRuntime,
     val installer: RootfsInstaller,
-    val distribution: UbuntuDistributionManager,
+    val distribution: DistributionManager,
     val processes: LinuxProcessManager,
     val workspace: LinuxWorkspaceManager,
     val manager: LinuxUserspaceManager,

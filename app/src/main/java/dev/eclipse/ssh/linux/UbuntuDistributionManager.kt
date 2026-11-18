@@ -86,8 +86,8 @@ class UbuntuDistributionManager(
      * before any of the work below starts, and one log has to hold both halves. The DI graph passes
      * a single instance to both; the default is for the tests that build one of the two alone.
      */
-    val diagnostics: UserspaceDiagnostics = UserspaceDiagnostics(),
-) {
+    override val diagnostics: UserspaceDiagnostics = UserspaceDiagnostics(),
+) : DistributionManager {
     private val rootfs: File get() = runtime.rootfsDir
 
     /**
@@ -142,7 +142,7 @@ class UbuntuDistributionManager(
      *   and the extras are on top of a userspace that is already whole.
      * @return the warnings collected along the way (empty on a fully clean install)
      */
-    suspend fun setup(
+    override suspend fun setup(
         onStep: suspend (SetupStep) -> Unit = {},
         onProgress: (String) -> Unit = {},
         extras: List<OptionalPackage> = emptyList(),
@@ -222,7 +222,7 @@ class UbuntuDistributionManager(
      * a crash, where a missing rootfs (the very thing it is checking for) must read as "not
      * configured", not as an exception nobody can catch there.
      */
-    fun isConfigured(): Boolean {
+    override fun isConfigured(): Boolean {
         val passwd = File(rootfs, "etc/passwd")
         val sources = File(rootfs, "etc/apt/sources.list")
         if (!passwd.isFile || !sources.isFile) return false
@@ -250,7 +250,7 @@ class UbuntuDistributionManager(
      *   repair that reached for the network before it had looked at the rootfs is the mistake this
      *   whole layer is arranged to avoid.
      */
-    suspend fun healthProbe(probeNetwork: Boolean = true): HealthReport {
+    override suspend fun healthProbe(probeNetwork: Boolean = true): HealthReport {
         val shell = runSessionCommand("echo $PROBE_MARKER", PROBE_TIMEOUT_MS)
         val whoami = runSessionCommand("whoami", PROBE_TIMEOUT_MS)
         val network =
@@ -351,7 +351,7 @@ class UbuntuDistributionManager(
      *   whether that is fatal; for both of them it is not, because a userspace without these names
      *   works — its `groups` output is the only thing that differs.
      */
-    fun nameSupplementaryGroups(): Boolean {
+    override fun nameSupplementaryGroups(): Boolean {
         val group = File(rootfs, "etc/group")
         // Nothing to name when there is no file: [registerUbuntuUser] writes it on the line above
         // this call, so a rootfs that has none is one the extractor did not finish, and its own
@@ -1013,7 +1013,7 @@ class UbuntuDistributionManager(
      * entirely" a lie a storage-usage read can see. A deleted memo is not a loss — the next
      * install's ladder re-probes and records a fresh winner.
      */
-    fun clearLastGoodMirror() {
+    override fun clearLastGoodMirror() {
         runCatching { File(runtime.rootDir, LAST_GOOD_MIRROR_FILE).delete() }
             .onFailure {
                 diagnostics.record(UserspaceDiagnosticCategory.APT, "last-good-mirror delete failed", detail = it.message)
