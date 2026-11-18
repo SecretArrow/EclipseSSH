@@ -121,6 +121,61 @@ internal object TestTarballs {
     }
 
     /**
+     * Writes a minimal Alpine-minirootfs-shaped tar.gz: BusyBox's `/bin/sh` (not bash), the account
+     * files `alpine-baselayout` ships (`/etc/passwd` with only `root`, `/etc/group` with `root` and
+     * `wheel:x:10:root`, `/etc/shadow`), `/etc/profile`, `/etc/hostname`, `/etc/hosts`, `/etc/shells`,
+     * `/etc/nsswitch.conf`, and a `bin/apk` with the executable bit — the layout
+     * [AlpineDistributionManager.setup] expects the rootfs it is handed to start from.
+     *
+     * Built as a real tarball rather than a directory so a test that wants to exercise the installer's
+     * extraction alongside setup can, but [AlpineDistributionManagerTest]'s harness writes the same
+     * layout directly into a temp rootfs and never opens this tar — the tarball extraction path is
+     * already pinned in [TarSafetyTest], and a setup test should not pay its cost. Kept here so the
+     * minirootfs shape has one home the way [writeRootfsFixture]'s Ubuntu-Base shape does.
+     */
+    fun writeAlpineRootfsFixture(
+        target: File,
+        release: String = "v3.21",
+        linkerName: String = "ld-linux-aarch64.so.1",
+    ): File {
+        target.parentFile?.mkdirs()
+        GZIPOutputStream(target.outputStream().buffered()).use { gzip ->
+            TarArchiveOutputStream(gzip).use { tar ->
+                putDirectory(tar, "bin")
+                putDirectory(tar, "etc")
+                putDirectory(tar, "etc/apk")
+                putDirectory(tar, "etc/profile.d")
+                putDirectory(tar, "lib")
+                putDirectory(tar, "usr")
+                putDirectory(tar, "usr/bin")
+                putDirectory(tar, "var/lib")
+                // BusyBox ash, not bash: the shell the minirootfs ships and the one the account
+                // is registered with until `apk add bash` runs.
+                putFile(tar, "bin/sh", "fake shell\n".toByteArray(), mode = 0b111_101_101)
+                putFile(tar, "bin/busybox", "fake busybox\n".toByteArray(), mode = 0b111_101_101)
+                putSymlink(tar, "usr/bin/env", "../../bin/busybox")
+                putFile(tar, "bin/apk", "fake apk\n".toByteArray(), mode = 0b111_101_101)
+                putFile(tar, "lib/$linkerName", "fake linker\n".toByteArray(), mode = 0b111_101_101)
+                // alpine-baselayout's account files: only root, and the wheel group the account is
+                // later added to.
+                putFile(tar, "etc/passwd", "root:x:0:0:root:/root:/bin/sh\n".toByteArray())
+                putFile(tar, "etc/group", "root:x:0:\nwheel:x:10:root\n".toByteArray())
+                putFile(tar, "etc/shadow", "root:!:19850:0:99999:7:::\n".toByteArray())
+                putFile(tar, "etc/profile", "# alpine-baselayout profile\nexport PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n".toByteArray())
+                putFile(tar, "etc/hostname", "localhost\n".toByteArray())
+                putFile(tar, "etc/hosts", "127.0.0.1\tlocalhost\n::1\tlocalhost\n".toByteArray())
+                putFile(tar, "etc/shells", "/bin/sh\n/bin/ash\n".toByteArray())
+                putFile(tar, "etc/nsswitch.conf", "passwd: files\nshadow: files\ngroup: files\nhosts: files dns\n".toByteArray())
+                // The file configureApkRepositories overwrites; shipped empty so isConfigured's
+                // "no marker" reading of a fresh rootfs is testable.
+                putFile(tar, "etc/apk/repositories", "".toByteArray())
+                putFile(tar, "var/lib/rootfs-fixture.pad", ByteArray(3 * 1024 * 1024))
+            }
+        }
+        return target
+    }
+
+    /**
      * A tarball that downloads, verifies and extracts cleanly — and is still not a rootfs: it has
      * no shell, no linker, no apt. What [RootfsValidator] exists to catch, in one fixture.
      */
