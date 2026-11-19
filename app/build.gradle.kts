@@ -28,8 +28,8 @@ android {
         applicationId = "dev.eclipse.ssh"
         minSdk = 28
         targetSdk = 35
-        versionCode = 71
-        versionName = "1.23.13"
+        versionCode = 72
+        versionName = "1.23.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
