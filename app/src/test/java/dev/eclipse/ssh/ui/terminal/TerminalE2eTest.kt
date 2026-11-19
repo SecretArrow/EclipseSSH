@@ -117,8 +117,17 @@ class TerminalE2eTest {
      * chunk the channel delivered to the emulator, decoded as UTF-8, in arrival order. The tee fires
      * on the raw chunk before the emulator's parser runs, so this is the byte stream the emulator
      * received — the honest reading of "bytes written to the SSH channel appear in the terminal".
+     *
+     * A `StringBuffer` rather than a `StringBuilder` because the writes happen on the controller's
+     * pump coroutine (`Dispatchers.Default`) while the test thread reads it from `pumpUntil`'s
+     * condition. `StringBuilder` is not thread-safe and the JMM does not guarantee the test thread
+     * ever sees the pump's appends without a happens-before edge — which is exactly the
+     * output-path failure: bytes reached the tee on the pump thread but `rendered.toString()` on the
+     * test thread read an empty buffer for the full 30s timeout. `StringBuffer` synchronizes every
+     * `append` and `toString` on the buffer itself, so the explicit `synchronized(rendered)` in the
+     * tee is belt-and-braces and the reads the conditions do are safe.
      */
-    private val rendered = StringBuilder()
+    private val rendered = StringBuffer()
 
     /** The controller under test, built fresh per test so no session leaks into the next. */
     private lateinit var controller: TerminalSessionController
@@ -371,7 +380,11 @@ class TerminalE2eTest {
      * once the banner is in place.
      */
     private fun attachToShellThatWrites(banner: String) {
-        val (ctrl, ch) = attachControllerToShell(ScriptedShell(banner = banner))
+        // Set before the dial: the server's ShellFactory (installed once in startServer) reads
+        // [nextShellBanner] when MINA asks it for a shell, so the shell the server starts writes the
+        // banner THIS test needs — not the suite-wide default the factory used to hardcode.
+        nextShellBanner = banner
+        val (ctrl, ch) = attachControllerToShell()
         controller = ctrl
         channel = ch
         // Wait for the banner — it is the channel-opened signal, and the test's real assertion can
@@ -396,7 +409,7 @@ class TerminalE2eTest {
      *  - The `OutputTee` list carries one tee that appends to [rendered], mirroring the
      *    `OutputTee { chunk -> scheduleTranscriptPublish(key, chunk) }` `MainViewModel` installs.
      */
-    private fun attachControllerToShell(shell: ScriptedShell): Pair<TerminalSessionController, SshTerminalChannel> {
+    private fun attachControllerToShell(): Pair<TerminalSessionController, SshTerminalChannel> {
         val client =
             SshClient.setUpDefaultClient().apply {
                 serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
@@ -454,12 +467,32 @@ class TerminalE2eTest {
     /**
      * Takes the next keyboard chunk the emulator produced, with a readable timeout message.
      *
-     * The emulator dispatches keyboard output on its own dispatcher, so the chunk arrives
-     * asynchronously; a bounded poll is the honest wait, and the message names the key so a failure
-     * points at the dispatch that never produced bytes.
+     * The emulator's keyboard output does NOT arrive synchronously from `dispatchKey` /
+     * `dispatchCharacter`: termlib's `TerminalEmulatorImpl.onKeyboardInput` (the JNI callback the
+     * native parser invokes when a key resolves to a byte sequence) wraps the configured
+     * `onKeyboardInput` lambda in `postCallback { ... }`, and `postCallback` hands it to a
+     * `Handler(Looper.getMainLooper())`. So the byte sequence is queued on the main looper, not
+     * handed back on the dispatching thread.
+     *
+     * Under Robolectric the main looper is paused: work posted to it does not run until something
+     * idles it. A plain `keyboardSink.poll(timeout)` parks the test thread for the whole timeout
+     * without ever idling the looper, so the queued callback never fires, the sink stays empty and
+     * the test falsely reports "the emulator never produced a byte sequence". That was the input-path
+     * failure. The fix is to poll in short slices and idle the main looper between slices, exactly
+     * the shape `pumpUntil` uses for the output path — the queued `onKeyboardInput.invoke(data)`
+     * runs while the looper idles, which is what feeds [keyboardSink].
      */
     private fun takeKeyboardChunk(what: String): ByteArray {
-        val chunk = keyboardSink.poll(KEYBOARD_POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        val deadline = System.nanoTime() + KEYBOARD_POLL_TIMEOUT_MS * 1_000_000
+        var chunk: ByteArray? = null
+        while (System.nanoTime() < deadline && chunk == null) {
+            // Idle the main looper so the emulator's handler-posted `onKeyboardInput` callback runs:
+            // the byte sequence for a key is queued on the main looper (termlib's `postCallback`),
+            // and Robolectric's looper is paused, so a plain `poll` that parks the test thread never
+            // lets the callback fire. Idling here is what feeds [keyboardSink].
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
+            chunk = keyboardSink.poll(SHORT_POLL_SLICE_MS, TimeUnit.MILLISECONDS)
+        }
         check(chunk != null) { "the emulator never produced a byte sequence for $what" }
         return chunk
     }
@@ -491,6 +524,12 @@ class TerminalE2eTest {
     private companion object {
         const val TEST_TIMEOUT_MS = 30_000L
         const val KEYBOARD_POLL_TIMEOUT_MS = 5_000L
+        /**
+         * How long each [takeKeyboardChunk] poll slice parks before idling the main looper again.
+         * Short enough that the looper is idled often enough for the emulator's handler-posted
+         * `onKeyboardInput` callback to fire promptly; long enough that the park is not a busy-wait.
+         */
+        const val SHORT_POLL_SLICE_MS = 25L
         const val CONNECT_TIMEOUT_SECONDS = 30L
 
         const val LOOPBACK = "127.0.0.1"
@@ -523,6 +562,21 @@ class TerminalE2eTest {
         var serverPort = 0
         private lateinit var server: SshServer
 
+        /**
+         * The banner the next server-side shell writes to stdout, set per test by
+         * [attachToShellThatWrites] before it dials.
+         *
+         * The `ShellFactory` is installed once, in [startServer], and MINA calls it for every
+         * shell channel the test opens — so a per-test banner cannot be passed through the factory
+         * constructor. This holder is the seam instead: the test sets it, the factory reads it, and
+         * the shell that MINA constructs writes whatever the test asked for. `@Volatile` because the
+         * test thread writes it and MINA's connection-acceptor thread reads it (inside the factory
+         * lambda). The default is the suite's banner so a shell opened before any test sets its own
+         * still produces something recognisable rather than an empty write.
+         */
+        @Volatile
+        var nextShellBanner: String = SHELL_BANNER
+
         @JvmStatic
         @BeforeClass
         fun startServer() {
@@ -549,7 +603,13 @@ class TerminalE2eTest {
                     // the auth path is unambiguous and there is no keyboard-interactive double-count.
                     userAuthFactories = listOf<UserAuthFactory>(UserAuthPasswordFactory.INSTANCE)
                     fileSystemFactory = VirtualFileSystemFactory(root.toAbsolutePath())
-                    shellFactory = ShellFactory { ScriptedShell(banner = SHELL_BANNER) }
+                    // Reads [nextShellBanner] rather than hardcoding SHELL_BANNER: the factory is
+                    // installed once but each test needs the shell to write a *different* banner
+                    // (scenario 1 wants "hello", scenario 3 wants the 256-colour payload). Hardcoding
+                    // the banner here made every shell write SHELL_BANNER regardless of what the test
+                    // asked for, so the per-test `attachToShellThatWrites(banner)` waited for a banner
+                    // the server never wrote — the output-path half of the failure.
+                    shellFactory = ShellFactory { ScriptedShell(banner = nextShellBanner) }
                     start()
                 }
             serverPort = (server.boundAddresses.first() as InetSocketAddress).port
