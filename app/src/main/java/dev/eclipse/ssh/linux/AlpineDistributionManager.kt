@@ -190,6 +190,7 @@ class AlpineDistributionManager(
                 ?.map { stripEscapes(it).trim() }
                 .orEmpty()
         val account = whoami?.outputText()?.answerLine()
+
         fun marked(prefix: String): String? =
             loginLines
                 .firstOrNull { it.startsWith(prefix) }
@@ -278,7 +279,10 @@ class AlpineDistributionManager(
      * group line is `name:x:gid:comma,separated,members`; a line with no members ends in a colon
      * after the gid, so the first append writes `name:x:gid:member` and a second writes nothing.
      */
-    private fun addToGroup(groupName: String, member: String) {
+    private fun addToGroup(
+        groupName: String,
+        member: String,
+    ) {
         val group = File(rootfs, "etc/group")
         if (!group.isFile) return
         val lines = group.readLines().toMutableList()
@@ -310,7 +314,9 @@ class AlpineDistributionManager(
         if (!home.isDirectory) home.mkdirs()
         if (installer != null) installer.ensureGuestTemp() else File(rootfs, "tmp").mkdirs()
         val workspace = File(rootfs, WORKSPACE_DIR)
-        val linked = java.nio.file.Files.isSymbolicLink(workspace.toPath())
+        val linked =
+            java.nio.file.Files
+                .isSymbolicLink(workspace.toPath())
         if (workspace.isDirectory && !linked) return
         deleteTreeNoFollow(workspace)
         workspace.mkdirs()
@@ -546,7 +552,13 @@ class AlpineDistributionManager(
         val result = runSetupCommand("apk add --no-cache $packages", APK_INSTALL_TIMEOUT_MS, onOutput = { onOutputLine(it, onProgress) })
         if (result == null || result.exitCode != 0) {
             warnings += "could not install optional packages ($packages): " +
-                (result?.outputText()?.take(200)?.trim()?.ifBlank { "exit ${result?.exitCode}" } ?: "no answer in time")
+                (
+                    result
+                        ?.outputText()
+                        ?.take(200)
+                        ?.trim()
+                        ?.ifBlank { "exit ${result?.exitCode}" } ?: "no answer in time"
+                )
         }
     }
 
@@ -610,7 +622,10 @@ class AlpineDistributionManager(
     private fun String.answerLine(): String? = lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.ifBlank { null }
 
     /** Forwards one output chunk to the install screen's progress line, as text. */
-    private fun onOutputLine(bytes: ByteArray, onProgress: (String) -> Unit) {
+    private fun onOutputLine(
+        bytes: ByteArray,
+        onProgress: (String) -> Unit,
+    ) {
         val text = String(bytes, Charsets.UTF_8)
         val lastLine = text.lineSequence().lastOrNull { it.isNotBlank() }
         if (lastLine != null) onProgress(lastLine.take(200))

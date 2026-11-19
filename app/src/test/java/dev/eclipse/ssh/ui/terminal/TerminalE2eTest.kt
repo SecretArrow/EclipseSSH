@@ -8,6 +8,7 @@ import dev.eclipse.ssh.presentation.OutputTee
 import dev.eclipse.ssh.presentation.TerminalSessionController
 import dev.eclipse.ssh.ssh.SshTerminalChannel
 import dev.eclipse.ssh.terminal.TerminalKey
+import kotlinx.coroutines.runBlocking
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
@@ -39,7 +40,6 @@ import java.time.Duration
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.runBlocking
 
 /**
  * The termlib migration's app-side end-to-end test: the terminal path the migration left with no
@@ -172,7 +172,7 @@ class TerminalE2eTest {
         // The shell's bytes travel: MINA server stdout -> SshTerminalChannel.output (SharedFlow) ->
         // TerminalSessionController.attach's producer -> emulator.writeInput -> the OutputTee this
         // test installed. That is the same chain MainViewModel publishes terminalOutput through.
-        pumpUntil("the echoed line never reached the rendered terminal: '${rendered}'") {
+        pumpUntil("the echoed line never reached the rendered terminal: '$rendered'") {
             rendered.toString().contains("hello")
         }
         // The echoed line made it through, in order — the controller did not drop or reorder the
@@ -264,7 +264,7 @@ class TerminalE2eTest {
         val payload = sequences.joinToString(separator = "")
         attachToShellThatWrites(payload)
 
-        pumpUntil("the 256-colour payload never reached the rendered terminal: '${rendered}'") {
+        pumpUntil("the 256-colour payload never reached the rendered terminal: '$rendered'") {
             rendered.toString().contains(MARKER_GRAY)
         }
 
@@ -287,7 +287,8 @@ class TerminalE2eTest {
         // into the next cell, which is the bug a byte-dropping channel would produce.
         val resetCount = out.split("\u001B[0m").size - 1
         assertWithMessage("the reset SGR did not arrive for every colour sequence")
-            .that(resetCount).isAtLeast(sequences.size)
+            .that(resetCount)
+            .isAtLeast(sequences.size)
 
         // The pty type the migration advertises is what makes the 256-colour path meaningful at
         // all: a server that believes it is talking to a `vt100` would never emit a 256-colour SGR.
@@ -375,7 +376,7 @@ class TerminalE2eTest {
         channel = ch
         // Wait for the banner — it is the channel-opened signal, and the test's real assertion can
         // only run once the controller's producer is actually pumping chunks into the emulator.
-        pumpUntil("the shell's banner never reached the rendered terminal: '${rendered}'") {
+        pumpUntil("the shell's banner never reached the rendered terminal: '$rendered'") {
             rendered.toString().contains(banner)
         }
     }
@@ -396,14 +397,17 @@ class TerminalE2eTest {
      *    `OutputTee { chunk -> scheduleTranscriptPublish(key, chunk) }` `MainViewModel` installs.
      */
     private fun attachControllerToShell(shell: ScriptedShell): Pair<TerminalSessionController, SshTerminalChannel> {
-        val client = SshClient.setUpDefaultClient().apply {
-            serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
-            start()
-        }
+        val client =
+            SshClient.setUpDefaultClient().apply {
+                serverKeyVerifier = org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier.INSTANCE
+                start()
+            }
         sshClient = client
-        val session = client.connect(USER, LOOPBACK, serverPort)
-            .verify(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .session
+        val session =
+            client
+                .connect(USER, LOOPBACK, serverPort)
+                .verify(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .session
         session.addPasswordIdentity(PASSWORD)
         session.auth().verify(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         clientSession = session
@@ -427,20 +431,22 @@ class TerminalE2eTest {
         }
         channel = rawChannel
 
-        val ctrl = TerminalSessionController(
-            defaultForeground = FOREGROUND_ARGB,
-            defaultBackground = BACKGROUND_ARGB,
-            onKeyboardInput = { data ->
-                // The emulator produced keyboard bytes — write them to the channel exactly as
-                // MainViewModel does, and capture them for the input-path assertions.
-                keyboardSink.add(data)
-                rawChannel.writeBytes(data)
-            },
-            tees = listOf(OutputTee { chunk -> synchronized(rendered) { rendered.append(chunk) } }),
-            externalScope = kotlinx.coroutines.CoroutineScope(
-                kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
-            ),
-        )
+        val ctrl =
+            TerminalSessionController(
+                defaultForeground = FOREGROUND_ARGB,
+                defaultBackground = BACKGROUND_ARGB,
+                onKeyboardInput = { data ->
+                    // The emulator produced keyboard bytes — write them to the channel exactly as
+                    // MainViewModel does, and capture them for the input-path assertions.
+                    keyboardSink.add(data)
+                    rawChannel.writeBytes(data)
+                },
+                tees = listOf(OutputTee { chunk -> synchronized(rendered) { rendered.append(chunk) } }),
+                externalScope =
+                    kotlinx.coroutines.CoroutineScope(
+                        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
+                    ),
+            )
         ctrl.attach(rawChannel) { _ -> ended.set(true) }
         return ctrl to rawChannel
     }

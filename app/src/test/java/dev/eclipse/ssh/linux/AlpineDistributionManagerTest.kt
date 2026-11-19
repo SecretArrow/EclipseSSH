@@ -214,9 +214,10 @@ class AlpineDistributionManagerTest {
          * for what the app can install, and a test that hand-builds a distro would be testing a
          * distro the app does not ship.
          */
-        distro: LinuxDistro = LinuxDistroCatalog.all.first {
-            it.id == "alpine-3.21" && it.ubuntuArch == "arm64"
-        },
+        distro: LinuxDistro =
+            LinuxDistroCatalog.all.first {
+                it.id == "alpine-3.21" && it.ubuntuArch == "arm64"
+            },
         scripted: ScriptedPtySpawner = ScriptedPtySpawner(),
         dnsServers: () -> List<String> = { UbuntuDistributionManager.DEFAULT_DNS_SERVERS },
         networkOnline: () -> Boolean = { true },
