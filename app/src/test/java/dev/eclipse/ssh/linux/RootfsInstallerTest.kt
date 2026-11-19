@@ -160,14 +160,28 @@ class RootfsInstallerTest {
             // `debian-aarch64/bash`), and the strip removed it — so the link resolves to the file
             // the staging root actually carries.
             val sh = rootfs.resolve("bin/sh")
-            assertThat(java.nio.file.Files.isSymbolicLink(sh.toPath())).isTrue()
-            assertThat(java.nio.file.Files.readSymbolicLink(sh.toPath()).toString()).isEqualTo("bash")
+            assertThat(
+                java.nio.file.Files
+                    .isSymbolicLink(sh.toPath()),
+            ).isTrue()
+            assertThat(
+                java.nio.file.Files
+                    .readSymbolicLink(sh.toPath())
+                    .toString(),
+            ).isEqualTo("bash")
             // A nested symlink whose target climbs the tree (`../../bin/bash`): the wrapper prefix
             // is stripped from the entry name but the link target is relative and was never
             // prefixed, so it survives the strip intact and resolves against the unwrapped tree.
             val env = rootfs.resolve("usr/bin/env")
-            assertThat(java.nio.file.Files.isSymbolicLink(env.toPath())).isTrue()
-            assertThat(java.nio.file.Files.readSymbolicLink(env.toPath()).toString()).isEqualTo("../../bin/bash")
+            assertThat(
+                java.nio.file.Files
+                    .isSymbolicLink(env.toPath()),
+            ).isTrue()
+            assertThat(
+                java.nio.file.Files
+                    .readSymbolicLink(env.toPath())
+                    .toString(),
+            ).isEqualTo("../../bin/bash")
         }
 
     @Test

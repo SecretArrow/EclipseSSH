@@ -63,8 +63,7 @@ class DebianDistributionManager(
      * Ubuntu archive for an entry with no `repoBaseUrl`, which is the strictly-additive guard: an
      * Ubuntu entry (family UBUNTU, repoBaseUrl null) keeps `primaryArchiveUrl`'s behaviour.
      */
-    override fun archiveBaseUrl(distro: LinuxDistro): String =
-        distro.repoBaseUrl ?: super.archiveBaseUrl(distro)
+    override fun archiveBaseUrl(distro: LinuxDistro): String = distro.repoBaseUrl ?: super.archiveBaseUrl(distro)
 
     /**
      * Empty: Debian/Deepin/Trisquel have no Ubuntu-style built-in mirror family. The ladder's

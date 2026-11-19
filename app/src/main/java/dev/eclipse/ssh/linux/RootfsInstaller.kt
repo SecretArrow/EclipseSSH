@@ -1100,9 +1100,9 @@ class RootfsInstaller(
                             if (source.isFile) {
                                 source.copyTo(target, overwrite = true)
                                 written += target.length()
-                                extractionWarnings += "hardlink ${effectiveName} copied: neither a hard link nor a symlink to ${effectiveLinkName} could be made"
+                                extractionWarnings += "hardlink $effectiveName copied: neither a hard link nor a symlink to $effectiveLinkName could be made"
                             } else {
-                                extractionWarnings += "hardlink ${effectiveName} skipped: its target ${effectiveLinkName} was not extracted"
+                                extractionWarnings += "hardlink $effectiveName skipped: its target $effectiveLinkName was not extracted"
                             }
                         }
                     }

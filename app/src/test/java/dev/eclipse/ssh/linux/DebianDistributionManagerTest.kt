@@ -224,8 +224,7 @@ class DebianDistributionManagerTest {
         }
 
     /** A Debian 12 (bookworm) catalogue entry, the family's representative distro for these tests. */
-    private fun debianDistro(): LinuxDistro =
-        LinuxDistroCatalog.all.first { it.id == "debian-12-bookworm" && it.ubuntuArch == "arm64" }
+    private fun debianDistro(): LinuxDistro = LinuxDistroCatalog.all.first { it.id == "debian-12-bookworm" && it.ubuntuArch == "arm64" }
 
     private companion object {
         /** The app uid/gid the harness registers the ubuntu account with. Arbitrary but realistic. */

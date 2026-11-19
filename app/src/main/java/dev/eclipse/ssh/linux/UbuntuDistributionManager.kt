@@ -1968,8 +1968,7 @@ open class UbuntuDistributionManager(
     }
 
     /** The fallback rungs — what joins the ladder once both primary rungs have failed. */
-    private fun ladderFallbacks(fetchedMirrors: List<String>): List<AptUpdateAttempt> =
-        ladderCandidates(fetchedMirrors).drop(PRIMARY_RUNGS)
+    private fun ladderFallbacks(fetchedMirrors: List<String>): List<AptUpdateAttempt> = ladderCandidates(fetchedMirrors).drop(PRIMARY_RUNGS)
 
     /**
      * The always-current official mirror feed, fetched once [aptUpdate] has exhausted the primary
