@@ -143,9 +143,9 @@ class UbuntuDistributionManager(
      * @return the warnings collected along the way (empty on a fully clean install)
      */
     override suspend fun setup(
-        onStep: suspend (SetupStep) -> Unit = {},
-        onProgress: (String) -> Unit = {},
-        extras: List<OptionalPackage> = emptyList(),
+        onStep: suspend (SetupStep) -> Unit,
+        onProgress: (String) -> Unit,
+        extras: List<OptionalPackage>,
     ): SetupReport {
         val warnings = mutableListOf<String>()
         requireOnline("starting setup")
@@ -250,7 +250,7 @@ class UbuntuDistributionManager(
      *   repair that reached for the network before it had looked at the rootfs is the mistake this
      *   whole layer is arranged to avoid.
      */
-    override suspend fun healthProbe(probeNetwork: Boolean = true): HealthReport {
+    override suspend fun healthProbe(probeNetwork: Boolean): HealthReport {
         val shell = runSessionCommand("echo $PROBE_MARKER", PROBE_TIMEOUT_MS)
         val whoami = runSessionCommand("whoami", PROBE_TIMEOUT_MS)
         val network =

@@ -1958,7 +1958,7 @@ class UbuntuDistributionManagerTest {
                 if (wedgeOn != null) WedgingPtySpawner(scripted, wedgeOn) else scripted,
                 storage = RuntimeStorageManager(rootDir, freeBytesProbe = { freeBytes() }),
             )
-        val distribution =
+        val distribution: DistributionManager =
             UbuntuDistributionManager(
                 distro,
                 runtime,

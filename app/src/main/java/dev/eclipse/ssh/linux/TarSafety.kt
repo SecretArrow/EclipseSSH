@@ -96,9 +96,9 @@ internal fun openTarStream(
             read >= 2 && magic[0] == 0x1f.toByte() && magic[1] == 0x8b.toByte() ->
                 GZIPInputStream(probe, bufferSize)
             read >= XZ_MAGIC.size && magic.copyOfRange(0, XZ_MAGIC.size).contentEquals(XZ_MAGIC) ->
-                XZCompressorInputStream(probe, bufferSize)
+                XZCompressorInputStream(probe)
             read >= BZIP2_MAGIC.size && magic.copyOfRange(0, BZIP2_MAGIC.size).contentEquals(BZIP2_MAGIC) ->
-                BZip2CompressorInputStream(probe, bufferSize)
+                BZip2CompressorInputStream(probe)
             else -> probe
         }
     return TarArchiveInputStream(source)

@@ -94,9 +94,9 @@ class AlpineDistributionManager(
      * @return the warnings collected along the way (empty on a fully clean install)
      */
     override suspend fun setup(
-        onStep: suspend (SetupStep) -> Unit = {},
-        onProgress: (String) -> Unit = {},
-        extras: List<OptionalPackage> = emptyList(),
+        onStep: suspend (SetupStep) -> Unit,
+        onProgress: (String) -> Unit,
+        extras: List<OptionalPackage>,
     ): SetupReport {
         val warnings = mutableListOf<String>()
         requireOnline("starting setup")
@@ -165,7 +165,7 @@ class AlpineDistributionManager(
      * @param probeNetwork when false the name-resolution command is not run at all, and
      *   [HealthReport.networkUp] reads as passing by convention. The repair ladder asks for this.
      */
-    override suspend fun healthProbe(probeNetwork: Boolean = true): HealthReport {
+    override suspend fun healthProbe(probeNetwork: Boolean): HealthReport {
         val shell = runSessionCommand("echo $PROBE_MARKER", PROBE_TIMEOUT_MS)
         val whoami = runSessionCommand("whoami", PROBE_TIMEOUT_MS)
         val network =
@@ -288,7 +288,7 @@ class AlpineDistributionManager(
         val lines = group.readLines().toMutableList()
         var changed = false
         for (i in lines.indices) {
-            val fields = lines[i].split(":")
+            val fields = lines[i].split(":").toMutableList()
             if (fields.size >= 4 && fields[0] == groupName) {
                 val members = fields[3].split(",").filter { it.isNotBlank() }
                 if (member !in members) {

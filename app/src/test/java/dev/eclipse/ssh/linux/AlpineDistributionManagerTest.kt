@@ -239,7 +239,7 @@ class AlpineDistributionManagerTest {
                 // never match the session the manager then probes.
                 family = DistroFamily.ALPINE,
             )
-        val distribution =
+        val distribution: DistributionManager =
             AlpineDistributionManager(
                 distro,
                 runtime,
