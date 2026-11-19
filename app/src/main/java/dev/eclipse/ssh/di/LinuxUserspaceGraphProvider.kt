@@ -8,6 +8,7 @@ import androidx.annotation.VisibleForTesting
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.eclipse.ssh.linux.AlpineDistributionManager
 import dev.eclipse.ssh.linux.AndroidGroupNames
+import dev.eclipse.ssh.linux.DebianDistributionManager
 import dev.eclipse.ssh.linux.DistributionManager
 import dev.eclipse.ssh.linux.DistroFamily
 import dev.eclipse.ssh.linux.LinuxDistro
@@ -107,12 +108,15 @@ class LinuxUserspaceGraphProvider
         /**
          * Every distro this device can run, newest first within each family — the install screen's
          * version list. Ubuntu comes first (the family the app was first built around, and the
-         * default a tap-through lands on), then Alpine; an installed distro of either family is
-         * resolved by id regardless of order, because [resolveDistro] reads by id not by position.
+         * default a tap-through lands on), then Alpine, then the Debian family (Debian, Deepin,
+         * Trisquel — all apt distros that reuse the Ubuntu apt pipeline but carry their own
+         * archive); an installed distro of any family is resolved by id regardless of order,
+         * because [resolveDistro] reads by id not by position.
          */
         val versions: List<LinuxDistro> =
             LinuxDistroCatalog.versionsFor(Build.SUPPORTED_ABIS.toList()) +
-                LinuxDistroCatalog.alpineVersionsFor(Build.SUPPORTED_ABIS.toList())
+                LinuxDistroCatalog.alpineVersionsFor(Build.SUPPORTED_ABIS.toList()) +
+                LinuxDistroCatalog.debianVersionsFor(Build.SUPPORTED_ABIS.toList())
 
         // Both of the declarations above have to precede this one. Property initializers run in
         // declaration order, and buildGraph() reads selectionFile and versions; declared below it,
@@ -233,6 +237,17 @@ class LinuxUserspaceGraphProvider
                             // missing-program restore reads the same pinned tarball this device
                             // installed from — and files into the same diagnostics ring, which is why
                             // both take the one `diagnostics` object.
+                            installer = installer,
+                            diagnostics = diagnostics,
+                        )
+                    DistroFamily.DEBIAN ->
+                        DebianDistributionManager(
+                            distro = distro,
+                            runtime = runtime,
+                            appUid = appUid,
+                            appGid = appGid,
+                            supplementaryGids = supplementaryGids,
+                            dnsServers = dnsServers,
                             installer = installer,
                             diagnostics = diagnostics,
                         )

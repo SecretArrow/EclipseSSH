@@ -70,6 +70,64 @@ internal object TestTarballs {
     }
 
     /**
+     * A tarball whose entries are wrapped under a single top-level `<wrapperDir>/` directory, the
+     * shape Termux `proot-distro` rebuilds ship: the rootfs lives under `debian-aarch64/bin/`,
+     * `debian-aarch64/etc/`, ... rather than `bin/`, `etc/`, ... at the top level. The extractor
+     * strips the wrapper prefix (see [LinuxDistro.wrapperDir]) so the staging tree ends up with
+     * `bin/` at its root.
+     *
+     * Built as a gzip tarball (the proot-distro Debian/Deepin tarballs are xz; gzip here is enough
+     * to exercise the wrapper-strip path — [TarSafetyTest] covers the xz/bzip2 magic detection
+     * separately). The wrapper directory entry itself (`debian-aarch64/`) is written first, the way
+     * a real tarball emits it, so the strip's "skip the empty effective name" branch is exercised.
+     *
+     * @param target the tarball file to write
+     * @param wrapperDir the top-level directory the entries are prefixed with; defaults to
+     *   `debian-aarch64/` (Debian's proot-distro rebuild)
+     * @param linkerName which architecture's dynamic linker to ship under lib/
+     */
+    fun writeWrappedRootfsFixture(
+        target: File,
+        wrapperDir: String = "debian-aarch64/",
+        linkerName: String = "ld-linux-aarch64.so.1",
+    ): File {
+        target.parentFile?.mkdirs()
+        GZIPOutputStream(target.outputStream().buffered()).use { gzip ->
+            TarArchiveOutputStream(gzip).use { tar ->
+                // The wrapper directory entry itself: strips to empty, so the extractor skips it
+                // rather than resolving an empty name against the staging root.
+                putDirectory(tar, wrapperDir.trimEnd('/'))
+                putDirectory(tar, "$wrapperDir/bin")
+                putDirectory(tar, "$wrapperDir/etc")
+                putDirectory(tar, "$wrapperDir/etc/apt")
+                putDirectory(tar, "$wrapperDir/lib")
+                putDirectory(tar, "$wrapperDir/usr")
+                putDirectory(tar, "$wrapperDir/usr/bin")
+                putDirectory(tar, "$wrapperDir/var/lib")
+                putDirectory(tar, "$wrapperDir/usr/sbin")
+                putFile(tar, "$wrapperDir/bin/bash", "fake shell\n".toByteArray(), mode = 0b111_101_101)
+                // A symlink whose target is itself prefixed by the wrapper directory: the strip
+                // must remove the prefix from linkName too, or the link would point at a path under
+                // the wrapper the staging tree does not carry.
+                putSymlink(tar, "$wrapperDir/bin/sh", "bash")
+                putSymlink(tar, "$wrapperDir/usr/bin/env", "../../bin/bash")
+                putFile(tar, "$wrapperDir/usr/bin/apt-get", "fake apt\n".toByteArray(), mode = 0b111_101_101)
+                putFile(tar, "$wrapperDir/lib/$linkerName", "fake linker\n".toByteArray(), mode = 0b111_101_101)
+                putFile(
+                    tar,
+                    "$wrapperDir/etc/passwd",
+                    "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n".toByteArray(),
+                )
+                putFile(tar, "$wrapperDir/etc/group", "root:x:0:\ndaemon:x:1:\n".toByteArray())
+                putFile(tar, "$wrapperDir/etc/shadow", "root:*:19850:0:99999:7:::\ndaemon:*:19850:0:99999:7:::\n".toByteArray())
+                putFile(tar, "$wrapperDir/etc/apt/sources.list", "deb https://fixtures.invalid/debian bookworm main\n".toByteArray())
+                putFile(tar, "$wrapperDir/var/lib/rootfs-fixture.pad", ByteArray(3 * 1024 * 1024))
+            }
+        }
+        return target
+    }
+
+    /**
      * The same rootfs fixture as [writeRootfsFixture], but xz-compressed — the wrapper the distros
      * the roadmap names (Debian, Fedora, Arch) ship their rootfs tarballs in. The fixture exists
      * so [openTarStream]'s xz magic detection is exercised against a real xz stream, not a
@@ -312,6 +370,38 @@ internal object TestTarballs {
             rootfsTarballUrl = url,
             rootfsSha256 = sha256,
             rootfsSizeBytes = rootfsSizeBytes,
+        )
+
+    /**
+     * A distro carrying a wrapper directory — the shape a Termux `proot-distro` rebuild (Debian,
+     * Deepin) presents: the extractor must strip [wrapperDir] from every entry's name (and link
+     * target) so the staging tree ends up with `bin/` at its root rather than under the wrapper.
+     * Defaults to the Debian family so the manager routing the distro routes through the
+     * DebianDistributionManager's apt pipeline; a test that only exercises extraction can ignore
+     * the family, since the installer never reads it.
+     */
+    fun wrappedFixtureDistro(
+        url: String,
+        sha256: String,
+        wrapperDir: String,
+        rootfsSizeBytes: Long = 0L,
+        ubuntuArch: String = "arm64",
+        id: String = "debian-12-bookworm",
+        release: String = "bookworm",
+        repoBaseUrl: String = "http://deb.debian.org/debian",
+    ): LinuxDistro =
+        LinuxDistro(
+            id = id,
+            displayName = "Debian 12 (bookworm)",
+            release = release,
+            ubuntuArch = ubuntuArch,
+            family = DistroFamily.DEBIAN,
+            packageManager = PackageManager.APT,
+            rootfsTarballUrl = url,
+            rootfsSha256 = sha256,
+            rootfsSizeBytes = rootfsSizeBytes,
+            repoBaseUrl = repoBaseUrl,
+            wrapperDir = wrapperDir,
         )
 
     /**

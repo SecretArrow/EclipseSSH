@@ -1036,7 +1036,29 @@ class RootfsInstaller(
         openTarStream(tarballFile, DOWNLOAD_BUFFER) { consumed = it }.use { tar ->
             while (true) {
                 val entry = tar.nextTarEntry ?: break
-                val target = resolveInside(stagingDir, entry.name)
+                // A wrapped tarball (the Termux proot-distro rebuilds) wraps every entry under a
+                // single top-level `<distro>-<arch>/` directory; the staging tree must end up with
+                // `bin/` at its root rather than under that wrapper, so the wrapper prefix is
+                // stripped from both the entry's own name and the link target it points at (links
+                // point at paths inside the rootfs, so they carry the same prefix). A plain
+                // rootfs (Ubuntu Base, Alpine, Chimera, Trisquel) has wrapperDir == null and the
+                // effective names are the raw ones — byte-identical to the pre-wrapper behaviour.
+                val effectiveName =
+                    if (distro.wrapperDir != null && entry.name.startsWith(distro.wrapperDir)) {
+                        entry.name.removePrefix(distro.wrapperDir)
+                    } else {
+                        entry.name
+                    }
+                // The wrapper directory entry itself (`debian-aarch64/`) strips to empty; skip it
+                // rather than resolving an empty name against the staging root.
+                if (effectiveName.isEmpty()) continue
+                val effectiveLinkName =
+                    if (distro.wrapperDir != null && entry.linkName.startsWith(distro.wrapperDir)) {
+                        entry.linkName.removePrefix(distro.wrapperDir)
+                    } else {
+                        entry.linkName
+                    }
+                val target = resolveInside(stagingDir, effectiveName)
                 // 0 is LF_OLDNORM - NUL is the pre-POSIX encoding of "regular file" and real
                 // tarballs (Ubuntu Base included) still emit it for early entries.
                 when (entry.linkFlag) {
@@ -1048,7 +1070,7 @@ class RootfsInstaller(
                         // Where the link points must resolve inside the staging root too: a
                         // symlink pointing out is an escape hatch none of the entry-name checks
                         // would catch, because nothing is written through it here.
-                        resolveLinkInsideRoot(stagingDir, entry.name, entry.linkName)
+                        resolveLinkInsideRoot(stagingDir, effectiveName, effectiveLinkName)
                         // Created and deleted: if a previous extraction (or the rootfs itself)
                         // already put something there, the symlink must replace it.
                         target.delete()
@@ -1057,12 +1079,12 @@ class RootfsInstaller(
                             .createSymbolicLink(
                                 target.toPath(),
                                 java.nio.file.Path
-                                    .of(entry.linkName),
+                                    .of(effectiveLinkName),
                             )
                     }
                     TarArchiveEntry.LF_LINK -> {
                         target.parentFile?.mkdirs()
-                        val source = resolveInside(stagingDir, entry.linkName)
+                        val source = resolveInside(stagingDir, effectiveLinkName)
                         target.delete()
                         deleteTreeNoFollow(target)
                         // A hard link is what the tarball says, and what costs nothing on disk.
@@ -1078,9 +1100,9 @@ class RootfsInstaller(
                             if (source.isFile) {
                                 source.copyTo(target, overwrite = true)
                                 written += target.length()
-                                extractionWarnings += "hardlink ${entry.name} copied: neither a hard link nor a symlink to ${entry.linkName} could be made"
+                                extractionWarnings += "hardlink ${effectiveName} copied: neither a hard link nor a symlink to ${effectiveLinkName} could be made"
                             } else {
-                                extractionWarnings += "hardlink ${entry.name} skipped: its target ${entry.linkName} was not extracted"
+                                extractionWarnings += "hardlink ${effectiveName} skipped: its target ${effectiveLinkName} was not extracted"
                             }
                         }
                     }

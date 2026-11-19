@@ -121,6 +121,56 @@ class RootfsInstallerTest {
         }
 
     @Test
+    fun `a wrapped tarball strips its wrapper directory so bin lands at the staging root`() =
+        runBlocking {
+            val root = newRoot()
+            val fixture =
+                TestTarballs.writeWrappedRootfsFixture(
+                    Files.createTempDirectory("linux-fixture").toFile().resolve("rootfs.tar.gz"),
+                    wrapperDir = "debian-aarch64/",
+                )
+            val installer =
+                RootfsInstaller(
+                    root,
+                    TestTarballs.wrappedFixtureDistro(
+                        url = "https://fixtures.invalid/rootfs.tar.gz",
+                        sha256 = TestTarballs.sha256(fixture),
+                        wrapperDir = "debian-aarch64/",
+                    ),
+                    TestTarballs.serving(fixture),
+                    retryWaitsMillis = longArrayOf(),
+                )
+
+            installer.install(onProgress = {})
+
+            assertThat(installer.isExtracted()).isTrue()
+            val rootfs = installer.rootfsDir
+            // The wrapper directory did NOT survive the strip: the staging tree ends up with
+            // `bin/bash` at its root, not `debian-aarch64/bin/bash`. A wrapper-strip bug would
+            // extract the whole rootfs one level deep, and every later setup step (which reads
+            // `etc/passwd`, `usr/bin/apt-get`, ...) would find nothing where it looked.
+            assertThat(rootfs.resolve("bin/bash").readText()).isEqualTo("fake shell\n")
+            assertThat(rootfs.resolve("bin/bash").canExecute()).isTrue()
+            assertThat(rootfs.resolve("usr/bin/apt-get").readText()).isEqualTo("fake apt\n")
+            // The wrapper directory itself is gone: the `debian-aarch64/` entry strips to an empty
+            // effective name, which the extractor skips rather than materializing as the staging
+            // root.
+            assertThat(rootfs.resolve("debian-aarch64").exists()).isFalse()
+            // The symlink's target was prefixed by the wrapper dir too (`bash`, not
+            // `debian-aarch64/bash`), and the strip removed it — so the link resolves to the file
+            // the staging root actually carries.
+            val sh = rootfs.resolve("bin/sh")
+            assertThat(java.nio.file.Files.isSymbolicLink(sh.toPath())).isTrue()
+            assertThat(java.nio.file.Files.readSymbolicLink(sh.toPath()).toString()).isEqualTo("bash")
+            // A nested symlink whose target climbs the tree (`../../bin/bash`): the wrapper prefix
+            // is stripped from the entry name but the link target is relative and was never
+            // prefixed, so it survives the strip intact and resolves against the unwrapped tree.
+            val env = rootfs.resolve("usr/bin/env")
+            assertThat(java.nio.file.Files.isSymbolicLink(env.toPath())).isTrue()
+            assertThat(java.nio.file.Files.readSymbolicLink(env.toPath()).toString()).isEqualTo("../../bin/bash")
+        }
+
+    @Test
     fun `a checksum mismatch extracts nothing`() =
         runBlocking {
             val root = newRoot()
