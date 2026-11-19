@@ -46,7 +46,7 @@ class LinuxUserspaceManager(
     private val distro: LinuxDistro,
     private val runtime: ProotRuntime,
     private val installer: RootfsInstaller,
-    private val distribution: UbuntuDistributionManager,
+    private val distribution: DistributionManager,
     private val processes: LinuxProcessManager,
     private val workspace: LinuxWorkspaceManager,
     backupFile: File? = null,

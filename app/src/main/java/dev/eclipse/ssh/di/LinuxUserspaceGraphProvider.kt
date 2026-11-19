@@ -6,7 +6,10 @@ import android.os.Build
 import android.os.Process
 import androidx.annotation.VisibleForTesting
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.eclipse.ssh.linux.AlpineDistributionManager
 import dev.eclipse.ssh.linux.AndroidGroupNames
+import dev.eclipse.ssh.linux.DistributionManager
+import dev.eclipse.ssh.linux.DistroFamily
 import dev.eclipse.ssh.linux.LinuxDistro
 import dev.eclipse.ssh.linux.LinuxDistroCatalog
 import dev.eclipse.ssh.linux.LinuxProcessManager
@@ -41,7 +44,7 @@ class LinuxUserspaceGraph(
     val distro: LinuxDistro,
     val runtime: ProotRuntime,
     val installer: RootfsInstaller,
-    val distribution: UbuntuDistributionManager,
+    val distribution: DistributionManager,
     val processes: LinuxProcessManager,
     val workspace: LinuxWorkspaceManager,
     val manager: LinuxUserspaceManager,
@@ -101,8 +104,15 @@ class LinuxUserspaceGraphProvider
          */
         private val selectionFile: File = File(context.filesDir, "linux-distro-selection.properties")
 
-        /** Every LTS this device can run, newest first — the install screen's version list. */
-        val versions: List<LinuxDistro> = LinuxDistroCatalog.versionsFor(Build.SUPPORTED_ABIS.toList())
+        /**
+         * Every distro this device can run, newest first within each family — the install screen's
+         * version list. Ubuntu comes first (the family the app was first built around, and the
+         * default a tap-through lands on), then Alpine; an installed distro of either family is
+         * resolved by id regardless of order, because [resolveDistro] reads by id not by position.
+         */
+        val versions: List<LinuxDistro> =
+            LinuxDistroCatalog.versionsFor(Build.SUPPORTED_ABIS.toList()) +
+                LinuxDistroCatalog.alpineVersionsFor(Build.SUPPORTED_ABIS.toList())
 
         // Both of the declarations above have to precede this one. Property initializers run in
         // declaration order, and buildGraph() reads selectionFile and versions; declared below it,
@@ -173,6 +183,12 @@ class LinuxUserspaceGraphProvider
                     nativeLibraryDir = nativeLibraryDir,
                     spawner = LinuxPtySpawner,
                     storage = storage,
+                    // The runtime's argv and environment are family-aware: an Alpine rootfs's
+                    // session execs /bin/sh and stands in /home/alpine, not /bin/bash and
+                    // /home/ubuntu. The family is read once, here, because the session argv is fixed
+                    // at graph-build time — before setup has run, so it must name a shell the
+                    // *tarball* ships, not one the install will add.
+                    family = distro.family,
                 )
             // One ring for the whole install, shared by the two halves that write to it: the rootfs
             // download and extraction happen before the distribution manager runs at all, and a user
@@ -180,34 +196,58 @@ class LinuxUserspaceGraphProvider
             // whichever half it was — not only the apt phase's.
             val diagnostics = UserspaceDiagnostics()
             val installer = RootfsInstaller(rootDir, distro, storage = storage, diagnostics = diagnostics)
-            val distribution =
-                UbuntuDistributionManager(
-                    distro = distro,
-                    runtime = runtime,
-                    appUid = Process.myUid(),
-                    // android.os.Process has no myGid() in the modern SDK, so the gid comes from the
-                    // syscall wrapper; on Android an app's primary gid is its own uid, which is the
-                    // value the runCatching fallback would land on anyway.
-                    appGid = runCatching { android.system.Os.getgid() }.getOrDefault(Process.myUid()),
-                    // The app's supplementary Android groups, which proot passes through to the session
-                    // untouched — the rootfs names them so `groups` and `id` do not report them by number.
-                    // A lambda for the same reason the resolvers are one: this is read again on every
-                    // start, and a permission granted since the install is one more group to name. An
-                    // empty answer names nothing, which is exactly the behaviour without this wiring.
-                    //
-                    // From /proc/self/status rather than Os.getgroups(), which the SDK does not publish:
-                    // android-37.0's android.jar has getuid/geteuid/getgid/getegid and no getgroups.
-                    supplementaryGids = { AndroidGroupNames.selfGroups() },
-                    // A lambda, not a snapshot: the resolvers are read each time setup writes
-                    // /etc/resolv.conf, so a network change between install and repair lands in the file
-                    // instead of pinning the DNS of the moment the graph was built.
-                    dnsServers = { liveDnsServers(context) },
-                    // The same installer instance the graph built above, so the manager's missing-program
-                    // restore reads the same pinned tarball this device installed from — and files into
-                    // the same diagnostics ring, which is why both take the one `diagnostics` object.
-                    installer = installer,
-                    diagnostics = diagnostics,
-                )
+            // The app's own identity and the device's own resolver + groups are shared by every
+            // family's manager, so they are read once here and threaded into whichever branch the
+            // distro's family picks. The branch is the one place a second family plugs in; the
+            // shape of the two constructors matches well enough that the named-arg call sites read
+            // as two parallel constructions rather than a factory's worth of indirection.
+            val appUid = Process.myUid()
+            // android.os.Process has no myGid() in the modern SDK, so the gid comes from the
+            // syscall wrapper; on Android an app's primary gid is its own uid, which is the
+            // value the runCatching fallback would land on anyway.
+            val appGid = runCatching { android.system.Os.getgid() }.getOrDefault(Process.myUid())
+            // The app's supplementary Android groups, which proot passes through to the session
+            // untouched — the rootfs names them so `groups` and `id` do not report them by number.
+            // A lambda for the same reason the resolvers are one: this is read again on every
+            // start, and a permission granted since the install is one more group to name. An
+            // empty answer names nothing, which is exactly the behaviour without this wiring.
+            //
+            // From /proc/self/status rather than Os.getgroups(), which the SDK does not publish:
+            // android-37.0's android.jar has getuid/geteuid/getgid/getegid and no getgroups.
+            val supplementaryGids = { AndroidGroupNames.selfGroups() }
+            // A lambda, not a snapshot: the resolvers are read each time setup writes
+            // /etc/resolv.conf, so a network change between install and repair lands in the file
+            // instead of pinning the DNS of the moment the graph was built.
+            val dnsServers = { liveDnsServers(context) }
+            val distribution: DistributionManager =
+                when (distro.family) {
+                    DistroFamily.UBUNTU ->
+                        UbuntuDistributionManager(
+                            distro = distro,
+                            runtime = runtime,
+                            appUid = appUid,
+                            appGid = appGid,
+                            supplementaryGids = supplementaryGids,
+                            dnsServers = dnsServers,
+                            // The same installer instance the graph built above, so the manager's
+                            // missing-program restore reads the same pinned tarball this device
+                            // installed from — and files into the same diagnostics ring, which is why
+                            // both take the one `diagnostics` object.
+                            installer = installer,
+                            diagnostics = diagnostics,
+                        )
+                    DistroFamily.ALPINE ->
+                        AlpineDistributionManager(
+                            distro = distro,
+                            runtime = runtime,
+                            appUid = appUid,
+                            appGid = appGid,
+                            supplementaryGids = supplementaryGids,
+                            dnsServers = dnsServers,
+                            installer = installer,
+                            diagnostics = diagnostics,
+                        )
+                }
             val processes = LinuxProcessManager()
             val workspace = LinuxWorkspaceManager(runtime, storage)
             val manager =

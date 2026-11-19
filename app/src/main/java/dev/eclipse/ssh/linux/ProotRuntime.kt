@@ -78,6 +78,16 @@ class ProotRuntime(
     private val spawner: PtySpawner,
     private val storage: RuntimeStorageManager = RuntimeStorageManager(rootDir),
     private val readerDrainTimeoutMs: Long = READER_DRAIN_TIMEOUT_MS,
+    /**
+     * The distribution family this runtime is built around. The exec model itself is family-neutral
+     * (proot fakes root the same way for any rootfs), but two things the session argv and environment
+     * bake in are not: the login shell (Ubuntu ships `/bin/bash`; an Alpine minirootfs ships only
+     * `/bin/sh` — BusyBox ash — until `apk add bash` runs) and the home directory the session stands
+     * in (`/home/ubuntu` for Ubuntu, `/home/alpine` for Alpine). Defaulted to [DistroFamily.UBUNTU]
+     * because the manager this class was first built around is Ubuntu, and every test that constructs
+     * a runtime without naming a family is exercising the Ubuntu path.
+     */
+    private val family: DistroFamily = DistroFamily.UBUNTU,
 ) {
     val rootfsDir: File get() = storage.rootfsDir
     val tmpDir: File get() = storage.tmpDir
@@ -209,10 +219,44 @@ class ProotRuntime(
 
     /**
      * The home *inside* the rootfs: where every session starts, and where the app's own file
-     * surfaces point. It is `/home/ubuntu` rather than `/root` even though the session is fake
-     * root — see [baseEnv].
+     * surfaces point. It is `/home/ubuntu` for Ubuntu and `/home/alpine` for Alpine — never `/root`,
+     * even though the session is fake root — because the workspace, the editor and SFTP all live
+     * under the unprivileged account's home, and a session that started in `/root` would be standing
+     * nowhere near the user's files. See [baseEnv].
      */
-    val homePath: String = "/home/ubuntu"
+    val homePath: String =
+        when (family) {
+            DistroFamily.UBUNTU -> "/home/ubuntu"
+            DistroFamily.ALPINE -> "/home/alpine"
+        }
+
+    /**
+     * The login shell the session execs into, chosen by family. Ubuntu Base ships `/bin/bash`; an
+     * Alpine minirootfs ships only `/bin/sh` (BusyBox ash) until `apk add bash` runs, so an Alpine
+     * session that tried to exec `/bin/bash` before the base packages were installed would die with
+     * 127 before a single prompt drew. `apk add bash` is part of the Alpine base set, so once setup
+     * has run `/bin/bash` exists and a later session could use it — but the session argv is fixed at
+     * graph-build time, before setup has run, so it must name a shell the *minirootfs* ships, not one
+     * the install will add.
+     */
+    private val loginShell: String =
+        when (family) {
+            DistroFamily.UBUNTU -> "/bin/bash"
+            DistroFamily.ALPINE -> "/bin/sh"
+        }
+
+    /**
+     * The PATH a login shell starts with. Identical across families today — both Ubuntu's
+     * `/etc/profile` and Alpine's `/etc/profile` set the same sbin-first list — but kept per-family
+     * so an Alpine-specific quirk (a `/usr/local/sbin` that does not exist yet on a fresh minirootfs)
+     * can be handled without touching the Ubuntu path. The login shell's own `/etc/profile`
+     * re-sets PATH after login, so this is only the value the very first command sees.
+     */
+    private val loginPath: String =
+        when (family) {
+            DistroFamily.UBUNTU -> "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            DistroFamily.ALPINE -> "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        }
 
     /** The persisted workspace *inside* the rootfs. */
     val workspacePath: String = "$homePath/workspace"
@@ -235,10 +279,11 @@ class ProotRuntime(
      *
      * `/dev`, `/proc` and `/sys` are bound because the Ubuntu Base rootfs ships empty mount points
      * for them — without the binds, `ps` shows nothing, `/proc/self/exe` is missing, and anything
-     * reading a device node fails. `-w` starts the shell in the user's home rather than wherever
-     * the outer process happened to be standing. `bash --login` gives the account a real login
-     * shell: `/etc/profile` and `~/.profile` run, so PATH and prompt behave exactly as they would
-     * over SSH.
+     * reading a device node fails. Alpine's minirootfs ships the same empty mount points, so the
+     * same binds apply. `-w` starts the shell in the user's home rather than wherever the outer
+     * process happened to be standing. The login shell is family-chosen ([loginShell]) and the
+     * `--login`/`-l` flag is what makes `/etc/profile` and `~/.profile` run, so PATH and prompt
+     * behave exactly as they would over SSH — bash takes `--login`, ash takes `-l`.
      */
     fun commandArgv(initialCommand: String? = null): List<String> {
         val argv =
@@ -254,11 +299,14 @@ class ProotRuntime(
                 "/sys",
                 "-w",
                 homePath,
-                "/bin/bash",
-                "--login",
+                loginShell,
             )
-        // A command overrides the interactive shell: `bash --login -c '…'`. The setup pipeline and
-        // the health probe use this; an interactive session does not.
+        when (family) {
+            DistroFamily.UBUNTU -> argv += "--login"
+            DistroFamily.ALPINE -> argv += "-l"
+        }
+        // A command overrides the interactive shell: `bash --login -c '…'` / `sh -l -c '…'`. The
+        // setup pipeline and the health probe use this; an interactive session does not.
         if (initialCommand != null) {
             argv += listOf("-c", initialCommand)
         }
@@ -280,12 +328,13 @@ class ProotRuntime(
             // is the fork's own app's cache — unwritable here, which silently disabled the
             // diagnostic; see linux/proot-patches/0002). One line per event, append-only, small.
             "PROOT_SIGSYS_LOG=${sigsysLogFile.absolutePath}",
-            // Ubuntu-conventional values, not Android's. HOME is pinned here rather than left to the
+            // Family-conventional values, not Android's. HOME is pinned here rather than left to the
             // login shell: the session is fake root, whose /etc/passwd home is /root, and the app's
-            // whole file model — the workspace, the editor, SFTP — lives under /home/ubuntu. A shell
-            // that started in /root would be standing nowhere near the user's files.
+            // whole file model — the workspace, the editor, SFTP — lives under the unprivileged
+            // account's home (/home/ubuntu for Ubuntu, /home/alpine for Alpine). A shell that started
+            // in /root would be standing nowhere near the user's files.
             "HOME=$homePath",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PATH=$loginPath",
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
         )

@@ -227,4 +227,41 @@ class TarSafetyTest {
         assertThat(oneAtATime.last()).isEqualTo(10L)
         assertThat(inBulk.last()).isEqualTo(10L)
     }
+
+    @Test
+    fun `an xz-compressed tarball is unwrapped and its entries read`() {
+        // XZ's magic is the longest at six bytes; a probe that reads only two (the gzip length)
+        // would hand the xz stream to the tar parser raw and read an empty archive, which is the
+        // exact regression this guard exists for. The fixture is a real xz stream so the test
+        // exercises the decompressor end to end, not a hand-rolled byte layout.
+        val fixture =
+            TestTarballs.writeRootfsFixtureXz(
+                newRoot().resolve("rootfs.tar.xz"),
+            )
+        val entries = mutableListOf<String>()
+        openTarStream(fixture, 64 * 1024).use { tar ->
+            while (tar.nextTarEntry != null) {
+                entries += tar.currentEntry.name
+            }
+        }
+        assertThat(entries).containsAtLeast("bin/sh", "etc/passwd", "etc/apk/repositories")
+    }
+
+    @Test
+    fun `a bzip2-compressed tarball is unwrapped and its entries read`() {
+        // bzip2's magic is three bytes (BZh); the six-byte probe covers it the same way it covers
+        // xz, and a fixture that is a real bzip2 stream is what exercises the decompressor rather
+        // than the sniffer alone.
+        val fixture =
+            TestTarballs.writeRootfsFixtureBzip2(
+                newRoot().resolve("rootfs.tar.bz2"),
+            )
+        val entries = mutableListOf<String>()
+        openTarStream(fixture, 64 * 1024).use { tar ->
+            while (tar.nextTarEntry != null) {
+                entries += tar.currentEntry.name
+            }
+        }
+        assertThat(entries).containsAtLeast("bin/sh", "etc/passwd", "etc/apk/repositories")
+    }
 }

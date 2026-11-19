@@ -1,6 +1,8 @@
 package dev.eclipse.ssh.linux
 
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -40,14 +42,16 @@ internal fun resolveInsideRoot(
 }
 
 /**
- * Opens [file] as a tar stream, unwrapping gzip when the file's magic bytes say it is gzipped.
+ * Opens [file] as a tar stream, unwrapping gzip, xz or bzip2 when the file's magic bytes say so.
  *
  * [TarArchiveInputStream] parses tar and nothing else — it neither sniffs nor decompresses, so a
  * `.tar.gz` fed to it raw reads as garbage headers and the archive looks empty: an install or a
- * restore would "succeed" while extracting nothing at all. Every tar this feature reads (the
- * pinned rootfs tarball, the workspace snapshot) is written gzipped, so the gzip magic
- * (0x1f 0x8b) decides the wrap; anything else passes through untouched, so a plain tar still
- * works.
+ * restore would "succeed" while extracting nothing at all. The pinned Ubuntu Base tarballs are
+ * gzipped, the Alpine mini-rootfs is gzipped, and the wider rootfs ecosystem (the distros the
+ * roadmap names: Debian, Fedora, Arch, NixOS) ships `.tar.xz` and `.tar.bz2` too. The magic bytes
+ * decide the wrap; anything the sniffer does not recognise passes through untouched, so a plain
+ * tar still works. The pin is the integrity guarantee — this layer's job is only to hand the tar
+ * parser the right decompressed bytes.
  */
 internal fun openTarStream(
     file: File,
@@ -69,23 +73,42 @@ internal fun openTarStream(
     onBytesRead: (Long) -> Unit,
 ): TarArchiveInputStream = openTarStream(CountingFileStream(file, onBytesRead), bufferSize)
 
-/** The read path both overloads share: sniff the gzip magic, then parse what follows as tar. */
+/**
+ * The read path both overloads share: sniff the compression magic, then parse what follows as tar.
+ *
+ * Three magics are recognised — gzip (0x1f 0x8b, 2 bytes), xz (0xfd 0x37 0x7a 0x58 0x5a 0x00,
+ * 6 bytes) and bzip2 (0x42 0x5a 0x68, 3 bytes) — so the six-byte read covers every one of them
+ * and the pushback returns whatever was not needed. A stream whose first bytes match none of these
+ * is handed to the tar parser untouched, which is what a plain (uncompressed) tar needs.
+ */
 internal fun openTarStream(
     raw: InputStream,
     bufferSize: Int,
 ): TarArchiveInputStream {
-    val probe = PushbackInputStream(raw.buffered(bufferSize), 2)
-    val magic = ByteArray(2)
+    // XZ's magic is the longest at six bytes; the pushback has to fit it so the unread returns
+    // the whole probe when none of the magics match.
+    val probe = PushbackInputStream(raw.buffered(bufferSize), XZ_MAGIC.size)
+    val magic = ByteArray(XZ_MAGIC.size)
     val read = probe.read(magic)
     if (read > 0) probe.unread(magic, 0, read)
     val source =
-        if (read == 2 && magic[0] == 0x1f.toByte() && magic[1] == 0x8b.toByte()) {
-            GZIPInputStream(probe, bufferSize)
-        } else {
-            probe
+        when {
+            read >= 2 && magic[0] == 0x1f.toByte() && magic[1] == 0x8b.toByte() ->
+                GZIPInputStream(probe, bufferSize)
+            read >= XZ_MAGIC.size && magic.copyOfRange(0, XZ_MAGIC.size).contentEquals(XZ_MAGIC) ->
+                XZCompressorInputStream(probe)
+            read >= BZIP2_MAGIC.size && magic.copyOfRange(0, BZIP2_MAGIC.size).contentEquals(BZIP2_MAGIC) ->
+                BZip2CompressorInputStream(probe)
+            else -> probe
         }
     return TarArchiveInputStream(source)
 }
+
+/** The XZ magic bytes: `0xFD 0x37 0x7A 0x58 0x5A 0x00` (`\u00fd7zXZ\u0000`). */
+private val XZ_MAGIC = byteArrayOf(0xfd.toByte(), 0x37, 0x7a, 0x58, 0x5a, 0x00)
+
+/** The bzip2 magic bytes: `0x42 0x5A 0x68` (`BZh`). */
+private val BZIP2_MAGIC = byteArrayOf(0x42, 0x5a, 0x68)
 
 /**
  * The file a progress-reporting extraction reads through: a [FileInputStream] that adds up what it
