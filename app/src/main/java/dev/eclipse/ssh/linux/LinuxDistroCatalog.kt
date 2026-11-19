@@ -27,6 +27,7 @@ package dev.eclipse.ssh.linux
 enum class DistroFamily {
     UBUNTU,
     ALPINE,
+    DEBIAN,
 }
 
 enum class PackageManager {
@@ -74,6 +75,15 @@ data class LinuxDistro(
      * for Chimera).
      */
     val repoBaseUrl: String? = null,
+    /**
+     * The top-level directory name the tarball wraps its rootfs in, or null when the tarball is a
+     * plain rootfs (entries at the top level: `bin/`, `etc/`, ...). Termux `proot-distro` rebuilds
+     * wrap every rootfs in a single `<distro>-<arch>/` directory; the extractor must strip that
+     * prefix so the staging tree ends up with `bin/` at its root rather than under a wrapper.
+     * Official rootfs tarballs (Ubuntu Base, Alpine minirootfs, Chimera, Trisquel) ship plain, so
+     * this is null for them.
+     */
+    val wrapperDir: String? = null,
 )
 
 /**
@@ -384,6 +394,104 @@ object LinuxDistroCatalog {
             ),
         )
 
+    /**
+     * One apt-family rootfs tarball the catalogue pins that is NOT an Ubuntu Base image: a Debian
+     * derivative shipped by `proot-distro` (Debian, Deepin) or an official Debian-derived rootfs
+     * (Trisquel). All three reuse the Ubuntu apt setup pipeline the `DEBIAN` family routes to, but
+     * their archive, codename and — for the proot-distro rebuilds — their tarball layout differ.
+     *
+     * `release` is the apt codename the suites derive from (`bookworm`, `apricot`, `nabia`).
+     * `repoBaseUrl` is the apt archive base — plain `http://` (not https) because the guest apt has
+     * no CA store until `ca-certificates` installs from the base packages this very first update
+     * unlocks, the same reason [UbuntuDistributionManager]'s `primaryArchiveUrl` is http. The base
+     * carries no suite segment; [sourcesListContent] appends `<release>` / `<release>-updates` /
+     * `<release>-security` itself. `wrapperDir` is the top-level directory Termux's rebuild wraps
+     * the rootfs in (so the extractor strips it); null for a plain rootfs like Trisquel's.
+     *
+     * Every entry is arm64-only: that is the only architecture the proot-distro plugins publish for
+     * the rebuilt distros (Debian, Deepin) and the only one the Trisquel arm64 cdimage carries. A
+     * catalogue pin for an architecture no verified tarball exists for would be a lie with a
+     * download progress bar.
+     */
+    private data class DebianRelease(
+        val id: String,
+        val displayName: String,
+        /** The apt codename the suites are named after: `bookworm`, `apricot`, `nabia`. */
+        val release: String,
+        /** Plain http (no CA store in the guest yet) — see the class doc. */
+        val repoBaseUrl: String,
+        /** The tarball URL, pinned to the exact proot-distro / cdimage release this build verified. */
+        val rootfsTarballUrl: String,
+        /** SHA256 of the tarball; publisher-attested. */
+        val rootfsSha256: String,
+        val rootfsSizeBytes: Long,
+        /**
+         * The top-level directory the tarball wraps its rootfs in (`debian-aarch64/`,
+         * `deepin-aarch64/`), or null when the tarball is a plain rootfs (Trisquel). See
+         * [LinuxDistro.wrapperDir].
+         */
+        val wrapperDir: String?,
+    )
+
+    /**
+     * The Debian-family series. Every SHA256 here is publisher-attested: Debian's and Deepin's are
+     * pinned by the termux `proot-distro` plugin (`distro_plugins/<distro>.sh` line 8) at the tag
+     * that references the tarball; Trisquel's is the official `.sha256` sidecar cdimage publishes
+     * beside the tarball. The install refuses a tarball whose hash disagrees with this pin.
+     *
+     * Debian 12 (bookworm): the proot-distro v4.7.0 plugin pins the v4.6.0 aarch64 tarball — the
+     * version mismatch between the plugin tag and the tarball release is normal for proot-distro.
+     * Deepin 20: the proot-distro v4.6.0 plugin pins the v4.3.1-2 aarch64 tarball. Trisquel 12: the
+     * official cdimage tarball (no wrapper directory — a plain rootfs like Ubuntu Base), with the
+     * codename `nabia` (derived from Ubuntu 20.04 focal).
+     */
+    private val debianSeries =
+        listOf(
+            DebianRelease(
+                id = "debian-12-bookworm",
+                displayName = "Debian 12 (bookworm)",
+                release = "bookworm",
+                // http, not https: the guest apt has no CA store until ca-certificates installs
+                // from this very first update — the same constraint Ubuntu's primaryArchiveUrl is
+                // http for. The official Debian archive base.
+                repoBaseUrl = "http://deb.debian.org/debian",
+                rootfsTarballUrl =
+                    "https://github.com/termux/proot-distro/releases/download/v4.6.0/" +
+                        "debian-aarch64-pd-v4.6.0.tar.xz",
+                rootfsSha256 = "68dab31b46af61114014b54876c4f317be648ce8c76c0c6cbb5d6011d420886c",
+                rootfsSizeBytes = 42_942_216L,
+                // proot-distro wraps the rootfs in a single top-level <distro>-<arch>/ directory.
+                wrapperDir = "debian-aarch64/",
+            ),
+            DebianRelease(
+                id = "deepin-20",
+                displayName = "Deepin 20",
+                release = "apricot",
+                // http, not https — see the Debian entry above for the CA-store rationale.
+                repoBaseUrl = "http://packages.deepin.com/deepin",
+                rootfsTarballUrl =
+                    "https://github.com/termux/proot-distro/releases/download/v4.3.1/" +
+                        "deepin-aarch64-pd-v4.3.1-2.tar.xz",
+                rootfsSha256 = "00136de01343b61e2d8ab47b5439842ff2c32380a657a0892c2a2475d9d01e84",
+                rootfsSizeBytes = 49_052_588L,
+                wrapperDir = "deepin-aarch64/",
+            ),
+            DebianRelease(
+                id = "trisquel-12",
+                displayName = "Trisquel 12",
+                release = "nabia",
+                // http, not https — see the Debian entry above for the CA-store rationale.
+                repoBaseUrl = "http://archive.trisquel.info/trisquel",
+                rootfsTarballUrl =
+                    "https://cdimage.trisquel.info/trisquel-images/trisquel-base_12.0_arm64.tar.bz2",
+                rootfsSha256 = "a241899069ca300eb54fadb06a1107f9d218add00d5f76387a8121ba1f23bf46",
+                rootfsSizeBytes = 460_203_734L,
+                // Trisquel's cdimage tarball is a plain rootfs (no wrapper directory), like
+                // Ubuntu Base — entries are bin/, etc/, ... at the top level.
+                wrapperDir = null,
+            ),
+        )
+
     /** Everything the app can install, newest LTS series first, keyed by nothing — see [byId]. */
     val all: List<LinuxDistro> =
         series.flatMap { s ->
@@ -438,6 +546,23 @@ object LinuxDistroCatalog {
                         repoBaseUrl = s.repoBaseUrl,
                     )
                 }
+            } +
+            debianSeries.map { s ->
+                // Every Debian-family series is arm64-only — the only architecture the proot-distro
+                // plugins publish (Debian, Deepin) and the only one Trisquel's cdimage carries.
+                LinuxDistro(
+                    id = s.id,
+                    displayName = s.displayName,
+                    release = s.release,
+                    ubuntuArch = "arm64",
+                    family = DistroFamily.DEBIAN,
+                    packageManager = PackageManager.APT,
+                    rootfsTarballUrl = s.rootfsTarballUrl,
+                    rootfsSha256 = s.rootfsSha256,
+                    rootfsSizeBytes = s.rootfsSizeBytes,
+                    repoBaseUrl = s.repoBaseUrl,
+                    wrapperDir = s.wrapperDir,
+                )
             }
 
     /**
@@ -467,6 +592,19 @@ object LinuxDistroCatalog {
     fun alpineVersionsFor(supportedAbis: List<String>): List<LinuxDistro> {
         val ubuntuArch = supportedAbis.firstOrNull()?.toUbuntuArch() ?: return emptyList()
         return all.filter { it.ubuntuArch == ubuntuArch && it.family == DistroFamily.ALPINE }
+    }
+
+    /**
+     * Every Debian-family series this device can run, newest first. Parallel to [versionsFor] and
+     * [alpineVersionsFor] for the apt-on-Debian family — Debian, Deepin and Trisquel reuse the
+     * Ubuntu apt setup pipeline (the `DEBIAN` family routes to it) but carry their own archive,
+     * so the chooser surfaces them through this accessor alongside the Ubuntu and Alpine lists.
+     *
+     * Every Debian-family entry is arm64-only, so this returns them only for an arm64 device.
+     */
+    fun debianVersionsFor(supportedAbis: List<String>): List<LinuxDistro> {
+        val ubuntuArch = supportedAbis.firstOrNull()?.toUbuntuArch() ?: return emptyList()
+        return all.filter { it.ubuntuArch == ubuntuArch && it.family == DistroFamily.DEBIAN }
     }
 
     /**

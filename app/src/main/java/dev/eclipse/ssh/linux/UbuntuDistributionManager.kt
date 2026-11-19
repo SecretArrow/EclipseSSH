@@ -52,8 +52,14 @@ import java.net.URL
  * @param aptUpdateAttemptTimeoutMs one rung's whole budget; injectable so a test can time a
  *   rung out without waiting ten real minutes
  */
-class UbuntuDistributionManager(
-    private val distro: LinuxDistro,
+open class UbuntuDistributionManager(
+    /**
+     * The pinned distribution being set up. Protected rather than private so a subclass
+     * ([DebianDistributionManager]) can read [LinuxDistro.release] / [LinuxDistro.repoBaseUrl] /
+     * [LinuxDistro.ubuntuArch] from its overrides of the open setup hooks; the parent treats it
+     * as immutable, and a subclass must too.
+     */
+    protected val distro: LinuxDistro,
     private val runtime: ProotRuntime,
     private val appUid: Int,
     private val appGid: Int,
@@ -89,6 +95,42 @@ class UbuntuDistributionManager(
     override val diagnostics: UserspaceDiagnostics = UserspaceDiagnostics(),
 ) : DistributionManager {
     private val rootfs: File get() = runtime.rootfsDir
+
+    /**
+     * The apt archive base this manager writes into `sources.list` and tries first on the ladder.
+     * Defaults to the Ubuntu archive ([primaryArchiveUrl]); the Debian family overrides it to return
+     * [LinuxDistro.repoBaseUrl] so a distro that carries its own archive base (Debian's
+     * `deb.debian.org`, Deepin's `packages.deepin.com`, Trisquel's `archive.trisquel.info`) uses it
+     * instead. Ubuntu entries (repoBaseUrl null) keep the current `archive.ubuntu.com` /
+     * `ports.ubuntu.com` behaviour byte-for-byte.
+     */
+    protected open fun archiveBaseUrl(distro: LinuxDistro): String = primaryArchiveUrl(distro)
+
+    /**
+     * The built-in last-resort mirrors the ladder joins once the primary and the live feed have both
+     * failed. Defaults to Ubuntu's [builtinMirrorUrls]; the Debian family overrides it to an empty
+     * list — Debian/Deepin/Trisquel publish no machine-readable mirror feed at `mirrors.ubuntu.com`
+     * (see [skipMirrorFeed]) and their only honest fallback is the primary archive retried with IPv4
+     * forced, not a list of Ubuntu-specific university mirrors that would 404 on a foreign archive.
+     */
+    protected open fun builtinMirrors(distro: LinuxDistro): List<String> = builtinMirrorUrls(distro)
+
+    /**
+     * Whether the ladder should fetch the official Ubuntu mirror feed. The feed lives at
+     * `mirrors.ubuntu.com/mirrors.txt` and lists Ubuntu ports/archive mirrors only — it is
+     * meaningless for a Debian-family distro whose archive is `deb.debian.org` or
+     * `packages.deepin.com`. The Debian family overrides this to true, so [aptUpdate] skips the
+     * fetch entirely and the ladder is just the primary archive as-is + the primary with IPv4 forced.
+     */
+    protected open val skipMirrorFeed: Boolean get() = false
+
+    /**
+     * The sources.list body for one archive base. Defaults to the Ubuntu shape
+     * ([sourcesListContent]: release, -updates, -security, all from the same base, with the Ubuntu
+     * component set); the Debian family overrides it because the security suite lives at a different
+     * base for Debian/Trisquel, Deepin ships a single rolling suite, and the component sets differ.
+     */
+    protected open fun sourcesListFor(baseUri: String): String = sourcesListContent(distro, baseUri)
 
     /**
      * The mirror list fetched during this manager's lifetime, once [aptUpdate] has needed it.
@@ -531,7 +573,7 @@ class UbuntuDistributionManager(
      */
     private fun configureAptSources() {
         disableShippedAptLists()
-        writeSourcesList(primaryArchiveUrl(distro))
+        writeSourcesList(archiveBaseUrl(distro))
     }
 
     /**
@@ -595,7 +637,7 @@ class UbuntuDistributionManager(
         var lastTail = ""
         // The ladder starts with the two primary rungs alone; the fallback rungs join only once
         // both have failed, at the bottom of the loop.
-        val rungs = ArrayDeque(aptUpdateCandidates(distro, emptyList()).take(PRIMARY_RUNGS))
+        val rungs = ArrayDeque(ladderCandidates(emptyList()).take(PRIMARY_RUNGS))
         var extendedWithFallbacks = false
         while (rungs.isNotEmpty()) {
             val attempt = rungs.removeFirst()
@@ -694,9 +736,19 @@ class UbuntuDistributionManager(
                 // failing yields an empty list, and the built-in rungs still join below: the feed
                 // itself must not become the new single point of failure. The guard flag stops
                 // the loop from re-extending itself forever once the last fallback has failed.
+                //
+                // skipMirrorFeed short-circuits the fetch for a Debian-family distro: the feed at
+                // mirrors.ubuntu.com lists Ubuntu mirrors only and is meaningless for a distro whose
+                // archive is deb.debian.org or packages.deepin.com, so the ladder skips straight to
+                // the built-in fallbacks (empty for the Debian family — see [builtinMirrors]).
                 extendedWithFallbacks = true
-                val fetched = fetchedMirrors ?: fetchMirrorList().also { fetchedMirrors = it }
-                rungs += fallbackCandidates(distro, fetched)
+                val fetched =
+                    if (skipMirrorFeed) {
+                        emptyList()
+                    } else {
+                        fetchedMirrors ?: fetchMirrorList().also { fetchedMirrors = it }
+                    }
+                rungs += ladderFallbacks(fetched)
             }
         }
         restoreLastGoodMirror()
@@ -1025,7 +1077,7 @@ class UbuntuDistributionManager(
         val lastGood =
             runCatching { File(runtime.rootDir, LAST_GOOD_MIRROR_FILE).takeIf { it.isFile }?.readText()?.trim() }
                 .getOrNull()
-        val base = lastGood?.takeIf { it.isNotBlank() } ?: primaryArchiveUrl(distro)
+        val base = lastGood?.takeIf { it.isNotBlank() } ?: archiveBaseUrl(distro)
         writeSourcesList(base)
         diagnostics.record(
             UserspaceDiagnosticCategory.APT,
@@ -1888,8 +1940,35 @@ class UbuntuDistributionManager(
         }
 
     private fun writeSourcesList(baseUri: String) {
-        writeAtomically(File(rootfs, "etc/apt/sources.list"), sourcesListContent(distro, baseUri))
+        writeAtomically(File(rootfs, "etc/apt/sources.list"), sourcesListFor(baseUri))
     }
+
+    /**
+     * The full apt-update ladder for this manager's distro, in rung order: the primary archive
+     * (this manager's [archiveBaseUrl]), the primary again with IPv4 forced, then the fetched mirrors
+     * and this manager's [builtinMirrors]. Mirrors the free [aptUpdateCandidates] function but
+     * routes the archive and the built-in fallbacks through the overridable members so a
+     * Debian-family distro (whose archive is `deb.debian.org` and whose built-in mirror list is
+     * empty) gets a ladder of its own rather than the Ubuntu-specific one the free function hardcodes.
+     *
+     * Rungs are deduplicated against the primary after trimming trailing slashes, the same way the
+     * free function does, so a mirror that differs from an earlier rung only by its slash is one
+     * rung, not two.
+     */
+    private fun ladderCandidates(fetchedMirrors: List<String>): List<AptUpdateAttempt> {
+        val primary = archiveBaseUrl(distro).trimEnd('/')
+        val fallbacks =
+            (fetchedMirrors + builtinMirrors(distro))
+                .distinctBy { it.trimEnd('/') }
+                .filter { it.trimEnd('/') != primary }
+        return listOf(
+            AptUpdateAttempt(archiveBaseUrl(distro), forceIpv4 = false),
+            AptUpdateAttempt(archiveBaseUrl(distro), forceIpv4 = true),
+        ) + fallbacks.map { AptUpdateAttempt(it, forceIpv4 = false) }
+    }
+
+    /** The fallback rungs — what joins the ladder once both primary rungs have failed. */
+    private fun ladderFallbacks(fetchedMirrors: List<String>): List<AptUpdateAttempt> = ladderCandidates(fetchedMirrors).drop(PRIMARY_RUNGS)
 
     /**
      * The always-current official mirror feed, fetched once [aptUpdate] has exhausted the primary
@@ -1907,7 +1986,7 @@ class UbuntuDistributionManager(
         withContext(Dispatchers.IO) {
             val outcome = runCatching { fetchFeedBody() }
             val body = outcome.getOrNull()
-            val mirrors = body?.let { parseMirrorList(it, primaryArchiveUrl(distro)) } ?: emptyList()
+            val mirrors = body?.let { parseMirrorList(it, archiveBaseUrl(distro)) } ?: emptyList()
             mirrorFeedStatus =
                 when {
                     // Not "unreachable": the endpoint answered, its answer just cannot be trusted to be a
@@ -1968,8 +2047,17 @@ class UbuntuDistributionManager(
         return body.toString(Charsets.UTF_8.name())
     }
 
+    /**
+     * The host [verifyResolution] resolves inside proot, to confirm DNS works before any archive is
+     * fetched. Derived from [archiveBaseUrl] so a Debian-family distro resolves its own archive host
+     * (`deb.debian.org`, `packages.deepin.com`, `archive.trisquel.info`) rather than Ubuntu's
+     * `archive.ubuntu.com`/`ports.ubuntu.com` — a Debian install whose DNS check probes
+     * `ports.ubuntu.com` would pass while resolving nothing the install actually needs.
+     */
     private val networkHost: String
-        get() = if (distro.ubuntuArch == "amd64") "archive.ubuntu.com" else "ports.ubuntu.com"
+        get() =
+            runCatching { URI(archiveBaseUrl(distro)).host }.getOrNull()
+                ?: if (distro.ubuntuArch == "amd64") "archive.ubuntu.com" else "ports.ubuntu.com"
 
     companion object {
         private const val ACCOUNT_NAME = "ubuntu"
@@ -2245,7 +2333,7 @@ class UbuntuDistributionManager(
          * rung that cannot finish in ten minutes is a network fact, and the ladder's whole point
          * is that there is another rung to try.
          */
-        private const val APT_UPDATE_ATTEMPT_TIMEOUT_MS = 10 * 60_000L
+        internal const val APT_UPDATE_ATTEMPT_TIMEOUT_MS = 10 * 60_000L
         private const val INSTALL_TIMEOUT_MS = 45 * 60_000L
 
         /**

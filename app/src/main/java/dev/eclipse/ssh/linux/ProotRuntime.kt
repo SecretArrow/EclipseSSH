@@ -83,9 +83,12 @@ class ProotRuntime(
      * (proot fakes root the same way for any rootfs), but two things the session argv and environment
      * bake in are not: the login shell (Ubuntu ships `/bin/bash`; an Alpine minirootfs ships only
      * `/bin/sh` — BusyBox ash — until `apk add bash` runs) and the home directory the session stands
-     * in (`/home/ubuntu` for Ubuntu, `/home/alpine` for Alpine). Defaulted to [DistroFamily.UBUNTU]
-     * because the manager this class was first built around is Ubuntu, and every test that constructs
-     * a runtime without naming a family is exercising the Ubuntu path.
+     * in (`/home/ubuntu` for Ubuntu, `/home/alpine` for Alpine). The DEBIAN family routes to the same
+     * `/bin/bash` + `/home/ubuntu` as UBUNTU, because a Debian-family rootfs ships bash and its
+     * manager registers the `ubuntu` account — the same internal user, so the session argv and home
+     * match the user the manager registered. Defaulted to [DistroFamily.UBUNTU] because the manager
+     * this class was first built around is Ubuntu, and every test that constructs a runtime without
+     * naming a family is exercising the Ubuntu path.
      */
     private val family: DistroFamily = DistroFamily.UBUNTU,
 ) {
@@ -226,7 +229,7 @@ class ProotRuntime(
      */
     val homePath: String =
         when (family) {
-            DistroFamily.UBUNTU -> "/home/ubuntu"
+            DistroFamily.UBUNTU, DistroFamily.DEBIAN -> "/home/ubuntu"
             DistroFamily.ALPINE -> "/home/alpine"
         }
 
@@ -241,7 +244,7 @@ class ProotRuntime(
      */
     private val loginShell: String =
         when (family) {
-            DistroFamily.UBUNTU -> "/bin/bash"
+            DistroFamily.UBUNTU, DistroFamily.DEBIAN -> "/bin/bash"
             DistroFamily.ALPINE -> "/bin/sh"
         }
 
@@ -254,7 +257,7 @@ class ProotRuntime(
      */
     private val loginPath: String =
         when (family) {
-            DistroFamily.UBUNTU -> "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            DistroFamily.UBUNTU, DistroFamily.DEBIAN -> "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             DistroFamily.ALPINE -> "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         }
 
@@ -302,7 +305,7 @@ class ProotRuntime(
                 loginShell,
             )
         when (family) {
-            DistroFamily.UBUNTU -> argv += "--login"
+            DistroFamily.UBUNTU, DistroFamily.DEBIAN -> argv += "--login"
             DistroFamily.ALPINE -> argv += "-l"
         }
         // A command overrides the interactive shell: `bash --login -c '…'` / `sh -l -c '…'`. The
