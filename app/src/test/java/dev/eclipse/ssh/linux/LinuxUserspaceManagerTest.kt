@@ -881,7 +881,7 @@ class LinuxUserspaceManagerTest {
             // runtime's own sentence is the detail.
             val state = harness.manager.state.value
             assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
+            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Linux terminals")
         }
 
     @Test
@@ -905,7 +905,7 @@ class LinuxUserspaceManagerTest {
             // in.
             val state = harness.manager.state.value
             assertThat(state).isInstanceOf(LinuxUserspaceState.NeedsRepair::class.java)
-            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Ubuntu terminals")
+            assertThat((state as LinuxUserspaceState.NeedsRepair).detail).contains("too many Linux terminals")
         }
 
     @Test
@@ -1351,7 +1351,7 @@ class LinuxUserspaceManagerTest {
             // The same sentence the un-healed path produced, which is the contract: a heal that worked
             // changes what the user sees, and one that did not changes nothing about it.
             val unhealthy = failure as UserspaceFailure.GuestUnhealthy
-            assertThat(unhealthy.message).startsWith("Ubuntu installed but failed its health check: ")
+            assertThat(unhealthy.message).startsWith("The distribution installed but failed its health check: ")
             assertThat(unhealthy.message).contains("'ubuntu'")
             // Unsound, not merely unhealthy: a wrong account is exactly what the deeper rungs are for, so
             // this is the case the *ladder* would climb on — and the install does not consult it, because

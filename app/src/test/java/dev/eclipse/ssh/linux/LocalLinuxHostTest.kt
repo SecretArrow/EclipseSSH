@@ -73,7 +73,7 @@ class LocalLinuxHostTest {
         // The connect path intercepts the reserved id and routes to the local terminal; if that
         // ever regresses, the placeholder must at least fail fast rather than authenticate
         // against localhost with someone's saved password.
-        assertThat(profile.username).isEqualTo("ubuntu")
+        assertThat(profile.username).isEqualTo("linux")
         // The local environment reconnects by construction - scheduling backoff attempts for it
         // would be five timers fighting over one pty that never needed redialing.
         assertThat(profile.autoReconnect).isFalse()

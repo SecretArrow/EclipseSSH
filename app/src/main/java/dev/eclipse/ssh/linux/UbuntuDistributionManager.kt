@@ -454,7 +454,7 @@ class UbuntuDistributionManager(
         workspace.mkdirs()
         if (!workspace.isDirectory) {
             throw IOException(
-                "could not create the workspace at ${workspace.path} - Ubuntu's home directory " +
+                "could not create the workspace at ${workspace.path} - the home directory " +
                     "is missing or not writable",
             )
         }
@@ -966,7 +966,7 @@ class UbuntuDistributionManager(
      * (other apps, storage reclaim). The budget here is only what the packages themselves need;
      * 0 free bytes means "unknown" and never blocks, same contract as the installer's gate.
      *
-     * The message starts with the [DISK_FULL_PREFIX] contract ("Ubuntu needs") so the error
+     * The message starts with the [DISK_FULL_PREFIX] contract ("Linux needs") so the error
      * taxonomy maps it to [UserspaceFailure.DiskFull] instead of a generic apt failure.
      */
     private fun requireAptDiskSpace() {
@@ -984,11 +984,11 @@ class UbuntuDistributionManager(
         )
         if (free < needed) {
             throw IOException(
-                "Ubuntu needs about ${needed / MIB} MB of free storage to install the packages " +
+                "Linux needs about ${needed / MIB} MB of free storage to install the packages " +
                     "(the base system is already on disk), but only about ${free / MIB} MB is free. " +
                     "Free up storage and try again.",
             ).let { e ->
-                // The same "Ubuntu needs" → DiskFull mapping runSetupCommand applies to the
+                // The same "Linux needs" → DiskFull mapping runSetupCommand applies to the
                 // runtime's worded refusals, so both disk gates surface the same verdict.
                 UserspaceFailure.fromMessage(e.message ?: "", e) ?: e
             }
@@ -2774,7 +2774,7 @@ data class HealthReport(
             if (unusableTempDirs.isNotEmpty()) {
                 // The guest's paths, not the archive's relative names: this sentence is read by
                 // someone looking at their own terminal, where the directory is `/tmp`.
-                add("Ubuntu's temporary directories cannot be written to (${unusableTempDirs.joinToString(", ") { "/$it" }})")
+                add("The Linux distribution's temporary directories cannot be written to (${unusableTempDirs.joinToString(", ") { "/$it" }})")
             }
             if (unusablePackageLocks.isNotEmpty()) {
                 // The paths are apt's own relative spelling, which is how they appear in apt's own

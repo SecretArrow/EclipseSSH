@@ -164,7 +164,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
      */
     @Inject lateinit var vaultUnlockGate: VaultUnlockGate
 
-    override val screenTitle = "Ubuntu on this device"
+    override val screenTitle = "Linux on this device"
 
     @Composable
     override fun Body(
@@ -311,7 +311,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                 // finish, but it also should not look like a feature that went missing.
                 SettingRow(
                     Icons.Default.Computer,
-                    "Ubuntu on this device",
+                    "Linux on this device",
                     "Not supported on this device's processor",
                 ) { }
                 return@SettingsSection
@@ -364,7 +364,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                 is LinuxUserspaceState.NotInstalled ->
                     SettingRow(
                         Icons.Default.Computer,
-                        "Ubuntu on this device",
+                        "Linux on this device",
                         if (ui.hasPendingWorkspaceBackup) {
                             "Not installed · a saved workspace will be restored"
                         } else {
@@ -377,7 +377,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                         // make. Selecting swaps the graph, and the Install dialog below names whatever
                         // the dropdown left selected.
                         SettingDropdown(
-                            label = "Ubuntu version",
+                            label = "Linux distribution",
                             options = ui.availableVersions,
                             selected = distro,
                             optionLabel = { it.displayName },
@@ -387,23 +387,23 @@ class UbuntuActivity : SettingsDestinationActivity() {
                 is LinuxUserspaceState.Stopped ->
                     SettingRow(
                         Icons.Default.Terminal,
-                        "Ubuntu on this device",
+                        "Linux on this device",
                         "Installed and verified · stopped",
                     ) { }
-                is LinuxUserspaceState.Starting -> SettingRow(Icons.Default.Terminal, "Ubuntu on this device", "Starting…") { }
+                is LinuxUserspaceState.Starting -> SettingRow(Icons.Default.Terminal, "Linux on this device", "Starting…") { }
                 is LinuxUserspaceState.Running ->
                     SettingRow(
                         Icons.Default.Terminal,
-                        "Ubuntu on this device",
+                        "Linux on this device",
                         // Held open, not merely alive: closing the last terminal does not end this, and
                         // the count is what tells the user there are shells to come back to.
                         "Running · ${ui.sessionCount} terminal session(s) held open",
                     ) { }
-                is LinuxUserspaceState.Stopping -> SettingRow(Icons.Default.Terminal, "Ubuntu on this device", "Stopping…") { }
+                is LinuxUserspaceState.Stopping -> SettingRow(Icons.Default.Terminal, "Linux on this device", "Stopping…") { }
                 is LinuxUserspaceState.NeedsRepair ->
                     SettingRow(
                         Icons.Default.Warning,
-                        "Ubuntu on this device",
+                        "Linux on this device",
                         "Needs repair · ${state.detail}",
                     ) { }
             }
@@ -424,7 +424,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                 SettingRow(
                     Icons.Default.Folder,
                     "Workspace",
-                    "/home/ubuntu/workspace · ${ui.workspaceFileCount} file(s) · kept by Stop and Restart",
+                    "your workspace · ${ui.workspaceFileCount} file(s) · kept by Stop and Restart",
                 ) { }
                 SettingRow(
                     Icons.Default.CheckCircle,
@@ -517,7 +517,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                                 // Named for what it is, version included: a user who keeps two exports
                                 // has nothing else to tell them apart, and the extension is what makes
                                 // the file openable by the next Import.
-                                exportPicker.launch("eclipse-ubuntu-${distro.release}-rootfs.tar.gz")
+                                exportPicker.launch("eclipse-${distro.id}-rootfs.tar.gz")
                             },
                         ) { Text("Export") }
                     }
@@ -655,7 +655,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                                 "your network. Anything else you want is one apt-get install away in " +
                                 "the terminal, or tick it below and this install adds it for you. " +
                                 "Inside it you are root over your own files and nothing else, and the " +
-                                "workspace at /home/ubuntu/workspace survives Stop and Restart." +
+                                "workspace survives Stop and Restart." +
                                 if (ui.hasPendingWorkspaceBackup) {
                                     " Your saved workspace is restored after the install."
                                 } else {
@@ -735,11 +735,11 @@ class UbuntuActivity : SettingsDestinationActivity() {
                             "unpacked and checked before anything is replaced, and "
                     val consequence =
                         if (ui.state is LinuxUserspaceState.NotInstalled) {
-                            "nothing is installed to lose. The workspace at /home/ubuntu/workspace " +
+                            "nothing is installed to lose. The workspace " +
                                 "comes from the archive."
                         } else {
-                            "the installed ${distroTitle(ui)} — packages, files and the workspace at " +
-                                "/home/ubuntu/workspace — is replaced when it has been. Uninstalling " +
+                            "the installed ${distroTitle(ui)} — packages, files and the workspace — " +
+                                "is replaced when it has been. Uninstalling " +
                                 "first would keep nothing that is not in the archive or already exported."
                         }
                     Text(
@@ -805,7 +805,7 @@ class UbuntuActivity : SettingsDestinationActivity() {
                     // after the picker has been on screen, and the flag has to be up before that.
                     pendingExport = linuxUserspace.exportInstallLog()
                     vaultUnlockGate.hold()
-                    logSavePicker.launch("eclipse-ubuntu-install.log")
+                    logSavePicker.launch("eclipse-linux-install.log")
                 },
                 onClear = { linuxUserspace.clearInstallLog() },
             )
@@ -854,7 +854,7 @@ private fun InstallLogDialog(
             ) {
                 if (events.isEmpty()) {
                     Text(
-                        "Nothing recorded yet. Install or repair Ubuntu on this device and this " +
+                        "Nothing recorded yet. Install or repair Linux on this device and this " +
                             "becomes a timestamped trace of every download, extraction and apt step.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -970,7 +970,7 @@ private fun PreinstallPicker(
             ) { Text(if (allSelected) "None" else "All") }
         }
         Text(
-            "Installed after the base system, most of them from the same Ubuntu archive. The npm " +
+            "Installed after the base system, most of them from the same software repository. The npm " +
                 "agents come from npm's registry and need Node.js; the Claude Code CLI comes from its " +
                 "maker's own installer. What reaches outside the archive needs a working connection, " +
                 "and one that does not install is reported as a warning rather than failing the " +
@@ -1032,7 +1032,7 @@ private fun PreinstallPicker(
 /**
  * The distro's display name, or a neutral title on a device where none is supported.
  */
-private fun distroTitle(ui: LinuxUserspaceUiState): String = ui.distro?.displayName ?: "Ubuntu"
+private fun distroTitle(ui: LinuxUserspaceUiState): String = ui.distro?.displayName ?: "Linux"
 
 /**
  * One install phase as the progress line renders it: the label, and the download's fraction when
@@ -1065,7 +1065,7 @@ private fun describeSetupStep(
 ): String {
     val label =
         when (step) {
-            SetupStep.REGISTER_USER -> "Creating the ubuntu account"
+            SetupStep.REGISTER_USER -> "Creating the user account"
             SetupStep.PREPARE_WORKSPACE -> "Preparing the workspace"
             SetupStep.CONFIGURE_DNS -> "Configuring DNS"
             SetupStep.CONFIGURE_APT -> "Configuring package sources"

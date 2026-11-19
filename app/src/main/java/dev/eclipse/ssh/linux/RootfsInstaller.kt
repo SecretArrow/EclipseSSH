@@ -289,9 +289,9 @@ class RootfsInstaller(
             detail = "free=${free / MIB}MB, needed=${needed / MIB}MB",
         )
         if (free < needed) {
-            // The prefix is a contract: the error taxonomy reads "Ubuntu needs" as DiskFull.
+            // The prefix is a contract: the error taxonomy reads "Linux needs" as DiskFull.
             throw IOException(
-                "Ubuntu needs about ${needed / MIB} MB of free storage to install " +
+                "Linux needs about ${needed / MIB} MB of free storage to install " +
                     "(the download plus the unpacked system), but only about ${free / MIB} MB is free. " +
                     "Free up storage and try again.",
             )
@@ -301,7 +301,7 @@ class RootfsInstaller(
     /**
      * Frees the bytes a userspace can regenerate, and answers how many were freed.
      *
-     * Written for the one environmental failure a repair can do something about. "Ubuntu needs about
+     * Written for the one environmental failure a repair can do something about. "Linux needs about
      * N MB of free storage" and the guest's own `No space left on device` are facts about the disk
      * rather than about the rootfs, and the app's answer to both used to be to tell the user to go
      * and free some — advice rather than a repair, on a device where the largest expendable trees

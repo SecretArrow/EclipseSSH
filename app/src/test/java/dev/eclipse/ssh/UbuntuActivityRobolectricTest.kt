@@ -77,14 +77,14 @@ class UbuntuActivityRobolectricTest {
     fun theTitleIsOnTheBarAndRepeatedOnTheRow() {
         compose.waitForIdle()
 
-        compose.assertTitled("Ubuntu on this device")
+        compose.assertTitled("Linux on this device")
     }
 
     @Test
     fun theCardHeaderNamesTheSection() {
         compose.waitForIdle()
 
-        compose.assertSectionHeader("Ubuntu on this device")
+        compose.assertSectionHeader("Linux on this device")
     }
 
     /**

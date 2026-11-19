@@ -226,10 +226,10 @@ class SettingsHeavyRowsRobolectricTest {
     fun theUbuntuRowSaysTheDeviceCannotRunItAndOffersNoControl() {
         openSettings()
 
-        pumpUntil(describe = { "the Ubuntu row never composed" }) {
-            compose.onAllNodesWithText("Ubuntu on this device").fetchSemanticsNodes().isNotEmpty()
+        pumpUntil(describe = { "the Linux row never composed" }) {
+            compose.onAllNodesWithText("Linux on this device").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("Ubuntu on this device").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Linux on this device").performScrollTo().assertIsDisplayed()
         // The subtitle is the unsupported branch's own sentence, so asserting it is asserting that
         // the branch was taken rather than merely that a row exists.
         compose
@@ -238,10 +238,10 @@ class SettingsHeavyRowsRobolectricTest {
             .assertIsDisplayed()
 
         assertWithMessage(
-            "the Ubuntu row offers a control on a device that cannot run a userspace; the " +
+            "the Linux row offers a control on a device that cannot run a userspace; the " +
                 "unsupported branch is supposed to hide it, and this test should then be " +
                 "extended to assert the launch instead",
-        ).that(compose.onAllNodesWithContentDescription("Ubuntu on this device").fetchSemanticsNodes())
+        ).that(compose.onAllNodesWithContentDescription("Linux on this device").fetchSemanticsNodes())
             .isEmpty()
     }
 }

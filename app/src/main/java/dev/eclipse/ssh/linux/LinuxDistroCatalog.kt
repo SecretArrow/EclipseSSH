@@ -59,6 +59,21 @@ data class LinuxDistro(
      * means "unknown", and the gates skip rather than guess.
      */
     val rootfsSizeBytes: Long = 0L,
+    /**
+     * The base URL of the distribution's package repository, used by the apk/apt manager to
+     * configure `/etc/apk/repositories` or `/etc/apt/sources.list`. Defaults to null — the
+     * manager then uses its own hardcoded default (Alpine's dl-cdn, Ubuntu's archive). When set,
+     * the manager uses this instead.
+     *
+     * For an apk-family entry the value is the prefix the per-branch paths append to: Alpine's
+     * `null` resolves to `https://dl-cdn.alpinelinux.org/alpine/<release>` (the manager appends
+     * `<release>` itself), while Chimera's `https://repo.chimera-linux.org/current` already
+     * carries the channel segment because Chimera's branches live under `/current/`, not under
+     * the date-stamped snapshot `release` names. The manager therefore treats a non-null base as
+     * complete and appends only the branch names (`main`/`community` for Alpine, `main`/`user`
+     * for Chimera).
+     */
+    val repoBaseUrl: String? = null,
 )
 
 /**
@@ -228,6 +243,83 @@ object LinuxDistroCatalog {
 
     private const val ALPINE_RELEASES_URL = "https://dl-cdn.alpinelinux.org/alpine"
 
+    /** Where Chimera publishes its dated rootfs snapshots (the `live/<date>/` tree). */
+    private const val CHIMERA_RELEASES_URL = "https://repo.chimera-linux.org/live"
+
+    /**
+     * One Chimera Linux rootfs snapshot: a full (not bootstrap) root filesystem published by
+     * `repo.chimera-linux.org` as a gzip tarball beside a minisig-signed `sha256sums.txt` — the
+     * same pin-and-verify contract Ubuntu Base and Alpine offer, only Chimera's rootfs is a full
+     * system image (~195 MB compressed) rather than a minirootfs.
+     *
+     * Chimera ships `apk` (apk-tools v3) and its own package build system, so a catalog entry here
+     * carries [DistroFamily.ALPINE] / [PackageManager.APK] and routes through the apk pipeline the
+     * same way Alpine does — but its repositories live at `repo.chimera-linux.org`, not
+     * dl-cdn.alpinelinux.org. [repoBaseUrl] carries that base so [AlpineDistributionManager] writes
+     * Chimera's `/current/main` and `/current/user` instead of Alpine's `<release>/main`,
+     * `<release>/community`: Chimera's branches live under a `/current/` channel, not under the
+     * date-stamped snapshot `release` the catalogue pins the tarball by.
+     *
+     * `release` is the date-stamped snapshot (`20261103`) the tarball file name carries; Chimera
+     * is a rolling distribution, so the snapshot date is the version. `tarballDate` mirrors it
+     * (kept separate so a future series that names a tarball differently does not have to overload
+     * `release`).
+     */
+    private data class ChimeraRelease(
+        val id: String,
+        val displayName: String,
+        /** The date-stamped snapshot, e.g. `20261103` — both the tarball's version and its path segment. */
+        val release: String,
+        /** The date as it appears in the tarball file name; mirrors [release] for the full rootfs. */
+        val tarballDate: String,
+        /** The base URL Chimera's apk branches live under, including the `/current` channel. */
+        val repoBaseUrl: String,
+        val tarballSizeBytesByArch: Map<String, Long>,
+        val sha256ByArch: Map<String, String>,
+    )
+
+    /**
+     * Chimera publishes only `aarch64` officially (the research survey verified the arm64 full
+     * rootfs); `amd64`/`armhf` exist on the mirror but were not verified for the catalogue, so the
+     * series is arm64-only rather than carrying unverified pins.
+     */
+    private val CHIMERA_ARCHES = listOf("arm64")
+
+    /** The Chimera architecture as it appears in the tarball file name (aarch64 not arm64). */
+    private fun chimeraTarballArch(ubuntuArch: String): String =
+        when (ubuntuArch) {
+            "arm64" -> "aarch64"
+            "amd64" -> "x86_64"
+            "armhf" -> "armhf"
+            else -> ubuntuArch
+        }
+
+    /**
+     * The Chimera series, newest first. The SHA256 here was fetched from the `sha256sums.txt`
+     * `repo.chimera-linux.org` publishes beside each snapshot, which is itself minisig-signed — the
+     * install refuses a tarball whose hash disagrees with this pin. Only the arm64 full rootfs is
+     * pinned; Chimera's other architectures (x86_64, riscv64, ppc64le, loongarch64) ship on the
+     * mirror but were not verified for this catalogue.
+     */
+    private val chimeraSeries =
+        listOf(
+            ChimeraRelease(
+                id = "chimera-20261103",
+                displayName = "Chimera 2026-11-03",
+                release = "20261103",
+                tarballDate = "20261103",
+                repoBaseUrl = "https://repo.chimera-linux.org/current",
+                tarballSizeBytesByArch =
+                    mapOf(
+                        "arm64" to 194_989_229L,
+                    ),
+                sha256ByArch =
+                    mapOf(
+                        "arm64" to "a15cbcae55626748dfdcb9184b5e03d14f65a042435320dde70b7d7c890ba098",
+                    ),
+            ),
+        )
+
     /**
      * The Alpine series, newest first. Every SHA256 here was fetched from the `.sha256` file
      * `dl-cdn.alpinelinux.org` publishes beside each tarball (the same source the catalogue's
@@ -323,6 +415,27 @@ object LinuxDistroCatalog {
                                 "alpine-minirootfs-${s.pointRelease}-${alpineTarballArch(arch)}.tar.gz",
                         rootfsSha256 = s.sha256ByArch.getValue(arch),
                         rootfsSizeBytes = s.tarballSizeBytesByArch.getValue(arch),
+                    )
+                }
+            } +
+            chimeraSeries.flatMap { s ->
+                CHIMERA_ARCHES.map { arch ->
+                    LinuxDistro(
+                        id = s.id,
+                        displayName = s.displayName,
+                        release = s.release,
+                        ubuntuArch = arch,
+                        family = DistroFamily.ALPINE,
+                        packageManager = PackageManager.APK,
+                        // Chimera's apk branches live under /current/ rather than under the
+                        // date-stamped snapshot, so repoBaseUrl carries the channel; the tarball
+                        // itself still comes from the dated live/<date>/ tree.
+                        rootfsTarballUrl =
+                            "$CHIMERA_RELEASES_URL/${s.tarballDate}/" +
+                                "chimera-linux-${chimeraTarballArch(arch)}-ROOTFS-${s.tarballDate}-full.tar.gz",
+                        rootfsSha256 = s.sha256ByArch.getValue(arch),
+                        rootfsSizeBytes = s.tarballSizeBytesByArch.getValue(arch),
+                        repoBaseUrl = s.repoBaseUrl,
                     )
                 }
             }

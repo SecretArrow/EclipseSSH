@@ -1835,7 +1835,7 @@ class UbuntuDistributionManagerTest {
             assertThat(report.unusablePackageLocks).isEmpty()
             assertThat(report.healthy).isFalse()
             assertThat(report.describe())
-                .isEqualTo("Ubuntu's temporary directories cannot be written to (/tmp)")
+                .isEqualTo("The Linux distribution's temporary directories cannot be written to (/tmp)")
         }
 
     @Test

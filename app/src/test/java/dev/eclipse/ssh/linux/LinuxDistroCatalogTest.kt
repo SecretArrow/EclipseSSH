@@ -66,11 +66,13 @@ class LinuxDistroCatalogTest {
         // The size estimate feeds the free-space gate and the content-length sanity check; an
         // entry with 0 would silently disable both, and a nonsense value would block honest
         // installs. Ubuntu Base tarballs live in the tens of megabytes; Alpine mini-rootfs are
-        // famously small (~3 MB compressed) — both are honest numbers from the publisher, and
-        // both must pass the gate so a user picking either knows the storage budget upfront.
+        // famously small (~3 MB compressed); Chimera ships a *full* rootfs rather than a
+        // minirootfs, so it lands near 195 MB compressed — all three are honest numbers from the
+        // publisher, and all must pass the gate so a user picking either knows the storage budget
+        // upfront. The upper bound accommodates a full rootfs without admitting an obvious typo.
         LinuxDistroCatalog.all.forEach { distro ->
             assertThat(distro.rootfsSizeBytes).isAtLeast(3_000_000L)
-            assertThat(distro.rootfsSizeBytes).isAtMost(100_000_000L)
+            assertThat(distro.rootfsSizeBytes).isAtMost(250_000_000L)
         }
     }
 
@@ -88,8 +90,8 @@ class LinuxDistroCatalogTest {
         val pairs = LinuxDistroCatalog.all.map { it.id to it.ubuntuArch }
         assertThat(pairs.distinct()).isEqualTo(pairs)
         // 5 Ubuntu series (4 LTS + the 25.10 interim) × 3 arches + 3 Alpine series × 3 arches
-        // = 24 entries.
-        assertThat(LinuxDistroCatalog.all).hasSize(24)
+        // + 1 Chimera series × 1 arch (arm64-only, the only arch verified) = 25 entries.
+        assertThat(LinuxDistroCatalog.all).hasSize(25)
     }
 
     @Test
@@ -165,19 +167,49 @@ class LinuxDistroCatalogTest {
         // what the apk repository URL is built from, the way an Ubuntu codename feeds apt.
         // Each Alpine series publishes three arches (arm64/amd64/armhf), so the catalogue carries
         // 9 Alpine entries — three per id — and the chooser sees them per-arch via
-        // alpineVersionsFor rather than as de-duplicated ids.
-        val alpine = LinuxDistroCatalog.all.filter { it.family == DistroFamily.ALPINE }
-        assertThat(alpine).hasSize(9)
-        assertThat(alpine.map { it.id }.distinct())
-            .containsExactly("alpine-3.21", "alpine-3.20", "alpine-3.19")
+        // alpineVersionsFor rather than as de-duplicated ids. Chimera rides the same apk family
+        // (it is apk-tools under the hood), so it shares the family-level assertions below and has
+        // its own branch/URL shape pinned in its own block.
+        val apkFamily = LinuxDistroCatalog.all.filter { it.family == DistroFamily.ALPINE }
+        // 9 Alpine (3 series × 3 arches) + 1 Chimera (arm64-only) = 10 apk-family entries.
+        assertThat(apkFamily).hasSize(10)
+        assertThat(apkFamily.map { it.id }.distinct())
+            .containsExactly("alpine-3.21", "alpine-3.20", "alpine-3.19", "chimera-20261103")
             .inOrder()
-        alpine.forEach { distro ->
+        // Every apk-family entry drives the apk pipeline, regardless of which apk distro it is.
+        apkFamily.forEach { distro ->
             assertThat(distro.packageManager).isEqualTo(PackageManager.APK)
+        }
+
+        // The Alpine-proper subset — its tarball name, branch and URL shape are Alpine-specific,
+        // so they are asserted on the Alpine entries alone rather than across the whole family.
+        val alpine = apkFamily.filter { it.release.startsWith("v3.") }
+        assertThat(alpine).hasSize(9)
+        alpine.forEach { distro ->
             assertThat(distro.release).startsWith("v3.")
             // The tarball name is `alpine-minirootfs-<point>-<arch>.tar.gz` — the pin is the
             // exact point release this build was verified against.
             assertThat(distro.rootfsTarballUrl).contains("alpine-minirootfs-")
             assertThat(distro.rootfsTarballUrl).contains(distro.release)
+            // Alpine's repos live on dl-cdn, so it does not override the manager's default base.
+            assertThat(distro.repoBaseUrl).isNull()
+        }
+
+        // Chimera is the apk-family distro with its own repository base: its branches live under
+        // repo.chimera-linux.org/current rather than dl-cdn.alpinelinux.org/alpine/<release>, and
+        // the catalogue pins the dated full rootfs from the live/<date>/ tree. arm64-only because
+        // that is the only architecture the survey verified.
+        val chimera = apkFamily.filter { it.id == "chimera-20261103" }
+        assertThat(chimera).hasSize(1)
+        chimera.forEach { distro ->
+            assertThat(distro.ubuntuArch).isEqualTo("arm64")
+            assertThat(distro.release).isEqualTo("20261103")
+            assertThat(distro.repoBaseUrl).isEqualTo("https://repo.chimera-linux.org/current")
+            // The tarball name is `chimera-linux-aarch64-ROOTFS-<date>-full.tar.gz` — the pin is
+            // the dated full rootfs snapshot this build was verified against.
+            assertThat(distro.rootfsTarballUrl)
+                .contains("chimera-linux-aarch64-ROOTFS-20261103-full.tar.gz")
+            assertThat(distro.rootfsTarballUrl).startsWith("https://repo.chimera-linux.org/live/")
         }
     }
 }

@@ -82,6 +82,46 @@ class AlpineDistributionManagerTest {
         }
 
     @Test
+    fun `configureApkRepositories uses the distro repoBaseUrl for an apk-family override`() =
+        runTest {
+            // Chimera is the apk-family distro that does NOT share Alpine's dl-cdn: its branches
+            // live under repo.chimera-linux.org/current, and the catalogue pins that base via
+            // LinuxDistro.repoBaseUrl. The manager must honour it — writing Chimera's `main` and
+            // `user` under that base instead of Alpine's `main`/`community` under dl-cdn — so the
+            // same apk pipeline serves both distros. The harness is reused verbatim (an apk
+            // baselayout rootfs is an apk baselayout rootfs); only the distro changes.
+            val harness =
+                Harness(
+                    distro =
+                        LinuxDistroCatalog.all.first {
+                            it.id == "chimera-20261103" && it.ubuntuArch == "arm64"
+                        },
+                )
+
+            harness.distribution.setup()
+
+            // The two branches Chimera publishes that a pinned install enables: `main`
+            // (mandatory) and `user` (extra software). `contrib` exists on the mirror but is not
+            // enabled here, matching the two-line shape the Alpine path writes. The base carries
+            // the /current channel — Chimera's branches live there, not under the date-stamped
+            // snapshot `release` the catalogue pins the tarball by.
+            val repos = File(harness.runtime.rootfsDir, "etc/apk/repositories").readText()
+            assertThat(repos).contains("https://repo.chimera-linux.org/current/main")
+            assertThat(repos).contains("https://repo.chimera-linux.org/current/user")
+            assertThat(repos).doesNotContain("dl-cdn.alpinelinux.org")
+            // The file is exactly the two lines, no Alpine community branch and no trailing content.
+            assertThat(repos.lines().filter { it.isNotBlank() })
+                .containsExactly(
+                    "https://repo.chimera-linux.org/current/main",
+                    "https://repo.chimera-linux.org/current/user",
+                ).inOrder()
+            // isConfigured follows the override: the marker it looks for is Chimera's host, so a
+            // repos file written from the Chimera base reads as configured rather than failing the
+            // Alpine-only marker the default path used.
+            assertThat(harness.distribution.isConfigured()).isTrue()
+        }
+
+    @Test
     fun `isConfigured is false before setup and true after`() =
         runTest {
             val harness = Harness()
