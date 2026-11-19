@@ -2333,7 +2333,7 @@ open class UbuntuDistributionManager(
          * rung that cannot finish in ten minutes is a network fact, and the ladder's whole point
          * is that there is another rung to try.
          */
-        private const val APT_UPDATE_ATTEMPT_TIMEOUT_MS = 10 * 60_000L
+        internal const val APT_UPDATE_ATTEMPT_TIMEOUT_MS = 10 * 60_000L
         private const val INSTALL_TIMEOUT_MS = 45 * 60_000L
 
         /**
