@@ -524,6 +524,7 @@ class TerminalE2eTest {
     private companion object {
         const val TEST_TIMEOUT_MS = 30_000L
         const val KEYBOARD_POLL_TIMEOUT_MS = 5_000L
+
         /**
          * How long each [takeKeyboardChunk] poll slice parks before idling the main looper again.
          * Short enough that the looper is idled often enough for the emulator's handler-posted
