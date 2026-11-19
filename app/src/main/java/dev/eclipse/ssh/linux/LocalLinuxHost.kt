@@ -39,7 +39,7 @@ object LocalLinuxHost {
      * titled "Local Ubuntu 22.04" over a 24.04 userspace was the app stating a version it had not
      * checked.
      */
-    const val CARD_TITLE = "Local Ubuntu"
+    const val CARD_TITLE = "Local Linux"
 
     /** The group the synthesized profile claims, so it sorts apart from real servers. */
     const val GROUP = "On this device"
@@ -84,7 +84,7 @@ object LocalLinuxHost {
             id = HOST_ID,
             name = distro.displayName,
             host = "localhost",
-            username = "ubuntu",
+            username = "linux",
             port = 22,
             authMethod = AuthMethod.PASSWORD,
             group = GROUP,

@@ -229,7 +229,7 @@ class LinuxUserspaceService : LifecycleService() {
                 .Builder(this, NotificationChannels.LINUX)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle(LocalLinuxHost.notificationTitle(distro))
-                .setContentText(notificationBody(state, sessionCount))
+                .setContentText(notificationBody(state, sessionCount, distro))
                 .setContentIntent(openIntent)
                 .setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -252,12 +252,13 @@ class LinuxUserspaceService : LifecycleService() {
     private fun notificationBody(
         state: LinuxUserspaceState,
         sessionCount: Int,
+        distro: LinuxDistro,
     ): String =
         when (state) {
             is LinuxUserspaceState.Installing ->
-                "Installing Ubuntu · ${describeInstallStep(state.step)} · ${state.percent}%"
-            LinuxUserspaceState.Starting -> "Starting Ubuntu"
-            LinuxUserspaceState.Stopping -> "Stopping Ubuntu"
+                "Installing ${distro.displayName} · ${describeInstallStep(state.step)} · ${state.percent}%"
+            LinuxUserspaceState.Starting -> "Starting ${distro.displayName}"
+            LinuxUserspaceState.Stopping -> "Stopping ${distro.displayName}"
             // Running, and — for the moment between a state change and this service's own
             // stop — the settled states, where the session count is the line the user reads.
             else -> getString(R.string.notif_linux_body, sessionCount)
@@ -284,7 +285,7 @@ class LinuxUserspaceService : LifecycleService() {
     ): String {
         val label =
             when (step) {
-                SetupStep.REGISTER_USER -> "creating the ubuntu account"
+                SetupStep.REGISTER_USER -> "creating the user account"
                 SetupStep.PREPARE_WORKSPACE -> "preparing the workspace"
                 SetupStep.CONFIGURE_DNS -> "configuring DNS"
                 SetupStep.CONFIGURE_APT -> "configuring package sources"

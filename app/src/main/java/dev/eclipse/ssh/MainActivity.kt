@@ -5533,7 +5533,7 @@ private fun SettingsScreen(
     SettingsSection("Linux userspace") {
         SettingRow(
             Icons.Default.Computer,
-            "Ubuntu on this device",
+            "Linux on this device",
             linuxUserspaceSummary(linuxUi),
         ) {
             // Absent, not disabled, on a device that cannot run it - the rule the section kept: an
@@ -5542,7 +5542,7 @@ private fun SettingsScreen(
             if (linuxUi.supported) {
                 TextButton(
                     onClick = { context.startActivity(Intent(context, UbuntuActivity::class.java)) },
-                    modifier = Modifier.semantics { contentDescription = "Ubuntu on this device" },
+                    modifier = Modifier.semantics { contentDescription = "Linux on this device" },
                 ) { Text("Open") }
             }
         }
@@ -5946,7 +5946,7 @@ private fun describeSetupStep(
 ): String {
     val label =
         when (step) {
-            SetupStep.REGISTER_USER -> "Creating the ubuntu account"
+            SetupStep.REGISTER_USER -> "Creating the user account"
             SetupStep.PREPARE_WORKSPACE -> "Preparing the workspace"
             SetupStep.CONFIGURE_DNS -> "Configuring DNS"
             SetupStep.CONFIGURE_APT -> "Configuring package sources"

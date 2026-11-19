@@ -324,7 +324,7 @@ class FilesExplorerController
                     if (ubuntuRunning.value) {
                         // Ubuntu is "live" when it is running, which is the only liveness it has: there is
                         // no session to hold open, because the files are simply there.
-                        listOf(ExplorerSession(UBUNTU_SESSION_ID, "Ubuntu on this device", ExplorerSessionKind.UBUNTU, live = true))
+                        listOf(ExplorerSession(UBUNTU_SESSION_ID, "Linux on this device", ExplorerSessionKind.UBUNTU, live = true))
                     } else {
                         emptyList()
                     }
@@ -712,7 +712,7 @@ class FilesExplorerController
                 val current = _state.value
                 val sessionId = current.activeSessionId
                 if (current.kind != ExplorerSessionKind.UBUNTU) {
-                    _state.update { it.copy(error = "Switch to Ubuntu on this device before copying into it") }
+                    _state.update { it.copy(error = "Switch to Linux on this device before copying into it") }
                     return@launch
                 }
                 val directory = current.path

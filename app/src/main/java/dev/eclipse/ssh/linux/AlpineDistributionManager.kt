@@ -145,6 +145,11 @@ class AlpineDistributionManager(
      * Whether setup has run to completion: the account exists, the workspace is in place and the
      * repositories file carries our marker. Cheap and file-based — [healthProbe] is the expensive
      * truth. Never throws, for the same reason the Ubuntu manager's [isConfigured] never does.
+     *
+     * The marker the repositories file is checked for is the base [configureApkRepositories]
+     * writes from — Alpine's dl-cdn default for `repoBaseUrl == null`, the distro's own
+     * [LinuxDistro.repoBaseUrl] otherwise — so a Chimera install that wrote
+     * `repo.chimera-linux.org` reads as configured rather than failing the Alpine-only marker.
      */
     override fun isConfigured(): Boolean {
         val passwd = File(rootfs, "etc/passwd")
@@ -152,8 +157,17 @@ class AlpineDistributionManager(
         if (!passwd.isFile || !repos.isFile) return false
         return passwd.readLines().any { it.startsWith(PASSWD_PREFIX) } &&
             File(rootfs, WORKSPACE_DIR).isDirectory &&
-            repos.readText().contains(APK_MARKER)
+            repos.readText().contains(apkMarker())
     }
+
+    /**
+     * The substring [isConfigured] looks for in `/etc/apk/repositories`: the host segment of the
+     * base [configureApkRepositories] writes from. A per-distro marker rather than a hardcoded
+     * Alpine one, because an apk-family distro with its own [LinuxDistro.repoBaseUrl] writes a
+     * different host and the configured check has to follow it there. Extracted the same way
+     * [networkHost] extracts the host, so the marker and the DNS probe point at the same name.
+     */
+    private fun apkMarker(): String = networkHost
 
     /**
      * The post-install and on-demand health check: can the session path actually run commands, is
@@ -352,24 +366,51 @@ class AlpineDistributionManager(
     }
 
     /**
-     * Writes `/etc/apk/repositories` with the two lines a pinned release needs: `main` and
-     * `community`, both under `https://dl-cdn.alpinelinux.org/alpine/<release>/`. The release comes
-     * from [LinuxDistro.release] (e.g. `v3.21`), which the catalogue sets from the Alpine branch.
-     * No `@edge` / `@testing` tag is used — those are for pulling edge alongside a stable release,
-     * which a pinned install does not do.
+     * Writes `/etc/apk/repositories` with the branch lines a pinned release needs.
+     *
+     * Two shapes, routed on [LinuxDistro.repoBaseUrl]:
+     *
+     *  - The default (Alpine, `repoBaseUrl == null`): two lines — `main` and `community` — both
+     *    under `https://dl-cdn.alpinelinux.org/alpine/<release>/`. The release comes from
+     *    [LinuxDistro.release] (e.g. `v3.21`), which the catalogue sets from the Alpine branch.
+     *    No `@edge` / `@testing` tag is used — those are for pulling edge alongside a stable
+     *    release, which a pinned install does not do.
+     *
+     *  - An override (Chimera, `repoBaseUrl != null`): the base URL is treated as complete — the
+     *    caller already folded the channel segment in (Chimera's branches live under
+     *    `/current/`, not under the date-stamped `release` the catalogue pins the tarball by), so
+     *    only the branch names are appended. Chimera publishes `main` (mandatory) and `user`
+     *    (extra software) — `contrib` exists on the mirror but is not enabled here, matching the
+     *    two-line shape the Alpine path writes.
+     *
+     * The marker [isConfigured] looks for in the repos file (see [apkMarker]) is whatever base the
+     * repos were written from, so a Chimera install that wrote `repo.chimera-linux.org` reads as
+     * configured, not as the Alpine default's marker being absent.
      */
     private fun configureApkRepositories() {
-        val base = "$ALPINE_RELEASES_URL/${distro.release}"
+        val (base, branches) = apkRepoBase()
         writeAtomically(
             File(rootfs, "etc/apk/repositories"),
-            "$base/main\n$base/community\n",
+            branches.joinToString("\n") { "$base/$it" } + "\n",
         )
         diagnostics.record(
             UserspaceDiagnosticCategory.APT,
             "apk repositories written",
-            detail = "$base/{main,community}",
+            detail = "$base/{${branches.joinToString(",")}}",
         )
     }
+
+    /**
+     * Resolves the repository base URL and the branch list for [distro]. See
+     * [configureApkRepositories] for the two shapes; this is the single place both are decided so
+     * [isConfigured]'s marker and [networkHost]'s host stay in sync with what gets written.
+     */
+    private fun apkRepoBase(): Pair<String, List<String>> =
+        if (distro.repoBaseUrl != null) {
+            distro.repoBaseUrl!! to listOf("main", "user")
+        } else {
+            "$ALPINE_RELEASES_URL/${distro.release}" to listOf("main", "community")
+        }
 
     /**
      * Proves resolution works from inside proot before anything network-heavy runs: `getent`
@@ -660,10 +701,14 @@ class AlpineDistributionManager(
     }
 
     /**
-     * The repository host [verifyResolution] resolves: the same CDN apk's first fetch will ask
-     * for, so a dead resolver is named before a single package byte is fetched.
+     * The repository host [verifyResolution] resolves: the host apk's first fetch will ask for, so
+     * a dead resolver is named before a single package byte is fetched. Per-distro rather than a
+     * hardcoded Alpine host, because an apk-family distro with its own [LinuxDistro.repoBaseUrl]
+     * fetches from a different host and the DNS check has to point at the one that will actually
+     * be asked.
      */
-    private val networkHost: String get() = "dl-cdn.alpinelinux.org"
+    private val networkHost: String
+        get() = apkRepoBase().first.substringBefore("/").substringAfter("://")
 
     companion object {
         /** What `whoami` has to answer inside a session: proot's `-0` gives it root. */
@@ -675,9 +720,6 @@ class AlpineDistributionManager(
         private const val HOME_DIR = "/home/alpine"
         private const val WORKSPACE_DIR = "home/alpine/workspace"
         private const val PASSWD_PREFIX = "alpine:"
-
-        /** The marker `isConfigured` looks for in `/etc/apk/repositories`. */
-        private const val APK_MARKER = "dl-cdn.alpinelinux.org/alpine"
 
         private const val ALPINE_RELEASES_URL = "https://dl-cdn.alpinelinux.org/alpine"
 

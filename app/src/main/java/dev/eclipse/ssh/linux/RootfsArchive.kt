@@ -285,7 +285,7 @@ internal class RootfsArchive(
         val release = readOsRelease(root)
         val id = release["ID"]
         if (id != null && id.isNotBlank() && !id.equals(UBUNTU_ID, ignoreCase = true)) {
-            findings += "the archive holds a \"$id\" system, and this app installs Ubuntu"
+            findings += "the archive holds a \"$id\" system, which is not one this app installs"
         }
         val codename = release["UBUNTU_CODENAME"] ?: release["VERSION_CODENAME"]
         if (codename != null &&
@@ -294,7 +294,7 @@ internal class RootfsArchive(
             !codename.equals(distro.release, ignoreCase = true)
         ) {
             findings +=
-                "the archive holds Ubuntu $codename and this device's Ubuntu is ${distro.release}: " +
+                "the archive holds $codename and this device's distribution is ${distro.displayName}: " +
                 "uninstall first, choose that version on the install screen, then import"
         }
         return findings

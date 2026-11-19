@@ -195,7 +195,7 @@ class LinuxUserspaceManager(
                     // the device fixes it here rather than handing the user a failure and a Repair
                     // button. See setUpVerifyAndHeal for what bounds that.
                     val report =
-                        setUpVerifyAndHeal(plan, "Ubuntu installed but failed its health check", extras)
+                        setUpVerifyAndHeal(plan, "The distribution installed but failed its health check", extras)
 
                     writeInstalledState()
                     val warnings = (extractionWarnings + report.warnings).toMutableList()
@@ -674,7 +674,7 @@ class LinuxUserspaceManager(
                     "empty one was created in its place"
                 diagnostics.record(
                     UserspaceDiagnosticCategory.ROOTFS,
-                    "the workspace was missing from /home/ubuntu and was recreated empty",
+                    "the workspace was missing and was recreated empty",
                     detail = "projects that were in it are not recoverable from the rootfs",
                 )
             } else {
@@ -776,7 +776,7 @@ class LinuxUserspaceManager(
                 // The archive's copy: honest about the one thing it costs, because the user is the only
                 // one who can put it back.
                 PackageDatabaseSource.ARCHIVE ->
-                    "the package database could not be read and was rebuilt from the Ubuntu archive, so " +
+                    "the package database could not be read and was rebuilt from the distribution's archive, so " +
                         "packages installed on top of the base system are no longer tracked as " +
                         "installed; their files are still on disk and reinstalling them with apt puts " +
                         "the record back"
@@ -830,7 +830,7 @@ class LinuxUserspaceManager(
             )
             return null
         }
-        warnings += "restored ${restored.size} missing file(s) from the Ubuntu archive: " +
+        warnings += "restored ${restored.size} missing file(s) from the distribution's archive: " +
             restored.take(4).joinToString(", ") +
             (if (restored.size > 4) " and ${restored.size - 4} more" else "")
         return setUpAgain(warnings)
@@ -1043,7 +1043,7 @@ class LinuxUserspaceManager(
     ): Throwable {
         failure?.let { UserspaceFailure.fromThrowable(it) }?.let { return it }
         return IOException(
-            "Ubuntu could not be repaired: ${failure?.message ?: "every repair step failed"}" +
+            "The distribution could not be repaired: ${failure?.message ?: "every repair step failed"}" +
                 " (tried: ${attempted.joinToString(", ")})",
             failure,
         )
@@ -1055,7 +1055,7 @@ class LinuxUserspaceManager(
          * [HealthReport.describe] completes it, and it names the repair rather than the rung, because
          * which rung ran is the log's business and the user's business is only that it did not work.
          */
-        const val HEALTH_FAILURE = "Ubuntu was repaired but still fails its health check"
+        const val HEALTH_FAILURE = "The distribution was repaired but still fails its health check"
 
         /**
          * How far down a cause chain [aRebuildCouldFix] looks before giving up. Three is deeper than

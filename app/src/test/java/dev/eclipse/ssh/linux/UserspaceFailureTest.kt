@@ -254,11 +254,11 @@ class UserspaceFailureTest {
 
     @Test
     fun `the installer's disk-space sentence is carried verbatim`() {
-        val failure = UserspaceFailure.fromMessage("Ubuntu needs ~900 MB free; 200 MB available")
+        val failure = UserspaceFailure.fromMessage("Linux needs ~900 MB free; 200 MB available")
 
         assertThat(failure).isInstanceOf(UserspaceFailure.DiskFull::class.java)
         // The gate already worded it well; the taxonomy must not fork one sentence into two.
-        assertThat(failure!!.message).isEqualTo("Ubuntu needs ~900 MB free; 200 MB available")
+        assertThat(failure!!.message).isEqualTo("Linux needs ~900 MB free; 200 MB available")
     }
 
     @Test
@@ -279,7 +279,7 @@ class UserspaceFailureTest {
                 networkUp = true,
                 aptUsable = true,
             )
-        val sentence = "Ubuntu installed but failed its health check"
+        val sentence = "The distribution installed but failed its health check"
         val failure = UserspaceFailure.GuestUnhealthy(wrongAccount, sentence)
 
         assertThat(failure.message).isEqualTo("$sentence: ${wrongAccount.describe()}")
@@ -370,7 +370,7 @@ class UserspaceFailureTest {
 
     @Test
     fun `a failure the taxonomy already typed is returned as it stands`() {
-        val already = UserspaceFailure.DiskFull(0, 0, detail = "Ubuntu needs ~900 MB free; 200 MB available")
+        val already = UserspaceFailure.DiskFull(0, 0, detail = "Linux needs ~900 MB free; 200 MB available")
 
         assertThat(UserspaceFailure.fromThrowable(IOException("wrapped", already))).isSameInstanceAs(already)
     }

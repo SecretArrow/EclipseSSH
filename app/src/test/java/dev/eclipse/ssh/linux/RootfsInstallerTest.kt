@@ -258,7 +258,7 @@ class RootfsInstallerTest {
             // The prefix is the taxonomy's DiskFull marker — a phone out of space must be told that,
             // not handed a download that dies of ENOSPC half way through.
             assertThat(thrown).isNotNull()
-            assertThat(thrown!!.message).startsWith("Ubuntu needs")
+            assertThat(thrown!!.message).startsWith("Linux needs")
             assertThat(downloads).isEqualTo(0)
         }
 

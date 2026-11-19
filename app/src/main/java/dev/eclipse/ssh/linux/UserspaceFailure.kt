@@ -106,7 +106,7 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-            "the Ubuntu base system could not be downloaded" +
+            "the base system could not be downloaded" +
                 (attempts.takeIf { it > 1 }?.let { " after $it attempts" } ?: "") +
                 " - check the connection and try again; the failure is in the download, not in what is " +
                 "already installed" +
@@ -154,7 +154,7 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-            "the package database is inconsistent - the repair pass will run; if this repeats, uninstall and reinstall Ubuntu" +
+            "the package database is inconsistent - the repair pass will run; if this repeats, uninstall and reinstall Linux" +
                 detail.inParentheses(),
             cause,
         )
@@ -289,7 +289,7 @@ sealed class UserspaceFailure(
         cause: Throwable? = null,
     ) : UserspaceFailure(
             "the package database cannot be read and no intact copy is left on the device - " +
-                "Repair rebuilds Ubuntu from the archive, which removes the packages installed on top " +
+                "Repair rebuilds the Linux distribution from the archive, which removes the packages installed on top " +
                 "of it; your own files are kept" +
                 detail.inParentheses(),
             cause,
@@ -353,7 +353,7 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-            "Ubuntu's temporary directory ($path) cannot be written to - Repair recreates it" +
+            "The Linux distribution's temporary directory ($path) cannot be written to - Repair recreates it" +
                 detail.inParentheses(),
             cause,
         )
@@ -375,7 +375,7 @@ sealed class UserspaceFailure(
         cause: Throwable? = null,
     ) : UserspaceFailure(
             "the Linux runtime this app ships ($component) is missing or unusable in this installation" +
-                " - reinstall or update the app; the Ubuntu files are not the problem" +
+                " - reinstall or update the app; the Linux files are not the problem" +
                 detail.inParentheses(),
             cause,
         )
@@ -390,7 +390,7 @@ sealed class UserspaceFailure(
         detail: String? = null,
         cause: Throwable? = null,
     ) : UserspaceFailure(
-            "too many Ubuntu terminals are open at once ($limit) - close one and try again" +
+            "too many Linux terminals are open at once ($limit) - close one and try again" +
                 detail.inParentheses(),
             cause,
         )
@@ -658,11 +658,11 @@ private fun killedSentence(
     tail: String,
 ): String =
     when (signal) {
-        9 -> "Ubuntu was killed by the system, which happens when the device runs out of memory - close other apps and try again"
-        11 -> "a program in Ubuntu crashed - this is a bug in the program, not in Ubuntu's files"
-        6 -> "a program in Ubuntu aborted - this is a bug in the program, not in Ubuntu's files"
-        15 -> "Ubuntu was stopped before the step finished"
-        else -> "a program in Ubuntu was killed (signal $signal)"
+        9 -> "The Linux session was killed by the system, which happens when the device runs out of memory - close other apps and try again"
+        11 -> "a program in the Linux environment crashed - this is a bug in the program, not in its files"
+        6 -> "a program in the Linux environment aborted - this is a bug in the program, not in its files"
+        15 -> "The Linux session was stopped before the step finished"
+        else -> "a program in the Linux environment was killed (signal $signal)"
     } + tailSummary(tail)
 
 /** The last thing the failed command said, as one line — proot's own error text lives here. */
@@ -685,7 +685,7 @@ private const val MAX_LOCKS = 4
 internal const val RUNTIME_STORAGE_PREFIX = "runtime storage not ready:"
 
 /** Cross-fork contract: the installer's free-space gate words its refusal this way. */
-internal const val DISK_FULL_PREFIX = "Ubuntu needs"
+internal const val DISK_FULL_PREFIX = "Linux needs"
 
 /**
  * Cross-fork contract: proot's own lines. Its diagnostics and the command's own output share one

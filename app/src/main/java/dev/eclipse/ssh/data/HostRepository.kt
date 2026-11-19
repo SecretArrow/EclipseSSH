@@ -44,7 +44,7 @@ class RoomHostRepository(
         // card has no edit menu — so reaching this guard means a bug, and a loud refusal beats a
         // row that has to be surgically removed later.
         check(!LocalLinuxHost.isLocalHost(host.id)) {
-            "The local Ubuntu environment is not a savable host"
+            "The local Linux environment is not a savable host"
         }
         val encrypted =
             host.copy(
