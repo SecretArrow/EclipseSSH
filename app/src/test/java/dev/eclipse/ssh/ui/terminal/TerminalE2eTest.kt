@@ -575,7 +575,7 @@ class TerminalE2eTest {
      */
     private class ScriptedShell(
         /** Written to stdout on start; the test syncs on this appearing in [rendered]. */
-        @Volatile private val banner: String,
+        private val banner: String,
     ) : Command {
         private var input: InputStream? = null
         private var output: OutputStream? = null

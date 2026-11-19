@@ -557,7 +557,7 @@ class AlpineDistributionManager(
                         ?.outputText()
                         ?.take(200)
                         ?.trim()
-                        ?.ifBlank { "exit ${result?.exitCode}" } ?: "no answer in time"
+                        ?.ifBlank { "exit ${result.exitCode}" } ?: "no answer in time"
                 )
         }
     }
