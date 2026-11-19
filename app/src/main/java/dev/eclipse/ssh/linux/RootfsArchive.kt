@@ -294,7 +294,7 @@ internal class RootfsArchive(
             !codename.equals(distro.release, ignoreCase = true)
         ) {
             findings +=
-                "the archive holds $codename and this device's distribution is ${distro.displayName}: " +
+                "the archive holds $codename and this device's distribution is ${distro.release} (${distro.displayName}): " +
                 "uninstall first, choose that version on the install screen, then import"
         }
         return findings
